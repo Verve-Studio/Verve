@@ -150,10 +150,36 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   })
 
   // ── Zoom to cursor + scroll save/restore ───────────────────────
+  // When a selection is active, zoom towards its centroid (Photoshop behaviour).
+  // Returns the selection centroid in image-pixel space, used by useScrollZoom
+  // to keep the selection anchor stable while zooming (Ctrl+scroll and Navigator).
+  const getSelectionAnchorRef = useRef<(() => { x: number; y: number } | null) | null>(null)
+  getSelectionAnchorRef.current = (): { x: number; y: number } | null => {
+    const mask = selectionStore.mask
+    if (!mask) return null
+    const sw = selectionStore.width
+    const sh = selectionStore.height
+    let lx = sw, ly = sh, rx = -1, ry = -1
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        if (mask[y * sw + x]) {
+          if (x < lx) lx = x
+          if (x > rx) rx = x
+          if (y < ly) ly = y
+          if (y > ry) ry = y
+        }
+      }
+    }
+    if (rx < 0) return null
+    // Return centroid in image pixels
+    return { x: (lx + rx) / 2, y: (ly + ry) / 2 }
+  }
+
   useScrollZoom(
     isActive, isActiveRef, viewportRef, zoomRef, pendingScrollRef, scrollPosRef,
     state.canvas.zoom,
     (zoom) => dispatch({ type: 'SET_ZOOM', payload: zoom }),
+    getSelectionAnchorRef,
   )
 
   // Init selection store dimensions once canvas is sized
