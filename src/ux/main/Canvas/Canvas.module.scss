@@ -47,7 +47,9 @@
 
 // Marching-ants canvas: sits at viewport level (not inside canvasWrapper),
 // always viewport-sized in CSS, backed by physical pixels set in JS.
-// Stays fixed while the canvas content scrolls underneath.
+// useMarchingAnts applies a `transform: translate(scrollLeft, scrollTop)`
+// each frame to counteract scrolling so the overlay stays pinned to the
+// viewport while its buffer remains viewport-sized.
 .antsOverlay {
   position: absolute;
   inset: 0;

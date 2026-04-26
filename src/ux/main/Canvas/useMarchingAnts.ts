@@ -44,6 +44,16 @@ export function useMarchingAnts(
         overlay.height = vh
       }
 
+      // The overlay is an absolute child of the scrolling viewport, so it
+      // scrolls along with the canvas content by default. Counteract that by
+      // translating it back by the current scroll offset every frame — this
+      // pins the overlay to the viewport in screen space, while keeping its
+      // buffer viewport-sized (no clipping when zoomed-in content extends
+      // past the visible area).
+      const sx = viewport.scrollLeft
+      const sy = viewport.scrollTop
+      overlay.style.transform = `translate(${sx}px, ${sy}px)`
+
       ctx2d.clearRect(0, 0, overlay.width, overlay.height)
 
       const { mask, pending, borderSegments } = selectionStore
@@ -55,6 +65,9 @@ export function useMarchingAnts(
       // Map from image-pixel coordinates to overlay physical-pixel coordinates.
       // getBoundingClientRect returns CSS pixels; multiply by dpr for physical px.
       // zoom = physical pixels per image pixel (zoom factor in PixelShop).
+      // The overlay is translated above to compensate for scroll, so the
+      // viewport-relative offset (wRect.left - vRect.left) is the correct
+      // origin in overlay-local pixel space.
       const vRect   = viewport.getBoundingClientRect()
       const wRect   = wrapper.getBoundingClientRect()
       const originX = (wRect.left - vRect.left) * dpr
