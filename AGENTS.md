@@ -32,8 +32,8 @@ src/
   core/
     io/                      ← file export helpers (exportPng, exportJpeg, exportWebp, exportTiff, exportTga, imageLoader)
     operations/
-      adjustments/           ← adjustment layer registry + curves data
-      filters/               ← filter registry
+      adjustments/           ← adjustment + filter layer registry + curves data
+      filters/               ← filter menu registry (menu organization only)
     services/                ← all business logic hooks (20+)
     store/                   ← AppContext, CanvasContext, module-level singletons, tabTypes
   graphicspipeline/
@@ -50,7 +50,7 @@ src/
     windows/
       adjustments/           ← one panel component per adjustment type (11)
       effects/               ← one options component per real-time effect (7)
-      filters/               ← one dialog component per filter (16)
+      filters/               ← one panel component per filter layer (+ LensFlareDialog)
   wasm/                      ← TypeScript wrapper over C++/WASM
 ```
 
@@ -108,7 +108,7 @@ Avoid re-initializing canvas layers in effects that list `rendererRef.current` a
 
 ### WebGPU (`src/graphicspipeline/webgpu/`)
 
-`rendering/WebGPURenderer.ts` is the GPU pixel read/write layer. `AdjustmentEncoder.ts` owns the 25 compute pipelines for adjustments and real-time effects. `compute/filterCompute.ts` handles destructive filter compute passes. It operates on `GpuLayer` objects:
+`rendering/WebGPURenderer.ts` is the GPU pixel read/write layer. `AdjustmentEncoder.ts` owns the compute pipelines for color adjustments and real-time effects. `compute/filterCompute.ts` owns the compute pipelines for filter layers (gaussian/box/radial/motion/lens blur, sharpen variants, noise, median, bilateral, reduce-noise, clouds, pixelate, etc.) and is dispatched non-destructively from the render plan. It operates on `GpuLayer` objects:
 
 ```ts
 interface GpuLayer {
@@ -149,11 +149,12 @@ Adjustment layers are non-destructive pixel operations inserted into the layer s
 
 **Registry** (`src/core/operations/adjustments/registry.ts`): every adjustment type is registered with a `label`, `defaultParams`, and a `group`:
 - `'color-adjustments'` — shown in the **Adjustments** top menu (11 types)
-- `'real-time-effects'` — shown in the **Effects** top menu (7 types: bloom, chromatic-aberration, halation, color-key, drop-shadow, glow, outline)
+- `'real-time-effects'` — shown in the **Effects** top menu (8 types: bloom, chromatic-aberration, halation, color-key, drop-shadow, glow, outline, halftone)
+- `'filters'` — shown in the **Filters** top menu (gaussian-blur, box-blur, radial-blur, motion-blur, remove-motion-blur, lens-blur, sharpen, sharpen-more, unsharp-mask, smart-sharpen, add-noise, film-grain, median-filter, bilateral-filter, reduce-noise, clouds, pixelate). These run through `compute/filterCompute.ts` rather than `AdjustmentEncoder.ts`.
 
-**Adding a new adjustment type:**
+**Adding a new adjustment / effect type:**
 1. Add the `AdjustmentType` literal and its `AdjustmentParamsMap` entry in `src/types/index.ts`.
-2. Register it in `src/core/operations/adjustments/registry.ts` with label, defaults, and group.
+2. Register it in `src/core/operations/adjustments/registry.ts` with label, defaults, and group (`'color-adjustments'` or `'real-time-effects'`).
 3. Write the WGSL shader and register it in `src/graphicspipeline/webgpu/AdjustmentEncoder.ts`.
 4. Add the `AdjustmentRenderOp` variant + uniform dispatch in `AdjustmentEncoder.ts`.
 5. Add the render-plan mapping in `src/ux/main/Canvas/canvasPlan.ts`.
@@ -164,16 +165,22 @@ The WGSL uniform struct must match the `Float32Array` passed from `AdjustmentEnc
 
 ### Filters
 
-Filters are destructive one-shot operations applied to the current pixel layer. They run as WebGPU compute passes (or WASM) and are dispatched from `useFilters`.
+Filters are **non-destructive** layers, just like adjustment and effect layers. Choosing a filter from the **Filters** top menu inserts a new filter layer into the layer stack; its parameters can be edited live via its panel and re-rendered every frame from the render plan.
 
-**Registry** (`src/core/operations/filters/registry.ts`): each `FilterKey` entry maps to a label, optional `instant` flag, and a `group`.
+- The **execution path** for filter layers is `compute/filterCompute.ts` (separate from `AdjustmentEncoder.ts`), which owns all filter compute pipelines and intermediate textures.
+- Filter layers are registered in `ADJUSTMENT_REGISTRY` with `group: 'filters'` — they share the `AdjustmentLayer` machinery (params, history, rasterization) with regular adjustments.
+- `src/core/operations/filters/registry.ts` (`FILTER_REGISTRY` / `FilterKey`) is now used **only** for organizing the Filters top menu into submenus (`blur`, `sharpen`, `noise`, `render`, `pixelate`) and for the rare dialog-based filter (Lens Flare, which still produces a new pixel layer via `useFilters.handleApplyLensFlare`).
+- `useFilters` is a thin shim: each `handleOpen…` calls `onCreateFilterAdjLayer(<adjustmentType>)` to insert the corresponding filter adjustment layer.
 
 **Adding a new filter:**
-1. Add the `FilterKey` literal in `src/types/index.ts`.
-2. Register it in `src/core/operations/filters/registry.ts`.
-3. Implement the shader/compute path in `src/graphicspipeline/webgpu/compute/filterCompute.ts` (or WASM).
-4. Create a dialog in `src/ux/windows/filters/<Name>Dialog/`.
-5. Wire it up in `useFilters` and the Filters top menu.
+1. Add the new `AdjustmentType` literal and its `AdjustmentParamsMap` entry in `src/types/index.ts` (and the `*AdjustmentLayer` interface + union).
+2. Register it in `src/core/operations/adjustments/registry.ts` with `group: 'filters'` and default params.
+3. Add the corresponding `FilterKey` entry to `src/core/operations/filters/registry.ts` so it appears in the Filters top menu under the right submenu.
+4. Implement the WGSL compute shader under `src/graphicspipeline/webgpu/shaders/compute/filters/` and wire it into `compute/filterCompute.ts` (pipeline construction + `runX` dispatch + `pendingDestroy*` cleanup).
+5. Add the render-plan mapping in `src/ux/main/Canvas/canvasPlan.ts` (one branch per `adjustmentType`).
+6. Create a panel component in `src/ux/windows/filters/<Name>Panel/` (use `filterPanel.module.scss` for styling).
+7. Wire the menu handler in `useFilters` (e.g. `handleOpenFoo = () => onCreateFilterAdjLayer('foo')`).
+8. Ensure unified rasterization handles it for flatten/export/merge.
 
 ### Unified Rasterization Pipeline
 
