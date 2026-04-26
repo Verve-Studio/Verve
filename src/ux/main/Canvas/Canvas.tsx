@@ -8,9 +8,10 @@ import type { TextLayerState, ShapeLayerState, MaskLayerState } from '@/types'
 import { TOOL_REGISTRY } from '@/tools'
 import type { ToolContext, ToolHandler } from '@/tools'
 import { brushOptions } from '@/tools/brush'
-import { pencilOptions, getPencilBrushPreviewDataUrl } from '@/tools/pencil'
+import { pencilOptions, getPencilBrushPreviewDataUrl, getPencilShapePreviewDataUrl } from '@/tools/pencil'
 import { eraserOptions } from '@/tools/eraser'
 import { cloneStampOptions } from '@/tools/cloneStamp'
+import { dodgeOptions, burnOptions } from '@/tools/dodge'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { drawCloneStampOverlay } from './cloneStampOverlay'
 import { polygonalSelectionStore } from '@/core/store/polygonalSelectionStore'
@@ -751,15 +752,19 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     },
     onHover: (pos) => {
       if (isActive) cursorStore.setPosition(pos.x, pos.y)
-      // Update circle cursor for brush / eraser / clone-stamp
+      // Update circle cursor for brush / eraser / clone-stamp / dodge / burn
       const tool = state.activeTool
-      if ((tool === 'brush' || tool === 'eraser' || tool === 'clone-stamp') && brushCursorRef.current) {
+      if ((tool === 'brush' || tool === 'eraser' || tool === 'clone-stamp' || tool === 'dodge' || tool === 'burn') && brushCursorRef.current) {
         const dpr = window.devicePixelRatio
         const zoom = zoomRef.current
-        const size = tool === 'brush' ? brushOptions.size : tool === 'eraser' ? eraserOptions.size : cloneStampOptions.size
+        const size = tool === 'brush' ? brushOptions.size
+                   : tool === 'eraser' ? eraserOptions.size
+                   : tool === 'dodge' ? dodgeOptions.size
+                   : tool === 'burn' ? burnOptions.size
+                   : cloneStampOptions.size
         const r = Math.max(1, size / 2 * zoom / dpr)
-        const cx = (pos.x + 0.5) * zoom / dpr
-        const cy = (pos.y + 0.5) * zoom / dpr
+        const cx = (pos.x) * zoom / dpr
+        const cy = (pos.y) * zoom / dpr
         const el = brushCursorRef.current
         el.style.left   = `${cx - r}px`
         el.style.top    = `${cy - r}px`
@@ -773,20 +778,25 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           el.className = styles.brushCursor
         }
       }
-      if (tool === 'pencil' && pencilOptions.pixelBrush && pixelBrushCursorRef.current) {
-        const preview = getPencilBrushPreviewDataUrl()
+      if (tool === 'pencil' && pixelBrushCursorRef.current) {
+        const { r, g, b, a } = state.primaryColor
+        const dpr  = window.devicePixelRatio
+        const zoom = zoomRef.current
+        const preview = pencilOptions.pixelBrush
+          ? getPencilBrushPreviewDataUrl(r, g, b, a)
+          : getPencilShapePreviewDataUrl(r, g, b, a)
         if (preview) {
-          const dpr  = window.devicePixelRatio
-          const zoom = zoomRef.current
           let canvasX = pos.x, canvasY = pos.y
-          if (pencilOptions.snapToBrush) {
-            canvasX = Math.round(pos.x / preview.width)  * preview.width
-            canvasY = Math.round(pos.y / preview.height) * preview.height
+          if (pencilOptions.pixelBrush && pencilOptions.snapToBrush && 'tileW' in preview) {
+            canvasX = Math.round(pos.x / preview.tileW) * preview.tileW
+            canvasY = Math.round(pos.y / preview.tileH) * preview.tileH
           }
-          const scaledW = preview.width  * zoom / dpr
-          const scaledH = preview.height * zoom / dpr
-          const screenX = (canvasX) * zoom / dpr - scaledW / 2
-          const screenY = (canvasY) * zoom / dpr - scaledH / 2
+          const previewW = 'previewW' in preview ? preview.previewW : preview.size
+          const previewH = 'previewH' in preview ? preview.previewH : preview.size
+          const scaledW = previewW * zoom / dpr
+          const scaledH = previewH * zoom / dpr
+          const screenX = (canvasX + 0.5) * zoom / dpr - scaledW / 2
+          const screenY = (canvasY + 0.5) * zoom / dpr - scaledH / 2
           const el = pixelBrushCursorRef.current
           el.style.display          = 'block'
           el.style.left             = `${screenX}px`
@@ -795,12 +805,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           el.style.height           = `${scaledH}px`
           el.style.backgroundImage  = `url("${preview.dataUrl}")`
           el.style.backgroundSize   = '100% 100%'
+        } else {
+          pixelBrushCursorRef.current.style.display = 'none'
         }
       } else if (pixelBrushCursorRef.current && pixelBrushCursorRef.current.style.display !== 'none') {
         pixelBrushCursorRef.current.style.display = 'none'
       }
       if (tool === 'pencil' && canvasRef.current) {
-        canvasRef.current.style.cursor = pencilOptions.pixelBrush ? 'none' : ''
+        canvasRef.current.style.cursor = 'none'
       }
       const ctx = buildCtx()
       if (ctx) toolHandlerRef.current.onHover?.(pos, ctx)
@@ -831,8 +843,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             style={{
               width:  width  * state.canvas.zoom / window.devicePixelRatio,
               height: height * state.canvas.zoom / window.devicePixelRatio,
-              cursor: (state.activeTool === 'brush' || state.activeTool === 'eraser') ? 'none'
-                    : (state.activeTool === 'pencil' && pencilOptions.pixelBrush) ? 'none'
+              cursor: (state.activeTool === 'brush' || state.activeTool === 'eraser' || state.activeTool === 'dodge' || state.activeTool === 'burn') ? 'none'
+                    : state.activeTool === 'pencil' ? 'none'
                     : (state.activeTool === 'polygonal-selection') ? 'crosshair'
                     : undefined,
               // Bilinear when zoomed out (smooth downscale); nearest when at or above 100% (crisp pixel art)

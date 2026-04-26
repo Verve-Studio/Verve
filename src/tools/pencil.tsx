@@ -57,35 +57,166 @@ function getBrushPixels(brush: PixelBrush): Uint8ClampedArray {
 }
 
 /**
- * Returns a CSS data-URL for the current pixel brush, or null if no brush is active.
- * Cached so the canvas DOM update is cheap (only regenerated when the brush changes).
+ * Returns a CSS data-URL for the current pixel brush rendered with the given primary
+ * color, pencilOptions.size, pencilOptions.shape, and pencilOptions.opacity.
+ * Cached by a composite key so it regenerates only when something relevant changes.
+ * Returns null if no pixel brush is active.
+ *
+ * - previewW / previewH: dimensions of the rendered preview image (= size when size > 1, else brush tile size)
+ * - tileW / tileH: brush tile dimensions, used to align the snap grid in Canvas
  */
-let _brushPreviewCache: { id: string; dataUrl: string } | null = null
+let _brushPreviewCache: { key: string; dataUrl: string; previewW: number; previewH: number } | null = null
 
-export function getPencilBrushPreviewDataUrl(): { dataUrl: string; width: number; height: number } | null {
+export function getPencilBrushPreviewDataUrl(
+  r: number, g: number, b: number, a: number,
+): { dataUrl: string; previewW: number; previewH: number; tileW: number; tileH: number } | null {
   const brush = pencilOptions.pixelBrush
   if (!brush) return null
 
-  if (_brushPreviewCache?.id === brush.id) {
-    return { dataUrl: _brushPreviewCache.dataUrl, width: brush.width, height: brush.height }
+  const { size, shape, opacity } = pencilOptions
+  const cacheKey = `${brush.id}_${size}_${shape}_${opacity}_${r}_${g}_${b}_${a}`
+
+  if (_brushPreviewCache?.key === cacheKey) {
+    return {
+      dataUrl:  _brushPreviewCache.dataUrl,
+      previewW: _brushPreviewCache.previewW,
+      previewH: _brushPreviewCache.previewH,
+      tileW: brush.width,
+      tileH: brush.height,
+    }
   }
 
   const pixels = getBrushPixels(brush)
+  const fa = a / 255  // primary color alpha factor (0–1)
+
+  if (size <= 1) {
+    // For size=1 the brush is a tiling mask — only one pixel is ever painted at
+    // the cursor position. Show a 1×1 preview so the cursor matches reality.
+    const cvs = document.createElement('canvas')
+    cvs.width = 1; cvs.height = 1
+    const ctx = cvs.getContext('2d')!
+    const imgData = ctx.createImageData(1, 1)
+    imgData.data[0] = r
+    imgData.data[1] = g
+    imgData.data[2] = b
+    imgData.data[3] = Math.round((opacity / 100) * fa * 255)
+    ctx.putImageData(imgData, 0, 0)
+    const dataUrl = cvs.toDataURL()
+    _brushPreviewCache = { key: cacheKey, dataUrl, previewW: 1, previewH: 1 }
+    return { dataUrl, previewW: 1, previewH: 1, tileW: brush.width, tileH: brush.height }
+  }
+
+  // size > 1: stamp footprint with shape + tiling brush mask
+  const half   = Math.floor(size / 2)
+  const radius = (size - 1) / 2
   const cvs = document.createElement('canvas')
-  cvs.width  = brush.width
-  cvs.height = brush.height
-  const ctx = cvs.getContext('2d')!
-  const imageData = ctx.createImageData(brush.width, brush.height)
-  imageData.data.set(pixels.subarray(0, brush.width * brush.height * 4))
-  ctx.putImageData(imageData, 0, 0)
+  cvs.width = size; cvs.height = size
+  const ctx2 = cvs.getContext('2d')!
+  const imgData = ctx2.createImageData(size, size)
+  const d = imgData.data
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const dx = i - half
+      const dy = j - half
+      const ox = dx - (radius - half)
+      const oy = dy - (radius - half)
+      let inside: boolean
+      if (shape === 'square') {
+        inside = true
+      } else if (shape === 'diamond') {
+        inside = (Math.abs(ox) + Math.abs(oy)) / Math.SQRT2 <= radius
+      } else {
+        inside = ox * ox + oy * oy <= radius * radius
+      }
+      if (!inside) continue
+      const bx = ((i % brush.width)  + brush.width)  % brush.width
+      const by = ((j % brush.height) + brush.height) % brush.height
+      const brushA = pixels[(by * brush.width + bx) * 4 + 3]
+      if (brushA === 0) continue
+      const idx = (j * size + i) * 4
+      d[idx]     = r
+      d[idx + 1] = g
+      d[idx + 2] = b
+      d[idx + 3] = Math.round((brushA / 255) * (opacity / 100) * fa * 255)
+    }
+  }
+  ctx2.putImageData(imgData, 0, 0)
   const dataUrl = cvs.toDataURL()
-  _brushPreviewCache = { id: brush.id, dataUrl }
-  return { dataUrl, width: brush.width, height: brush.height }
+  _brushPreviewCache = { key: cacheKey, dataUrl, previewW: size, previewH: size }
+  return { dataUrl, previewW: size, previewH: size, tileW: brush.width, tileH: brush.height }
 }
 
 /** Invalidate the preview cache (call when the active brush changes). */
 export function invalidatePencilBrushPreview(): void {
   _brushPreviewCache = null
+}
+
+/**
+ * Returns a CSS data-URL for the standard (no pixel brush) pencil tip shape
+ * based on pencilOptions.size, pencilOptions.shape, pencilOptions.opacity, and
+ * the given primary color. Returns null when size <= 1 (single pixel — too small
+ * to preview meaningfully as an image; show a simple dot cursor instead).
+ */
+let _shapePreviewCache: { key: string; dataUrl: string; size: number } | null = null
+
+export function getPencilShapePreviewDataUrl(
+  r: number, g: number, b: number, a: number,
+): { dataUrl: string; size: number } | null {
+  const { size, shape, opacity } = pencilOptions
+  if (pencilOptions.pixelBrush) return null  // handled by getPencilBrushPreviewDataUrl
+
+  const cacheKey = `${size}_${shape}_${opacity}_${r}_${g}_${b}_${a}`
+  if (_shapePreviewCache?.key === cacheKey) {
+    return { dataUrl: _shapePreviewCache.dataUrl, size: _shapePreviewCache.size }
+  }
+
+  if (size <= 1) {
+    // 1×1 dot
+    const cvs = document.createElement('canvas')
+    cvs.width = 1; cvs.height = 1
+    const ctx = cvs.getContext('2d')!
+    const imgData = ctx.createImageData(1, 1)
+    const fa = a / 255
+    imgData.data[0] = r; imgData.data[1] = g; imgData.data[2] = b
+    imgData.data[3] = Math.round((opacity / 100) * fa * 255)
+    ctx.putImageData(imgData, 0, 0)
+    const dataUrl = cvs.toDataURL()
+    _shapePreviewCache = { key: cacheKey, dataUrl, size: 1 }
+    return { dataUrl, size: 1 }
+  }
+
+  const half   = Math.floor(size / 2)
+  const radius = (size - 1) / 2
+  const fa     = a / 255
+  const alpha  = Math.round((opacity / 100) * fa * 255)
+  const cvs = document.createElement('canvas')
+  cvs.width = size; cvs.height = size
+  const ctx = cvs.getContext('2d')!
+  const imgData = ctx.createImageData(size, size)
+  const d = imgData.data
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const dx = i - half
+      const dy = j - half
+      const ox = dx - (radius - half)
+      const oy = dy - (radius - half)
+      let inside: boolean
+      if (shape === 'square') {
+        inside = true
+      } else if (shape === 'diamond') {
+        inside = (Math.abs(ox) + Math.abs(oy)) / Math.SQRT2 <= radius
+      } else {
+        inside = ox * ox + oy * oy <= radius * radius
+      }
+      if (!inside) continue
+      const idx = (j * size + i) * 4
+      d[idx] = r; d[idx + 1] = g; d[idx + 2] = b; d[idx + 3] = alpha
+    }
+  }
+  ctx.putImageData(imgData, 0, 0)
+  const dataUrl = cvs.toDataURL()
+  _shapePreviewCache = { key: cacheKey, dataUrl, size }
+  return { dataUrl, size }
 }
 
 // ─── Module-level context refs (for selection capture from the Options UI) ────

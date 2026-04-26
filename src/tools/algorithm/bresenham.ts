@@ -587,17 +587,34 @@ function dodgeBurnStampCircle(
   size: number,
   exposure: number,
   range: DodgeBurnRange,
+  hardness: number,
+  antiAlias: boolean,
   touched?: Map<number, number>,
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {
-  const radius = size / 2
-  const iRadius = Math.ceil(radius)
+  const radius   = size / 2
+  const outerR   = antiAlias ? radius + 0.5 : radius
+  const iRadius  = Math.ceil(outerR) + 1
+  const hardR    = radius * (hardness / 100)
+  const softZone = radius - hardR
+
   for (let dy = -iRadius; dy <= iRadius; dy++) {
     for (let dx = -iRadius; dx <= iRadius; dx++) {
-      if (dx * dx + dy * dy <= radius * radius) {
-        dodgeBurnPixelOp(renderer, layer, cx + dx, cy + dy, exposure, 1, range, touched, sel, origData)
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist > outerR) continue
+
+      const edgeFactor = antiAlias ? Math.min(1, outerR - dist) : 1
+      let softFactor: number
+      if (softZone <= 0 || dist <= hardR) {
+        softFactor = 1
+      } else {
+        const t = (dist - hardR) / softZone
+        softFactor = 0.5 * (1 + Math.cos(Math.PI * t))
       }
+      const coverage = edgeFactor * softFactor
+      if (coverage <= 0) continue
+      dodgeBurnPixelOp(renderer, layer, cx + dx, cy + dy, exposure, coverage, range, touched, sel, origData)
     }
   }
 }
@@ -610,12 +627,16 @@ function dodgeBurnAASegment(
   size: number,
   exposure: number,
   range: DodgeBurnRange,
+  hardness: number,
   touched?: Map<number, number>,
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {
-  const radius = size / 2
-  const pad = Math.ceil(radius) + 1
+  const radius   = size / 2
+  const outerR   = radius + 0.5
+  const hardR    = radius * (hardness / 100)
+  const softZone = radius - hardR
+  const pad = Math.ceil(outerR) + 1
   const sdx = x1 - x0, sdy = y1 - y0
   const lenSq = sdx * sdx + sdy * sdy
   const minX = Math.floor(Math.min(x0, x1)) - pad
@@ -632,7 +653,17 @@ function dodgeBurnAASegment(
         const t = Math.max(0, Math.min(1, ((px - x0) * sdx + (py - y0) * sdy) / lenSq))
         dist = Math.sqrt((px - x0 - t * sdx) ** 2 + (py - y0 - t * sdy) ** 2)
       }
-      const coverage = Math.max(0, Math.min(1, radius + 0.5 - dist))
+      if (dist > outerR) continue
+
+      const edgeFactor = Math.min(1, outerR - dist)
+      let softFactor: number
+      if (softZone <= 0 || dist <= hardR) {
+        softFactor = 1
+      } else {
+        const t = (dist - hardR) / softZone
+        softFactor = 0.5 * (1 + Math.cos(Math.PI * t))
+      }
+      const coverage = edgeFactor * softFactor
       if (coverage > 0) {
         dodgeBurnPixelOp(renderer, layer, px, py, exposure, coverage, range, touched, sel, origData)
       }
@@ -658,6 +689,7 @@ export function dodgeBurnThickLine(
   size: number,
   exposure: number,
   range: DodgeBurnRange,
+  hardness = 100,
   antiAlias = false,
   touched?: Map<number, number>,
   sel?: SelMask,
@@ -669,7 +701,7 @@ export function dodgeBurnThickLine(
         dodgeBurnPixelOp(renderer, layer, x, y, exposure, coverage, range, touched, sel, origData)
       })
     } else {
-      dodgeBurnAASegment(renderer, layer, x0, y0, x1, y1, size, exposure, range, touched, sel, origData)
+      dodgeBurnAASegment(renderer, layer, x0, y0, x1, y1, size, exposure, range, hardness, touched, sel, origData)
     }
   } else {
     if (size <= 1) {
@@ -678,7 +710,7 @@ export function dodgeBurnThickLine(
       })
     } else {
       bresenham(x0, y0, x1, y1, (cx, cy) => {
-        dodgeBurnStampCircle(renderer, layer, cx, cy, size, exposure, range, touched, sel, origData)
+        dodgeBurnStampCircle(renderer, layer, cx, cy, size, exposure, range, hardness, antiAlias, touched, sel, origData)
       })
     }
   }

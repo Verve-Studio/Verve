@@ -9,6 +9,7 @@ import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOpti
 export const dodgeOptions = {
   size: 25,
   exposure: 50,
+  hardness: 80,
   range: 'midtones' as DodgeBurnRange,
   antiAlias: true,
 }
@@ -16,6 +17,7 @@ export const dodgeOptions = {
 export const burnOptions = {
   size: 25,
   exposure: 50,
+  hardness: 80,
   range: 'midtones' as DodgeBurnRange,
   antiAlias: true,
 }
@@ -43,6 +45,7 @@ function createDodgeBurnHandler(opts: typeof dodgeOptions, sign: 1 | -1): () => 
         opts.size,
         sign * opts.exposure / 100,
         opts.range,
+        opts.hardness,
         opts.antiAlias,
         touched ?? undefined,
         sel,
@@ -87,11 +90,13 @@ function DodgeBurnOptions({
 }): React.JSX.Element {
   const [size, setSize]         = useState(opts.size)
   const [exposure, setExposure] = useState(opts.exposure)
+  const [hardness, setHardness] = useState(opts.hardness)
   const [range, setRange]       = useState<DodgeBurnRange>(opts.range)
   const [antiAlias, setAA]      = useState(opts.antiAlias)
 
   const handleSize     = (v: number): void => { opts.size = v; setSize(v) }
   const handleExposure = (v: number): void => { opts.exposure = v; setExposure(v) }
+  const handleHardness = (v: number): void => { opts.hardness = v; setHardness(v) }
   const handleRange    = (v: DodgeBurnRange): void => { opts.range = v; setRange(v) }
   const handleAA       = (v: boolean): void => { opts.antiAlias = v; setAA(v) }
 
@@ -99,6 +104,9 @@ function DodgeBurnOptions({
     <>
       <label className={styles.optLabel}>Size:</label>
       <SliderInput value={size} min={1} max={200} inputWidth={42} onChange={handleSize} />
+      <span className={styles.optSep} />
+      <label className={styles.optLabel}>Hardness:</label>
+      <SliderInput value={hardness} min={0} max={100} suffix="%" inputWidth={42} onChange={handleHardness} />
       <span className={styles.optSep} />
       <label className={styles.optLabel}>Exposure:</label>
       <SliderInput value={exposure} min={1} max={100} suffix="%" inputWidth={42} onChange={handleExposure} />
