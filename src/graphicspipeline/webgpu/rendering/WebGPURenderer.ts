@@ -106,16 +106,38 @@ export class WebGPURenderer {
 
   // ─── Render cache ──────────────────────────────────────────────────────────
   // Per-adjustment-group output textures: skip re-running adjustment passes when
-  // the base layer and params are unchanged since the last frame.
-  // Key = parentLayerId. Only used during screen-preview renderPlan() calls, not
-  // for flatten / export / readback (which always re-render from scratch).
+  // the base layer's pixel content, position, mask, and params are all unchanged.
+  // Key = parentLayerId. Only used during screen-preview renderPlan() calls.
   private adjGroupCache = new Map<string, {
     baseContentVersion: number
+    offsetX: number
+    offsetY: number
+    baseMaskVersion: number  // -1 when there is no base mask
     paramsKey: string
     tex: GPUTexture
   }>()
-  // True while encoding a screen-preview renderPlan() — enables the caches above.
+  // Per standalone AdjustmentRenderOp (group-scoped effects: bloom, halation, etc.)
+  // output cache. Keyed by op.layerId. The cache hits when the accumulated input
+  // (everything composited before this op in the plan) and the op params are
+  // both unchanged — in which case we copy from the cached texture instead of
+  // re-running the (potentially multi-pass) compute pipeline.
+  private standaloneOpCache = new Map<string, {
+    inputFp: string
+    paramsKey: string
+    tex: GPUTexture
+  }>()
+  // True while encoding a screen-preview renderPlan() — enables the adj-group cache.
   private adjGroupCacheEnabled = false
+  // When true (e.g. during a whole-layer drag), standalone AdjustmentRenderOps
+  // (bloom, halation, glow, drop-shadow, etc.) are skipped so the compositor
+  // only re-runs them once on pointer-up. Layers with per-layer color adjustments
+  // still render correctly because the adj-group cache handles those separately.
+  private previewMode = false
+
+  /** Enable/disable preview mode. Call with true at drag start, false on pointer-up. */
+  setPreviewMode(enabled: boolean): void {
+    this.previewMode = enabled
+  }
 
   readonly pixelWidth: number
   readonly pixelHeight: number
@@ -330,6 +352,11 @@ export class WebGPURenderer {
     if (cached) {
       cached.tex.destroy()
       this.adjGroupCache.delete(layer.id)
+    }
+    const cachedSO = this.standaloneOpCache.get(layer.id)
+    if (cachedSO) {
+      cachedSO.tex.destroy()
+      this.standaloneOpCache.delete(layer.id)
     }
   }
 
@@ -564,7 +591,7 @@ export class WebGPURenderer {
   ): GPUTexture {
     this.encodeClearTexture(encoder, this.pingTex)
     this.encodeClearTexture(encoder, this.pongTex)
-    const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex)
+    const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '')
     return src
   }
 
@@ -573,28 +600,35 @@ export class WebGPURenderer {
     plan: RenderPlanEntry[],
     src: GPUTexture,
     dst: GPUTexture,
-  ): { src: GPUTexture; dst: GPUTexture } {
+    inputFp: string,
+  ): { src: GPUTexture; dst: GPUTexture; inputFp: string } {
     for (const entry of plan) {
       if (entry.kind === 'layer') {
         if (!entry.layer.visible || entry.layer.opacity === 0) continue
         this.encodeCompositeLayer(encoder, entry.layer, src, dst, entry.mask)
         ;[src, dst] = [dst, src]
+        const l = entry.layer
+        const maskPart = entry.mask ? `:M${entry.mask.contentVersion}` : ''
+        inputFp += `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`
 
       } else if (entry.kind === 'layer-group') {
         if (!entry.visible) continue
         if (entry.blendMode === 'pass-through') {
           // Pass-through: inline children into the parent ping-pong pair.
-          ;({ src, dst } = this.encodeSubPlan(encoder, entry.children, src, dst))
+          const child = this.encodeSubPlan(encoder, entry.children, src, dst, inputFp)
+          src = child.src; dst = child.dst; inputFp = child.inputFp
+          inputFp += `|GRP-end:${entry.groupId}`
         } else {
           // Isolated: allocate a fresh ping-pong pair for this group.
           const iso1 = this.allocateTempGroupTex()
           const iso2 = this.allocateTempGroupTex()
           this.encodeClearTexture(encoder, iso1)
           this.encodeClearTexture(encoder, iso2)
-          const { src: isoResult } = this.encodeSubPlan(encoder, entry.children, iso2, iso1)
+          const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '')
           // Composite the isolated result into the parent context.
-          this.encodeCompositeTexture(encoder, isoResult, src, dst, entry.opacity, entry.blendMode)
+          this.encodeCompositeTexture(encoder, child.src, src, dst, entry.opacity, entry.blendMode)
           ;[src, dst] = [dst, src]
+          inputFp += `|GRP:${entry.groupId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}`
         }
 
       } else if (entry.kind === 'adjustment-group') {
@@ -602,13 +636,18 @@ export class WebGPURenderer {
 
         let groupResult: GPUTexture
 
+        const paramsKey = computeAdjGroupParamsKey(entry.adjustments)
+        const baseMaskVersion = entry.baseMask ? entry.baseMask.contentVersion : -1
+
         if (this.adjGroupCacheEnabled) {
-          const paramsKey = computeAdjGroupParamsKey(entry.adjustments)
           const cached = this.adjGroupCache.get(entry.parentLayerId)
 
           if (
             cached &&
             cached.baseContentVersion === entry.baseLayer.contentVersion &&
+            cached.offsetX === entry.baseLayer.offsetX &&
+            cached.offsetY === entry.baseLayer.offsetY &&
+            cached.baseMaskVersion === baseMaskVersion &&
             cached.paramsKey === paramsKey
           ) {
             // Cache hit: composite the pre-computed result directly.
@@ -635,6 +674,9 @@ export class WebGPURenderer {
             )
             this.adjGroupCache.set(entry.parentLayerId, {
               baseContentVersion: entry.baseLayer.contentVersion,
+              offsetX: entry.baseLayer.offsetX,
+              offsetY: entry.baseLayer.offsetY,
+              baseMaskVersion,
               paramsKey,
               tex: cacheTex,
             })
@@ -647,15 +689,63 @@ export class WebGPURenderer {
 
         this.encodeCompositeTexture(encoder, groupResult, src, dst, entry.baseLayer.opacity, entry.baseLayer.blendMode)
         ;[src, dst] = [dst, src]
+        const l = entry.baseLayer
+        inputFp += `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`
 
       } else {
         // AdjustmentRenderOp — visible guard already handled per-op in AdjustmentEncoder
         if (!entry.visible) continue
-        this.adjEncoder.encode(encoder, entry as AdjustmentRenderOp, src, dst)
-        ;[src, dst] = [dst, src]
+        // In preview mode (e.g. whole-layer drag), skip expensive standalone effects
+        // (bloom, halation, glow, drop-shadow, etc.) — they re-run on pointer-up.
+        if (this.previewMode) {
+          inputFp += `|SKIP:${(entry as AdjustmentRenderOp).layerId}`
+          continue
+        }
+        const op = entry as AdjustmentRenderOp
+        const opParamsKey = serializeAdjOp(op)
+
+        if (this.adjGroupCacheEnabled) {
+          const cached = this.standaloneOpCache.get(op.layerId)
+          if (cached && cached.inputFp === inputFp && cached.paramsKey === opParamsKey) {
+            // Cache hit: dst = src + op(src) is replaced by dst = cached. Copy and swap.
+            encoder.copyTextureToTexture(
+              { texture: cached.tex },
+              { texture: dst },
+              { width: this.pixelWidth, height: this.pixelHeight },
+            )
+            ;[src, dst] = [dst, src]
+            inputFp += `|SO:${op.layerId}:${opParamsKey}`
+            continue
+          }
+          // Cache miss: encode normally, then snapshot dst into cache.
+          this.adjEncoder.encode(encoder, op, src, dst)
+          ;[src, dst] = [dst, src]
+          const texUsage =
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.COPY_SRC |
+            GPUTextureUsage.RENDER_ATTACHMENT
+          const cacheTex = cached?.tex ?? this.device.createTexture({
+            size: { width: this.pixelWidth, height: this.pixelHeight },
+            format: 'rgba8unorm',
+            usage: texUsage,
+          })
+          // After the swap, the op's output now lives in `src`.
+          encoder.copyTextureToTexture(
+            { texture: src },
+            { texture: cacheTex },
+            { width: this.pixelWidth, height: this.pixelHeight },
+          )
+          this.standaloneOpCache.set(op.layerId, { inputFp, paramsKey: opParamsKey, tex: cacheTex })
+          inputFp += `|SO:${op.layerId}:${opParamsKey}`
+        } else {
+          this.adjEncoder.encode(encoder, op, src, dst)
+          ;[src, dst] = [dst, src]
+          inputFp += `|SO:${op.layerId}:${opParamsKey}`
+        }
       }
     }
-    return { src, dst }
+    return { src, dst, inputFp }
   }
 
   private allocateTempGroupTex(): GPUTexture {
@@ -881,6 +971,8 @@ export class WebGPURenderer {
     this.adjEncoder.destroy()
     for (const entry of this.adjGroupCache.values()) entry.tex.destroy()
     this.adjGroupCache.clear()
+    for (const entry of this.standaloneOpCache.values()) entry.tex.destroy()
+    this.standaloneOpCache.clear()
     this.device.destroy()
   }
 }

@@ -71,6 +71,15 @@ export function blendPixelOver(
   touched?: Map<number, number>,
   sel?: SelMask,
 ): void {
+  // Reject pixels outside the canvas BEFORE any row-major index math, otherwise
+  // a negative or oversized canvasX wraps `canvasY * W + canvasX` onto an
+  // adjacent row — corrupting the touched-map (causing visible "holes" on the
+  // opposite edge) and the selection-mask lookup. Off-canvas samples are never
+  // visible anyway (the composite vertex stage clips them).
+  if (
+    canvasX < 0 || canvasX >= renderer.pixelWidth ||
+    canvasY < 0 || canvasY >= renderer.pixelHeight
+  ) return
   if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return
   const lx = canvasX - layer.offsetX
   const ly = canvasY - layer.offsetY

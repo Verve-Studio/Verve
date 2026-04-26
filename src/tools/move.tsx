@@ -162,7 +162,10 @@ function createMoveHandler(): ToolHandler {
         const moved = translateShapeLayer(shapeLayerSnapshot, dx, dy)
         ctx.previewShapeLayer(moved)
       } else {
-        // Update offset in-place (no pixel data change)
+        // Update offset in-place (no pixel data change).
+        // Enable preview mode so expensive standalone effects (bloom, halation, etc.)
+        // are skipped during the drag — they rerun at full quality on pointer-up.
+        ctx.renderer.setPreviewMode(true)
         ctx.layer.offsetX = originalOffsetX + dx
         ctx.layer.offsetY = originalOffsetY + dy
         ctx.render(ctx.layers)
@@ -195,8 +198,11 @@ function createMoveHandler(): ToolHandler {
         if (dx !== lastDx || dy !== lastDy) {
           ctx.layer.offsetX = originalOffsetX + dx
           ctx.layer.offsetY = originalOffsetY + dy
-          ctx.render(ctx.layers)
         }
+        // Always exit preview mode and do a full-quality rerender on pointer-up
+        // so standalone effects (bloom, halation, etc.) render at the final position.
+        ctx.renderer.setPreviewMode(false)
+        ctx.render(ctx.layers)
       }
     },
   }

@@ -41,6 +41,13 @@ function dodgeBurnPixelOp(
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {
+  // See blendPixelOver in primitives.ts: bail before any row-major index math
+  // when the sample is outside the canvas, so a negative or oversized canvasX
+  // can't wrap onto an adjacent row of the touched-map / selection mask.
+  if (
+    canvasX < 0 || canvasX >= renderer.pixelWidth ||
+    canvasY < 0 || canvasY >= renderer.pixelHeight
+  ) return
   if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return
   const lx = canvasX - layer.offsetX
   const ly = canvasY - layer.offsetY
