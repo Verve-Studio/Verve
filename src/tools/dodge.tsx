@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { dodgeBurnThickLine } from './algorithm/bresenham'
-import type { DodgeBurnRange } from './algorithm/bresenham'
+import { dodgeBurnThickLine } from './algorithm/dodgeBurn'
+import type { DodgeBurnRange } from './algorithm/dodgeBurn'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
 

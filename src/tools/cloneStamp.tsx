@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { stampCloneSegment } from './algorithm/bresenham'
+import { stampCloneSegment } from './algorithm/cloneStamp'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'

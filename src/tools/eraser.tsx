@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { eraseThickLine } from './algorithm/bresenham'
+import { eraseThickLine } from './algorithm/eraseStroke'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
 

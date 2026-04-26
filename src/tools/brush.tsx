@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { walkQuadBezier } from './algorithm/bresenham'
-import type { BrushShape } from './algorithm/bresenham'
+import { walkQuadBezier } from './algorithm/brushStroke'
+import type { BrushShape } from './algorithm/brushStroke'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
 
