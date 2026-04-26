@@ -1,0 +1,302 @@
+@use '@/styles/variables' as vars;
+
+.content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Segmented control (Mode toggle) ── */
+
+.segGroup {
+  display: flex;
+  flex: 1;
+  border: 1px solid #555555;
+  border-radius: 2px;
+  overflow: hidden;
+  height: 18px;
+}
+
+.segBtn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-right: 1px solid #555555;
+  color: #aaaaaa;
+  font-size: 10px;
+  font-family: vars.$font-sans;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0 4px;
+
+  &:last-child { border-right: none; }
+
+  &:hover:not(.active) { background: #4a4a4a; }
+
+  &.active {
+    background: #0699fb;
+    color: #ffffff;
+    font-weight: 500;
+  }
+}
+
+/* ── Separator ── */
+
+.separator {
+  height: 1px;
+  background: #191919;
+  margin: 0;
+}
+
+/* ── Section header ── */
+
+.sectionHeader {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  color: #7a7a7a;
+  font-weight: 600;
+  padding: 3px 0 1px;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+/* ── Row layouts ── */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+}
+
+.chanRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+
+/* ── Labels ── */
+
+.label {
+  width: 58px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #aaaaaa;
+  white-space: nowrap;
+}
+
+.chanLabel {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ── Track wrap ── */
+
+.trackWrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Standard slider (left-origin fill) ── */
+
+.track {
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(
+    to right,
+    #0699fb calc(var(--pct) * 100%),
+    #3a3a3a calc(var(--pct) * 100%)
+  );
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d4d4d4;
+    border: 1px solid #555555;
+    cursor: pointer;
+    transition: background 80ms;
+  }
+
+  &:hover::-webkit-slider-thumb {
+    background: #ffffff;
+  }
+
+  &:focus::-webkit-slider-thumb {
+    background: #0699fb;
+    border-color: #0699fb;
+    box-shadow: 0 0 0 2px rgba(6, 153, 251, 0.18);
+  }
+
+  &::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d4d4d4;
+    border: 1px solid #555555;
+    cursor: pointer;
+  }
+}
+
+/* ── Center-origin offset slider (accent fills outward from 50%) ── */
+
+.offsetTrack {
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(
+    to right,
+    #3a3a3a 0%,
+    #3a3a3a min(var(--pct), 50%),
+    #0699fb min(var(--pct), 50%),
+    #0699fb max(var(--pct), 50%),
+    #3a3a3a max(var(--pct), 50%),
+    #3a3a3a 100%
+  );
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d4d4d4;
+    border: 1px solid #555555;
+    cursor: pointer;
+    transition: background 80ms;
+  }
+
+  &:hover::-webkit-slider-thumb {
+    background: #ffffff;
+  }
+
+  &:focus::-webkit-slider-thumb {
+    background: #0699fb;
+    border-color: #0699fb;
+    box-shadow: 0 0 0 2px rgba(6, 153, 251, 0.18);
+  }
+
+  &::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d4d4d4;
+    border: 1px solid #555555;
+    cursor: pointer;
+  }
+}
+
+/* ── Number input ── */
+
+.numInput {
+  width: 40px;
+  height: 18px;
+  padding: 0 4px;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  color: #d4d4d4;
+  text-align: right;
+  outline: none;
+  flex-shrink: 0;
+  appearance: textfield;
+  -moz-appearance: textfield;
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  &:focus {
+    border-color: #0699fb;
+    box-shadow: 0 0 0 1px rgba(6, 153, 251, 0.45);
+  }
+}
+
+/* ── Unit labels ── */
+
+.unitLabel {
+  font-size: 10px;
+  color: #7a7a7a;
+  flex-shrink: 0;
+  width: 14px;
+}
+
+.freqUnit {
+  font-size: 10px;
+  color: #7a7a7a;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── Footer ── */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px solid #191919;
+  font-size: 10px;
+  color: #7a7a7a;
+  gap: 6px;
+  margin-top: 4px;
+
+  strong {
+    font-weight: 500;
+    color: #d4d4d4;
+  }
+}
+
+.footerInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resetBtn {
+  background: transparent;
+  border: 1px solid #555555;
+  border-radius: vars.$radius-sm;
+  color: #7a7a7a;
+  padding: 0 8px;
+  height: 20px;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  cursor: default;
+  flex-shrink: 0;
+  transition: background vars.$transition-fast, border-color vars.$transition-fast, color vars.$transition-fast;
+
+  &:hover {
+    background: #3a3a3a;
+    border-color: #777777;
+    color: #d4d4d4;
+  }
+
+  &:active {
+    background: #404040;
+  }
+}

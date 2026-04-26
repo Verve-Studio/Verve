@@ -155,6 +155,18 @@ export type AdjustmentRenderOp =
       visible:   boolean
       selMaskLayer?: GpuLayer
     }
+  | {
+      kind:      'halftone'
+      layerId:   string
+      frequency: number         // 2–50 cells per 100 px
+      offsetC:   number         // −50..+50 (%)
+      offsetM:   number
+      offsetY:   number
+      offsetK:   number
+      mode:      'color' | 'bw'
+      visible:   boolean
+      selMaskLayer?: GpuLayer
+    }
 
 // ─── RenderPlanEntry ──────────────────────────────────────────────────────────
 

@@ -1,0 +1,2046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PixelShop — Halftone Effect Design</title>
+  <style>
+    :root {
+      --color-bg:               #3c3c3c;
+      --color-surface:          #2d2d2d;
+      --color-surface-2:        #323232;
+      --color-surface-hover:    #4a4a4a;
+      --color-surface-selected: #404040;
+      --color-border:           #191919;
+      --color-border-light:     #555555;
+      --color-text:             #d4d4d4;
+      --color-text-dim:         #aaaaaa;
+      --color-text-muted:       #7a7a7a;
+      --color-accent:           #0699fb;
+      --color-accent-hover:     #1aa3ff;
+      --color-accent-glow:      rgba(6, 153, 251, 0.18);
+      --color-accent-border:    rgba(6, 153, 251, 0.45);
+      --color-danger:           #c04040;
+      --chan-c: #3dbcbc;
+      --chan-m: #bc4d8c;
+      --chan-y: #a0a000;
+      --chan-k: #909090;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #161616;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      font-size: 12px;
+    }
+
+    /* ── Prototype chrome ──────────────────────────────────────────── */
+
+    .proto-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #252525;
+    }
+
+    .proto-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .proto-title em {
+      color: var(--color-accent);
+      font-style: normal;
+    }
+
+    .hdiv {
+      width: 1px;
+      height: 14px;
+      background: #262626;
+      flex-shrink: 0;
+    }
+
+    .state-label {
+      font-size: 10px;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .state-toggle {
+      display: flex;
+      gap: 2px;
+      background: #1a1a1a;
+      border: 1px solid #252525;
+      border-radius: 3px;
+      padding: 2px;
+    }
+
+    .state-btn {
+      height: 20px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      color: #4a4a4a;
+      background: transparent;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+    }
+
+    .state-btn:hover { color: #888; }
+    .state-btn.active { background: var(--color-surface); color: var(--color-text); }
+
+    .proto-hint {
+      margin-left: auto;
+      font-size: 10px;
+      color: #333;
+      white-space: nowrap;
+    }
+
+    /* ── App shell ─────────────────────────────────────────────────── */
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      height: 36px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      user-select: none;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    .logo-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--color-accent);
+      border-radius: 3px;
+      cursor: default;
+    }
+
+    .menu-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--color-border-light);
+      margin: 0 4px;
+    }
+
+    .menubar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 2px;
+    }
+
+    .menu-trigger {
+      height: 22px;
+      padding: 0 8px;
+      border: none;
+      background: transparent;
+      cursor: default;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      border-radius: 3px;
+    }
+
+    .menu-trigger.menu-active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    .topbar-center {
+      flex: 1;
+      padding: 0 8px;
+    }
+
+    .doc-title {
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    /* ── Main body ─────────────────────────────────────────────────── */
+
+    .app-body {
+      display: flex;
+      height: 530px;
+      position: relative;
+    }
+
+    .toolbar-strip {
+      width: 52px;
+      background: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .workspace {
+      flex: 1;
+      background: var(--color-bg);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .right-panel {
+      width: 250px;
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Canvas mock ───────────────────────────────────────────────── */
+
+    .canvas-wrap {
+      position: relative;
+      border: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+
+    #preview-canvas {
+      display: block;
+    }
+
+    /* ── Halftone floating panel ────────────────────────────────────── */
+
+    .adj-panel {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 266px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.65), 0 1px 4px rgba(0,0,0,0.4);
+      z-index: 50;
+      user-select: none;
+    }
+
+    /* title bar */
+    .adj-titlebar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 6px 0 8px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+      border-radius: 3px 3px 0 0;
+      cursor: default;
+      gap: 5px;
+    }
+
+    .adj-icon {
+      flex-shrink: 0;
+      color: var(--color-accent);
+      display: flex;
+      align-items: center;
+    }
+
+    .adj-title {
+      flex: 1;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text);
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .adj-close-btn {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      font-size: 14px;
+      line-height: 1;
+      cursor: default;
+      flex-shrink: 0;
+      transition: background 80ms, color 80ms;
+    }
+
+    .adj-close-btn:hover {
+      background: rgba(192,64,64,0.2);
+      color: #e07070;
+    }
+
+    /* body */
+    .adj-body {
+      padding: 8px 8px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* ── Shared row pattern ────────────────────────────────────────── */
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+    }
+
+    .slider-label {
+      width: 58px;
+      font-size: 11px;
+      color: var(--color-text-dim);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .slider-track-wrap {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    /* standard slider: fill from left */
+    .ps-slider {
+      width: 100%;
+      height: 3px;
+      appearance: none;
+      -webkit-appearance: none;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      background: linear-gradient(
+        to right,
+        var(--color-accent) 0%,
+        var(--color-accent) var(--pct, 50%),
+        #3a3a3a var(--pct, 50%),
+        #3a3a3a 100%
+      );
+    }
+
+    .ps-slider::-webkit-slider-thumb {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--color-text);
+      border: 1px solid var(--color-border-light);
+      cursor: pointer;
+      transition: background 80ms;
+    }
+
+    .ps-slider:hover::-webkit-slider-thumb { background: #fff; }
+
+    .ps-slider:focus::-webkit-slider-thumb {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 2px var(--color-accent-glow);
+    }
+
+    .ps-slider::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--color-text);
+      border: 1px solid var(--color-border-light);
+      cursor: pointer;
+    }
+
+    /* center-origin offset slider: accent fills from 50% outward in both directions */
+    .offset-slider {
+      background: linear-gradient(
+        to right,
+        #3a3a3a 0%,
+        #3a3a3a var(--off-lo, 50%),
+        var(--color-accent) var(--off-lo, 50%),
+        var(--color-accent) var(--off-hi, 50%),
+        #3a3a3a var(--off-hi, 50%),
+        #3a3a3a 100%
+      );
+    }
+
+    /* numeric input */
+    .ps-num-input {
+      width: 40px;
+      height: 18px;
+      padding: 0 4px;
+      background: #1e1e1e;
+      border: 1px solid #3a3a3a;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      text-align: right;
+      outline: none;
+      flex-shrink: 0;
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+
+    .ps-num-input::-webkit-outer-spin-button,
+    .ps-num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    .ps-num-input:focus {
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 1px var(--color-accent-border);
+    }
+
+    .ps-unit {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+      width: 14px;
+      text-align: left;
+    }
+
+    /* wider unit label for "c/100px" */
+    .freq-unit {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    /* row separator */
+    .row-sep {
+      height: 1px;
+      background: var(--color-border);
+      margin: 3px 0 2px;
+    }
+
+    /* ── Mode toggle row ───────────────────────────────────────────── */
+
+    .mode-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+    }
+
+    .seg-group {
+      display: flex;
+      flex: 1;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .seg-btn {
+      flex: 1;
+      height: 18px;
+      border: none;
+      border-right: 1px solid var(--color-border-light);
+      background: var(--color-bg);
+      font-size: 10px;
+      font-family: var(--font-sans);
+      color: var(--color-text-muted);
+      cursor: pointer;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+      padding: 0 4px;
+    }
+
+    .seg-btn:last-child { border-right: none; }
+
+    .seg-btn:hover:not(.seg-active) {
+      background: var(--color-surface-hover);
+      color: var(--color-text-dim);
+    }
+
+    .seg-btn.seg-active {
+      background: var(--color-accent);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    /* ── Channel Offsets section ───────────────────────────────────── */
+
+    .cmyk-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .section-header {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 3px 0 1px;
+    }
+
+    /* channel offset row: narrower label (just the letter) */
+    .chan-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+    }
+
+    .chan-label {
+      width: 14px;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      text-align: center;
+      letter-spacing: 0;
+    }
+
+    .chan-c { color: var(--chan-c); }
+    .chan-m { color: var(--chan-m); }
+    .chan-y { color: var(--chan-y); }
+    .chan-k { color: var(--chan-k); }
+
+    /* ── Panel footer ──────────────────────────────────────────────── */
+
+    .adj-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px 7px;
+      border-top: 1px solid var(--color-border);
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .layer-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .layer-indicator-icon {
+      flex-shrink: 0;
+      color: var(--color-text-muted);
+      display: flex;
+      align-items: center;
+    }
+
+    .layer-indicator-text {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .layer-indicator-text strong {
+      color: var(--color-text-dim);
+      font-weight: 500;
+    }
+
+    .reset-btn {
+      height: 20px;
+      padding: 0 8px;
+      background: transparent;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text-muted);
+      cursor: default;
+      flex-shrink: 0;
+      transition: background 80ms, color 80ms, border-color 80ms;
+      white-space: nowrap;
+    }
+
+    .reset-btn:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-text-muted);
+      color: var(--color-text);
+    }
+
+    .reset-btn:active { background: var(--color-surface-selected); }
+
+    /* ── Right panel (Layer Panel) ─────────────────────────────────── */
+
+    .rp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 26px;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-header-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .rp-blend-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-select {
+      flex: 1;
+      min-width: 0;
+      height: 20px;
+      background: #1e1e1e;
+      border: 1px solid #3a3a3a;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .rp-opacity-label {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    .rp-opacity-input {
+      width: 36px;
+      height: 20px;
+      background: #1e1e1e;
+      border: 1px solid #3a3a3a;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      text-align: right;
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .rp-layer-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    .layer-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 5px;
+      min-height: 36px;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      transition: background 80ms;
+      position: relative;
+    }
+
+    .layer-row:hover { background: var(--color-surface-hover); }
+    .layer-row.layer-selected { background: #3a6ea8; }
+    .layer-row.layer-selected .layer-name { color: #fff; }
+    .layer-row.layer-selected .layer-eye { color: rgba(255,255,255,0.8); }
+
+    .layer-row.child { padding-left: 22px; }
+
+    .layer-eye {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      cursor: default;
+      transition: color 80ms;
+    }
+
+    .layer-eye:hover { color: var(--color-text); }
+
+    .layer-thumb {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.1);
+      background-color: #fafafa;
+      background-image: repeating-conic-gradient(#e4e4e4 0% 25%, #fafafa 0% 50%);
+      background-size: 7px 7px;
+      position: relative;
+      overflow: hidden;
+      border-radius: 1px;
+    }
+
+    .layer-adj-chip {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      border: 1px solid rgba(6,153,251,0.3);
+      background: rgba(6,153,251,0.08);
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-accent);
+    }
+
+    .layer-name {
+      flex: 1;
+      font-size: 11px;
+      color: var(--color-text);
+      font-style: italic;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .layer-name.adj-name {
+      font-style: normal;
+      color: var(--color-text-dim);
+    }
+
+    .child-connector {
+      position: absolute;
+      left: 14px;
+      top: -18px;
+      width: 7px;
+      height: 26px;
+      border-left: 1px solid var(--color-border-light);
+      border-bottom: 1px solid var(--color-border-light);
+      pointer-events: none;
+    }
+
+    .rp-footer {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px 4px;
+      border-top: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-footer-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      cursor: default;
+      transition: color 80ms;
+    }
+
+    .rp-footer-btn:hover { color: var(--color-text); }
+
+    /* ── Status bar ────────────────────────────────────────────────── */
+
+    .statusbar {
+      height: 24px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      gap: 12px;
+    }
+
+    .status-item { font-size: 10px; color: var(--color-text-muted); }
+
+    /* ── Annotation section ────────────────────────────────────────── */
+
+    .annotation-section {
+      background: #111;
+      border-top: 1px solid #232323;
+      padding: 20px 24px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .ann-heading {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #333;
+    }
+
+    .ann-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .ann-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .ann-card {
+      background: #181818;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ann-card-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #222;
+    }
+
+    .ann-card-note {
+      font-size: 10px;
+      color: #383838;
+      line-height: 1.55;
+    }
+
+    /* ── Mini panels (annotation) ──────────────────────────────────── */
+
+    .mini-panel {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+      width: 100%;
+    }
+
+    .mini-titlebar {
+      display: flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 6px 0 8px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+      border-radius: 3px 3px 0 0;
+      gap: 5px;
+    }
+
+    .mini-icon {
+      flex-shrink: 0;
+      color: var(--color-accent);
+      display: flex;
+      align-items: center;
+    }
+
+    .mini-title {
+      flex: 1;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .mini-close {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .mini-body {
+      padding: 6px 8px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .mini-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 24px;
+    }
+
+    .mini-label {
+      width: 48px;
+      font-size: 10px;
+      color: var(--color-text-dim);
+      flex-shrink: 0;
+    }
+
+    .mini-track {
+      flex: 1;
+      height: 3px;
+      border-radius: 2px;
+      position: relative;
+    }
+
+    .mini-track-bg {
+      position: absolute;
+      inset: 0;
+      border-radius: 2px;
+      background: #3a3a3a;
+    }
+
+    .mini-track-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      border-radius: 2px 0 0 2px;
+      background: var(--color-accent);
+    }
+
+    /* center-origin mini track fill */
+    .mini-track-fill-center {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: var(--color-accent);
+      border-radius: 2px;
+    }
+
+    .mini-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-text);
+      border: 1px solid var(--color-border-light);
+    }
+
+    .mini-num {
+      width: 30px;
+      height: 16px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 10px;
+      color: var(--color-text);
+      text-align: right;
+      padding: 0 3px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+
+    .mini-unit {
+      font-size: 9px;
+      color: var(--color-text-muted);
+      width: 12px;
+      flex-shrink: 0;
+    }
+
+    .mini-unit-long {
+      font-size: 9px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .mini-seg {
+      display: flex;
+      flex: 1;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .mini-seg-btn {
+      flex: 1;
+      height: 16px;
+      border: none;
+      border-right: 1px solid var(--color-border-light);
+      background: var(--color-bg);
+      font-size: 9px;
+      font-family: var(--font-sans);
+      color: var(--color-text-muted);
+      padding: 0 2px;
+    }
+
+    .mini-seg-btn:last-child { border-right: none; }
+
+    .mini-seg-btn.mini-seg-active {
+      background: var(--color-accent);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .mini-sep { height: 1px; background: var(--color-border); margin: 2px 0; }
+
+    .mini-section-header {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 2px 0 1px;
+    }
+
+    .mini-chan-label {
+      width: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .mini-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px 6px;
+      border-top: 1px solid var(--color-border);
+      gap: 6px;
+    }
+
+    .mini-indicator-text {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mini-indicator-text strong {
+      color: var(--color-text-dim);
+      font-weight: 500;
+    }
+
+    .mini-reset {
+      height: 17px;
+      padding: 0 6px;
+      background: transparent;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 10px;
+      font-family: var(--font-sans);
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ── Control state demos ───────────────────────────────────────── */
+
+    .ctrl-demo {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+    }
+
+    .ctrl-demo-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #444;
+      font-weight: 600;
+    }
+
+    .input-state-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .input-state-label {
+      font-size: 10px;
+      color: #444;
+      width: 52px;
+      flex-shrink: 0;
+    }
+
+    /* offset slider state demo */
+    .offset-demo-track {
+      flex: 1;
+      height: 3px;
+      border-radius: 2px;
+      position: relative;
+    }
+
+    .odt-bg {
+      position: absolute;
+      inset: 0;
+      border-radius: 2px;
+      background: #3a3a3a;
+    }
+
+    .odt-fill {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: var(--color-accent);
+      border-radius: 2px;
+    }
+
+    .odt-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-text);
+      border: 1px solid var(--color-border-light);
+    }
+
+    /* center tick on offset track */
+    .odt-center-tick {
+      position: absolute;
+      top: -2px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1px;
+      height: 7px;
+      background: var(--color-border-light);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Prototype header ─────────────────────────────────────────── -->
+  <div class="proto-header">
+    <span class="proto-title">PixelShop — <em>Halftone</em> Effect Panel</span>
+    <div class="hdiv"></div>
+    <span class="state-label">Mode:</span>
+    <div class="state-toggle">
+      <button class="state-btn active" id="proto-btn-cmyk" onclick="setMode('cmyk')">Color (CMYK)</button>
+      <button class="state-btn"        id="proto-btn-bw"   onclick="setMode('bw')">B&W</button>
+    </div>
+    <span class="proto-hint">Effects → Halftone…</span>
+  </div>
+
+  <!-- ── App shell ─────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="logo-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="1" width="14" height="14" rx="2" fill="currentColor" opacity="0.15"/>
+          <text x="3.5" y="12" font-family="sans-serif" font-weight="700" font-size="11" fill="currentColor">P</text>
+        </svg>
+      </button>
+      <div class="menu-divider"></div>
+      <nav class="menubar">
+        <button class="menu-trigger">File</button>
+        <button class="menu-trigger">Edit</button>
+        <button class="menu-trigger">Select</button>
+        <button class="menu-trigger">Layer</button>
+        <button class="menu-trigger">Adjustments</button>
+        <button class="menu-trigger menu-active">Effects</button>
+        <button class="menu-trigger">Filters</button>
+        <button class="menu-trigger">View</button>
+        <button class="menu-trigger">Help</button>
+      </nav>
+    </div>
+    <div class="topbar-center">
+      <span class="doc-title">poster-design.psd @ 100%</span>
+    </div>
+  </div>
+
+  <div class="app-body">
+
+    <!-- left toolbar stub -->
+    <div class="toolbar-strip"></div>
+
+    <!-- workspace + floating panel -->
+    <div class="workspace">
+
+      <!-- Canvas mock -->
+      <div class="canvas-wrap">
+        <canvas id="preview-canvas" width="340" height="260"></canvas>
+      </div>
+
+      <!-- ── Halftone floating panel ── -->
+      <div class="adj-panel" id="adj-panel">
+
+        <!-- Title bar -->
+        <div class="adj-titlebar">
+          <span class="adj-icon">
+            <!-- Halftone dot-grid icon: 3×3 dots at varying sizes, suggesting a halftone screen -->
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="2.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+              <circle cx="7"   cy="2.5" r="1.5" fill="currentColor" opacity="0.60"/>
+              <circle cx="11.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+              <circle cx="2.5" cy="7"   r="1.5" fill="currentColor" opacity="0.60"/>
+              <circle cx="7"   cy="7"   r="2.2" fill="currentColor" opacity="0.95"/>
+              <circle cx="11.5" cy="7"  r="1.5" fill="currentColor" opacity="0.60"/>
+              <circle cx="2.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+              <circle cx="7"   cy="11.5" r="1.5" fill="currentColor" opacity="0.60"/>
+              <circle cx="11.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+            </svg>
+          </span>
+          <span class="adj-title">Halftone</span>
+          <button class="adj-close-btn" title="Close (Esc)">&#x2715;</button>
+        </div>
+
+        <!-- Body -->
+        <div class="adj-body">
+
+          <!-- Mode toggle -->
+          <div class="mode-row">
+            <span class="slider-label">Mode</span>
+            <div class="seg-group" id="panel-mode-seg">
+              <button class="seg-btn seg-active" id="panel-btn-cmyk" onclick="setMode('cmyk')">Color (CMYK)</button>
+              <button class="seg-btn"            id="panel-btn-bw"   onclick="setMode('bw')">B&W</button>
+            </div>
+          </div>
+
+          <div class="row-sep"></div>
+
+          <!-- Frequency -->
+          <div class="slider-row">
+            <span class="slider-label">Frequency</span>
+            <div class="slider-track-wrap">
+              <input type="range" class="ps-slider" id="sl-freq"
+                     min="2" max="50" value="10"
+                     style="--pct: 16.7%"
+                     oninput="onFreqSlider(this)">
+            </div>
+            <input type="number" class="ps-num-input" id="num-freq"
+                   min="2" max="50" value="10" style="width:34px;"
+                   onchange="onFreqInput(this)">
+            <span class="freq-unit">c/100px</span>
+          </div>
+
+          <!-- CMYK channel offsets section (hidden in B&W mode) -->
+          <div id="cmyk-section" class="cmyk-section">
+
+            <div class="row-sep"></div>
+            <div class="section-header">Channel Offsets</div>
+
+            <!-- C -->
+            <div class="chan-row">
+              <span class="chan-label chan-c">C</span>
+              <div class="slider-track-wrap">
+                <input type="range" class="ps-slider offset-slider" id="sl-c"
+                       min="-50" max="50" value="0"
+                       style="--off-lo:50%;--off-hi:50%"
+                       oninput="onOffsetSlider('c', this)">
+              </div>
+              <input type="number" class="ps-num-input" id="num-c"
+                     min="-50" max="50" value="0" style="width:36px;"
+                     onchange="onOffsetInput('c', this)">
+              <span class="ps-unit">%</span>
+            </div>
+
+            <!-- M -->
+            <div class="chan-row">
+              <span class="chan-label chan-m">M</span>
+              <div class="slider-track-wrap">
+                <input type="range" class="ps-slider offset-slider" id="sl-m"
+                       min="-50" max="50" value="0"
+                       style="--off-lo:50%;--off-hi:50%"
+                       oninput="onOffsetSlider('m', this)">
+              </div>
+              <input type="number" class="ps-num-input" id="num-m"
+                     min="-50" max="50" value="0" style="width:36px;"
+                     onchange="onOffsetInput('m', this)">
+              <span class="ps-unit">%</span>
+            </div>
+
+            <!-- Y -->
+            <div class="chan-row">
+              <span class="chan-label chan-y">Y</span>
+              <div class="slider-track-wrap">
+                <input type="range" class="ps-slider offset-slider" id="sl-y"
+                       min="-50" max="50" value="0"
+                       style="--off-lo:50%;--off-hi:50%"
+                       oninput="onOffsetSlider('y', this)">
+              </div>
+              <input type="number" class="ps-num-input" id="num-y"
+                     min="-50" max="50" value="0" style="width:36px;"
+                     onchange="onOffsetInput('y', this)">
+              <span class="ps-unit">%</span>
+            </div>
+
+            <!-- K -->
+            <div class="chan-row">
+              <span class="chan-label chan-k">K</span>
+              <div class="slider-track-wrap">
+                <input type="range" class="ps-slider offset-slider" id="sl-k"
+                       min="-50" max="50" value="0"
+                       style="--off-lo:50%;--off-hi:50%"
+                       oninput="onOffsetSlider('k', this)">
+              </div>
+              <input type="number" class="ps-num-input" id="num-k"
+                     min="-50" max="50" value="0" style="width:36px;"
+                     onchange="onOffsetInput('k', this)">
+              <span class="ps-unit">%</span>
+            </div>
+
+          </div><!-- /cmyk-section -->
+
+        </div><!-- /adj-body -->
+
+        <!-- Footer -->
+        <div class="adj-footer">
+          <div class="layer-indicator">
+            <span class="layer-indicator-icon">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 2 v6 h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="layer-indicator-text">on <strong>poster-design.jpg</strong></span>
+          </div>
+          <button class="reset-btn" onclick="resetValues()">Reset</button>
+        </div>
+
+      </div><!-- /adj-panel -->
+
+    </div><!-- /workspace -->
+
+    <!-- ── Right panel (Layer Panel) ── -->
+    <div class="right-panel">
+
+      <div class="rp-header">
+        <span class="rp-header-title">Layers</span>
+      </div>
+
+      <div class="rp-blend-row">
+        <select class="rp-select">
+          <option>Normal</option>
+        </select>
+        <span class="rp-opacity-label">Opacity</span>
+        <input type="number" class="rp-opacity-input" value="100">
+        <span style="font-size:10px; color:var(--color-text-muted);">%</span>
+      </div>
+
+      <ul class="rp-layer-list">
+
+        <!-- Background layer -->
+        <li class="layer-row">
+          <button class="layer-eye">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="6" cy="6" r="1.8" fill="currentColor"/>
+            </svg>
+          </button>
+          <div class="layer-thumb" style="background: linear-gradient(135deg, #f08040 0%, #2040a0 100%);"></div>
+          <span class="layer-name">Background</span>
+        </li>
+
+        <!-- Pixel layer (parent, selected) -->
+        <li class="layer-row layer-selected">
+          <button class="layer-eye">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="6" cy="6" r="1.8" fill="currentColor"/>
+            </svg>
+          </button>
+          <div class="layer-thumb" style="background: linear-gradient(135deg, #e8b870 0%, #583828 100%);"></div>
+          <span class="layer-name">poster-design.jpg</span>
+        </li>
+
+        <!-- Halftone adjustment layer (child, indented) -->
+        <li class="layer-row child" id="halftone-layer-row">
+          <div class="child-connector"></div>
+          <button class="layer-eye">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="6" cy="6" r="1.8" fill="currentColor"/>
+            </svg>
+          </button>
+          <div class="layer-adj-chip">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <circle cx="2.5" cy="2.5" r="0.9" fill="currentColor" opacity="0.4"/>
+              <circle cx="6"   cy="2.5" r="1.3" fill="currentColor" opacity="0.65"/>
+              <circle cx="9.5" cy="2.5" r="0.9" fill="currentColor" opacity="0.4"/>
+              <circle cx="2.5" cy="6"   r="1.3" fill="currentColor" opacity="0.65"/>
+              <circle cx="6"   cy="6"   r="2.0" fill="currentColor" opacity="0.95"/>
+              <circle cx="9.5" cy="6"   r="1.3" fill="currentColor" opacity="0.65"/>
+              <circle cx="2.5" cy="9.5" r="0.9" fill="currentColor" opacity="0.4"/>
+              <circle cx="6"   cy="9.5" r="1.3" fill="currentColor" opacity="0.65"/>
+              <circle cx="9.5" cy="9.5" r="0.9" fill="currentColor" opacity="0.4"/>
+            </svg>
+          </div>
+          <span class="layer-name adj-name">Halftone</span>
+        </li>
+
+      </ul>
+
+      <div class="rp-footer">
+        <button class="rp-footer-btn" title="New layer">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <rect x="1" y="1" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1"/>
+            <line x1="7" y1="4" x2="7" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="4" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="rp-footer-btn" title="Duplicate layer">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <rect x="4" y="1" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1"/>
+            <rect x="1" y="4" width="9" height="9" rx="1" fill="var(--color-surface)" stroke="currentColor" stroke-width="1"/>
+          </svg>
+        </button>
+        <button class="rp-footer-btn" title="Delete layer" style="margin-left:auto;">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <path d="M4 2h6M2 3h10M4 3v9h6V3H4zm2 2v5m2-5v5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+    </div><!-- /right-panel -->
+
+  </div><!-- /app-body -->
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <span class="status-item">1200 × 900 px</span>
+    <span class="status-item">RGB/8</span>
+    <span class="status-item" id="status-mode">Mode: Color (CMYK)</span>
+    <span class="status-item" id="status-params">Freq: 10 c/100px  C:0%  M:0%  Y:0%  K:0%</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- ── Annotation section ──────────────────────────────────────── -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="annotation-section">
+
+    <div class="ann-heading">Panel States</div>
+
+    <div class="ann-grid">
+
+      <!-- Color (CMYK) mode panel -->
+      <div class="ann-card">
+        <div class="ann-card-title">Color (CMYK) mode — full panel</div>
+        <div class="mini-panel">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                <circle cx="2.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="7"   cy="2.5" r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="11.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="2.5" cy="7"   r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="7"   cy="7"   r="2.2" fill="currentColor" opacity="0.95"/>
+                <circle cx="11.5" cy="7"  r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="2.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="7"   cy="11.5" r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="11.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+              </svg>
+            </span>
+            <span class="mini-title">Halftone</span>
+            <span class="mini-close">&#x2715;</span>
+          </div>
+          <div class="mini-body">
+            <!-- Mode -->
+            <div class="mini-row">
+              <span class="mini-label">Mode</span>
+              <div class="mini-seg">
+                <button class="mini-seg-btn mini-seg-active">Color (CMYK)</button>
+                <button class="mini-seg-btn">B&W</button>
+              </div>
+            </div>
+            <div class="mini-sep"></div>
+            <!-- Frequency -->
+            <div class="mini-row">
+              <span class="mini-label">Frequency</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="width:16.7%;"></div>
+                <div class="mini-thumb" style="left:16.7%;"></div>
+              </div>
+              <div class="mini-num">10</div>
+              <span class="mini-unit-long">c/100px</span>
+            </div>
+            <div class="mini-sep"></div>
+            <div class="mini-section-header">Channel Offsets</div>
+            <!-- C -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-c);font-weight:700;">C</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="left:50%;width:0%;"></div>
+                <div class="mini-thumb" style="left:50%;"></div>
+              </div>
+              <div class="mini-num">0</div>
+              <span class="mini-unit">%</span>
+            </div>
+            <!-- M -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-m);font-weight:700;">M</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="left:50%;width:0%;"></div>
+                <div class="mini-thumb" style="left:50%;"></div>
+              </div>
+              <div class="mini-num">0</div>
+              <span class="mini-unit">%</span>
+            </div>
+            <!-- Y -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-y);font-weight:700;">Y</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="left:50%;width:0%;"></div>
+                <div class="mini-thumb" style="left:50%;"></div>
+              </div>
+              <div class="mini-num">0</div>
+              <span class="mini-unit">%</span>
+            </div>
+            <!-- K -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-k);font-weight:700;">K</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="left:50%;width:0%;"></div>
+                <div class="mini-thumb" style="left:50%;"></div>
+              </div>
+              <div class="mini-num">0</div>
+              <span class="mini-unit">%</span>
+            </div>
+          </div>
+          <div class="mini-footer">
+            <span class="mini-indicator-text">on <strong>poster-design.jpg</strong></span>
+            <button class="mini-reset">Reset</button>
+          </div>
+        </div>
+        <div class="ann-card-note">Default state. All channel offsets at 0%. Panel height is larger in CMYK mode to accommodate the four channel rows.</div>
+      </div>
+
+      <!-- B&W mode panel -->
+      <div class="ann-card">
+        <div class="ann-card-title">B&W mode — channel section hidden</div>
+        <div class="mini-panel">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                <circle cx="2.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="7"   cy="2.5" r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="11.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="2.5" cy="7"   r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="7"   cy="7"   r="2.2" fill="currentColor" opacity="0.95"/>
+                <circle cx="11.5" cy="7"  r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="2.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="7"   cy="11.5" r="1.5" fill="currentColor" opacity="0.60"/>
+                <circle cx="11.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+              </svg>
+            </span>
+            <span class="mini-title">Halftone</span>
+            <span class="mini-close">&#x2715;</span>
+          </div>
+          <div class="mini-body">
+            <!-- Mode -->
+            <div class="mini-row">
+              <span class="mini-label">Mode</span>
+              <div class="mini-seg">
+                <button class="mini-seg-btn">Color (CMYK)</button>
+                <button class="mini-seg-btn mini-seg-active">B&W</button>
+              </div>
+            </div>
+            <div class="mini-sep"></div>
+            <!-- Frequency only -->
+            <div class="mini-row">
+              <span class="mini-label">Frequency</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="width:16.7%;"></div>
+                <div class="mini-thumb" style="left:16.7%;"></div>
+              </div>
+              <div class="mini-num">10</div>
+              <span class="mini-unit-long">c/100px</span>
+            </div>
+            <!-- no channel section -->
+          </div>
+          <div class="mini-footer">
+            <span class="mini-indicator-text">on <strong>poster-design.jpg</strong></span>
+            <button class="mini-reset">Reset</button>
+          </div>
+        </div>
+        <div class="ann-card-note">B&W mode. The Channel Offsets section (C/M/Y/K rows) is completely hidden. The panel collapses in height. Frequency value is preserved when switching modes.</div>
+      </div>
+
+      <!-- Active param values panel -->
+      <div class="ann-card">
+        <div class="ann-card-title">Color (CMYK) — non-zero offsets</div>
+        <div class="mini-panel">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                <circle cx="7" cy="7" r="2.2" fill="currentColor" opacity="0.95"/>
+                <circle cx="2.5" cy="2.5" r="1.0" fill="currentColor" opacity="0.35"/>
+                <circle cx="11.5" cy="11.5" r="1.0" fill="currentColor" opacity="0.35"/>
+              </svg>
+            </span>
+            <span class="mini-title">Halftone</span>
+            <span class="mini-close">&#x2715;</span>
+          </div>
+          <div class="mini-body">
+            <div class="mini-row">
+              <span class="mini-label">Mode</span>
+              <div class="mini-seg">
+                <button class="mini-seg-btn mini-seg-active">Color (CMYK)</button>
+                <button class="mini-seg-btn">B&W</button>
+              </div>
+            </div>
+            <div class="mini-sep"></div>
+            <div class="mini-row">
+              <span class="mini-label">Frequency</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill" style="width:39.6%;"></div>
+                <div class="mini-thumb" style="left:39.6%;"></div>
+              </div>
+              <div class="mini-num">21</div>
+              <span class="mini-unit-long">c/100px</span>
+            </div>
+            <div class="mini-sep"></div>
+            <div class="mini-section-header">Channel Offsets</div>
+            <!-- C: +20% -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-c);font-weight:700;">C</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill-center" style="left:50%;width:20%;"></div>
+                <div class="mini-thumb" style="left:70%;"></div>
+              </div>
+              <div class="mini-num">+20</div>
+              <span class="mini-unit">%</span>
+            </div>
+            <!-- M: -15% -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-m);font-weight:700;">M</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill-center" style="left:35%;width:15%;"></div>
+                <div class="mini-thumb" style="left:35%;"></div>
+              </div>
+              <div class="mini-num">−15</div>
+              <span class="mini-unit">%</span>
+            </div>
+            <!-- Y: 0% -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-y);font-weight:700;">Y</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill-center" style="left:50%;width:0%;"></div>
+                <div class="mini-thumb" style="left:50%;"></div>
+              </div>
+              <div class="mini-num">0</div>
+              <span class="mini-unit">%</span>
+            </div>
+            <!-- K: +30% -->
+            <div class="mini-row">
+              <span class="mini-chan-label" style="color:var(--chan-k);font-weight:700;">K</span>
+              <div class="mini-track">
+                <div class="mini-track-bg"></div>
+                <div class="mini-track-fill-center" style="left:50%;width:30%;"></div>
+                <div class="mini-thumb" style="left:80%;"></div>
+              </div>
+              <div class="mini-num">+30</div>
+              <span class="mini-unit">%</span>
+            </div>
+          </div>
+          <div class="mini-footer">
+            <span class="mini-indicator-text">on <strong>poster-design.jpg</strong></span>
+            <button class="mini-reset">Reset</button>
+          </div>
+        </div>
+        <div class="ann-card-note">Example with freq=21 and mixed channel offsets. The center-origin gradient on each offset slider grows outward from center: rightward for positive (+), leftward for negative (−).</div>
+      </div>
+
+    </div><!-- /ann-grid -->
+
+    <!-- ── Control state annotations ─────────────────────────────── -->
+
+    <div class="ann-heading">Control States</div>
+
+    <div class="ann-grid-2">
+
+      <!-- Mode toggle states -->
+      <div class="ann-card">
+        <div class="ann-card-title">Mode segmented control</div>
+        <div class="ctrl-demo">
+          <div class="ctrl-demo-label">Color (CMYK) active</div>
+          <div style="display:flex;border:1px solid var(--color-border-light);border-radius:2px;overflow:hidden;height:18px;">
+            <div style="flex:1;background:var(--color-accent);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:500;">Color (CMYK)</div>
+            <div style="flex:1;background:var(--color-bg);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-muted);border-left:1px solid var(--color-border-light);">B&W</div>
+          </div>
+        </div>
+        <div class="ctrl-demo">
+          <div class="ctrl-demo-label">B&W active</div>
+          <div style="display:flex;border:1px solid var(--color-border-light);border-radius:2px;overflow:hidden;height:18px;">
+            <div style="flex:1;background:var(--color-bg);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-muted);">Color (CMYK)</div>
+            <div style="flex:1;background:var(--color-accent);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:500;border-left:1px solid var(--color-border-light);">B&W</div>
+          </div>
+        </div>
+        <div class="ann-card-note">Active segment fills with accent blue (#0699fb), white text, 500 weight. Inactive: dark bg (#3c3c3c), muted text. Matches the seg-group pattern used by the Quality control in Bloom.</div>
+      </div>
+
+      <!-- Offset slider states -->
+      <div class="ann-card">
+        <div class="ann-card-title">Channel offset slider — center-origin gradient</div>
+        <div class="ctrl-demo">
+          <div class="ctrl-demo-label">Slider states (range: −50 to +50)</div>
+
+          <div class="input-state-row">
+            <span class="input-state-label">value = −30</span>
+            <div class="offset-demo-track">
+              <div class="odt-bg"></div>
+              <div class="odt-center-tick"></div>
+              <!-- fill from 20% to 50% (left of center) -->
+              <div class="odt-fill" style="left:20%;width:30%;"></div>
+              <div class="odt-thumb" style="left:20%;"></div>
+            </div>
+            <div class="mini-num" style="margin-left:6px;">−30</div>
+            <span class="mini-unit">%</span>
+          </div>
+
+          <div class="input-state-row">
+            <span class="input-state-label">value = 0</span>
+            <div class="offset-demo-track">
+              <div class="odt-bg"></div>
+              <div class="odt-center-tick"></div>
+              <!-- no fill at center -->
+              <div class="odt-fill" style="left:50%;width:0%;"></div>
+              <div class="odt-thumb" style="left:50%;"></div>
+            </div>
+            <div class="mini-num" style="margin-left:6px;">0</div>
+            <span class="mini-unit">%</span>
+          </div>
+
+          <div class="input-state-row">
+            <span class="input-state-label">value = +35</span>
+            <div class="offset-demo-track">
+              <div class="odt-bg"></div>
+              <div class="odt-center-tick"></div>
+              <!-- fill from 50% to 85% (right of center) -->
+              <div class="odt-fill" style="left:50%;width:35%;"></div>
+              <div class="odt-thumb" style="left:85%;"></div>
+            </div>
+            <div class="mini-num" style="margin-left:6px;">+35</div>
+            <span class="mini-unit">%</span>
+          </div>
+
+        </div>
+        <div class="ann-card-note">The offset slider accent fill grows outward from the 50% center mark. A subtle tick mark at the center indicates the zero position. This is distinct from the standard fill-from-left sliders (Frequency uses fill-from-left, same as all other PixelShop sliders).</div>
+      </div>
+
+    </div><!-- /ann-grid-2 -->
+
+    <!-- ── Design decisions ──────────────────────────────────────── -->
+
+    <div class="ann-heading">Design Decisions &amp; Ambiguities</div>
+
+    <div class="ann-grid">
+
+      <div class="ann-card">
+        <div class="ann-card-title">Mode toggle placement</div>
+        <div class="ann-card-note">
+          Mode toggle is the first control in the panel body (above Frequency), separated by a row-sep divider from the Frequency row. This follows the spec's ordering and means the toggle is always immediately visible. Alternative: place it in the title bar — rejected because the title bar is shared with icon, title, and close button, leaving insufficient room for a two-button segmented control.
+        </div>
+      </div>
+
+      <div class="ann-card">
+        <div class="ann-card-title">Channel label color coding</div>
+        <div class="ann-card-note">
+          C/M/Y/K labels use muted CMYK color approximations against the dark surface: C=#3dbcbc, M=#bc4d8c, Y=#a0a000, K=#909090. These are toned down from pure CMYK ink colors to remain legible and professional on the dark theme. The labels are single letters (C/M/Y/K) — not "C Offset" etc. — because the "Channel Offsets" section header already establishes the context.
+        </div>
+      </div>
+
+      <div class="ann-card">
+        <div class="ann-card-title">Frequency unit label</div>
+        <div class="ann-card-note">
+          The spec states the unit is "cells/100px". Displayed as "c/100px" (abbreviated) to avoid overflow in the compact row layout. Full "cells/100px" is used in the status bar where space is less constrained. The abbreviation is consistent with standard compact panel usage in professional tools.
+        </div>
+      </div>
+
+      <div class="ann-card">
+        <div class="ann-card-title">Channel row height vs. Frequency row</div>
+        <div class="ann-card-note">
+          Frequency row uses the standard 28px height (slider-row). Channel offset rows use 24px (chan-row) to keep the CMYK panel compact — four 24px rows adds only 96px vs 112px at 28px. This keeps the panel within a reasonable floating window size without scrolling. Both row heights are consistent with the density-first PixelShop design language.
+        </div>
+      </div>
+
+      <div class="ann-card">
+        <div class="ann-card-title">Offset slider gradient direction</div>
+        <div class="ann-card-note">
+          The spec does not specify how ±50% sliders should be visually represented. This design uses a center-origin gradient where the accent fill grows outward from 50% (the zero point) in whichever direction the value is non-zero. At value=0 the track shows no accent fill. This is more intuitive than fill-from-left (which would show 50% blue at the neutral position). Implementation: CSS custom properties --off-lo/--off-hi updated via oninput JavaScript.
+        </div>
+      </div>
+
+      <div class="ann-card">
+        <div class="ann-card-title">Channel offsets: hidden vs. preserved in B&W</div>
+        <div class="ann-card-note">
+          The spec states: "per-channel offsets are hidden (but preserved) when switching to B&W." The design hides the entire cmyk-section div (display:none in B&W mode) while JS keeps the offset values in memory. When switching back to Color (CMYK) mode, the previously entered values are restored. This matches spec intent exactly.
+        </div>
+      </div>
+
+    </div><!-- /ann-grid -->
+
+  </div><!-- /annotation-section -->
+
+  <script>
+    /* ── State ─────────────────────────────────────────────────────── */
+    let currentMode = 'cmyk';
+    const offsets = { c: 0, m: 0, y: 0, k: 0 };
+    let frequency = 10;
+
+    /* ── Mode switching ────────────────────────────────────────────── */
+    function setMode(mode) {
+      currentMode = mode;
+
+      // Proto header buttons
+      document.getElementById('proto-btn-cmyk').classList.toggle('active', mode === 'cmyk');
+      document.getElementById('proto-btn-bw').classList.toggle('active', mode === 'bw');
+
+      // Panel mode buttons
+      document.getElementById('panel-btn-cmyk').classList.toggle('seg-active', mode === 'cmyk');
+      document.getElementById('panel-btn-bw').classList.toggle('seg-active', mode === 'bw');
+
+      // Show/hide CMYK section
+      const section = document.getElementById('cmyk-section');
+      section.style.display = mode === 'cmyk' ? 'flex' : 'none';
+
+      // Status bar
+      document.getElementById('status-mode').textContent =
+        'Mode: ' + (mode === 'cmyk' ? 'Color (CMYK)' : 'B&W');
+      updateStatusParams();
+
+      // Redraw canvas
+      drawHalftone();
+    }
+
+    /* ── Frequency controls ────────────────────────────────────────── */
+    function onFreqSlider(el) {
+      frequency = parseFloat(el.value);
+      el.style.setProperty('--pct', freqPct(frequency));
+      document.getElementById('num-freq').value = frequency;
+      updateStatusParams();
+      drawHalftone();
+    }
+
+    function onFreqInput(el) {
+      let v = Math.min(50, Math.max(2, parseFloat(el.value) || 2));
+      el.value = v;
+      frequency = v;
+      const sl = document.getElementById('sl-freq');
+      sl.value = v;
+      sl.style.setProperty('--pct', freqPct(v));
+      updateStatusParams();
+      drawHalftone();
+    }
+
+    function freqPct(v) {
+      return ((v - 2) / 48 * 100).toFixed(1) + '%';
+    }
+
+    /* ── Offset controls ───────────────────────────────────────────── */
+    function onOffsetSlider(chan, el) {
+      const v = parseFloat(el.value);
+      offsets[chan] = v;
+      updateOffsetGradient(el);
+      document.getElementById('num-' + chan).value = v;
+      updateStatusParams();
+      drawHalftone();
+    }
+
+    function onOffsetInput(chan, el) {
+      let v = Math.min(50, Math.max(-50, parseFloat(el.value) || 0));
+      el.value = v;
+      offsets[chan] = v;
+      const sl = document.getElementById('sl-' + chan);
+      sl.value = v;
+      updateOffsetGradient(sl);
+      updateStatusParams();
+      drawHalftone();
+    }
+
+    function updateOffsetGradient(sliderEl) {
+      const v = parseFloat(sliderEl.value);
+      // pct position: -50→0%, 0→50%, +50→100%
+      const pct = v + 50;
+      const lo = Math.min(50, pct);
+      const hi = Math.max(50, pct);
+      sliderEl.style.setProperty('--off-lo', lo + '%');
+      sliderEl.style.setProperty('--off-hi', hi + '%');
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────────── */
+    function resetValues() {
+      frequency = 10;
+      offsets.c = 0; offsets.m = 0; offsets.y = 0; offsets.k = 0;
+
+      const freqSl = document.getElementById('sl-freq');
+      freqSl.value = 10;
+      freqSl.style.setProperty('--pct', freqPct(10));
+      document.getElementById('num-freq').value = 10;
+
+      ['c','m','y','k'].forEach(ch => {
+        const sl = document.getElementById('sl-' + ch);
+        sl.value = 0;
+        updateOffsetGradient(sl);
+        document.getElementById('num-' + ch).value = 0;
+      });
+
+      updateStatusParams();
+      drawHalftone();
+    }
+
+    function updateStatusParams() {
+      if (currentMode === 'cmyk') {
+        document.getElementById('status-params').textContent =
+          `Freq: ${frequency} c/100px  C:${offsets.c}%  M:${offsets.m}%  Y:${offsets.y}%  K:${offsets.k}%`;
+      } else {
+        document.getElementById('status-params').textContent =
+          `Freq: ${frequency} c/100px`;
+      }
+    }
+
+    /* ── Canvas halftone preview ───────────────────────────────────── */
+    function drawHalftone() {
+      const canvas = document.getElementById('preview-canvas');
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+
+      // Step 1: Draw source image (warm gradient simulating a photo)
+      const grad = ctx.createRadialGradient(W * 0.42, H * 0.38, 0, W * 0.42, H * 0.38, W * 0.62);
+      grad.addColorStop(0,    '#e8b870');
+      grad.addColorStop(0.30, '#c07840');
+      grad.addColorStop(0.58, '#703820');
+      grad.addColorStop(0.82, '#381808');
+      grad.addColorStop(1,    '#100800');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Add a blue–purple lower region for color interest
+      const grad2 = ctx.createLinearGradient(0, H * 0.55, W, H);
+      grad2.addColorStop(0, 'rgba(60, 80, 180, 0.45)');
+      grad2.addColorStop(1, 'rgba(120, 40, 160, 0.30)');
+      ctx.fillStyle = grad2;
+      ctx.fillRect(0, H * 0.55, W, H);
+
+      // Step 2: Read source pixels before drawing halftone
+      const srcData = ctx.getImageData(0, 0, W, H);
+
+      // Step 3: Clear to white
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, W, H);
+
+      const pitch = 100 / frequency;
+
+      if (currentMode === 'bw') {
+        // B&W: single dot screen, dot size proportional to (1 - luminance)
+        ctx.fillStyle = '#1a1a1a';
+        for (let cy = pitch / 2; cy < H; cy += pitch) {
+          for (let cx = pitch / 2; cx < W; cx += pitch) {
+            const ix = Math.min(W - 1, Math.round(cx));
+            const iy = Math.min(H - 1, Math.round(cy));
+            const i = (iy * W + ix) * 4;
+            const r = srcData.data[i], g = srcData.data[i+1], b = srcData.data[i+2];
+            const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+            const dotR = (1 - lum) * pitch * 0.48;
+            if (dotR > 0.25) {
+              ctx.beginPath();
+              ctx.arc(cx, cy, Math.min(dotR, pitch * 0.48), 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+      } else {
+        // CMYK: four dot screens in subtractive ink colors
+        // Simplified (non-rotated) for preview purposes
+        const channels = [
+          {
+            color: 'rgba(0, 160, 185, 0.82)',
+            get(r, g, b) {
+              const K = 1 - Math.max(r, g, b) / 255;
+              return K < 1 ? (1 - r / 255 - K) / (1 - K) : 0;
+            },
+            offset: offsets.c
+          },
+          {
+            color: 'rgba(185, 40, 105, 0.82)',
+            get(r, g, b) {
+              const K = 1 - Math.max(r, g, b) / 255;
+              return K < 1 ? (1 - g / 255 - K) / (1 - K) : 0;
+            },
+            offset: offsets.m
+          },
+          {
+            color: 'rgba(155, 155, 0, 0.82)',
+            get(r, g, b) {
+              const K = 1 - Math.max(r, g, b) / 255;
+              return K < 1 ? (1 - b / 255 - K) / (1 - K) : 0;
+            },
+            offset: offsets.y
+          },
+          {
+            color: 'rgba(20, 20, 20, 0.85)',
+            get(r, g, b) { return 1 - Math.max(r, g, b) / 255; },
+            offset: offsets.k
+          }
+        ];
+
+        for (const ch of channels) {
+          ctx.fillStyle = ch.color;
+          const scaleFactor = 1 + ch.offset / 100;
+          for (let cy = pitch / 2; cy < H; cy += pitch) {
+            for (let cx = pitch / 2; cx < W; cx += pitch) {
+              const ix = Math.min(W - 1, Math.round(cx));
+              const iy = Math.min(H - 1, Math.round(cy));
+              const i = (iy * W + ix) * 4;
+              const r = srcData.data[i], g = srcData.data[i+1], b = srcData.data[i+2];
+              const val = ch.get(r, g, b);
+              const dotR = Math.min(val * pitch * 0.48 * scaleFactor, pitch * 0.48);
+              if (dotR > 0.25) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /* ── Init ──────────────────────────────────────────────────────── */
+    drawHalftone();
+  </script>
+
+</body>
+</html>

@@ -38,6 +38,7 @@ import {
   OUTLINE_BLUR_H_COMPUTE,
   OUTLINE_BLUR_V_COMPUTE,
   OUTLINE_COMPOSITE_COMPUTE,
+  HALFTONE_COMPUTE,
 } from './shaders/shaders'
 import type {
   GpuLayer,
@@ -137,6 +138,9 @@ export class AdjustmentEncoder {
   // Outline texture cache
   private outlineTexCache: { tempA: GPUTexture; tempB: GPUTexture; tempC: GPUTexture } | null = null
 
+  // Halftone
+  private readonly halftonePipeline: GPUComputePipeline
+
   // Linear sampler for LUT texture lookups
   private readonly lutSampler: GPUSampler
 
@@ -192,6 +196,8 @@ export class AdjustmentEncoder {
     this.outlineBlurHPipeline     = createComputePipeline(device, OUTLINE_BLUR_H_COMPUTE,     'cs_outline_blur_h')
     this.outlineBlurVPipeline     = createComputePipeline(device, OUTLINE_BLUR_V_COMPUTE,     'cs_outline_blur_v')
     this.outlineCompositePipeline = createComputePipeline(device, OUTLINE_COMPOSITE_COMPUTE,  'cs_outline_composite')
+
+    this.halftonePipeline = createComputePipeline(device, HALFTONE_COMPUTE, 'cs_halftone')
 
     this.lutSampler = device.createSampler({
       magFilter: 'linear',
@@ -331,6 +337,19 @@ export class AdjustmentEncoder {
         entry.thickness, entry.position, entry.softness,
         entry.selMaskLayer,
       )
+      return
+    }
+    if (entry.kind === 'halftone') {
+      const buf = new ArrayBuffer(32)
+      const f   = new Float32Array(buf)
+      const u   = new Uint32Array(buf)
+      f[0] = entry.frequency
+      f[1] = entry.offsetC
+      f[2] = entry.offsetM
+      f[3] = entry.offsetY
+      f[4] = entry.offsetK
+      u[5] = entry.mode === 'color' ? 0 : 1
+      this.encodeComputePassRaw(encoder, this.halftonePipeline, srcTex, dstTex, buf, entry.selMaskLayer)
       return
     }
     const _exhaustive: never = entry

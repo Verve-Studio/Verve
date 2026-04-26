@@ -283,6 +283,20 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     }
   }
+  if (ls.adjustmentType === 'halftone') {
+    return {
+      kind:      'halftone',
+      layerId:   ls.id,
+      frequency: ls.params.frequency,
+      offsetC:   ls.params.offsetC,
+      offsetM:   ls.params.offsetM,
+      offsetY:   ls.params.offsetY,
+      offsetK:   ls.params.offsetK,
+      mode:      ls.params.mode,
+      visible:   ls.visible,
+      selMaskLayer: mask,
+    }
+  }
   const _exhaustive: never = ls
   return _exhaustive
 }

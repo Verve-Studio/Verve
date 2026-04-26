@@ -43,3 +43,4 @@ export {
   OUTLINE_BLUR_V_COMPUTE,
   OUTLINE_COMPOSITE_COMPUTE,
 } from './compute/adjustments/outline'
+export { HALFTONE_COMPUTE } from './compute/adjustments/halftone'

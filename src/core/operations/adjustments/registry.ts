@@ -198,4 +198,17 @@ export const ADJUSTMENT_REGISTRY = [
       softness:  0,
     },
   },
+  {
+    adjustmentType: 'halftone' as const,
+    label: 'Halftone…',
+    group: 'real-time-effects',
+    defaultParams: {
+      mode:      'color' as const,
+      frequency: 10,
+      offsetC:   0,
+      offsetM:   0,
+      offsetY:   0,
+      offsetK:   0,
+    },
+  },
 ] as const satisfies readonly AdjustmentRegistrationEntry[]

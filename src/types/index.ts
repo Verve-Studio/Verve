@@ -222,6 +222,7 @@ export type AdjustmentType =
   | 'drop-shadow'
   | 'glow'
   | 'outline'
+  | 'halftone'
 
 export type FilterKey =
   | 'gaussian-blur'
@@ -415,6 +416,14 @@ export interface AdjustmentParamsMap {
     /** Gaussian-approximation blur radius for the stroke mask, 0–50 px. Default: 0 */
     softness:  number
   }
+  'halftone': {
+    mode:      'color' | 'bw'
+    frequency: number
+    offsetC:   number
+    offsetM:   number
+    offsetY:   number
+    offsetK:   number
+  }
 }
 
 export type OutlineParams = AdjustmentParamsMap['outline']
@@ -565,6 +574,12 @@ export interface OutlineAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean
 }
 
+export interface HalftoneAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'halftone'
+  params: AdjustmentParamsMap['halftone']
+  hasMask: boolean
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -585,6 +600,7 @@ export type AdjustmentLayerState =
   | DropShadowAdjustmentLayer
   | GlowAdjustmentLayer
   | OutlineAdjustmentLayer
+  | HalftoneAdjustmentLayer
 
 export interface GroupLayerState {
   id:        string
