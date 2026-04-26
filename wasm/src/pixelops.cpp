@@ -100,16 +100,6 @@ float* pixelops_curves_histogram(
 }
 
 
-// ─── Remove Motion Blur (in-place) ──────────────────────────────────────────
-
-EMSCRIPTEN_KEEPALIVE
-void pixelops_remove_motion_blur(
-    uint8_t* pixels, int width, int height,
-    float angleDeg, int distance, int noiseReduction
-) {
-    filters_remove_motion_blur(pixels, width, height, angleDeg, distance, noiseReduction);
-}
-
 // ─── Affine Transform (src → dst, inverse-mapped) ───────────────────────────
 
 EMSCRIPTEN_KEEPALIVE

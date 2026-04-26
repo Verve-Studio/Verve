@@ -63,10 +63,6 @@ export interface PixelOpsModule {
     maskPtr: number
   ): number
 
-_pixelops_remove_motion_blur(
-    pixelsPtr: number, width: number, height: number,
-    angleDeg: number, distance: number, noiseReduction: number
-  ): void
 
   _pixelops_affine_transform(
     srcPtr: number, srcW: number, srcH: number,

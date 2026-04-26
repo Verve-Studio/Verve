@@ -14,7 +14,7 @@ import { FILTER_REDUCE_NOISE_COMPUTE, runReduceNoise } from '../shaders/compute/
 import { FILTER_LENS_FLARE_COMPUTE, runRenderLensFlare } from '../shaders/compute/filters/lens-flare'
 import { FILTER_PIXELATE_COMPUTE, runPixelate } from '../shaders/compute/filters/pixelate'
 import { createUniformBuffer, writeUniformBuffer } from '../utils'
-import { removeMotionBlur as wasmRemoveMotionBlur } from '../../../wasm/index'
+import { FILTER_RMB_PSF_COMPUTE, FILTER_RMB_RATIO_COMPUTE, FILTER_RMB_UPDATE_COMPUTE, FILTER_RMB_FINAL_COMPUTE } from '../shaders/compute/filters/remove-motion-blur'
 
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
@@ -42,14 +42,16 @@ class FilterComputeEngine {
   private readonly reduceNoisePipeline: GPUComputePipeline
   private readonly lensFlareRenderPipeline: GPUComputePipeline
   private readonly pixelatePipeline: GPUComputePipeline
+  private readonly rmbPsfPipeline: GPUComputePipeline
+  private readonly rmbRatioPipeline: GPUComputePipeline
+  private readonly rmbUpdatePipeline: GPUComputePipeline
+  private readonly rmbFinalPipeline: GPUComputePipeline
   private readonly intermediate0: GPUTexture
   private cachedKernelKey: string = ''
   private cachedKernelBuf: GPUBuffer | null = null
   private cachedKernelCount: number = 0
   pendingDestroyBuffers: GPUBuffer[] = []
   pendingDestroyTextures: GPUTexture[] = []
-  private rmbCache: Map<string, { hash: string; tex: GPUTexture }> = new Map()
-  rmbPendingBakes: Set<string> = new Set()
 
   private constructor(device: GPUDevice, width: number, height: number) {
     this.device = device
@@ -80,6 +82,10 @@ class FilterComputeEngine {
     this.reduceNoisePipeline = this.makePipeline(FILTER_REDUCE_NOISE_COMPUTE, 'cs_reduce_noise')
     this.lensFlareRenderPipeline = this.makePipeline(FILTER_LENS_FLARE_COMPUTE, 'cs_lens_flare')
     this.pixelatePipeline = this.makePipeline(FILTER_PIXELATE_COMPUTE, 'cs_pixelate')
+    this.rmbPsfPipeline    = this.makePipeline(FILTER_RMB_PSF_COMPUTE,    'cs_rmb_psf')
+    this.rmbRatioPipeline  = this.makePipeline(FILTER_RMB_RATIO_COMPUTE,  'cs_rmb_ratio')
+    this.rmbUpdatePipeline = this.makePipeline(FILTER_RMB_UPDATE_COMPUTE, 'cs_rmb_update')
+    this.rmbFinalPipeline  = this.makePipeline(FILTER_RMB_FINAL_COMPUTE,  'cs_rmb_final')
   }
 
   static create(device: GPUDevice, width: number, height: number): FilterComputeEngine {
@@ -90,8 +96,6 @@ class FilterComputeEngine {
     this.intermediate0.destroy()
     this.cachedKernelBuf?.destroy()
     this.cachedKernelBuf = null
-    for (const [, entry] of this.rmbCache) entry.tex.destroy()
-    this.rmbCache.clear()
   }
 
   private makePipeline(wgsl: string, entryPoint: string): GPUComputePipeline {
@@ -186,6 +190,16 @@ class FilterComputeEngine {
     this.pendingDestroyTextures = []
   }
 
+  private makeRgba16FloatTex(w: number, h: number): GPUTexture {
+    const tex = this.device.createTexture({
+      size: { width: w, height: h },
+      format: 'rgba16float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+    })
+    this.pendingDestroyTextures.push(tex)
+    return tex
+  }
+
   private makeRgba8Tex(w: number, h: number): GPUTexture {
     const tex = this.device.createTexture({
       size: { width: w, height: h },
@@ -268,13 +282,77 @@ class FilterComputeEngine {
     ], Math.ceil(w / 8), Math.ceil(h / 8))
   }
 
-  encodeRemoveMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, layerId: string): void {
-    const cached = this.rmbCache.get(layerId)
-    encoder.copyTextureToTexture(
-      { texture: cached != null ? cached.tex : srcTex, mipLevel: 0 },
-      { texture: dstTex, mipLevel: 0 },
-      { width: w, height: h, depthOrArrayLayers: 1 },
-    )
+  encodeRemoveMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number, noiseReduction: number): void {
+    const wgx = Math.ceil(w / 8)
+    const wgy = Math.ceil(h / 8)
+    // 8–15 iterations: noiseReduction=0 → 15, noiseReduction=100 → 8
+    const iterations = 8 + Math.round((100 - noiseReduction) / 14)
+    const blendBack  = (noiseReduction / 100) * 0.35
+
+    // PSF params reused for all forward and back-projection passes.
+    const buf = new ArrayBuffer(16)
+    const dv  = new DataView(buf)
+    dv.setFloat32(0, angle, true); dv.setUint32(4, distance, true)
+    dv.setUint32(8, 0, true); dv.setUint32(12, 0, true)
+    const psfParamsBuf = this.makeParamsBuf(buf)
+
+    // Final blend params.
+    const finalBuf = new ArrayBuffer(16)
+    const fdv = new DataView(finalBuf)
+    fdv.setFloat32(0, blendBack, true)
+    const finalParamsBuf = this.makeParamsBuf(finalBuf)
+
+    // Intermediate rgba16float textures for RL ping-pong.
+    const estA  = this.makeRgba16FloatTex(w, h) // even-iteration estimate output
+    const estB  = this.makeRgba16FloatTex(w, h) // odd-iteration estimate output
+    const temp  = this.makeRgba16FloatTex(w, h) // PSF scratch (reused for fwd + back)
+    const ratio = this.makeRgba16FloatTex(w, h) // ratio = input / PSF(est)
+
+    // For iteration 0 the estimate starts as srcTex (rgba8unorm — compatible with
+    // texture_2d<f32> reads). Subsequent iterations use the computed estA / estB.
+    let curEst: GPUTexture = srcTex
+
+    for (let i = 0; i < iterations; i++) {
+      const nextEst = (i % 2 === 0) ? estA : estB
+
+      // Step 1 — Forward PSF: PSF(curEst) → temp
+      this.encodePass(encoder, this.rmbPsfPipeline, [
+        { binding: 0, resource: curEst.createView() },
+        { binding: 1, resource: temp.createView() },
+        { binding: 2, resource: { buffer: psfParamsBuf } },
+      ], wgx, wgy)
+
+      // Step 2 — Ratio: input / PSF(est) → ratio
+      this.encodePass(encoder, this.rmbRatioPipeline, [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: temp.createView() },
+        { binding: 2, resource: ratio.createView() },
+      ], wgx, wgy)
+
+      // Step 3 — Back-projection: PSF(ratio) → temp  (reuse temp; ratio is done)
+      this.encodePass(encoder, this.rmbPsfPipeline, [
+        { binding: 0, resource: ratio.createView() },
+        { binding: 1, resource: temp.createView() },
+        { binding: 2, resource: { buffer: psfParamsBuf } },
+      ], wgx, wgy)
+
+      // Step 4 — RL Update: est * PSF(ratio) → nextEst
+      this.encodePass(encoder, this.rmbUpdatePipeline, [
+        { binding: 0, resource: curEst.createView() },
+        { binding: 1, resource: temp.createView() },
+        { binding: 2, resource: nextEst.createView() },
+      ], wgx, wgy)
+
+      curEst = nextEst
+    }
+
+    // Final pass — blend deblurred estimate with original → rgba8unorm dstTex
+    this.encodePass(encoder, this.rmbFinalPipeline, [
+      { binding: 0, resource: curEst.createView() },
+      { binding: 1, resource: srcTex.createView() },
+      { binding: 2, resource: dstTex.createView() },
+      { binding: 3, resource: { buffer: finalParamsBuf } },
+    ], wgx, wgy)
   }
 
   encodeLensBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number, bladeCount: number, bladeCurvature: number, rotation: number): void {
@@ -560,25 +638,6 @@ class FilterComputeEngine {
     ], Math.ceil(Math.ceil(w / blockSize) / 8), Math.ceil(Math.ceil(h / blockSize) / 8))
   }
 
-  async bakeRemoveMotionBlur(layerId: string, pixels: Uint8Array, width: number, height: number, angle: number, distance: number, noiseReduction: number): Promise<void> {
-    const result = await wasmRemoveMotionBlur(pixels, width, height, angle, distance, noiseReduction)
-    const old = this.rmbCache.get(layerId)
-    if (old != null) old.tex.destroy()
-    const tex = this.device.createTexture({
-      size: { width, height },
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
-    })
-    this.device.queue.writeTexture({ texture: tex }, result.buffer as ArrayBuffer, { bytesPerRow: width * 4 }, { width, height })
-    this.rmbCache.set(layerId, { hash: `${angle}|${distance}|${noiseReduction}`, tex })
-    this.rmbPendingBakes.delete(layerId)
-  }
-
-  clearRmbCache(layerId: string): void {
-    const entry = this.rmbCache.get(layerId)
-    if (entry != null) { entry.tex.destroy(); this.rmbCache.delete(layerId) }
-    this.rmbPendingBakes.delete(layerId)
-  }
 }
 
 // ─── Module-level singleton ───────────────────────────────────────────────────
@@ -612,7 +671,7 @@ export function encodeGaussianBlur(encoder: GPUCommandEncoder, srcTex: GPUTextur
 export function encodeBoxBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void { _engine!.encodeBoxBlur(encoder, srcTex, dstTex, w, h, radius) }
 export function encodeRadialBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, mode: number, amount: number, centerX: number, centerY: number, quality: number): void { _engine!.encodeRadialBlur(encoder, srcTex, dstTex, w, h, mode, amount, centerX, centerY, quality) }
 export function encodeMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number): void { _engine!.encodeMotionBlur(encoder, srcTex, dstTex, w, h, angle, distance) }
-export function encodeRemoveMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, layerId: string): void { _engine!.encodeRemoveMotionBlur(encoder, srcTex, dstTex, w, h, layerId) }
+export function encodeRemoveMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number, noiseReduction: number): void { _engine!.encodeRemoveMotionBlur(encoder, srcTex, dstTex, w, h, angle, distance, noiseReduction) }
 export function encodeLensBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number, bladeCount: number, bladeCurvature: number, rotation: number): void { _engine!.encodeLensBlur(encoder, srcTex, dstTex, w, h, radius, bladeCount, bladeCurvature, rotation) }
 export function encodeSharpen(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void { _engine!.encodeSharpen(encoder, srcTex, dstTex, w, h) }
 export function encodeSharpenMore(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void { _engine!.encodeSharpenMore(encoder, srcTex, dstTex, w, h) }
@@ -625,7 +684,5 @@ export function encodeBilateral(encoder: GPUCommandEncoder, srcTex: GPUTexture, 
 export function encodeReduceNoise(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, strength: number, preserveDetails: number, reduceColorNoise: number, sharpenDetails: number): void { _engine!.encodeReduceNoise(encoder, srcTex, dstTex, w, h, strength, preserveDetails, reduceColorNoise, sharpenDetails) }
 export function encodeClouds(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, scale: number, opacity: number, colorMode: number, fgColor: number, bgColor: number, seed: number): void { _engine!.encodeClouds(encoder, srcTex, dstTex, w, h, scale, opacity, colorMode, fgColor, bgColor, seed) }
 export function encodePixelate(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, blockSize: number): void { _engine!.encodePixelate(encoder, srcTex, dstTex, w, h, blockSize) }
-export async function bakeRemoveMotionBlur(layerId: string, pixels: Uint8Array, width: number, height: number, angle: number, distance: number, noiseReduction: number): Promise<void> { return _engine!.bakeRemoveMotionBlur(layerId, pixels, width, height, angle, distance, noiseReduction) }
-export function getRmbPendingBakes(): Set<string> { return _engine!.rmbPendingBakes }
-export function clearRmbCache(layerId: string): void { _engine!.clearRmbCache(layerId) }
+
 export function flushFilterComputeDestroys(): void { _engine?.flushPendingDestroys() }

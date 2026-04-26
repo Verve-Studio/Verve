@@ -252,14 +252,12 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'sharpen' as const,
     label: 'Sharpen',
     group: 'filters',
-    noPanel: true,
     defaultParams: {},
   },
   {
     adjustmentType: 'sharpen-more' as const,
     label: 'Sharpen More',
     group: 'filters',
-    noPanel: true,
     defaultParams: {},
   },
   {

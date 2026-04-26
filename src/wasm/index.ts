@@ -220,16 +220,6 @@ export async function computeHistogramRGBA(
   }
 }
 
-export async function removeMotionBlur(
-  pixels: Uint8Array, width: number, height: number,
-  angleDeg: number, distance: number, noiseReduction: number
-): Promise<Uint8Array> {
-  const m = await getPixelOps()
-  return withInPlaceBuffer(m, pixels, ptr =>
-    m._pixelops_remove_motion_blur(ptr, width, height, angleDeg, distance, noiseReduction)
-  )
-}
-
 /**
  * Affine transform via inverse-mapping.
  * invMatrix: [a, b, tx, c, d, ty] — maps output (x,y) to source (u,v):

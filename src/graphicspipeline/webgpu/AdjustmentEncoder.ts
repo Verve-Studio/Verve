@@ -52,7 +52,7 @@ import {
   encodeRemoveMotionBlur, encodeLensBlur, encodeSharpen, encodeSharpenMore,
   encodeUnsharpMask, encodeSmartSharpen, encodeAddNoise, encodeFilmGrain,
   encodeMedian, encodeBilateral, encodeReduceNoise, encodeClouds, encodePixelate,
-  bakeRemoveMotionBlur as filterComputeBakeRmb, getRmbPendingBakes, flushFilterComputeDestroys,
+  flushFilterComputeDestroys,
 } from './compute/filterCompute'
 
 // ─── Free helper ──────────────────────────────────────────────────────────────
@@ -378,7 +378,7 @@ export class AdjustmentEncoder {
       return
     }
     if (entry.kind === 'remove-motion-blur') {
-      encodeRemoveMotionBlur(encoder, srcTex, dstTex, w, h, entry.layerId)
+      encodeRemoveMotionBlur(encoder, srcTex, dstTex, w, h, entry.angle, entry.distance, entry.noiseReduction)
       return
     }
     if (entry.kind === 'lens-blur') {
@@ -438,14 +438,6 @@ export class AdjustmentEncoder {
     for (const buf of this.pendingDestroyBuffers) buf.destroy()
     this.pendingDestroyBuffers = []
     flushFilterComputeDestroys()
-  }
-
-  /** Returns layer IDs that need async WASM baking for remove-motion-blur. */
-  get pendingRemoveMotionBlurBakes(): Set<string> { return getRmbPendingBakes() }
-
-  /** Run async WASM baking for a remove-motion-blur layer. Call when pendingRemoveMotionBlurBakes is non-empty. */
-  async bakeRemoveMotionBlur(layerId: string, angle: number, distance: number, noiseReduction: number, srcPixels: Uint8Array): Promise<void> {
-    await filterComputeBakeRmb(layerId, srcPixels, this.pixelWidth, this.pixelHeight, angle, distance, noiseReduction)
   }
 
   /** Destroy all persistent GPU resources (pipelines, texture caches, LUT textures). */

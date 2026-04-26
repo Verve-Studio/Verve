@@ -27,6 +27,7 @@ export { RadialBlurPanel } from './windows/filters/RadialBlurPanel/RadialBlurPan
 export { MotionBlurPanel } from './windows/filters/MotionBlurPanel/MotionBlurPanel'
 export { RemoveMotionBlurPanel } from './windows/filters/RemoveMotionBlurPanel/RemoveMotionBlurPanel'
 export { LensBlurPanel } from './windows/filters/LensBlurPanel/LensBlurPanel'
+export { SharpenPanel } from './windows/filters/SharpenPanel/SharpenPanel'
 export { UnsharpMaskPanel } from './windows/filters/UnsharpMaskPanel/UnsharpMaskPanel'
 export { SmartSharpenPanel } from './windows/filters/SmartSharpenPanel/SmartSharpenPanel'
 export { AddNoisePanel } from './windows/filters/AddNoisePanel/AddNoisePanel'

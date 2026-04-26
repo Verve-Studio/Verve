@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { useAppContext } from '@/core/store/AppContext'
-import type { AdjustmentLayerState, BrightnessContrastAdjustmentLayer, HueSaturationAdjustmentLayer, ColorVibranceAdjustmentLayer, ColorBalanceAdjustmentLayer, BlackAndWhiteAdjustmentLayer, ColorTemperatureAdjustmentLayer, ColorInvertAdjustmentLayer, SelectiveColorAdjustmentLayer, CurvesAdjustmentLayer, ColorGradingAdjustmentLayer, ReduceColorsAdjustmentLayer, ColorDitheringAdjustmentLayer, BloomAdjustmentLayer, ChromaticAberrationAdjustmentLayer, HalationAdjustmentLayer, ColorKeyAdjustmentLayer, DropShadowAdjustmentLayer, GlowAdjustmentLayer, OutlineAdjustmentLayer, HalftoneAdjustmentLayer, GaussianBlurAdjustmentLayer, BoxBlurAdjustmentLayer, RadialBlurAdjustmentLayer, MotionBlurAdjustmentLayer, RemoveMotionBlurAdjustmentLayer, LensBlurAdjustmentLayer, UnsharpMaskAdjustmentLayer, SmartSharpenAdjustmentLayer, AddNoiseAdjustmentLayer, FilmGrainAdjustmentLayer, MedianFilterAdjustmentLayer, BilateralFilterAdjustmentLayer, ReduceNoiseAdjustmentLayer, CloudsAdjustmentLayer, PixelateAdjustmentLayer } from '@/types'
+import type { AdjustmentLayerState, BrightnessContrastAdjustmentLayer, HueSaturationAdjustmentLayer, ColorVibranceAdjustmentLayer, ColorBalanceAdjustmentLayer, BlackAndWhiteAdjustmentLayer, ColorTemperatureAdjustmentLayer, ColorInvertAdjustmentLayer, SelectiveColorAdjustmentLayer, CurvesAdjustmentLayer, ColorGradingAdjustmentLayer, ReduceColorsAdjustmentLayer, ColorDitheringAdjustmentLayer, BloomAdjustmentLayer, ChromaticAberrationAdjustmentLayer, HalationAdjustmentLayer, ColorKeyAdjustmentLayer, DropShadowAdjustmentLayer, GlowAdjustmentLayer, OutlineAdjustmentLayer, HalftoneAdjustmentLayer, GaussianBlurAdjustmentLayer, BoxBlurAdjustmentLayer, RadialBlurAdjustmentLayer, MotionBlurAdjustmentLayer, RemoveMotionBlurAdjustmentLayer, LensBlurAdjustmentLayer, SharpenAdjustmentLayer, SharpenMoreAdjustmentLayer, UnsharpMaskAdjustmentLayer, SmartSharpenAdjustmentLayer, AddNoiseAdjustmentLayer, FilmGrainAdjustmentLayer, MedianFilterAdjustmentLayer, BilateralFilterAdjustmentLayer, ReduceNoiseAdjustmentLayer, CloudsAdjustmentLayer, PixelateAdjustmentLayer } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import { BrightnessContrastPanel } from './adjustments/BrightnessContrastPanel/BrightnessContrastPanel'
 import { HueSaturationPanel } from './adjustments/HueSaturationPanel/HueSaturationPanel'
@@ -23,6 +23,7 @@ import { GlowOptions } from './effects/GlowOptions/GlowOptions'
 import { OutlineOptions } from './effects/OutlineOptions/OutlineOptions'
 import { HalftoneOptions } from './effects/HalftoneOptions/HalftoneOptions'
 import { GaussianBlurPanel } from './filters/GaussianBlurPanel/GaussianBlurPanel'
+import { SharpenPanel } from './filters/SharpenPanel/SharpenPanel'
 import { BoxBlurPanel } from './filters/BoxBlurPanel/BoxBlurPanel'
 import { RadialBlurPanel } from './filters/RadialBlurPanel/RadialBlurPanel'
 import { MotionBlurPanel } from './filters/MotionBlurPanel/MotionBlurPanel'
@@ -427,6 +428,12 @@ export function AdjustmentPanel({ onClose, canvasHandleRef }: ToolWindowProps): 
         )}
         {adjLayer.adjustmentType === 'lens-blur' && (
           <LensBlurPanel layer={adjLayer as LensBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'sharpen' && (
+          <SharpenPanel layer={adjLayer as SharpenAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'sharpen-more' && (
+          <SharpenPanel layer={adjLayer as SharpenMoreAdjustmentLayer} parentLayerName={parentLayerName} />
         )}
         {adjLayer.adjustmentType === 'unsharp-mask' && (
           <UnsharpMaskPanel layer={adjLayer as UnsharpMaskAdjustmentLayer} parentLayerName={parentLayerName} />
