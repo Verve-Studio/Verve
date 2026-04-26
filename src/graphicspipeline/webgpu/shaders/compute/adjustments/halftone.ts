@@ -73,7 +73,11 @@ fn screenDot(
 
   let dist = length(vec2f(sx - ccsx, sy - ccsy));
 
-  return select(0.0, 1.0, dist <= dot_r);
+  // Anti-aliased circle via SDF: 1-pixel smooth transition around the edge.
+  // step(0.001, dot_r) zeroes out sub-pixel dots that would otherwise leave
+  // a faint halo at the cell centre when ch_val ≈ 0.
+  let sdf = dist - dot_r;
+  return clamp(0.5 - sdf, 0.0, 1.0) * step(0.001, dot_r);
 }
 
 @compute @workgroup_size(8, 8)
@@ -101,7 +105,9 @@ fn cs_halftone(@builtin(global_invocation_id) id: vec3u) {
     let R = (1.0 - dotC) * (1.0 - dotK);
     let G = (1.0 - dotM) * (1.0 - dotK);
     let B = (1.0 - dotY) * (1.0 - dotK);
-    let A = select(0.0, 1.0, (dotC + dotM + dotY + dotK) > 0.0);
+    // Alpha is the maximum ink coverage across all channels so the edge
+    // anti-aliasing propagates correctly into the composite.
+    let A = max(max(dotC, dotM), max(dotY, dotK));
 
     out_color = vec4f(R, G, B, A);
   } else {
@@ -133,8 +139,9 @@ fn cs_halftone(@builtin(global_invocation_id) id: vec3u) {
     let dot_r = (1.0 - lum) * max_r;
 
     let dist = length(vec2f(sx - ccsx, sy - ccsy));
-    let has_dot = dist <= dot_r;
-    out_color = select(vec4f(0.0), vec4f(0.0, 0.0, 0.0, 1.0), has_dot);
+    let sdf   = dist - dot_r;
+    let alpha = clamp(0.5 - sdf, 0.0, 1.0) * step(0.001, dot_r);
+    out_color = vec4f(0.0, 0.0, 0.0, alpha);
   }
 
   if maskFlags.hasMask != 0u {
