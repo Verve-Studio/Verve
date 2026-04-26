@@ -104,6 +104,13 @@ export class WebGPURenderer {
   // Temporary GPU textures for isolated group compositing; flushed after submit.
   private pendingDestroyTextures: GPUTexture[] = []
 
+  // Reusable per-composite (uniform, vertex) buffer pool. encodeCompositeLayer would
+  // otherwise allocate two GPUBuffers (64-byte uniform + 48-byte vertex quad) per layer
+  // per frame. At 60+ fps with N layers, that's hundreds of allocations/sec churning the
+  // WebGPU driver. The pool grows once to historic peak and is then reused indefinitely.
+  private compositeBufferPool: { unif: GPUBuffer; pos: GPUBuffer }[] = []
+  private compositeBufferIndex = 0
+
   // ─── Render cache ──────────────────────────────────────────────────────────
   // Per-adjustment-group output textures: skip re-running adjustment passes when
   // the base layer's pixel content, position, mask, and params are all unchanged.
@@ -589,10 +596,35 @@ export class WebGPURenderer {
     encoder: GPUCommandEncoder,
     plan: RenderPlanEntry[],
   ): GPUTexture {
+    this.compositeBufferIndex = 0
     this.encodeClearTexture(encoder, this.pingTex)
     this.encodeClearTexture(encoder, this.pongTex)
     const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '')
     return src
+  }
+
+  /**
+   * Lend out a (uniform, vertex) buffer pair from the pool. Buffers persist across frames;
+   * the pool grows on demand and the index is reset at the start of each plan encoding.
+   * Avoids ~2 GPUBuffer allocations per layer per frame in encodeCompositeLayer.
+   */
+  private acquireCompositeBuffers(): { unif: GPUBuffer; pos: GPUBuffer } {
+    const i = this.compositeBufferIndex++
+    let pair = this.compositeBufferPool[i]
+    if (!pair) {
+      pair = {
+        unif: this.device.createBuffer({
+          size: 64,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        }),
+        pos: this.device.createBuffer({
+          size: 48, // 6 vertices * 2 floats * 4 bytes
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        }),
+      }
+      this.compositeBufferPool[i] = pair
+    }
+    return pair
   }
 
   private encodeSubPlan(
@@ -846,7 +878,8 @@ export class WebGPURenderer {
     //   offset 36: (pad to align _pad to 16)
     //   offset 48: _pad       : vec3u  (12 bytes)
     //   total size: 64 bytes
-    const unifBuf = createUniformBuffer(device, 64)
+    // Acquire a reusable (uniform, vertex) buffer pair from the pool.
+    const { unif: unifBuf, pos: posBuffer } = this.acquireCompositeBuffers()
     const unifView = new DataView(new ArrayBuffer(64))
     unifView.setFloat32( 0, layer.opacity, true)
     unifView.setUint32 ( 4, BLEND_MODE_INDEX[layer.blendMode] ?? 0, true)
@@ -874,17 +907,14 @@ export class WebGPURenderer {
     })
 
     // Position quad covering only the layer's canvas-space rect
-    const posBuffer = createVertexBuffer(
-      device,
-      new Float32Array([
-        ox,      oy,
-        ox + lw, oy,
-        ox,      oy + lh,
-        ox,      oy + lh,
-        ox + lw, oy,
-        ox + lw, oy + lh,
-      ])
-    )
+    device.queue.writeBuffer(posBuffer, 0, new Float32Array([
+      ox,      oy,
+      ox + lw, oy,
+      ox,      oy + lh,
+      ox,      oy + lh,
+      ox + lw, oy,
+      ox + lw, oy + lh,
+    ]))
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
@@ -899,8 +929,6 @@ export class WebGPURenderer {
     pass.setVertexBuffer(1, this.texCoordBuffer)
     pass.draw(6)
     pass.end()
-
-    this.pendingDestroyBuffers.push(unifBuf, posBuffer)
   }
 
   private encodeCompositeTexture(
@@ -973,6 +1001,11 @@ export class WebGPURenderer {
     this.adjGroupCache.clear()
     for (const entry of this.standaloneOpCache.values()) entry.tex.destroy()
     this.standaloneOpCache.clear()
+    for (const pair of this.compositeBufferPool) {
+      pair.unif.destroy()
+      pair.pos.destroy()
+    }
+    this.compositeBufferPool = []
     this.device.destroy()
   }
 }
