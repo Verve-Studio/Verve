@@ -1,44 +1,20 @@
-import { sharpen, sharpenMore } from '@/graphicspipeline/webgpu/compute/filterCompute'
 import type { AppAction } from '@/core/store/AppContext'
-import { selectionStore } from '@/core/store/selectionStore'
-import type { AppState, FilterKey, LayerState } from '@/types'
+import type { AdjustmentType, AppState, FilterKey, LayerState } from '@/types'
 import { isPixelLayer } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/canvasHandle'
 import type { Dispatch, MutableRefObject } from 'react'
 import { useCallback, useMemo } from 'react'
 
-// ─── Selection-aware compositing helper ───────────────────────────────────────
-
-function applySelectionComposite(
-  processed: Uint8Array,
-  original:  Uint8Array,
-  mask:      Uint8Array | null,
-): Uint8Array {
-  if (mask === null) return processed
-  const out = original.slice()
-  const pixelCount = mask.length
-  for (let i = 0; i < pixelCount; i++) {
-    if (mask[i] !== 0) {
-      const p = i * 4
-      out[p]     = processed[p]
-      out[p + 1] = processed[p + 1]
-      out[p + 2] = processed[p + 2]
-      out[p + 3] = processed[p + 3]
-    }
-  }
-  return out
-}
 
 interface UseFiltersOptions {
-  layers:             LayerState[]
-  activeLayerId:      string | null
-  onOpenFilterDialog: (key: FilterKey) => void
-  canvasHandleRef:    { readonly current: CanvasHandle | null }
-  canvasWidth:        number
-  canvasHeight:       number
-  captureHistory:     (label: string) => void
-  dispatch:           Dispatch<AppAction>
-  stateRef:           MutableRefObject<AppState>
+  layers:                  LayerState[]
+  activeLayerId:           string | null
+  onOpenFilterDialog:      (key: FilterKey) => void
+  onCreateFilterAdjLayer:  (type: AdjustmentType) => void
+  canvasHandleRef:         { readonly current: CanvasHandle | null }
+  captureHistory:          (label: string) => void
+  dispatch:                Dispatch<AppAction>
+  stateRef:                MutableRefObject<AppState>
 }
 
 export interface UseFiltersReturn {
@@ -48,8 +24,8 @@ export interface UseFiltersReturn {
   handleOpenRadialBlur:   () => void
   handleOpenMotionBlur:   () => void
   handleOpenRemoveMotionBlur: () => void
-  handleSharpen:          () => Promise<void>
-  handleSharpenMore:      () => Promise<void>
+  handleSharpen:          () => void
+  handleSharpenMore:      () => void
   handleOpenUnsharpMask:  () => void
   handleOpenSmartSharpen: () => void
   handleOpenAddNoise:     () => void
@@ -69,9 +45,8 @@ export function useFilters({
   layers,
   activeLayerId,
   onOpenFilterDialog,
+  onCreateFilterAdjLayer,
   canvasHandleRef,
-  canvasWidth,
-  canvasHeight,
   captureHistory,
   dispatch,
   stateRef,
@@ -83,107 +58,81 @@ export function useFilters({
   }, [layers, activeLayerId])
 
   const handleOpenGaussianBlur = useCallback(
-    () => onOpenFilterDialog('gaussian-blur'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('gaussian-blur'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenBoxBlur = useCallback(
-    () => onOpenFilterDialog('box-blur'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('box-blur'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenRadialBlur = useCallback(
-    () => onOpenFilterDialog('radial-blur'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('radial-blur'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenMotionBlur = useCallback(
-    () => onOpenFilterDialog('motion-blur'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('motion-blur'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenRemoveMotionBlur = useCallback(
-    () => onOpenFilterDialog('remove-motion-blur'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('remove-motion-blur'),
+    [onCreateFilterAdjLayer]
   )
 
-  const handleSharpen = useCallback(async (): Promise<void> => {
-    const handle = canvasHandleRef.current
-    if (!handle || activeLayerId == null) return
-    const original = handle.getLayerPixels(activeLayerId)
-    if (!original) return
-    const mask = selectionStore.mask ? selectionStore.mask.slice() : null
-    try {
-      const result = await sharpen(original.slice(), canvasWidth, canvasHeight)
-      const composed = applySelectionComposite(result, original, mask)
-      handle.writeLayerPixels(activeLayerId, composed)
-      captureHistory('Sharpen')
-    } catch (err) {
-      console.error('[useFilters] Sharpen failed:', err)
-      throw err
-    }
-  }, [canvasHandleRef, activeLayerId, canvasWidth, canvasHeight, captureHistory])
+  const handleSharpen = useCallback((): void => {
+    onCreateFilterAdjLayer('sharpen')
+  }, [onCreateFilterAdjLayer])
 
-  const handleSharpenMore = useCallback(async (): Promise<void> => {
-    const handle = canvasHandleRef.current
-    if (!handle || activeLayerId == null) return
-    const original = handle.getLayerPixels(activeLayerId)
-    if (!original) return
-    const mask = selectionStore.mask ? selectionStore.mask.slice() : null
-    try {
-      const result = await sharpenMore(original.slice(), canvasWidth, canvasHeight)
-      const composed = applySelectionComposite(result, original, mask)
-      handle.writeLayerPixels(activeLayerId, composed)
-      captureHistory('Sharpen More')
-    } catch (err) {
-      console.error('[useFilters] Sharpen More failed:', err)
-      throw err
-    }
-  }, [canvasHandleRef, activeLayerId, canvasWidth, canvasHeight, captureHistory])
+  const handleSharpenMore = useCallback((): void => {
+    onCreateFilterAdjLayer('sharpen-more')
+  }, [onCreateFilterAdjLayer])
 
   const handleOpenUnsharpMask = useCallback(
-    () => onOpenFilterDialog('unsharp-mask'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('unsharp-mask'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenSmartSharpen = useCallback(
-    () => onOpenFilterDialog('smart-sharpen'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('smart-sharpen'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenAddNoise = useCallback(
-    () => onOpenFilterDialog('add-noise'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('add-noise'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenFilmGrain = useCallback(
-    () => onOpenFilterDialog('film-grain'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('film-grain'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenLensBlur = useCallback(
-    () => onOpenFilterDialog('lens-blur'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('lens-blur'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenClouds = useCallback(
-    () => onOpenFilterDialog('clouds'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('clouds'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenMedianFilter = useCallback(
-    () => onOpenFilterDialog('median-filter'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('median-filter'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenBilateralFilter = useCallback(
-    () => onOpenFilterDialog('bilateral-filter'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('bilateral-filter'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenReduceNoise = useCallback(
-    () => onOpenFilterDialog('reduce-noise'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('reduce-noise'),
+    [onCreateFilterAdjLayer]
   )
 
   const handleOpenLensFlare = useCallback(
@@ -193,8 +142,8 @@ export function useFilters({
 
   const handleApplyLensFlare = useCallback((
     pixels: Uint8Array,
-    width:  number,
-    height: number,
+    _width:  number,
+    _height: number,
   ): void => {
     const handle        = canvasHandleRef.current
     const activeId      = stateRef.current.activeLayerId
@@ -212,13 +161,13 @@ export function useFilters({
   }, [canvasHandleRef, stateRef, captureHistory, dispatch])
 
   const handleInstantFilter = useCallback((key: FilterKey): void => {
-    if (key === 'sharpen')      void handleSharpen()
-    if (key === 'sharpen-more') void handleSharpenMore()
-  }, [handleSharpen, handleSharpenMore])
+    if (key === 'sharpen')      onCreateFilterAdjLayer('sharpen')
+    if (key === 'sharpen-more') onCreateFilterAdjLayer('sharpen-more')
+  }, [onCreateFilterAdjLayer])
 
   const handleOpenPixelate = useCallback(
-    () => onOpenFilterDialog('pixelate'),
-    [onOpenFilterDialog]
+    () => onCreateFilterAdjLayer('pixelate'),
+    [onCreateFilterAdjLayer]
   )
 
   return {

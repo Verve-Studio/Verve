@@ -810,8 +810,11 @@ void filters_remove_motion_blur(
         inB[i] = (float)pixels[i * 4 + 2];
     }
 
-    const int   iterations = std::max(2, 3 - noiseReduction / 50);
-    const float blendBack  = (noiseReduction / 100.f) * 0.5f;
+    // More iterations produce stronger deblurring.
+    // noiseReduction=0 → 25 iter (aggressive), noiseReduction=100 → 8 iter (gentle).
+    const int   iterations = 8 + (int)((100 - noiseReduction) * 17 / 100);
+    // Blend fraction: at high noiseReduction pull back toward original more.
+    const float blendBack  = (noiseReduction / 100.f) * 0.35f;
 
     std::vector<float> estR = inR, estG = inG, estB = inB;
     std::vector<float> blurR(N), blurG(N), blurB(N);
@@ -824,11 +827,11 @@ void filters_remove_motion_blur(
         directional_box_avg(estG.data(),  blurG.data(), width, height, angleDeg, distance);
         directional_box_avg(estB.data(),  blurB.data(), width, height, angleDeg, distance);
 
-        // Ratio: input / blurred
+        // Ratio: input / blurred — clamped to prevent wild updates
         for (int i = 0; i < N; ++i) {
-            ratR[i] = inR[i] / std::max(blurR[i], 0.001f);
-            ratG[i] = inG[i] / std::max(blurG[i], 0.001f);
-            ratB[i] = inB[i] / std::max(blurB[i], 0.001f);
+            ratR[i] = std::clamp(inR[i] / std::max(blurR[i], 1.f), 0.f, 8.f);
+            ratG[i] = std::clamp(inG[i] / std::max(blurG[i], 1.f), 0.f, 8.f);
+            ratB[i] = std::clamp(inB[i] / std::max(blurB[i], 1.f), 0.f, 8.f);
         }
 
         // Back-projection (PSF is symmetric so same convolution)

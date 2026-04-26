@@ -47,6 +47,13 @@ import type {
   ColorGradingPassParams,
 } from './types'
 import type { CurvesLuts } from '@/core/operations/adjustments/curves'
+import {
+  encodeGaussianBlur, encodeBoxBlur, encodeRadialBlur, encodeMotionBlur,
+  encodeRemoveMotionBlur, encodeLensBlur, encodeSharpen, encodeSharpenMore,
+  encodeUnsharpMask, encodeSmartSharpen, encodeAddNoise, encodeFilmGrain,
+  encodeMedian, encodeBilateral, encodeReduceNoise, encodeClouds, encodePixelate,
+  bakeRemoveMotionBlur as filterComputeBakeRmb, getRmbPendingBakes, flushFilterComputeDestroys,
+} from './compute/filterCompute'
 
 // ─── Free helper ──────────────────────────────────────────────────────────────
 
@@ -352,6 +359,76 @@ export class AdjustmentEncoder {
       this.encodeComputePassRaw(encoder, this.halftonePipeline, srcTex, dstTex, buf, entry.selMaskLayer)
       return
     }
+    const w = this.pixelWidth
+    const h = this.pixelHeight
+    if (entry.kind === 'gaussian-blur') {
+      encodeGaussianBlur(encoder, srcTex, dstTex, w, h, entry.radius)
+      return
+    }
+    if (entry.kind === 'box-blur') {
+      encodeBoxBlur(encoder, srcTex, dstTex, w, h, entry.radius)
+      return
+    }
+    if (entry.kind === 'radial-blur') {
+      encodeRadialBlur(encoder, srcTex, dstTex, w, h, entry.mode, entry.amount, entry.centerX, entry.centerY, entry.quality)
+      return
+    }
+    if (entry.kind === 'motion-blur') {
+      encodeMotionBlur(encoder, srcTex, dstTex, w, h, entry.angle, entry.distance)
+      return
+    }
+    if (entry.kind === 'remove-motion-blur') {
+      encodeRemoveMotionBlur(encoder, srcTex, dstTex, w, h, entry.layerId)
+      return
+    }
+    if (entry.kind === 'lens-blur') {
+      encodeLensBlur(encoder, srcTex, dstTex, w, h, entry.radius, entry.bladeCount, entry.bladeCurvature, entry.rotation)
+      return
+    }
+    if (entry.kind === 'sharpen') {
+      encodeSharpen(encoder, srcTex, dstTex, w, h)
+      return
+    }
+    if (entry.kind === 'sharpen-more') {
+      encodeSharpenMore(encoder, srcTex, dstTex, w, h)
+      return
+    }
+    if (entry.kind === 'unsharp-mask') {
+      encodeUnsharpMask(encoder, srcTex, dstTex, w, h, entry.amount, entry.radius, entry.threshold)
+      return
+    }
+    if (entry.kind === 'smart-sharpen') {
+      encodeSmartSharpen(encoder, srcTex, dstTex, w, h, entry.amount, entry.radius, entry.reduceNoise, entry.remove)
+      return
+    }
+    if (entry.kind === 'add-noise') {
+      encodeAddNoise(encoder, srcTex, dstTex, w, h, entry.amount, entry.distribution, entry.monochromatic, entry.seed)
+      return
+    }
+    if (entry.kind === 'film-grain') {
+      encodeFilmGrain(encoder, srcTex, dstTex, w, h, entry.grainSize, entry.intensity, entry.roughness, entry.seed)
+      return
+    }
+    if (entry.kind === 'median-filter') {
+      encodeMedian(encoder, srcTex, dstTex, w, h, entry.radius)
+      return
+    }
+    if (entry.kind === 'bilateral-filter') {
+      encodeBilateral(encoder, srcTex, dstTex, w, h, entry.radius, entry.sigmaSpatial, entry.sigmaColor)
+      return
+    }
+    if (entry.kind === 'reduce-noise') {
+      encodeReduceNoise(encoder, srcTex, dstTex, w, h, entry.strength, entry.preserveDetails, entry.reduceColorNoise, entry.sharpenDetails)
+      return
+    }
+    if (entry.kind === 'clouds') {
+      encodeClouds(encoder, srcTex, dstTex, w, h, entry.scale, entry.opacity, entry.colorMode, entry.fgColor, entry.bgColor, entry.seed)
+      return
+    }
+    if (entry.kind === 'pixelate') {
+      encodePixelate(encoder, srcTex, dstTex, w, h, entry.blockSize)
+      return
+    }
     const _exhaustive: never = entry
     return _exhaustive
   }
@@ -360,6 +437,15 @@ export class AdjustmentEncoder {
   flushPendingDestroys(): void {
     for (const buf of this.pendingDestroyBuffers) buf.destroy()
     this.pendingDestroyBuffers = []
+    flushFilterComputeDestroys()
+  }
+
+  /** Returns layer IDs that need async WASM baking for remove-motion-blur. */
+  get pendingRemoveMotionBlurBakes(): Set<string> { return getRmbPendingBakes() }
+
+  /** Run async WASM baking for a remove-motion-blur layer. Call when pendingRemoveMotionBlurBakes is non-empty. */
+  async bakeRemoveMotionBlur(layerId: string, angle: number, distance: number, noiseReduction: number, srcPixels: Uint8Array): Promise<void> {
+    await filterComputeBakeRmb(layerId, srcPixels, this.pixelWidth, this.pixelHeight, angle, distance, noiseReduction)
   }
 
   /** Destroy all persistent GPU resources (pipelines, texture caches, LUT textures). */

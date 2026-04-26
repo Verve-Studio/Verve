@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { useAppContext } from '@/core/store/AppContext'
-import type { AdjustmentLayerState, BrightnessContrastAdjustmentLayer, HueSaturationAdjustmentLayer, ColorVibranceAdjustmentLayer, ColorBalanceAdjustmentLayer, BlackAndWhiteAdjustmentLayer, ColorTemperatureAdjustmentLayer, ColorInvertAdjustmentLayer, SelectiveColorAdjustmentLayer, CurvesAdjustmentLayer, ColorGradingAdjustmentLayer, ReduceColorsAdjustmentLayer, ColorDitheringAdjustmentLayer, BloomAdjustmentLayer, ChromaticAberrationAdjustmentLayer, HalationAdjustmentLayer, ColorKeyAdjustmentLayer, DropShadowAdjustmentLayer, GlowAdjustmentLayer, OutlineAdjustmentLayer, HalftoneAdjustmentLayer } from '@/types'
+import type { AdjustmentLayerState, BrightnessContrastAdjustmentLayer, HueSaturationAdjustmentLayer, ColorVibranceAdjustmentLayer, ColorBalanceAdjustmentLayer, BlackAndWhiteAdjustmentLayer, ColorTemperatureAdjustmentLayer, ColorInvertAdjustmentLayer, SelectiveColorAdjustmentLayer, CurvesAdjustmentLayer, ColorGradingAdjustmentLayer, ReduceColorsAdjustmentLayer, ColorDitheringAdjustmentLayer, BloomAdjustmentLayer, ChromaticAberrationAdjustmentLayer, HalationAdjustmentLayer, ColorKeyAdjustmentLayer, DropShadowAdjustmentLayer, GlowAdjustmentLayer, OutlineAdjustmentLayer, HalftoneAdjustmentLayer, GaussianBlurAdjustmentLayer, BoxBlurAdjustmentLayer, RadialBlurAdjustmentLayer, MotionBlurAdjustmentLayer, RemoveMotionBlurAdjustmentLayer, LensBlurAdjustmentLayer, UnsharpMaskAdjustmentLayer, SmartSharpenAdjustmentLayer, AddNoiseAdjustmentLayer, FilmGrainAdjustmentLayer, MedianFilterAdjustmentLayer, BilateralFilterAdjustmentLayer, ReduceNoiseAdjustmentLayer, CloudsAdjustmentLayer, PixelateAdjustmentLayer } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import { BrightnessContrastPanel } from './adjustments/BrightnessContrastPanel/BrightnessContrastPanel'
 import { HueSaturationPanel } from './adjustments/HueSaturationPanel/HueSaturationPanel'
@@ -22,6 +22,21 @@ import { DropShadowOptions } from './effects/DropShadowOptions/DropShadowOptions
 import { GlowOptions } from './effects/GlowOptions/GlowOptions'
 import { OutlineOptions } from './effects/OutlineOptions/OutlineOptions'
 import { HalftoneOptions } from './effects/HalftoneOptions/HalftoneOptions'
+import { GaussianBlurPanel } from './filters/GaussianBlurPanel/GaussianBlurPanel'
+import { BoxBlurPanel } from './filters/BoxBlurPanel/BoxBlurPanel'
+import { RadialBlurPanel } from './filters/RadialBlurPanel/RadialBlurPanel'
+import { MotionBlurPanel } from './filters/MotionBlurPanel/MotionBlurPanel'
+import { RemoveMotionBlurPanel } from './filters/RemoveMotionBlurPanel/RemoveMotionBlurPanel'
+import { LensBlurPanel } from './filters/LensBlurPanel/LensBlurPanel'
+import { UnsharpMaskPanel } from './filters/UnsharpMaskPanel/UnsharpMaskPanel'
+import { SmartSharpenPanel } from './filters/SmartSharpenPanel/SmartSharpenPanel'
+import { AddNoisePanel } from './filters/AddNoisePanel/AddNoisePanel'
+import { FilmGrainPanel } from './filters/FilmGrainPanel/FilmGrainPanel'
+import { MedianFilterPanel } from './filters/MedianFilterPanel/MedianFilterPanel'
+import { BilateralFilterPanel } from './filters/BilateralFilterPanel/BilateralFilterPanel'
+import { ReduceNoisePanel } from './filters/ReduceNoisePanel/ReduceNoisePanel'
+import { CloudsPanel } from './filters/CloudsPanel/CloudsPanel'
+import { PixelatePanel } from './filters/PixelatePanel/PixelatePanel'
 import { ToolWindow } from '@/ux'
 import styles from './ToolWindow.module.scss'
 
@@ -56,6 +71,23 @@ function toolTitle(layer: AdjustmentLayerState): string {
     case 'glow':                 return 'Glow'
     case 'outline':              return 'Outline'
     case 'halftone':             return 'Halftone'
+    case 'gaussian-blur':        return 'Gaussian Blur'
+    case 'box-blur':             return 'Box Blur'
+    case 'radial-blur':          return 'Radial Blur'
+    case 'motion-blur':          return 'Motion Blur'
+    case 'remove-motion-blur':   return 'Remove Motion Blur'
+    case 'lens-blur':            return 'Lens Blur'
+    case 'sharpen':              return 'Sharpen'
+    case 'sharpen-more':         return 'Sharpen More'
+    case 'unsharp-mask':         return 'Unsharp Mask'
+    case 'smart-sharpen':        return 'Smart Sharpen'
+    case 'add-noise':            return 'Add Noise'
+    case 'film-grain':           return 'Film Grain'
+    case 'median-filter':        return 'Median'
+    case 'bilateral-filter':     return 'Bilateral Filter'
+    case 'reduce-noise':         return 'Reduce Noise'
+    case 'clouds':               return 'Clouds'
+    case 'pixelate':             return 'Pixelate'
   }
 }
 
@@ -377,6 +409,51 @@ export function AdjustmentPanel({ onClose, canvasHandleRef }: ToolWindowProps): 
             layer={adjLayer as HalftoneAdjustmentLayer}
             parentLayerName={parentLayerName}
           />
+        )}
+        {adjLayer.adjustmentType === 'gaussian-blur' && (
+          <GaussianBlurPanel layer={adjLayer as GaussianBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'box-blur' && (
+          <BoxBlurPanel layer={adjLayer as BoxBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'radial-blur' && (
+          <RadialBlurPanel layer={adjLayer as RadialBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'motion-blur' && (
+          <MotionBlurPanel layer={adjLayer as MotionBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'remove-motion-blur' && (
+          <RemoveMotionBlurPanel layer={adjLayer as RemoveMotionBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'lens-blur' && (
+          <LensBlurPanel layer={adjLayer as LensBlurAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'unsharp-mask' && (
+          <UnsharpMaskPanel layer={adjLayer as UnsharpMaskAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'smart-sharpen' && (
+          <SmartSharpenPanel layer={adjLayer as SmartSharpenAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'add-noise' && (
+          <AddNoisePanel layer={adjLayer as AddNoiseAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'film-grain' && (
+          <FilmGrainPanel layer={adjLayer as FilmGrainAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'median-filter' && (
+          <MedianFilterPanel layer={adjLayer as MedianFilterAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'bilateral-filter' && (
+          <BilateralFilterPanel layer={adjLayer as BilateralFilterAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'reduce-noise' && (
+          <ReduceNoisePanel layer={adjLayer as ReduceNoiseAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'clouds' && (
+          <CloudsPanel layer={adjLayer as CloudsAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'pixelate' && (
+          <PixelatePanel layer={adjLayer as PixelateAdjustmentLayer} parentLayerName={parentLayerName} />
         )}
       </div>
     </ToolWindow>

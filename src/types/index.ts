@@ -223,6 +223,23 @@ export type AdjustmentType =
   | 'glow'
   | 'outline'
   | 'halftone'
+  | 'gaussian-blur'
+  | 'box-blur'
+  | 'radial-blur'
+  | 'motion-blur'
+  | 'remove-motion-blur'
+  | 'lens-blur'
+  | 'sharpen'
+  | 'sharpen-more'
+  | 'unsharp-mask'
+  | 'smart-sharpen'
+  | 'add-noise'
+  | 'film-grain'
+  | 'median-filter'
+  | 'bilateral-filter'
+  | 'reduce-noise'
+  | 'clouds'
+  | 'pixelate'
 
 export type FilterKey =
   | 'gaussian-blur'
@@ -424,6 +441,51 @@ export interface AdjustmentParamsMap {
     offsetY:   number
     offsetK:   number
   }
+  'gaussian-blur':      { radius: number }
+  'box-blur':           { radius: number }
+  'radial-blur': {
+    mode:    0 | 1
+    amount:  number
+    centerX: number
+    centerY: number
+    quality: 0 | 1 | 2
+  }
+  'motion-blur': { angle: number; distance: number }
+  'remove-motion-blur': { angle: number; distance: number; noiseReduction: number }
+  'lens-blur': { radius: number; bladeCount: number; bladeCurvature: number; rotation: number }
+  'sharpen':      Record<string, never>
+  'sharpen-more': Record<string, never>
+  'unsharp-mask': { amount: number; radius: number; threshold: number }
+  'smart-sharpen': {
+    amount:      number
+    radius:      number
+    reduceNoise: number
+    remove:      'gaussian' | 'lens-blur'
+  }
+  'add-noise': {
+    amount:         number
+    distribution:   'uniform' | 'gaussian'
+    monochromatic:  boolean
+    seed:           number
+  }
+  'film-grain': { grainSize: number; intensity: number; roughness: number; seed: number }
+  'median-filter':    { radius: number }
+  'bilateral-filter': { radius: number; sigmaSpatial: number; sigmaColor: number }
+  'reduce-noise': {
+    strength:           number
+    preserveDetails:    number
+    reduceColorNoise:   number
+    sharpenDetails:     number
+  }
+  'clouds': {
+    scale:     number
+    opacity:   number
+    colorMode: 'grayscale' | 'color'
+    fgR: number; fgG: number; fgB: number
+    bgR: number; bgG: number; bgB: number
+    seed: number
+  }
+  'pixelate': { blockSize: number }
 }
 
 export type OutlineParams = AdjustmentParamsMap['outline']
@@ -580,6 +642,108 @@ export interface HalftoneAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean
 }
 
+export interface GaussianBlurAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'gaussian-blur'
+  params: AdjustmentParamsMap['gaussian-blur']
+  hasMask: boolean
+}
+
+export interface BoxBlurAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'box-blur'
+  params: AdjustmentParamsMap['box-blur']
+  hasMask: boolean
+}
+
+export interface RadialBlurAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'radial-blur'
+  params: AdjustmentParamsMap['radial-blur']
+  hasMask: boolean
+}
+
+export interface MotionBlurAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'motion-blur'
+  params: AdjustmentParamsMap['motion-blur']
+  hasMask: boolean
+}
+
+export interface RemoveMotionBlurAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'remove-motion-blur'
+  params: AdjustmentParamsMap['remove-motion-blur']
+  hasMask: boolean
+}
+
+export interface LensBlurAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'lens-blur'
+  params: AdjustmentParamsMap['lens-blur']
+  hasMask: boolean
+}
+
+export interface SharpenAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'sharpen'
+  params: AdjustmentParamsMap['sharpen']
+  hasMask: boolean
+}
+
+export interface SharpenMoreAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'sharpen-more'
+  params: AdjustmentParamsMap['sharpen-more']
+  hasMask: boolean
+}
+
+export interface UnsharpMaskAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'unsharp-mask'
+  params: AdjustmentParamsMap['unsharp-mask']
+  hasMask: boolean
+}
+
+export interface SmartSharpenAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'smart-sharpen'
+  params: AdjustmentParamsMap['smart-sharpen']
+  hasMask: boolean
+}
+
+export interface AddNoiseAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'add-noise'
+  params: AdjustmentParamsMap['add-noise']
+  hasMask: boolean
+}
+
+export interface FilmGrainAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'film-grain'
+  params: AdjustmentParamsMap['film-grain']
+  hasMask: boolean
+}
+
+export interface MedianFilterAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'median-filter'
+  params: AdjustmentParamsMap['median-filter']
+  hasMask: boolean
+}
+
+export interface BilateralFilterAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'bilateral-filter'
+  params: AdjustmentParamsMap['bilateral-filter']
+  hasMask: boolean
+}
+
+export interface ReduceNoiseAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'reduce-noise'
+  params: AdjustmentParamsMap['reduce-noise']
+  hasMask: boolean
+}
+
+export interface CloudsAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'clouds'
+  params: AdjustmentParamsMap['clouds']
+  hasMask: boolean
+}
+
+export interface PixelateAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'pixelate'
+  params: AdjustmentParamsMap['pixelate']
+  hasMask: boolean
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -601,6 +765,23 @@ export type AdjustmentLayerState =
   | GlowAdjustmentLayer
   | OutlineAdjustmentLayer
   | HalftoneAdjustmentLayer
+  | GaussianBlurAdjustmentLayer
+  | BoxBlurAdjustmentLayer
+  | RadialBlurAdjustmentLayer
+  | MotionBlurAdjustmentLayer
+  | RemoveMotionBlurAdjustmentLayer
+  | LensBlurAdjustmentLayer
+  | SharpenAdjustmentLayer
+  | SharpenMoreAdjustmentLayer
+  | UnsharpMaskAdjustmentLayer
+  | SmartSharpenAdjustmentLayer
+  | AddNoiseAdjustmentLayer
+  | FilmGrainAdjustmentLayer
+  | MedianFilterAdjustmentLayer
+  | BilateralFilterAdjustmentLayer
+  | ReduceNoiseAdjustmentLayer
+  | CloudsAdjustmentLayer
+  | PixelateAdjustmentLayer
 
 export interface GroupLayerState {
   id:        string

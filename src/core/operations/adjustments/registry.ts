@@ -6,6 +6,7 @@ export interface AdjustmentRegistrationEntry<T extends AdjustmentType = Adjustme
   label: string
   defaultParams: AdjustmentParamsMap[T]
   group?: string
+  noPanel?: true
 }
 
 export const ADJUSTMENT_REGISTRY = [
@@ -210,5 +211,109 @@ export const ADJUSTMENT_REGISTRY = [
       offsetY:   0,
       offsetK:   0,
     },
+  },
+  {
+    adjustmentType: 'gaussian-blur' as const,
+    label: 'Gaussian Blur…',
+    group: 'filters',
+    defaultParams: { radius: 5 },
+  },
+  {
+    adjustmentType: 'box-blur' as const,
+    label: 'Box Blur…',
+    group: 'filters',
+    defaultParams: { radius: 5 },
+  },
+  {
+    adjustmentType: 'radial-blur' as const,
+    label: 'Radial Blur…',
+    group: 'filters',
+    defaultParams: { mode: 0, amount: 10, centerX: 0.5, centerY: 0.5, quality: 1 },
+  },
+  {
+    adjustmentType: 'motion-blur' as const,
+    label: 'Motion Blur…',
+    group: 'filters',
+    defaultParams: { angle: 0, distance: 10 },
+  },
+  {
+    adjustmentType: 'remove-motion-blur' as const,
+    label: 'Remove Motion Blur…',
+    group: 'filters',
+    defaultParams: { angle: 0, distance: 10, noiseReduction: 10 },
+  },
+  {
+    adjustmentType: 'lens-blur' as const,
+    label: 'Lens Blur…',
+    group: 'filters',
+    defaultParams: { radius: 10, bladeCount: 6, bladeCurvature: 0, rotation: 0 },
+  },
+  {
+    adjustmentType: 'sharpen' as const,
+    label: 'Sharpen',
+    group: 'filters',
+    noPanel: true,
+    defaultParams: {},
+  },
+  {
+    adjustmentType: 'sharpen-more' as const,
+    label: 'Sharpen More',
+    group: 'filters',
+    noPanel: true,
+    defaultParams: {},
+  },
+  {
+    adjustmentType: 'unsharp-mask' as const,
+    label: 'Unsharp Mask…',
+    group: 'filters',
+    defaultParams: { amount: 50, radius: 2, threshold: 0 },
+  },
+  {
+    adjustmentType: 'smart-sharpen' as const,
+    label: 'Smart Sharpen…',
+    group: 'filters',
+    defaultParams: { amount: 100, radius: 3, reduceNoise: 0, remove: 'gaussian' as const },
+  },
+  {
+    adjustmentType: 'add-noise' as const,
+    label: 'Add Noise…',
+    group: 'filters',
+    defaultParams: { amount: 25, distribution: 'uniform' as const, monochromatic: false, seed: 0 },
+  },
+  {
+    adjustmentType: 'film-grain' as const,
+    label: 'Film Grain…',
+    group: 'filters',
+    defaultParams: { grainSize: 1, intensity: 25, roughness: 50, seed: 0 },
+  },
+  {
+    adjustmentType: 'median-filter' as const,
+    label: 'Median Filter…',
+    group: 'filters',
+    defaultParams: { radius: 1 },
+  },
+  {
+    adjustmentType: 'bilateral-filter' as const,
+    label: 'Bilateral Filter…',
+    group: 'filters',
+    defaultParams: { radius: 5, sigmaSpatial: 10, sigmaColor: 30 },
+  },
+  {
+    adjustmentType: 'reduce-noise' as const,
+    label: 'Reduce Noise…',
+    group: 'filters',
+    defaultParams: { strength: 6, preserveDetails: 25, reduceColorNoise: 50, sharpenDetails: 0 },
+  },
+  {
+    adjustmentType: 'clouds' as const,
+    label: 'Clouds…',
+    group: 'filters',
+    defaultParams: { scale: 100, opacity: 100, colorMode: 'grayscale' as const, fgR: 0, fgG: 0, fgB: 0, bgR: 255, bgG: 255, bgB: 255, seed: 0 },
+  },
+  {
+    adjustmentType: 'pixelate' as const,
+    label: 'Pixelate…',
+    group: 'filters',
+    defaultParams: { blockSize: 10 },
   },
 ] as const satisfies readonly AdjustmentRegistrationEntry[]

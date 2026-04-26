@@ -167,6 +167,53 @@ export type AdjustmentRenderOp =
       visible:   boolean
       selMaskLayer?: GpuLayer
     }
+  | { kind: 'gaussian-blur';      layerId: string; radius: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'box-blur';           layerId: string; radius: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | {
+      kind: 'radial-blur'
+      layerId:  string
+      mode:     number
+      amount:   number
+      centerX:  number
+      centerY:  number
+      quality:  number
+      visible:  boolean
+      selMaskLayer?: GpuLayer
+    }
+  | { kind: 'motion-blur';        layerId: string; angle: number; distance: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'remove-motion-blur'; layerId: string; angle: number; distance: number; noiseReduction: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'lens-blur';          layerId: string; radius: number; bladeCount: number; bladeCurvature: number; rotation: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'sharpen';            layerId: string; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'sharpen-more';       layerId: string; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'unsharp-mask';       layerId: string; amount: number; radius: number; threshold: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | {
+      kind:        'smart-sharpen'
+      layerId:     string
+      amount:      number
+      radius:      number
+      reduceNoise: number
+      remove:      number
+      visible:     boolean
+      selMaskLayer?: GpuLayer
+    }
+  | { kind: 'add-noise';          layerId: string; amount: number; distribution: number; monochromatic: number; seed: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'film-grain';         layerId: string; grainSize: number; intensity: number; roughness: number; seed: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'median-filter';      layerId: string; radius: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'bilateral-filter';   layerId: string; radius: number; sigmaSpatial: number; sigmaColor: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | { kind: 'reduce-noise';       layerId: string; strength: number; preserveDetails: number; reduceColorNoise: number; sharpenDetails: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | {
+      kind:      'clouds'
+      layerId:   string
+      scale:     number
+      opacity:   number
+      colorMode: number
+      fgColor:   number
+      bgColor:   number
+      seed:      number
+      visible:   boolean
+      selMaskLayer?: GpuLayer
+    }
+  | { kind: 'pixelate'; layerId: string; blockSize: number; visible: boolean; selMaskLayer?: GpuLayer }
 
 // ─── RenderPlanEntry ──────────────────────────────────────────────────────────
 

@@ -1,7 +1,8 @@
 import { ADJUSTMENT_REGISTRY } from '@/core/operations/adjustments/registry'
+import type { AdjustmentRegistrationEntry } from '@/core/operations/adjustments/registry'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import type { AppAction } from '@/core/store/AppContext'
-import type { AdjustmentLayerState, AdjustmentType, AppState, LayerState } from '@/types'
+import type { AdjustmentLayerState, AdjustmentParamsMap, AdjustmentType, AppState, LayerState } from '@/types'
 import type { Dispatch, MutableRefObject } from 'react'
 import { useCallback, useMemo } from 'react'
 
@@ -18,7 +19,7 @@ interface UseAdjustmentsOptions {
 }
 
 export interface UseAdjustmentsReturn {
-  handleCreateAdjustmentLayer:             (adjustmentType: AdjustmentType) => void
+  handleCreateAdjustmentLayer:             <T extends AdjustmentType>(adjustmentType: T, paramOverrides?: Partial<AdjustmentParamsMap[T]>) => void
   handleCreateColorDitheringWithSetup:     (addReduceColors: boolean) => void
   handleOpenAdjustmentPanel:               (layerId: string) => void
   handleCloseAdjustmentPanel:              () => void
@@ -61,7 +62,7 @@ export function useAdjustments({
     dispatch({ type: 'SET_OPEN_ADJUSTMENT', payload: null })
   }, [stateRef, captureHistory, dispatch])
 
-  const handleCreateAdjustmentLayer = useCallback((adjustmentType: AdjustmentType): void => {
+  const handleCreateAdjustmentLayer = useCallback(<T extends AdjustmentType>(adjustmentType: T, paramOverrides?: Partial<AdjustmentParamsMap[T]>): void => {
     const { activeLayerId, layers, openAdjustmentLayerId } = stateRef.current
 
     if (openAdjustmentLayerId !== null) {
@@ -86,7 +87,7 @@ export function useAdjustments({
       return
     }
 
-    const entry = ADJUSTMENT_REGISTRY.find(e => e.adjustmentType === adjustmentType)
+    const entry = (ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]).find(e => e.adjustmentType === adjustmentType)
     if (!entry) return
 
     const newId = `adj-${Date.now()}`
@@ -100,12 +101,14 @@ export function useAdjustments({
       type: 'adjustment' as const,
       parentId: effectiveParentId,
       adjustmentType: entry.adjustmentType,
-      params: { ...entry.defaultParams },
+      params: { ...entry.defaultParams, ...(paramOverrides ?? {}) },
       hasMask,
     } as AdjustmentLayerState
 
     dispatch({ type: 'ADD_ADJUSTMENT_LAYER', payload: newLayer })
-    dispatch({ type: 'SET_OPEN_ADJUSTMENT', payload: newId })
+    if (!entry.noPanel) {
+      dispatch({ type: 'SET_OPEN_ADJUSTMENT', payload: newId })
+    }
 
     if (selPixels && registerAdjMask) {
       registerAdjMask(newId, selPixels)

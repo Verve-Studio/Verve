@@ -297,6 +297,69 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     }
   }
+  if (ls.adjustmentType === 'gaussian-blur') {
+    return { kind: 'gaussian-blur', layerId: ls.id, radius: ls.params.radius, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'box-blur') {
+    return { kind: 'box-blur', layerId: ls.id, radius: ls.params.radius, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'radial-blur') {
+    const { mode, amount, centerX, centerY, quality } = ls.params
+    return { kind: 'radial-blur', layerId: ls.id, mode, amount, centerX, centerY, quality, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'motion-blur') {
+    return { kind: 'motion-blur', layerId: ls.id, angle: ls.params.angle, distance: ls.params.distance, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'remove-motion-blur') {
+    const { angle, distance, noiseReduction } = ls.params
+    return { kind: 'remove-motion-blur', layerId: ls.id, angle, distance, noiseReduction, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'lens-blur') {
+    const { radius, bladeCount, bladeCurvature, rotation } = ls.params
+    return { kind: 'lens-blur', layerId: ls.id, radius, bladeCount, bladeCurvature, rotation, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'sharpen') {
+    return { kind: 'sharpen', layerId: ls.id, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'sharpen-more') {
+    return { kind: 'sharpen-more', layerId: ls.id, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'unsharp-mask') {
+    const { amount, radius, threshold } = ls.params
+    return { kind: 'unsharp-mask', layerId: ls.id, amount, radius, threshold, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'smart-sharpen') {
+    const { amount, radius, reduceNoise, remove } = ls.params
+    return { kind: 'smart-sharpen', layerId: ls.id, amount, radius, reduceNoise, remove: remove === 'gaussian' ? 0 : 1, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'add-noise') {
+    const { amount, distribution, monochromatic, seed } = ls.params
+    return { kind: 'add-noise', layerId: ls.id, amount, distribution: distribution === 'gaussian' ? 1 : 0, monochromatic: monochromatic ? 1 : 0, seed, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'film-grain') {
+    const { grainSize, intensity, roughness, seed } = ls.params
+    return { kind: 'film-grain', layerId: ls.id, grainSize, intensity, roughness, seed, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'median-filter') {
+    return { kind: 'median-filter', layerId: ls.id, radius: ls.params.radius, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'bilateral-filter') {
+    const { radius, sigmaSpatial, sigmaColor } = ls.params
+    return { kind: 'bilateral-filter', layerId: ls.id, radius, sigmaSpatial, sigmaColor, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'reduce-noise') {
+    const { strength, preserveDetails, reduceColorNoise, sharpenDetails } = ls.params
+    return { kind: 'reduce-noise', layerId: ls.id, strength, preserveDetails, reduceColorNoise, sharpenDetails, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'clouds') {
+    const { scale, opacity, colorMode, fgR, fgG, fgB, bgR, bgG, bgB, seed } = ls.params
+    const fgColor = (fgR | (fgG << 8) | (fgB << 16)) >>> 0
+    const bgColor = (bgR | (bgG << 8) | (bgB << 16)) >>> 0
+    return { kind: 'clouds', layerId: ls.id, scale, opacity, colorMode: colorMode === 'color' ? 1 : 0, fgColor, bgColor, seed, visible: ls.visible, selMaskLayer: mask }
+  }
+  if (ls.adjustmentType === 'pixelate') {
+    return { kind: 'pixelate', layerId: ls.id, blockSize: ls.params.blockSize, visible: ls.visible, selMaskLayer: mask }
+  }
   const _exhaustive: never = ls
   return _exhaustive
 }
