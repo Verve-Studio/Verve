@@ -155,8 +155,12 @@ function createMoveHandler(): ToolHandler {
       if (originalPixels) {
         applySelectionMove(dx, dy, ctx)
       } else if (textLayerSnapshot) {
-        // Text layer: re-rasterize at preview position (no GL offset, no state update)
-        ctx.previewTextAt(textLayerSnapshot, textLayerOrigX + dx, textLayerOrigY + dy)
+        // Text layer: shift via GPU offset (same as pixel layers) to avoid
+        // re-rasterizing on every frame. Final rasterize happens on pointer-up.
+        ctx.renderer.setPreviewMode(true)
+        ctx.layer.offsetX = dx
+        ctx.layer.offsetY = dy
+        ctx.render(ctx.layers)
       } else if (shapeLayerSnapshot) {
         // Shape layer: shift via GPU offset (same as pixel layers) to avoid
         // re-rasterizing on every frame. Final rasterize happens on pointer-up.
@@ -188,7 +192,11 @@ function createMoveHandler(): ToolHandler {
         originalPixels = null
         originalMask   = null
       } else if (textLayerSnapshot) {
-        // Ensure final position is rasterized before committing to state
+        // Reset offset before rasterizing so the text bakes its position into
+        // pixel data at offset (0, 0), matching the normal text layer invariant.
+        ctx.layer.offsetX = 0
+        ctx.layer.offsetY = 0
+        ctx.renderer.setPreviewMode(false)
         ctx.previewTextAt(textLayerSnapshot, textLayerOrigX + dx, textLayerOrigY + dy)
         ctx.updateTextLayer({ ...textLayerSnapshot, x: textLayerOrigX + dx, y: textLayerOrigY + dy })
         textLayerSnapshot = null
