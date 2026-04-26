@@ -25,6 +25,9 @@ export interface GpuLayer {
   blendMode: string
   /** Accumulated dirty region in layer-local texel coords. Expanded by tools; consumed + reset by flushLayer. */
   dirtyRect: { lx: number; ly: number; rx: number; ry: number } | null
+  /** Incremented by flushLayer() every time pixel content is uploaded to the GPU.
+   *  Used by the render cache to detect content changes without full pixel comparison. */
+  contentVersion: number
 }
 
 export const BLEND_MODE_INDEX: Record<string, number> = {

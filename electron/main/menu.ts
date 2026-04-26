@@ -21,7 +21,12 @@ let recentFilesList: string[] = []
 
 function send(actionId: string): void {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-  win?.webContents.send('menu:action', actionId)
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  try {
+    win.webContents.send('menu:action', actionId)
+  } catch {
+    // Renderer frame was disposed mid-flight (e.g. during hot-reload); ignore.
+  }
 }
 
 type ItemOpts = Omit<MenuItemConstructorOptions, 'id' | 'label' | 'click'> & {

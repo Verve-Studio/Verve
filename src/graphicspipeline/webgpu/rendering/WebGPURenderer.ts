@@ -33,6 +33,35 @@ export { BLEND_MODE_INDEX, WebGPUUnavailableError } from '../types'
 import type { GpuLayer, RenderPlanEntry, AdjustmentRenderOp } from '../types'
 import { BLEND_MODE_INDEX, WebGPUUnavailableError } from '../types'
 
+// ─── Render cache helpers ─────────────────────────────────────────────────────
+
+/**
+ * Produces a stable string key for a single AdjustmentRenderOp, excluding GPU
+ * objects (`selMaskLayer`, `luts`) and substituting content-tracked surrogates.
+ * Used to detect params changes for the adj-group output cache.
+ */
+function serializeAdjOp(op: AdjustmentRenderOp): string {
+  const parts: string[] = [`${op.kind}|${op.layerId}|${op.visible ? 1 : 0}`]
+  if (op.selMaskLayer) parts.push(`selV:${op.selMaskLayer.contentVersion}`)
+  const record = op as Record<string, unknown>
+  for (const [k, v] of Object.entries(record)) {
+    if (k === 'kind' || k === 'layerId' || k === 'visible' || k === 'selMaskLayer' || k === 'luts') continue
+    if (v instanceof Float32Array) {
+      parts.push(`${k}:${Array.from(v).join(',')}`)
+    } else if (typeof v === 'object' && v !== null) {
+      try { parts.push(`${k}:${JSON.stringify(v)}`) } catch { parts.push(`${k}:[object]`) }
+    } else {
+      parts.push(`${k}:${v}`)
+    }
+  }
+  return parts.join('~')
+}
+
+/** Stable key for a list of adjustment ops — used as the params portion of the group cache key. */
+function computeAdjGroupParamsKey(adjustments: AdjustmentRenderOp[]): string {
+  return adjustments.map(serializeAdjOp).join('§')
+}
+
 // ─── Full-canvas quad (two triangles) ─────────────────────────────────────────
 
 const QUAD_POSITIONS = (w: number, h: number): Float32Array =>
@@ -74,6 +103,19 @@ export class WebGPURenderer {
   private pendingDestroyBuffers: GPUBuffer[] = []
   // Temporary GPU textures for isolated group compositing; flushed after submit.
   private pendingDestroyTextures: GPUTexture[] = []
+
+  // ─── Render cache ──────────────────────────────────────────────────────────
+  // Per-adjustment-group output textures: skip re-running adjustment passes when
+  // the base layer and params are unchanged since the last frame.
+  // Key = parentLayerId. Only used during screen-preview renderPlan() calls, not
+  // for flatten / export / readback (which always re-render from scratch).
+  private adjGroupCache = new Map<string, {
+    baseContentVersion: number
+    paramsKey: string
+    tex: GPUTexture
+  }>()
+  // True while encoding a screen-preview renderPlan() — enables the caches above.
+  private adjGroupCacheEnabled = false
 
   readonly pixelWidth: number
   readonly pixelHeight: number
@@ -267,11 +309,12 @@ export class WebGPURenderer {
   ): GpuLayer {
     const data = new Uint8Array(lw * lh * 4)
     const texture = createGpuTexture(this.device, lw, lh, data)
-    return { id, name, texture, data, layerWidth: lw, layerHeight: lh, offsetX: ox, offsetY: oy, opacity: 1, visible: true, blendMode: 'normal', dirtyRect: null }
+    return { id, name, texture, data, layerWidth: lw, layerHeight: lh, offsetX: ox, offsetY: oy, opacity: 1, visible: true, blendMode: 'normal', dirtyRect: null, contentVersion: 0 }
   }
 
   flushLayer(layer: GpuLayer): void {
     if (this.deferFlush) return
+    layer.contentVersion++
     if (layer.dirtyRect) {
       const { lx, ly, rx, ry } = layer.dirtyRect
       layer.dirtyRect = null
@@ -283,6 +326,11 @@ export class WebGPURenderer {
 
   destroyLayer(layer: GpuLayer): void {
     layer.texture.destroy()
+    const cached = this.adjGroupCache.get(layer.id)
+    if (cached) {
+      cached.tex.destroy()
+      this.adjGroupCache.delete(layer.id)
+    }
   }
 
   growLayerToFit(layer: GpuLayer, canvasX: number, canvasY: number, extraRadius = 0): boolean {
@@ -342,6 +390,7 @@ export class WebGPURenderer {
     layer.offsetX    = newX
     layer.offsetY    = newY
     layer.dirtyRect  = null  // texture is fully up-to-date after grow
+    layer.contentVersion++
     return true
   }
 
@@ -397,7 +446,9 @@ export class WebGPURenderer {
     const { device } = this
     const encoder = device.createCommandEncoder()
 
+    this.adjGroupCacheEnabled = true
     const finalTex = this.encodePlanToComposite(encoder, plan)
+    this.adjGroupCacheEnabled = false
 
     // Render to screen: checkerboard + blit
     const screenView = this.context.getCurrentTexture().createView()
@@ -548,7 +599,52 @@ export class WebGPURenderer {
 
       } else if (entry.kind === 'adjustment-group') {
         if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
-        const groupResult = this.encodeAdjustmentGroup(encoder, entry)
+
+        let groupResult: GPUTexture
+
+        if (this.adjGroupCacheEnabled) {
+          const paramsKey = computeAdjGroupParamsKey(entry.adjustments)
+          const cached = this.adjGroupCache.get(entry.parentLayerId)
+
+          if (
+            cached &&
+            cached.baseContentVersion === entry.baseLayer.contentVersion &&
+            cached.paramsKey === paramsKey
+          ) {
+            // Cache hit: composite the pre-computed result directly.
+            groupResult = cached.tex
+          } else {
+            // Cache miss: run all adjustment passes.
+            const result = this.encodeAdjustmentGroup(encoder, entry)
+
+            // Persist the result to a cache texture for subsequent frames.
+            const texUsage =
+              GPUTextureUsage.TEXTURE_BINDING |
+              GPUTextureUsage.COPY_DST |
+              GPUTextureUsage.COPY_SRC |
+              GPUTextureUsage.RENDER_ATTACHMENT
+            const cacheTex = cached?.tex ?? this.device.createTexture({
+              size: { width: this.pixelWidth, height: this.pixelHeight },
+              format: 'rgba8unorm',
+              usage: texUsage,
+            })
+            encoder.copyTextureToTexture(
+              { texture: result },
+              { texture: cacheTex },
+              { width: this.pixelWidth, height: this.pixelHeight },
+            )
+            this.adjGroupCache.set(entry.parentLayerId, {
+              baseContentVersion: entry.baseLayer.contentVersion,
+              paramsKey,
+              tex: cacheTex,
+            })
+
+            groupResult = result
+          }
+        } else {
+          groupResult = this.encodeAdjustmentGroup(encoder, entry)
+        }
+
         this.encodeCompositeTexture(encoder, groupResult, src, dst, entry.baseLayer.opacity, entry.baseLayer.blendMode)
         ;[src, dst] = [dst, src]
 
@@ -738,6 +834,7 @@ export class WebGPURenderer {
       visible: true,
       blendMode,
       dirtyRect: null,
+      contentVersion: 0,
     }
     this.encodeCompositeLayer(encoder, pseudoLayer, srcTex, dstTex)
   }
@@ -782,6 +879,8 @@ export class WebGPURenderer {
     this.groupPongTex.destroy()
     this.texCoordBuffer.destroy()
     this.adjEncoder.destroy()
+    for (const entry of this.adjGroupCache.values()) entry.tex.destroy()
+    this.adjGroupCache.clear()
     this.device.destroy()
   }
 }
