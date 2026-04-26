@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { transformStore } from '@/store/transformStore'
+import { transformStore } from '@/core/store/transformStore'
 import type { TransformHandleMode, TransformInterpolation } from '@/types'
 import styles from './TransformToolbar.module.scss'
 

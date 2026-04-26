@@ -51,7 +51,7 @@ export function useContentAwareFill({
     const mask = selectionStore.mask!
 
     // Guard: selection bounding box must be at least 4×4
-    const { canvas, layers, activeLayerId } = stateRef.current
+    const { canvas, activeLayerId } = stateRef.current
     const { width: cw, height: ch } = canvas
     let minX = cw, minY = ch, maxX = 0, maxY = 0
     for (let i = 0; i < cw * ch; i++) {

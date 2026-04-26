@@ -1,4 +1,4 @@
-import type { RenderPlanEntry, WebGPURenderer } from '@/webgpu/WebGPURenderer'
+import type { RenderPlanEntry, WebGPURenderer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 
 export type RasterBackend = 'gpu'
 export type RasterReason = 'flatten' | 'export' | 'sample' | 'merge'

@@ -8,7 +8,7 @@ import { DEVICE_PALETTES, DEVICE_KEYS, DEVICE_LABELS } from '@/utils/devicePalet
 import type { DevicePaletteKey } from '@/utils/devicePalettes'
 import { quantize } from '@/wasm'
 import type { RGBAColor } from '@/types'
-import type { CanvasHandle } from '@/components/ui/Canvas/Canvas'
+import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import styles from './GeneratePaletteDialog.module.scss'
 
 // ─── Types ────────────────────────────────────────────────────────────────────

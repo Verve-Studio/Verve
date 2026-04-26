@@ -1,4 +1,4 @@
-import type { AdjustmentRenderOp, GpuLayer } from '@/webgpu/WebGPURenderer'
+import type { AdjustmentRenderOp, GpuLayer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 import {
   RasterizationExecutionError,
   type RasterizeDocumentRequest,

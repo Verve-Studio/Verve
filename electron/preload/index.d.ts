@@ -26,6 +26,13 @@ declare global {
       getRecentFiles: () => Promise<string[]>
       addRecentFile: (path: string) => Promise<string[]>
       clearRecentFiles: () => Promise<void>
+      // Pixel Brushes (user-profile storage)
+      loadUserPixelBrushes: () => Promise<string>
+      saveUserPixelBrushes: (data: string) => Promise<void>
+      openBrushFileDialog: () => Promise<string | null>
+      saveBrushFileDialog: (defaultPath?: string) => Promise<string | null>
+      readBrushFile: (filePath: string) => Promise<string>
+      writeBrushFile: (filePath: string, data: string) => Promise<void>
       // App lifecycle
       exitApp: () => Promise<void>
       // Platform & native menu (macOS)

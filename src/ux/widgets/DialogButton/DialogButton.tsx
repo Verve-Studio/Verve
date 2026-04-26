@@ -2,11 +2,12 @@ import React from 'react'
 import styles from './DialogButton.module.scss'
 
 export interface DialogButtonProps {
-  onClick: () => void
+  onClick?: () => void
   primary?: boolean
   title?: string
   className?: string
   disabled?: boolean
+  type?: 'button' | 'submit' | 'reset'
   'aria-pressed'?: boolean
   'aria-label'?: string
   children: React.ReactNode
@@ -18,6 +19,7 @@ export function DialogButton({
   title,
   className,
   disabled,
+  type = 'button',
   'aria-pressed': ariaPressed,
   'aria-label': ariaLabel,
   children,
@@ -30,6 +32,7 @@ export function DialogButton({
       className={cls}
       title={title}
       disabled={disabled}
+      type={type}
       aria-pressed={ariaPressed}
       aria-label={ariaLabel}
       onClick={onClick}

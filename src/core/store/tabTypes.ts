@@ -1,4 +1,4 @@
-import type { HistoryEntry } from '@/store/historyStore'
+import type { HistoryEntry } from '@/core/store/historyStore'
 import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush } from '@/types'
 
 // ─── Default swatch palette ───────────────────────────────────────────────────

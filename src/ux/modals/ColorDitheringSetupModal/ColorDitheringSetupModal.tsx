@@ -13,7 +13,6 @@ export interface ColorDitheringSetupModalProps {
 export function ColorDitheringSetupModal({
   open,
   onProceed,
-  onOpenGeneratePalette,
   onCancel,
 }: ColorDitheringSetupModalProps): React.JSX.Element | null {
   const [addReduceColors, setAddReduceColors] = useState(false)

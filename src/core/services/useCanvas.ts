@@ -134,7 +134,6 @@ export function useCanvas({
           }
         }
       } else {
-        const pos = toCanvasPos(e)
         onHover?.(toRawPos(e))
         if (isDrawing.current) onPointerMove?.(toRawPos(e))
       }

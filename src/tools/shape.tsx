@@ -323,7 +323,7 @@ function createShapeHandler(): ToolHandler {
   }
 
   return {
-    onPointerDown({ x, y, shiftKey }: ToolPointerPos, ctx: ToolContext): void {
+    onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext): void {
       const active = getActive(ctx)
       if (active) {
         const hi = hitTestHandles(active, x, y, ctx.zoom)

@@ -32,7 +32,7 @@ function createPolygonalSelectionHandler(): ToolHandler {
   let lastClickTime = 0
 
   return {
-    onPointerDown({ x, y, shiftKey, altKey, timeStamp }: ToolPointerPos, ctx: ToolContext) {
+    onPointerDown({ x, y, shiftKey, altKey, timeStamp }: ToolPointerPos) {
       const now = timeStamp
       const isDoubleClick = (now - lastClickTime) < 300
       lastClickTime = now
