@@ -158,9 +158,12 @@ function createMoveHandler(): ToolHandler {
         // Text layer: re-rasterize at preview position (no GL offset, no state update)
         ctx.previewTextAt(textLayerSnapshot, textLayerOrigX + dx, textLayerOrigY + dy)
       } else if (shapeLayerSnapshot) {
-        // Shape layer: re-rasterize at translated parametric coords
-        const moved = translateShapeLayer(shapeLayerSnapshot, dx, dy)
-        ctx.previewShapeLayer(moved)
+        // Shape layer: shift via GPU offset (same as pixel layers) to avoid
+        // re-rasterizing on every frame. Final rasterize happens on pointer-up.
+        ctx.renderer.setPreviewMode(true)
+        ctx.layer.offsetX = dx
+        ctx.layer.offsetY = dy
+        ctx.render(ctx.layers)
       } else {
         // Update offset in-place (no pixel data change).
         // Enable preview mode so expensive standalone effects (bloom, halation, etc.)
@@ -191,6 +194,11 @@ function createMoveHandler(): ToolHandler {
         textLayerSnapshot = null
       } else if (shapeLayerSnapshot) {
         const moved = translateShapeLayer(shapeLayerSnapshot, dx, dy)
+        // Reset offset before rasterizing so the shape bakes its position into
+        // pixel data at offset (0, 0), matching the normal shape layer invariant.
+        ctx.layer.offsetX = 0
+        ctx.layer.offsetY = 0
+        ctx.renderer.setPreviewMode(false)
         ctx.previewShapeLayer(moved)
         ctx.updateShapeLayer(moved)
         shapeLayerSnapshot = null

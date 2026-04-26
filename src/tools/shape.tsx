@@ -167,12 +167,8 @@ function clearOverlay(oc: HTMLCanvasElement): void {
   if (c) c.clearRect(0, 0, oc.width, oc.height)
 }
 
-/** Draw shape outline + bounding box handles on the tool overlay canvas. */
-function drawHandles(oc: HTMLCanvasElement, ls: ShapeLayerState, zoom: number): void {
-  const c = oc.getContext('2d')
-  if (!c) return
-  c.clearRect(0, 0, oc.width, oc.height)
-
+/** Inner handles chrome — no clearRect so it can compose on top of other drawings. */
+function _drawHandlesBody(c: CanvasRenderingContext2D, ls: ShapeLayerState, zoom: number): void {
   const dpr = window.devicePixelRatio
   const handleR = Math.max(3.5, 5 * dpr / zoom) // canvas px radius
 
@@ -261,6 +257,56 @@ function drawHandles(oc: HTMLCanvasElement, ls: ShapeLayerState, zoom: number): 
   }
 }
 
+/** Draw shape outline + bounding box handles on the tool overlay canvas. */
+function drawHandles(oc: HTMLCanvasElement, ls: ShapeLayerState, zoom: number): void {
+  const c = oc.getContext('2d')
+  if (!c) return
+  c.clearRect(0, 0, oc.width, oc.height)
+  _drawHandlesBody(c, ls, zoom)
+}
+
+/**
+ * Draw the shape's real fill+stroke appearance plus selection handles.
+ * Used during live edits (move/resize/rotate/endpoint) so GPU rasterization
+ * is skipped entirely — every drag frame is pure Canvas2D on the overlay.
+ */
+function drawShapeEditOverlay(oc: HTMLCanvasElement, ls: ShapeLayerState, zoom: number): void {
+  const c = oc.getContext('2d')
+  if (!c) return
+  c.clearRect(0, 0, oc.width, oc.height)
+
+  // Draw the shape's actual appearance
+  c.save()
+  if (ls.shapeType === 'line') {
+    if (ls.strokeColor && ls.strokeWidth > 0) {
+      c.strokeStyle = rgbaToStr(ls.strokeColor)
+      c.lineWidth   = ls.strokeWidth
+      c.lineCap     = 'round'
+      c.beginPath()
+      c.moveTo(ls.x1, ls.y1)
+      c.lineTo(ls.x2, ls.y2)
+      c.stroke()
+    }
+  } else {
+    c.translate(ls.cx, ls.cy)
+    c.rotate((ls.rotation * Math.PI) / 180)
+    buildShapePath(c, ls)
+    if (ls.fillColor) {
+      c.fillStyle = rgbaToStr(ls.fillColor)
+      c.fill()
+    }
+    if (ls.strokeColor && ls.strokeWidth > 0) {
+      c.strokeStyle = rgbaToStr(ls.strokeColor)
+      c.lineWidth   = ls.strokeWidth
+      c.stroke()
+    }
+  }
+  c.restore()
+
+  // Draw handles chrome on top
+  _drawHandlesBody(c, ls, zoom)
+}
+
 /** Draw a dashed preview of the shape being drawn on the overlay canvas. */
 function drawCreationPreview(oc: HTMLCanvasElement, ls: ShapeLayerState): void {
   const c = oc.getContext('2d')
@@ -312,6 +358,8 @@ type DrawMode =
 function createShapeHandler(): ToolHandler {
   let mode: DrawMode    = { t: 'idle', id: '' }
   let drawPreview: ShapeLayerState | null = null   // scratch layer used only during 'draw'
+  // GpuLayer hidden during a live shape edit to avoid stale-position compositing
+  let editLayer: { visible: boolean } | null = null
 
   function getActive(ctx: ToolContext): ShapeLayerState | null {
     return ctx.activeShapeLayer
@@ -336,6 +384,20 @@ function createShapeHandler(): ToolHandler {
           } else {
             mode = { t: 'resize', id: active.id, hi, last: active }
           }
+          // Draw overlay first so the shape appears seamlessly before the GPU layer is hidden,
+          // then hide the layer and re-render — eliminates the flicker frame.
+          if (ctx.layer && ctx.overlayCanvas) {
+            drawShapeEditOverlay(ctx.overlayCanvas, active, ctx.zoom)
+            editLayer = ctx.layer
+            ctx.layer.visible = false
+            ctx.renderer.setPreviewMode(true)
+            ctx.render()
+          } else if (ctx.layer) {
+            editLayer = ctx.layer
+            ctx.layer.visible = false
+            ctx.renderer.setPreviewMode(true)
+            ctx.render()
+          }
           return
         }
         if (hitTestShapeInterior(active, x, y)) {
@@ -344,6 +406,18 @@ function createShapeHandler(): ToolHandler {
             ocx: active.cx, ocy: active.cy,
             ox1: active.x1, oy1: active.y1, ox2: active.x2, oy2: active.y2,
             last: active,
+          }
+          if (ctx.layer && ctx.overlayCanvas) {
+            drawShapeEditOverlay(ctx.overlayCanvas, active, ctx.zoom)
+            editLayer = ctx.layer
+            ctx.layer.visible = false
+            ctx.renderer.setPreviewMode(true)
+            ctx.render()
+          } else if (ctx.layer) {
+            editLayer = ctx.layer
+            ctx.layer.visible = false
+            ctx.renderer.setPreviewMode(true)
+            ctx.render()
           }
           return
         }
@@ -418,8 +492,8 @@ function createShapeHandler(): ToolHandler {
       }
 
       if (updated) {
-        ctx.previewShapeLayer(updated)
-        if (ctx.overlayCanvas) drawHandles(ctx.overlayCanvas, updated, ctx.zoom)
+        // Pure Canvas2D overlay — no GPU rasterization or upload per frame
+        if (ctx.overlayCanvas) drawShapeEditOverlay(ctx.overlayCanvas, updated, ctx.zoom)
       }
     },
 
@@ -444,9 +518,19 @@ function createShapeHandler(): ToolHandler {
       const shape = modeShape(ctx)
       const finalState = (mode as { last?: ShapeLayerState }).last ?? shape
       if (finalState && mode.t !== 'idle') {
+        // Restore GPU layer visibility and rasterize the final position once
+        if (editLayer) { editLayer.visible = true; editLayer = null }
+        ctx.renderer.setPreviewMode(false)
+        ctx.previewShapeLayer(finalState)
         ctx.updateShapeLayer(finalState)
         ctx.commitStroke(`Edit shape`)
         if (ctx.overlayCanvas) drawHandles(ctx.overlayCanvas, finalState, ctx.zoom)
+      } else if (editLayer) {
+        // Pointer-up without a valid final state (shouldn't normally happen)
+        editLayer.visible = true
+        editLayer = null
+        ctx.renderer.setPreviewMode(false)
+        ctx.render()
       }
       mode = { t: 'idle', id: '' }
     },
