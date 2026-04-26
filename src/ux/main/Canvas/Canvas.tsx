@@ -113,21 +113,53 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   }, [width, height, thumbnailCanvasRef])
 
   // doRender: wrapper around renderPlan that also asynchronously refreshes the mirror canvas.
+  // Mirror updates are flight-controlled: at most one in-flight createImageBitmap. During a
+  // high-frequency drag (60–120 fps) without this, bitmap snapshots queue up faster than they
+  // resolve, causing perceived memory growth from large in-flight bitmaps.
+  //
+  // Render calls themselves are coalesced to one-per-animation-frame. A 1000 Hz mouse drag would
+  // otherwise issue ~1000 renderPlan() calls/sec, each creating GPUBindGroups, GPUTextureViews,
+  // and a GPUCommandBuffer. These objects rely on GC (no destroy API) and the WebGPU driver
+  // retains them until the GPU consumes the submitted command buffers — at 1000 Hz the in-flight
+  // set grows faster than it drains, producing visible memory growth during sustained drags.
+  const mirrorBitmapInFlightRef = useRef(false)
+  const mirrorBitmapPendingRef = useRef(false)
+  const renderRafIdRef = useRef<number>(0)
   const doRender = (): void => {
-    const renderer = rendererRef.current
-    if (!renderer) return
-    renderer.renderPlan(buildRenderPlan())
-    // Async mirror update — createImageBitmap is the spec-correct way to snapshot a WebGPU canvas.
+    if (renderRafIdRef.current !== 0) return // already scheduled for this frame
+    renderRafIdRef.current = requestAnimationFrame(() => {
+      renderRafIdRef.current = 0
+      const renderer = rendererRef.current
+      if (!renderer) return
+      renderer.renderPlan(buildRenderPlan())
+      scheduleMirrorUpdate()
+    })
+  }
+  const scheduleMirrorUpdate = (): void => {
     const gpuCanvas = canvasRef.current
     const mirror = thumbnailCanvasRef.current
-    if (gpuCanvas && mirror) {
-      createImageBitmap(gpuCanvas).then(bitmap => {
-        const ctx = mirror.getContext('2d')
-        ctx?.clearRect(0, 0, mirror.width, mirror.height)
-        ctx?.drawImage(bitmap, 0, 0)
-        bitmap.close()
-      }).catch(() => { /* not yet presented */ })
+    if (!gpuCanvas || !mirror) return
+    if (mirrorBitmapInFlightRef.current) {
+      // Coalesce: a frame is already in flight; mark that we owe one more update once it resolves.
+      mirrorBitmapPendingRef.current = true
+      return
     }
+    mirrorBitmapInFlightRef.current = true
+    createImageBitmap(gpuCanvas).then(bitmap => {
+      const m = thumbnailCanvasRef.current
+      if (m) {
+        const ctx = m.getContext('2d')
+        ctx?.clearRect(0, 0, m.width, m.height)
+        ctx?.drawImage(bitmap, 0, 0)
+      }
+      bitmap.close()
+    }).catch(() => { /* not yet presented */ }).finally(() => {
+      mirrorBitmapInFlightRef.current = false
+      if (mirrorBitmapPendingRef.current) {
+        mirrorBitmapPendingRef.current = false
+        scheduleMirrorUpdate()
+      }
+    })
   }
 
   // ── Expose handle for save / export / clipboard ────────────────
