@@ -393,6 +393,29 @@ export function useCanvasHandle({
       if (!renderer || !layer) return
       const w = renderer.pixelWidth
       const h = renderer.pixelHeight
+
+      // Scan the input for the bounding box of non-transparent pixels (canvas-space).
+      // Operations like Free Transform / Perspective produce a canvas-sized buffer
+      // where the result may extend beyond the layer's current rect (e.g. a perspective
+      // skew that pushes corners outward). Without growing the layer first, those
+      // out-of-rect pixels would be silently cropped.
+      let minX = w, maxX = -1, minY = h, maxY = -1
+      for (let y = 0; y < h; y++) {
+        const row = y * w
+        for (let x = 0; x < w; x++) {
+          if (pixels[(row + x) * 4 + 3] !== 0) {
+            if (x < minX) minX = x
+            if (x > maxX) maxX = x
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+          }
+        }
+      }
+      if (maxX >= 0) {
+        renderer.growLayerToFit(layer, minX, minY)
+        renderer.growLayerToFit(layer, maxX, maxY)
+      }
+
       for (let ly = 0; ly < layer.layerHeight; ly++) {
         const cy = layer.offsetY + ly
         if (cy < 0 || cy >= h) continue
