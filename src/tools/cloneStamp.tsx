@@ -19,7 +19,7 @@ export const cloneStampOptions = {
 function createCloneStampHandler(): ToolHandler {
   let lastPos: { x: number; y: number } | null = null
   let touched: Map<number, number> | null = null
-  let sourceBuffer: Uint8Array | null = null
+  let sourceBuffer: Uint8Array | Float32Array | null = null
   let sourceBounds: { offsetX: number; offsetY: number; layerWidth: number; layerHeight: number } | null = null
   let strokeOffsetDX = 0
   let strokeOffsetDY = 0

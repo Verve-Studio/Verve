@@ -85,20 +85,36 @@ function renderGradient(
 
       // Porter-Duff "over" composite onto existing pixel
       const i = (ly * layer.layerWidth + lx) * 4
-      const dstR = layer.data[i]
-      const dstG = layer.data[i + 1]
-      const dstB = layer.data[i + 2]
-      const dstA = layer.data[i + 3] / 255
-      const outA = srcA + dstA * (1 - srcA)
-
-      if (outA <= 0) {
-        layer.data[i] = 0; layer.data[i + 1] = 0; layer.data[i + 2] = 0; layer.data[i + 3] = 0
+      if (layer.format === 'rgba32f') {
+        // layer.data is Float32Array, values 0.0–1.0; gr/gg/gb/ga are 0–255
+        const sr = gr / 255, sg = gg / 255, sb = gb / 255
+        const dstR = layer.data[i], dstG = layer.data[i + 1], dstB = layer.data[i + 2]
+        const dstA = layer.data[i + 3]  // already 0.0–1.0
+        const outA = srcA + dstA * (1 - srcA)
+        if (outA <= 0) {
+          layer.data[i] = 0; layer.data[i + 1] = 0; layer.data[i + 2] = 0; layer.data[i + 3] = 0
+        } else {
+          const blend = dstA * (1 - srcA)
+          layer.data[i]     = (sr * srcA + dstR * blend) / outA
+          layer.data[i + 1] = (sg * srcA + dstG * blend) / outA
+          layer.data[i + 2] = (sb * srcA + dstB * blend) / outA
+          layer.data[i + 3] = outA
+        }
       } else {
-        const blend = dstA * (1 - srcA)
-        layer.data[i]     = Math.round((gr * srcA + dstR * blend) / outA)
-        layer.data[i + 1] = Math.round((gg * srcA + dstG * blend) / outA)
-        layer.data[i + 2] = Math.round((gb * srcA + dstB * blend) / outA)
-        layer.data[i + 3] = Math.round(outA * 255)
+        const dstR = layer.data[i]
+        const dstG = layer.data[i + 1]
+        const dstB = layer.data[i + 2]
+        const dstA = layer.data[i + 3] / 255
+        const outA = srcA + dstA * (1 - srcA)
+        if (outA <= 0) {
+          layer.data[i] = 0; layer.data[i + 1] = 0; layer.data[i + 2] = 0; layer.data[i + 3] = 0
+        } else {
+          const blend = dstA * (1 - srcA)
+          layer.data[i]     = Math.round((gr * srcA + dstR * blend) / outA)
+          layer.data[i + 1] = Math.round((gg * srcA + dstG * blend) / outA)
+          layer.data[i + 2] = Math.round((gb * srcA + dstB * blend) / outA)
+          layer.data[i + 3] = Math.round(outA * 255)
+        }
       }
     }
   }

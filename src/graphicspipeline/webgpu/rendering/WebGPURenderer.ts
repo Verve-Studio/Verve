@@ -501,15 +501,27 @@ export class WebGPURenderer {
 
     const copyX = layer.offsetX - newX
     const copyY = layer.offsetY - newY
-    const newData = new Uint8Array(newW * newH * 4)
+    const textureFormat: GPUTextureFormat = layer.format === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
+    const newData: Uint8Array | Float32Array = layer.format === 'rgba32f'
+      ? new Float32Array(newW * newH * 4)
+      : new Uint8Array(newW * newH * 4)
+    const stride = layer.layerWidth * 4 // elements per row (same for both Float32Array and Uint8Array in rgba channels)
     for (let row = 0; row < layer.layerHeight; row++) {
-      const srcOff = row * layer.layerWidth * 4
+      const srcOff = row * stride
       const dstOff = ((copyY + row) * newW + copyX) * 4
-      newData.set(layer.data.subarray(srcOff, srcOff + layer.layerWidth * 4), dstOff)
+      ;(newData as Uint8Array).set(
+        (layer.data as Uint8Array).subarray(srcOff, srcOff + stride),
+        dstOff,
+      )
     }
 
     // Copy old texture data into new texture using WebGPU
-    const newTex = createGpuTexture(this.device, newW, newH, newData)
+    const newTex = createGpuTexture(this.device, newW, newH, null, textureFormat)
+    if (layer.format === 'rgba32f') {
+      uploadF32TextureData(this.device, newTex, newW, newH, newData as Float32Array)
+    } else {
+      uploadTextureData(this.device, newTex, newW, newH, newData as Uint8Array)
+    }
 
     layer.texture.destroy()
     layer.texture    = newTex

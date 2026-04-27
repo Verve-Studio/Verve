@@ -108,19 +108,39 @@ export function blendPixelOver(
   }
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly)
-  const dstA = ea / 255
-  const outA = blendA + dstA * (1 - blendA)
-  if (outA <= 0) {
-    renderer.drawPixel(layer, lx, ly, 0, 0, 0, 0)
+  if (layer.format === 'rgba32f') {
+    // samplePixel/drawPixel operate in [0.0, 1.0] for rgba32f;
+    // incoming r/g/b/a are always 0-255 from tools.
+    const sr = r / 255, sg = g / 255, sb = b / 255
+    const dstA = ea  // already 0.0-1.0
+    const outA = blendA + dstA * (1 - blendA)
+    if (outA <= 0) {
+      renderer.drawPixel(layer, lx, ly, 0, 0, 0, 0)
+    } else {
+      const dstBlend = dstA * (1 - blendA)
+      renderer.drawPixel(
+        layer, lx, ly,
+        (sr * blendA + er * dstBlend) / outA,
+        (sg * blendA + eg * dstBlend) / outA,
+        (sb * blendA + eb * dstBlend) / outA,
+        outA,
+      )
+    }
   } else {
-    const dstBlend = dstA * (1 - blendA)
-    renderer.drawPixel(
-      layer, lx, ly,
-      Math.round((r * blendA + er * dstBlend) / outA),
-      Math.round((g * blendA + eg * dstBlend) / outA),
-      Math.round((b * blendA + eb * dstBlend) / outA),
-      Math.round(outA * 255),
-    )
+    const dstA = ea / 255
+    const outA = blendA + dstA * (1 - blendA)
+    if (outA <= 0) {
+      renderer.drawPixel(layer, lx, ly, 0, 0, 0, 0)
+    } else {
+      const dstBlend = dstA * (1 - blendA)
+      renderer.drawPixel(
+        layer, lx, ly,
+        Math.round((r * blendA + er * dstBlend) / outA),
+        Math.round((g * blendA + eg * dstBlend) / outA),
+        Math.round((b * blendA + eb * dstBlend) / outA),
+        Math.round(outA * 255),
+      )
+    }
   }
 }
 

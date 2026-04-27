@@ -23,7 +23,7 @@ export function stampCloneSegment(
   size: number,
   hardness: number,
   offsetDX: number, offsetDY: number,
-  sourceBuffer: Uint8Array,
+  sourceBuffer: Uint8Array | Float32Array,
   sourceIsCanvas: boolean,
   sourceBounds: { offsetX: number; offsetY: number; layerWidth: number; layerHeight: number } | null,
   canvasW: number, canvasH: number,
@@ -67,6 +67,8 @@ export function stampCloneSegment(
       const srcY = py + offsetDY
 
       let sr = 0, sg = 0, sb = 0, sa = 0
+      const isF32 = sourceBuffer instanceof Float32Array
+      const scale = isF32 ? 255 : 1
       if (sourceIsCanvas) {
         let sx = Math.round(srcX), sy = Math.round(srcY)
         if (tiledW !== undefined && tiledH !== undefined) {
@@ -75,16 +77,16 @@ export function stampCloneSegment(
         }
         if (sx >= 0 && sy >= 0 && sx < canvasW && sy < canvasH) {
           const i = (sy * canvasW + sx) * 4
-          sr = sourceBuffer[i]; sg = sourceBuffer[i + 1]
-          sb = sourceBuffer[i + 2]; sa = sourceBuffer[i + 3]
+          sr = sourceBuffer[i] * scale; sg = sourceBuffer[i + 1] * scale
+          sb = sourceBuffer[i + 2] * scale; sa = sourceBuffer[i + 3] * scale
         }
       } else if (sourceBounds) {
         const lx = Math.round(srcX) - sourceBounds.offsetX
         const ly = Math.round(srcY) - sourceBounds.offsetY
         if (lx >= 0 && ly >= 0 && lx < sourceBounds.layerWidth && ly < sourceBounds.layerHeight) {
           const i = (ly * sourceBounds.layerWidth + lx) * 4
-          sr = sourceBuffer[i]; sg = sourceBuffer[i + 1]
-          sb = sourceBuffer[i + 2]; sa = sourceBuffer[i + 3]
+          sr = sourceBuffer[i] * scale; sg = sourceBuffer[i + 1] * scale
+          sb = sourceBuffer[i + 2] * scale; sa = sourceBuffer[i + 3] * scale
         }
       }
       if (sa === 0) continue

@@ -465,6 +465,8 @@ function createPencilHandler(): ToolHandler {
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
     growLayerToFit(Math.round(p1x), Math.round(p1y), padR)
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
+    const tiledW = ctx.tiledMode ? renderer.pixelWidth  : undefined
+    const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
     walkQuadBezier(
       renderer, layer,
       p0x, p0y, cpx, cpy, p1x, p1y,
@@ -474,7 +476,28 @@ function createPencilHandler(): ToolHandler {
       pencilOptions.antiAlias,
       pencilOptions.motionBlur / 100,
       touched ?? undefined, sel,
+      tiledW, tiledH,
     )
+
+    // In tiled mode, wrapped writes may land anywhere on the layer — skip dirty
+    // rect tracking and do a full upload, same as brush.tsx.
+    if (!ctx.tiledMode) {
+      const lx = Math.max(0, Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR)
+      const ly = Math.max(0, Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR)
+      const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1)
+      const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1)
+      if (layer.dirtyRect === null) {
+        layer.dirtyRect = { lx, ly, rx, ry }
+      } else {
+        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
+        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
+        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
+        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      }
+    } else {
+      layer.dirtyRect = null
+    }
+
     renderer.flushLayer(layer)
     render(layers)
   }
