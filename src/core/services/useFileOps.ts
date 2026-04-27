@@ -108,7 +108,7 @@ export function useFileOps({
     }
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1 },
+      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false },
     ]
     setTabs(updated)
     setActiveTabId(newId)
@@ -145,13 +145,13 @@ export function useFileOps({
       const newId          = makeTabId()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1 },
+        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false },
       ]
       setTabs(updated)
       setActiveTabId(newId)
       historyStore.clear({ recaptureSnapshot: false })
       setPendingLayerData(null)
-      dispatch({ type: 'SWITCH_TAB', payload: { width, height, backgroundFill: 'transparent', layers, activeLayerId: layerId, zoom: 1 } })
+      dispatch({ type: 'SWITCH_TAB', payload: { width, height, backgroundFill: 'transparent', layers, activeLayerId: layerId, zoom: 1, tiledMode: false, showTileGrid: false } })
       const updatedRecent = await window.api.addRecentFile(path)
       onRecentFilesUpdated?.(updatedRecent)
       return
@@ -220,13 +220,13 @@ export function useFileOps({
     const newId          = makeTabId()
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1 },
+      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false },
     ]
     setTabs(updated)
     setActiveTabId(newId)
     historyStore.clear({ recaptureSnapshot: false })
     setPendingLayerData(null)
-    dispatch({ type: 'SWITCH_TAB', payload: { width: doc.canvas.width, height: doc.canvas.height, backgroundFill: bg, layers, activeLayerId: newSnapshot.activeLayerId, zoom: 1 } })
+    dispatch({ type: 'SWITCH_TAB', payload: { width: doc.canvas.width, height: doc.canvas.height, backgroundFill: bg, layers, activeLayerId: newSnapshot.activeLayerId, zoom: 1, tiledMode: false, showTileGrid: false } })
     dispatch({ type: 'SET_SWATCHES', payload: docSwatches })
     dispatch({ type: 'SET_SWATCH_GROUPS', payload: docSwatchGroups })
     dispatch({ type: 'SET_PIXEL_BRUSHES', payload: docPixelBrushes })

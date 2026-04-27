@@ -23,7 +23,14 @@ function erasePixelOp(
   alphaMode: boolean,
   touched?: Map<number, number>,
   sel?: SelMask,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
+  // Apply modular wrap before bounds check and touched-map key computation.
+  if (tiledW !== undefined && tiledH !== undefined) {
+    canvasX = ((canvasX % tiledW) + tiledW) % tiledW
+    canvasY = ((canvasY % tiledH) + tiledH) % tiledH
+  }
   // See blendPixelOver in primitives.ts: bail before any row-major index math
   // when the sample is outside the canvas, so a negative or oversized canvasX
   // can't wrap onto an adjacent row of the touched-map / selection mask.
@@ -77,6 +84,8 @@ function eraseStampCircle(
   alphaMode: boolean,
   touched?: Map<number, number>,
   sel?: SelMask,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
   const radius = size / 2
   const iRadius = Math.ceil(radius)
@@ -84,7 +93,7 @@ function eraseStampCircle(
   for (let dy = -iRadius; dy <= iRadius; dy++) {
     for (let dx = -iRadius; dx <= iRadius; dx++) {
       if (dx * dx + dy * dy <= radius * radius) {
-        erasePixelOp(renderer, layer, cx + dx, cy + dy, secR, secG, secB, bf, alphaMode, touched, sel)
+        erasePixelOp(renderer, layer, cx + dx, cy + dy, secR, secG, secB, bf, alphaMode, touched, sel, tiledW, tiledH)
       }
     }
   }
@@ -103,6 +112,8 @@ function eraseAASegment(
   alphaMode: boolean,
   touched?: Map<number, number>,
   sel?: SelMask,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
   const radius = size / 2
   const pad = Math.ceil(radius) + 1
@@ -124,7 +135,7 @@ function eraseAASegment(
       }
       const coverage = Math.max(0, Math.min(1, radius + 0.5 - dist))
       if (coverage > 0) {
-        erasePixelOp(renderer, layer, px, py, secR, secG, secB, (strength / 100) * coverage, alphaMode, touched, sel)
+        erasePixelOp(renderer, layer, px, py, secR, secG, secB, (strength / 100) * coverage, alphaMode, touched, sel, tiledW, tiledH)
       }
     }
   }
@@ -154,24 +165,26 @@ export function eraseThickLine(
   antiAlias = false,
   touched?: Map<number, number>,
   sel?: SelMask,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
   const bf = strength / 100
   if (antiAlias) {
     if (size <= 1) {
       wuLine(x0, y0, x1, y1, (x, y, coverage) => {
-        erasePixelOp(renderer, layer, x, y, secR, secG, secB, bf * coverage, alphaMode, touched, sel)
+        erasePixelOp(renderer, layer, x, y, secR, secG, secB, bf * coverage, alphaMode, touched, sel, tiledW, tiledH)
       })
     } else {
-      eraseAASegment(renderer, layer, x0, y0, x1, y1, size, secR, secG, secB, strength, alphaMode, touched, sel)
+      eraseAASegment(renderer, layer, x0, y0, x1, y1, size, secR, secG, secB, strength, alphaMode, touched, sel, tiledW, tiledH)
     }
   } else {
     if (size <= 1) {
       bresenham(x0, y0, x1, y1, (x, y) => {
-        erasePixelOp(renderer, layer, x, y, secR, secG, secB, bf, alphaMode, touched, sel)
+        erasePixelOp(renderer, layer, x, y, secR, secG, secB, bf, alphaMode, touched, sel, tiledW, tiledH)
       })
     } else {
       bresenham(x0, y0, x1, y1, (cx, cy) => {
-        eraseStampCircle(renderer, layer, cx, cy, size, secR, secG, secB, strength, alphaMode, touched, sel)
+        eraseStampCircle(renderer, layer, cx, cy, size, secR, secG, secB, strength, alphaMode, touched, sel, tiledW, tiledH)
       })
     }
   }

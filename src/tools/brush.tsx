@@ -69,6 +69,8 @@ function createBrushHandler(): ToolHandler {
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
     growLayerToFit(Math.round(p1x), Math.round(p1y), padR)
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
+    const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+    const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
     walkQuadBezier(
       renderer, layer,
       p0x, p0y, cpx, cpy, p1x, p1y,
@@ -76,21 +78,30 @@ function createBrushHandler(): ToolHandler {
       brushOptions.hardness, brushOptions.shape, brushOptions.antiAlias,
       brushOptions.motionBlur / 100,
       touched ?? undefined, sel,
+      tiledW, tiledH,
     )
 
     // Expand the accumulated dirty rect so flushLayer only uploads the touched area.
     // Coordinates are layer-local (origin at layer.offsetX, layer.offsetY).
-    const lx = Math.max(0, Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR)
-    const ly = Math.max(0, Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR)
-    const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1)
-    const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1)
-    if (layer.dirtyRect === null) {
-      layer.dirtyRect = { lx, ly, rx, ry }
+    // In tiled mode, blendPixelOver wraps and writes to layer regions far from
+    // the unwrapped p0/cp/p1 bounding box. Tracking a bounded dirtyRect here
+    // would miss those wrapped writes, leaving the GPU texture stale on the
+    // opposing seam. Leave dirtyRect=null to trigger a full-layer upload.
+    if (!ctx.tiledMode) {
+      const lx = Math.max(0, Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR)
+      const ly = Math.max(0, Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR)
+      const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1)
+      const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1)
+      if (layer.dirtyRect === null) {
+        layer.dirtyRect = { lx, ly, rx, ry }
+      } else {
+        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
+        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
+        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
+        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      }
     } else {
-      layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
-      layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
-      layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
-      layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      layer.dirtyRect = null
     }
 
     renderer.flushLayer(layer)

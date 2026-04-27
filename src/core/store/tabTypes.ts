@@ -52,6 +52,10 @@ export interface TabRecord {
   savedHistory: { entries: HistoryEntry[]; currentIndex: number } | null
   /** Incremented to force this tab's Canvas to remount (resize / crop). */
   canvasKey: number
+  /** Session-only: tiled mode toggle for this tab. Not persisted to document. */
+  tiledMode: boolean
+  /** Session-only: tile grid overlay visibility for this tab. Not persisted. */
+  showTileGrid: boolean
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

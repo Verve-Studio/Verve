@@ -30,6 +30,8 @@ export function stampCloneSegment(
   opacity: number,
   touched?: Map<number, number>,
   sel?: SelMask,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
   const radius = size / 2
   const pad = Math.ceil(radius) + 1
@@ -66,7 +68,11 @@ export function stampCloneSegment(
 
       let sr = 0, sg = 0, sb = 0, sa = 0
       if (sourceIsCanvas) {
-        const sx = Math.round(srcX), sy = Math.round(srcY)
+        let sx = Math.round(srcX), sy = Math.round(srcY)
+        if (tiledW !== undefined && tiledH !== undefined) {
+          sx = ((sx % tiledW) + tiledW) % tiledW
+          sy = ((sy % tiledH) + tiledH) % tiledH
+        }
         if (sx >= 0 && sy >= 0 && sx < canvasW && sy < canvasH) {
           const i = (sy * canvasW + sx) * 4
           sr = sourceBuffer[i]; sg = sourceBuffer[i + 1]
@@ -88,6 +94,7 @@ export function stampCloneSegment(
         sr, sg, sb, sa,
         opacity * coverage,
         touched, sel,
+        tiledW, tiledH,
       )
     }
   }

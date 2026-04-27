@@ -211,6 +211,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
           label:   'Show Grid',
           type:    'checkbox',
           checked: false,
+          accelerator: 'CmdOrCtrl+\'',
           click:   () => send('toggleGrid'),
         },
       ],

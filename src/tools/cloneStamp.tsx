@@ -40,6 +40,9 @@ function createCloneStampHandler(): ToolHandler {
       ? { mask: selectionMask, width: renderer.pixelWidth }
       : undefined
 
+    const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+    const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
+
     stampCloneSegment(
       renderer, layer,
       x0, y0, x1, y1,
@@ -53,19 +56,27 @@ function createCloneStampHandler(): ToolHandler {
       cloneStampOptions.opacity,
       touched ?? undefined,
       sel,
+      tiledW, tiledH,
     )
 
-    const lx = Math.max(0, Math.floor(Math.min(x0, x1) - layer.offsetX) - pad)
-    const ly = Math.max(0, Math.floor(Math.min(y0, y1) - layer.offsetY) - pad)
-    const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(x0, x1) - layer.offsetX) + pad + 1)
-    const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(y0, y1) - layer.offsetY) + pad + 1)
-    if (layer.dirtyRect === null) {
-      layer.dirtyRect = { lx, ly, rx, ry }
+    // In tiled mode, stampCloneSegment wraps writes to the opposing edge of
+    // the layer, far from the unwrapped (x0..x1) bounding box. A bounded
+    // dirtyRect would miss those writes; leave it null for a full upload.
+    if (!ctx.tiledMode) {
+      const lx = Math.max(0, Math.floor(Math.min(x0, x1) - layer.offsetX) - pad)
+      const ly = Math.max(0, Math.floor(Math.min(y0, y1) - layer.offsetY) - pad)
+      const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(x0, x1) - layer.offsetX) + pad + 1)
+      const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(y0, y1) - layer.offsetY) + pad + 1)
+      if (layer.dirtyRect === null) {
+        layer.dirtyRect = { lx, ly, rx, ry }
+      } else {
+        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
+        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
+        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
+        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      }
     } else {
-      layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
-      layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
-      layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
-      layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      layer.dirtyRect = null
     }
 
     renderer.flushLayer(layer)

@@ -64,6 +64,8 @@ export interface ToolContext {
   activeShapeLayer: ShapeLayerState | null
   /** Current canvas zoom level — used to compute screen-space handle sizes in overlay drawings. */
   zoom: number
+  /** Whether tiled mode is active — used by wrap-capable tools to enable coordinate wrapping. */
+  tiledMode: boolean
 }
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────

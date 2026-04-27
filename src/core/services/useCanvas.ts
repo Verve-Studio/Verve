@@ -24,6 +24,12 @@ interface UseCanvasOptions {
   onHover?: (pos: CanvasPointerPosition) => void
   /** Fires when the pointer leaves the canvas. */
   onLeave?: () => void
+  /**
+   * When provided, subtract offset.x/y from the computed canvas coordinates.
+   * Bounds checking is also skipped so tools receive out-of-bounds coords
+   * (needed for tiled-mode wrap-around).
+   */
+  coordinateOffset?: { x: number; y: number }
 }
 
 interface UseCanvasReturn {
@@ -41,6 +47,7 @@ export function useCanvas({
   onPointerUp,
   onHover,
   onLeave,
+  coordinateOffset,
 }: UseCanvasOptions): UseCanvasReturn {
   const isDrawing = useRef(false)
 
@@ -49,12 +56,18 @@ export function useCanvas({
       const rect = e.currentTarget.getBoundingClientRect()
       const scaleX = e.currentTarget.width / rect.width
       const scaleY = e.currentTarget.height / rect.height
-      const x = Math.floor((e.clientX - rect.left) * scaleX)
-      const y = Math.floor((e.clientY - rect.top) * scaleY)
-      if (x < 0 || y < 0 || x >= e.currentTarget.width || y >= e.currentTarget.height) return null
+      let x = Math.floor((e.clientX - rect.left) * scaleX)
+      let y = Math.floor((e.clientY - rect.top) * scaleY)
+      if (coordinateOffset) {
+        x -= coordinateOffset.x
+        y -= coordinateOffset.y
+        // Skip bounds check in tiled mode — tools need out-of-bounds coords for wrap-around
+      } else {
+        if (x < 0 || y < 0 || x >= e.currentTarget.width || y >= e.currentTarget.height) return null
+      }
       return { x, y, pressure: e.pressure, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: e.timeStamp }
     },
-    []
+    [coordinateOffset]
   )
 
   /** Converts pointer position to canvas coords without bounds checking — used during active strokes. */
@@ -63,13 +76,15 @@ export function useCanvas({
       const rect = e.currentTarget.getBoundingClientRect()
       const scaleX = e.currentTarget.width / rect.width
       const scaleY = e.currentTarget.height / rect.height
+      const ox = coordinateOffset?.x ?? 0
+      const oy = coordinateOffset?.y ?? 0
       return {
-        x: Math.floor((e.clientX - rect.left) * scaleX),
-        y: Math.floor((e.clientY - rect.top) * scaleY),
+        x: Math.floor((e.clientX - rect.left) * scaleX) - ox,
+        y: Math.floor((e.clientY - rect.top)  * scaleY) - oy,
         pressure: e.pressure, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: e.timeStamp,
       }
     },
-    []
+    [coordinateOffset]
   )
 
   const handlePointerDown = useCallback(
@@ -107,11 +122,13 @@ export function useCanvas({
         const rect = e.currentTarget.getBoundingClientRect()
         const sx = e.currentTarget.width / rect.width
         const sy = e.currentTarget.height / rect.height
+        const ox = coordinateOffset?.x ?? 0
+        const oy = coordinateOffset?.y ?? 0
         const positions: CanvasPointerPosition[] = []
         for (const ce of coalesced) {
           const pos: CanvasPointerPosition = {
-            x: Math.floor((ce.clientX - rect.left) * sx),
-            y: Math.floor((ce.clientY - rect.top)  * sy),
+            x: Math.floor((ce.clientX - rect.left) * sx) - ox,
+            y: Math.floor((ce.clientY - rect.top)  * sy) - oy,
             // Use primary event pressure for all coalesced samples — per-coalesced pressure
             // fluctuates at the hardware polling rate and causes visible size/opacity jitter.
             pressure: e.pressure,
@@ -138,7 +155,7 @@ export function useCanvas({
         if (isDrawing.current) onPointerMove?.(toRawPos(e))
       }
     },
-    [toCanvasPos, onPointerMove, onPointerMoveBatch, onPointerUp, onHover]
+    [toCanvasPos, onPointerMove, onPointerMoveBatch, onPointerUp, onHover, coordinateOffset]
   )
 
   const handlePointerUp = useCallback(

@@ -81,6 +81,9 @@ interface UseCanvasHandleParams {
   height: number
   viewportRef: React.RefObject<HTMLDivElement | null>
   onZoom: (zoom: number) => void
+  tiledMode?: boolean
+  /** Re-renders both the WebGPU canvas and (if active) the tiled 2D overlay. */
+  requestRender: () => void
 }
 
 export function useCanvasHandle({
@@ -95,6 +98,8 @@ export function useCanvasHandle({
   height,
   viewportRef,
   onZoom,
+  tiledMode,
+  requestRender,
 }: UseCanvasHandleParams): void {
   const buildRenderArgsRef = useRef(buildRenderArgs)
   buildRenderArgsRef.current = buildRenderArgs
@@ -105,11 +110,11 @@ export function useCanvasHandle({
     return renderer
   }
 
+  const requestRenderRef = useRef(requestRender)
+  requestRenderRef.current = requestRender
+
   const renderFromPlan = (): void => {
-    const renderer = rendererRef.current
-    if (!renderer) return
-    const { plan } = buildRenderArgsRef.current()
-    renderer.renderPlan(plan)
+    requestRenderRef.current()
   }
 
   const rebuildPlanForLayers = (layers: readonly LayerState[]): RenderPlanEntry[] => {
@@ -310,9 +315,10 @@ export function useCanvasHandle({
       if (!vp) return
       const dpr = window.devicePixelRatio || 1
       const margin = 0.9
+      const scale = tiledMode ? 3 : 1
       const zoom = Math.min(
-        (vp.clientWidth  / (width  / dpr)) * margin,
-        (vp.clientHeight / (height / dpr)) * margin,
+        (vp.clientWidth  / (width  * scale / dpr)) * margin,
+        (vp.clientHeight / (height * scale / dpr)) * margin,
       )
       onZoom(parseFloat(Math.max(0.05, Math.min(32, zoom)).toFixed(4)))
     },
@@ -340,8 +346,11 @@ export function useCanvasHandle({
         layer.data.set(pixels)
         renderer.flushLayer(layer)
       }
-      const refLayers = layerStateForRender ?? layersStateRef.current
-      renderer.renderPlan(rebuildPlanForLayers(refLayers))
+      // Note: layerStateForRender is currently unused — Canvas.tsx's doRender
+      // builds the plan from the live state.layers via buildRenderPlan().
+      // Tiled mode requires going through doRender so the 2D overlay is updated.
+      void layerStateForRender
+      requestRenderRef.current()
     },
 
     restoreAllAdjustmentMasks: (masks) => {

@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useRef, useState } from 'react'
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import { useWebGPU } from '@/core/services/useWebGPU'
 import { useCanvas } from '@/core/services/useCanvas'
 import { useAppContext } from '@/core/store/AppContext'
@@ -72,6 +72,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   const scrollPosRef = useRef({ left: 0, top: 0 })
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const toolOverlayRef = useRef<HTMLCanvasElement>(null)
+  const tiledCanvasRef = useRef<HTMLCanvasElement>(null)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const pixelBrushCursorRef = useRef<HTMLDivElement>(null)
   const canvasWrapperRef = useRef<HTMLDivElement>(null)
@@ -132,6 +133,32 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       const renderer = rendererRef.current
       if (!renderer) return
       renderer.renderPlan(buildRenderPlan())
+      // Tiled mode: blit GPU canvas 9 times into the 2D overlay canvas
+      if (state.canvas.tiledMode) {
+        const tc = tiledCanvasRef.current
+        const gc = canvasRef.current
+        if (tc && gc) {
+          const ctx2d = tc.getContext('2d')
+          if (ctx2d) {
+            ctx2d.clearRect(0, 0, tc.width, tc.height)
+            for (let row = 0; row < 3; row++) {
+              for (let col = 0; col < 3; col++) {
+                ctx2d.drawImage(gc, col * width, row * height, width, height)
+              }
+            }
+            if (state.canvas.showTileGrid) {
+              ctx2d.strokeStyle = 'rgba(0, 220, 200, 0.55)'
+              ctx2d.lineWidth = 0.75
+              ctx2d.beginPath()
+              ctx2d.moveTo(width, 0);       ctx2d.lineTo(width, 3 * height)
+              ctx2d.moveTo(2 * width, 0);   ctx2d.lineTo(2 * width, 3 * height)
+              ctx2d.moveTo(0, height);      ctx2d.lineTo(3 * width, height)
+              ctx2d.moveTo(0, 2 * height);  ctx2d.lineTo(3 * width, 2 * height)
+              ctx2d.stroke()
+            }
+          }
+        }
+      }
       scheduleMirrorUpdate()
     })
   }
@@ -179,6 +206,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     height,
     viewportRef,
     onZoom: (zoom) => dispatch({ type: 'SET_ZOOM', payload: zoom }),
+    tiledMode: state.canvas.tiledMode,
+    requestRender: doRender,
   })
 
   // ── Zoom to cursor + scroll save/restore ───────────────────────
@@ -458,6 +487,23 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   useEffect(() => {
     if (!isActive) return
+    doRender()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.canvas.tiledMode, state.canvas.showTileGrid, isActive])
+
+  useEffect(() => {
+    if (!isActive || !state.canvas.tiledMode) return
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const dpr = window.devicePixelRatio
+    const zoom = zoomRef.current
+    viewport.scrollLeft = width * zoom / dpr
+    viewport.scrollTop  = height * zoom / dpr
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.canvas.tiledMode, isActive])
+
+  useEffect(() => {
+    if (!isActive) return
     const unsubscribe = adjustmentPreviewStore.subscribe(() => {
       const renderer = rendererRef.current
       if (!renderer) return
@@ -698,6 +744,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         // The shader samples the mask at canvas UV [0,1]², so a shifted/grown mask
         // causes the parent layer to appear invisible ("squished mask" artifact).
         if (isMaskLayer) return
+        // Tiled mode: wrap the coord into canvas range. blendPixelOver applies the
+        // same wrap before bounds-checking against the layer rect, so the layer
+        // must cover the wrapped destination, not the raw out-of-canvas input.
+        if (state.canvas.tiledMode) {
+          const W = renderer.pixelWidth
+          const H = renderer.pixelHeight
+          canvasX = ((canvasX % W) + W) % W
+          canvasY = ((canvasY % H) + H) % H
+        }
         renderer.growLayerToFit(activeLayer!, canvasX, canvasY, extraRadius)
       },
       setColor: (color) => {
@@ -765,6 +820,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         return l && 'type' in l && l.type === 'shape' ? l : null
       })(),
       zoom: state.canvas.zoom,
+      tiledMode: state.canvas.tiledMode,
     }
   }
 
@@ -881,6 +937,79 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     },
   })
 
+  // Stable offset object for the tiled canvas second useCanvas call
+  const tiledOffset = useMemo(() => ({ x: width, y: height }), [width, height])
+
+  const { handlePointerDown: handleTiledPointerDown, handlePointerMove: handleTiledPointerMove, handlePointerUp: handleTiledPointerUp, handlePointerLeave: handleTiledPointerLeave } = useCanvas({
+    onPointerDown: (pos) => {
+      const ctx = buildCtx()
+      if (ctx) toolHandlerRef.current.onPointerDown(pos, ctx)
+    },
+    onPointerMove: (pos) => {
+      const ctx = buildCtx()
+      if (ctx) toolHandlerRef.current.onPointerMove(pos, ctx)
+    },
+    onPointerMoveBatch: (positions) => {
+      const renderer = rendererRef.current
+      const ctx = buildCtx()
+      if (!ctx || !renderer) return
+      renderer.deferFlush = true
+      const noopRender = (): void => { /* deferred */ }
+      for (const pos of positions) {
+        toolHandlerRef.current.onPointerMove(pos, { ...ctx, render: noopRender })
+      }
+      renderer.deferFlush = false
+      renderer.flushLayer(ctx.layer)
+      ctx.render()
+    },
+    onPointerUp: (pos) => {
+      const ctx = buildCtx()
+      if (ctx) toolHandlerRef.current.onPointerUp(pos, ctx)
+      newPixelLayerRef.current = null
+      const def = TOOL_REGISTRY[state.activeTool]
+      if (def.modifiesPixels && !def.skipAutoHistory && ctx) {
+        const label = state.activeTool.charAt(0).toUpperCase() + state.activeTool.slice(1)
+        onStrokeEndRef.current?.(label)
+      }
+    },
+    onHover: (pos) => {
+      if (isActive) cursorStore.setPosition(pos.x, pos.y)
+      const tool = state.activeTool
+      if ((tool === 'brush' || tool === 'eraser' || tool === 'clone-stamp' || tool === 'dodge' || tool === 'burn') && brushCursorRef.current) {
+        const dpr = window.devicePixelRatio
+        const zoom = zoomRef.current
+        const size = tool === 'brush' ? brushOptions.size
+                   : tool === 'eraser' ? eraserOptions.size
+                   : tool === 'dodge' ? dodgeOptions.size
+                   : tool === 'burn' ? burnOptions.size
+                   : cloneStampOptions.size
+        const r = Math.max(1, size / 2 * zoom / dpr)
+        // In tiled mode, coordinates are in [-W, 2W). Map to wrapper-space:
+        const cx = (pos.x + width) * zoom / dpr
+        const cy = (pos.y + height) * zoom / dpr
+        const el = brushCursorRef.current
+        el.style.left   = `${cx - r}px`
+        el.style.top    = `${cy - r}px`
+        el.style.width  = `${r * 2}px`
+        el.style.height = `${r * 2}px`
+        if (tool === 'clone-stamp') {
+          el.style.display = cloneStampStore.source ? 'block' : 'none'
+          el.className = `${styles.brushCursor} ${styles.brushCursorCrossHair}`
+        } else {
+          el.style.display = 'block'
+          el.className = styles.brushCursor
+        }
+      }
+      const ctx = buildCtx()
+      if (ctx) toolHandlerRef.current.onHover?.(pos, ctx)
+    },
+    onLeave: () => {
+      const ctx = buildCtx()
+      if (ctx) toolHandlerRef.current.onLeave?.(ctx)
+    },
+    coordinateOffset: tiledOffset,
+  })
+
   return (
     <>
     <div ref={viewportRef} className={styles.viewport} data-canvas-viewport data-active-viewport={isActive ? '' : undefined}>
@@ -889,8 +1018,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           ref={canvasWrapperRef}
           className={styles.canvasWrapper}
           style={{
-            width:  width  * state.canvas.zoom / window.devicePixelRatio,
-            height: height * state.canvas.zoom / window.devicePixelRatio,
+            width:  (state.canvas.tiledMode ? 3 : 1) * width  * state.canvas.zoom / window.devicePixelRatio,
+            height: (state.canvas.tiledMode ? 3 : 1) * height * state.canvas.zoom / window.devicePixelRatio,
           }}
         >
           <canvas
@@ -899,6 +1028,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             width={width}
             height={height}
             style={{
+              display: state.canvas.tiledMode ? 'none' : 'block',
               width:  width  * state.canvas.zoom / window.devicePixelRatio,
               height: height * state.canvas.zoom / window.devicePixelRatio,
               cursor: (state.activeTool === 'brush' || state.activeTool === 'eraser' || state.activeTool === 'dodge' || state.activeTool === 'burn') ? 'none'
@@ -914,6 +1044,28 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             onPointerLeave={handlePointerLeave}
             aria-label={`Canvas ${width}\u00d7${height}`}
           />
+          {state.canvas.tiledMode && (
+            <canvas
+              ref={tiledCanvasRef}
+              width={3 * width}
+              height={3 * height}
+              style={{
+                position: 'absolute',
+                top: 0, left: 0,
+                width: '100%', height: '100%',
+                cursor: (state.activeTool === 'brush' || state.activeTool === 'eraser' || state.activeTool === 'dodge' || state.activeTool === 'burn') ? 'none'
+                      : state.activeTool === 'pencil' ? 'none'
+                      : state.activeTool === 'polygonal-selection' ? 'crosshair'
+                      : undefined,
+                imageRendering: state.canvas.zoom < 1 ? 'auto' : 'pixelated',
+                touchAction: 'none',
+              }}
+              onPointerDown={handleTiledPointerDown}
+              onPointerMove={handleTiledPointerMove}
+              onPointerUp={handleTiledPointerUp}
+              onPointerLeave={handleTiledPointerLeave}
+            />
+          )}
           <canvas
             ref={toolOverlayRef}
             className={styles.overlay}

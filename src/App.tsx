@@ -287,6 +287,18 @@ function AppContent(): React.JSX.Element {
   const handleToggleGrid   = useCallback(() => { dispatch({ type: 'TOGGLE_GRID' }) }, [dispatch])
   const handleFindLayers   = useCallback(() => { setFindLayersCounter(c => c + 1) }, [])
 
+  const handleSetNormalMode = useCallback(() => {
+    dispatch({ type: 'SET_TILED_MODE', payload: false })
+  }, [dispatch])
+
+  const handleSetTiledMode = useCallback(() => {
+    dispatch({ type: 'SET_TILED_MODE', payload: true })
+  }, [dispatch])
+
+  const handleToggleTileGrid = useCallback(() => {
+    dispatch({ type: 'SET_SHOW_TILE_GRID', payload: !stateRef.current.canvas.showTileGrid })
+  }, [dispatch])
+
   const handleSelectAll = useCallback((): void => {
     const { width, height } = stateRef.current.canvas
     if (width === 0 || height === 0) return
@@ -395,6 +407,22 @@ function AppContent(): React.JSX.Element {
       const next = current === 'magic-wand' ? 'object-selection' : 'magic-wand'
       handleToolChange(next)
     }, [handleToolChange]),
+    handleNew:       useCallback(() => setShowNewImageDialog(true), []),
+    handleOpen:      useCallback(() => { void handleOpen() }, [handleOpen]),
+    handleSave:      useCallback(() => { void handleSave(false) }, [handleSave]),
+    handleSaveAs:    useCallback(() => { void handleSave(true) }, [handleSave]),
+    handleExport:    useCallback(() => setShowExportDialog(true), []),
+    handleNewLayer,
+    handleGroupLayers: useCallback(() => {
+      const s = stateRef.current
+      const ids = new Set(s.selectedLayerIds)
+      if (s.activeLayerId) ids.add(s.activeLayerId)
+      handleGroupLayers([...ids])
+    }, [handleGroupLayers]),
+    handleUngroupLayers: useCallback(() => {
+      const id = stateRef.current.activeLayerId
+      if (id) handleUngroupLayers(id)
+    }, [handleUngroupLayers]),
   })
 
   // ── Export ────────────────────────────────────────────────────────
@@ -488,6 +516,9 @@ function AppContent(): React.JSX.Element {
       case 'zoomOut':         handleZoomOut(); break
       case 'fitToWindow':     handleFitToWindow(); break
       case 'toggleGrid':      handleToggleGrid(); break
+      case 'setNormalMode':   handleSetNormalMode();  break
+      case 'setTiledMode':    handleSetTiledMode();   break
+      case 'toggleTileGrid':  handleToggleTileGrid(); break
       case 'about':           setShowAboutDialog(true); break
       case 'keyboardShortcuts': setShowShortcutsDialog(true); break
       case 'openDevTools':    window.api.openDevTools(); break
@@ -501,6 +532,7 @@ function AppContent(): React.JSX.Element {
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
     handleFitToWindow, handleToggleGrid, handleEnterTransform,
+    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers,
     handleOpenCafDialog,
@@ -542,11 +574,16 @@ function AppContent(): React.JSX.Element {
   }, [isMac, isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
       hasSelection, isContentAwareFilling, adjustments.isAdjustmentMenuEnabled])
 
-  // Sync Show Grid checkbox state.
+  // Sync Show Grid and tiled mode checkbox states.
   useEffect(() => {
     if (!isMac) return
-    window.api.setMenuItemChecked({ toggleGrid: state.canvas.showGrid })
-  }, [isMac, state.canvas.showGrid])
+    window.api.setMenuItemChecked({
+      toggleGrid:   state.canvas.showGrid,
+      normalMode:   !state.canvas.tiledMode,
+      tiledMode:    state.canvas.tiledMode,
+      showTileGrid: state.canvas.showTileGrid,
+    })
+  }, [isMac, state.canvas.showGrid, state.canvas.tiledMode, state.canvas.showTileGrid])
 
   return (
     <div className={styles.app}>
@@ -578,6 +615,11 @@ function AppContent(): React.JSX.Element {
         onFitToWindow={handleFitToWindow}
         onToggleGrid={handleToggleGrid}
         showGrid={state.canvas.showGrid}
+        onSetNormalMode={handleSetNormalMode}
+        onSetTiledMode={handleSetTiledMode}
+        tiledMode={state.canvas.tiledMode}
+        onToggleTileGrid={handleToggleTileGrid}
+        showTileGrid={state.canvas.showTileGrid}
         onNewLayer={handleNewLayer}
         onDuplicateLayer={handleDuplicateLayer}
         onDeleteLayer={handleDeleteActiveLayer}

@@ -821,6 +821,8 @@ export interface CanvasState {
   gridType: GridType
   backgroundFill: BackgroundFill
   key: number
+  tiledMode: boolean
+  showTileGrid: boolean
 }
 
 // ─── Pixel Brushes ─────────────────────────────────────────────────────────────

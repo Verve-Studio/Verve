@@ -28,6 +28,8 @@ function createEraserHandler(): ToolHandler {
     growLayerToFit(x0, y0, Math.ceil(radius))
     if (x1 !== x0 || y1 !== y0) growLayerToFit(x1, y1, Math.ceil(radius))
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
+    const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+    const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
     eraseThickLine(
       renderer, layer,
       x0, y0, x1, y1,
@@ -38,6 +40,7 @@ function createEraserHandler(): ToolHandler {
       eraserOptions.antiAlias,
       touched ?? undefined,
       sel,
+      tiledW, tiledH,
     )
     renderer.flushLayer(layer)
     render(layers)

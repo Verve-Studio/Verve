@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PixelShop — Tiled Mode Design</title>
+  <style>
+    :root {
+      --color-bg:             #3c3c3c;
+      --color-surface:        #2d2d2d;
+      --color-surface-hover:  #4a4a4a;
+      --color-border:         #191919;
+      --color-border-light:   #555555;
+      --color-text:           #d4d4d4;
+      --color-text-dim:       #aaaaaa;
+      --color-text-muted:     #7a7a7a;
+      --color-accent-blue:    #0699fb;
+      --color-danger:         #c04040;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #161616;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      font-size: 12px;
+    }
+
+    /* ── Prototype header ──────────────────────────────────────────── */
+
+    .proto-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #252525;
+    }
+
+    .proto-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .proto-title em {
+      color: var(--color-accent-blue);
+      font-style: normal;
+    }
+
+    .hdiv {
+      width: 1px;
+      height: 14px;
+      background: #262626;
+      flex-shrink: 0;
+    }
+
+    .state-label {
+      font-size: 10px;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .state-toggle {
+      display: flex;
+      gap: 2px;
+      background: #1a1a1a;
+      border: 1px solid #252525;
+      border-radius: 3px;
+      padding: 2px;
+    }
+
+    .state-btn {
+      height: 20px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      color: #4a4a4a;
+      background: transparent;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+    }
+
+    .state-btn:hover { color: #888; }
+
+    .state-btn.active {
+      background: var(--color-surface);
+      color: var(--color-text);
+    }
+
+    .proto-hint {
+      margin-left: auto;
+      font-size: 10px;
+      color: #333;
+      white-space: nowrap;
+    }
+
+    /* ── App shell ─────────────────────────────────────────────────── */
+
+    .app-shell {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 560px;
+      overflow: hidden;
+    }
+
+    /* ── TopBar ────────────────────────────────────────────────────── */
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      height: 36px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      position: relative;
+      z-index: 110;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    .logo-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--color-accent-blue);
+      border-radius: 3px;
+      cursor: default;
+      flex-shrink: 0;
+    }
+
+    .logo-btn:hover { background: var(--color-surface-hover); }
+
+    .menu-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--color-border-light);
+      margin: 0 4px;
+      flex-shrink: 0;
+    }
+
+    /* ── MenuBar ───────────────────────────────────────────────────── */
+
+    .menubar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 2px;
+    }
+
+    .menu-entry {
+      position: relative;
+    }
+
+    .menu-trigger {
+      height: 22px;
+      padding: 0 8px;
+      border: none;
+      background: transparent;
+      cursor: default;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      border-radius: 3px;
+      letter-spacing: 0.01em;
+      transition: background-color 80ms ease, color 80ms ease;
+      white-space: nowrap;
+    }
+
+    .menu-trigger:hover,
+    .menu-trigger.open {
+      background-color: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    /* ── Dropdown ──────────────────────────────────────────────────── */
+
+    .dropdown {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 0;
+      min-width: 210px;
+      background: #282828;
+      border: 1px solid #1a1a1a;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.55);
+      padding: 3px;
+      list-style: none;
+      z-index: 200;
+      display: none;
+    }
+
+    .dropdown.open { display: block; }
+
+    .dropdown-sep {
+      height: 1px;
+      background: rgba(255,255,255,.07);
+      margin: 3px 6px;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 5px 10px;
+      border: none;
+      background: transparent;
+      cursor: default;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      border-radius: 4px;
+      text-align: left;
+      gap: 4px;
+      transition: background-color 60ms ease;
+    }
+
+    .menu-item:not(:disabled):hover {
+      background: var(--color-surface-hover);
+    }
+
+    .menu-item:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .check-mark {
+      width: 14px;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--color-text-dim);
+    }
+
+    .item-label { flex: 1; }
+
+    .item-shortcut {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      letter-spacing: 0.03em;
+      opacity: 0.7;
+    }
+
+    /* ── TopBar center / right ─────────────────────────────────────── */
+
+    .topbar-center {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      overflow: hidden;
+      gap: 6px;
+    }
+
+    .doc-title {
+      font-size: 11px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Tiled Mode badge in the topbar */
+    .mode-badge {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      background: rgba(6, 153, 251, 0.14);
+      border: 1px solid rgba(6, 153, 251, 0.3);
+      color: var(--color-accent-blue);
+      letter-spacing: 0.04em;
+      display: none;
+    }
+
+    .mode-badge.visible { display: inline-block; }
+
+    /* ── Tab bar ───────────────────────────────────────────────────── */
+
+    .tabbar {
+      display: flex;
+      align-items: flex-end;
+      height: 28px;
+      background: #252525;
+      border-bottom: 1px solid var(--color-border);
+      padding: 0 4px;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .tab {
+      height: 24px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-bottom: none;
+      background: transparent;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text-muted);
+      border-radius: 3px 3px 0 0;
+      cursor: default;
+      white-space: nowrap;
+      transition: background 80ms;
+    }
+
+    .tab.active {
+      background: #1e1e1e;
+      border-color: #1a1a1a;
+      color: var(--color-text);
+    }
+
+    /* ── Main workspace row ────────────────────────────────────────── */
+
+    .workspace-row {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar (left) ────────────────────────────────────────────── */
+
+    .toolbar {
+      width: 36px;
+      background: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6px 0;
+      gap: 1px;
+      flex-shrink: 0;
+    }
+
+    .tool-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      border-radius: 3px;
+      color: var(--color-text-dim);
+      cursor: default;
+      font-size: 13px;
+    }
+
+    .tool-btn:hover { background: var(--color-surface-hover); }
+    .tool-btn.active { background: rgba(6,153,251,0.18); color: var(--color-accent-blue); }
+
+    .tool-sep {
+      width: 20px;
+      height: 1px;
+      background: var(--color-border);
+      margin: 4px 0;
+    }
+
+    /* ── Canvas area ───────────────────────────────────────────────── */
+
+    .canvas-area {
+      flex: 1;
+      background: #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── Normal mode canvas ────────────────────────────────────────── */
+
+    .canvas-normal {
+      position: relative;
+      width: 240px;
+      height: 240px;
+    }
+
+    .canvas-normal canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* ── Tiled mode 3×3 grid ───────────────────────────────────────── */
+
+    .canvas-tiled {
+      position: relative;
+      /* 3 tiles × 80px each = 240px, no gap between tiles */
+      width: 240px;
+      height: 240px;
+      display: none;
+    }
+
+    .tile-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 80px);
+      grid-template-rows: repeat(3, 80px);
+      gap: 0;
+      width: 240px;
+      height: 240px;
+    }
+
+    .tile {
+      width: 80px;
+      height: 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tile canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Grid overlay: lines at tile seam boundaries */
+    .grid-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+
+    .grid-overlay.visible { display: block; }
+
+    .grid-overlay svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Right panel ───────────────────────────────────────────────── */
+
+    .right-panel {
+      width: 200px;
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .panel-section {
+      border-bottom: 1px solid var(--color-border);
+      padding: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 26px;
+      padding: 0 8px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-text-muted);
+      cursor: default;
+    }
+
+    .panel-body {
+      padding: 6px 8px;
+    }
+
+    /* Color swatch area */
+    .color-swatches {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .swatch-primary {
+      width: 26px;
+      height: 26px;
+      background: #2266cc;
+      border: 1px solid #444;
+      border-radius: 2px;
+    }
+
+    .swatch-secondary {
+      width: 20px;
+      height: 20px;
+      background: #f0f0f0;
+      border: 1px solid #444;
+      border-radius: 2px;
+      margin-left: -8px;
+      margin-top: 8px;
+    }
+
+    /* Layer items */
+    .layer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 2px;
+      cursor: default;
+    }
+
+    .layer-item.selected {
+      background: rgba(6,153,251,0.18);
+    }
+
+    .layer-item:not(.selected):hover {
+      background: var(--color-surface-hover);
+    }
+
+    .layer-thumb {
+      width: 20px;
+      height: 20px;
+      border: 1px solid #3a3a3a;
+      border-radius: 1px;
+      flex-shrink: 0;
+      background-image: repeating-conic-gradient(#3a3a3a 0% 25%, #292929 0% 50%);
+      background-size: 6px 6px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .layer-thumb-fill {
+      position: absolute;
+      inset: 0;
+      background: #2266cc;
+      opacity: 0.7;
+    }
+
+    .layer-name {
+      flex: 1;
+      font-size: 11px;
+      color: var(--color-text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .layer-item.selected .layer-name {
+      color: var(--color-text);
+    }
+
+    .layer-vis {
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--color-text-muted);
+      font-size: 10px;
+    }
+
+    /* ── Status bar ────────────────────────────────────────────────── */
+
+    .statusbar {
+      height: 22px;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .status-item {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+
+    .status-item span {
+      color: var(--color-text-dim);
+    }
+
+    /* ── Static comparison section ─────────────────────────────────── */
+
+    .comparison-section {
+      background: #111;
+      border-top: 1px solid #232323;
+      padding: 16px 20px 24px;
+    }
+
+    .comparison-heading {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #333;
+      margin-bottom: 16px;
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 220px);
+      gap: 28px;
+      flex-wrap: wrap;
+    }
+
+    .comparison-case {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .case-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #4a4a4a;
+    }
+
+    .case-badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      letter-spacing: 0.04em;
+    }
+
+    .case-badge.normal {
+      background: rgba(120,120,120,0.12);
+      border: 1px solid rgba(120,120,120,0.25);
+      color: #888;
+    }
+
+    .case-badge.tiled {
+      background: rgba(6,153,251,0.12);
+      border: 1px solid rgba(6,153,251,0.28);
+      color: #0699fb;
+    }
+
+    .case-badge.grid {
+      background: rgba(0,220,200,0.10);
+      border: 1px solid rgba(0,220,200,0.25);
+      color: #00dcc8;
+    }
+
+    .static-dropdown {
+      background: #282828;
+      border: 1px solid #1a1a1a;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.5);
+      padding: 3px;
+      list-style: none;
+      display: inline-block;
+      width: 215px;
+    }
+
+    .static-dropdown .pre-hover {
+      background: var(--color-surface-hover);
+    }
+
+    .case-note {
+      font-size: 10px;
+      color: #383838;
+      line-height: 1.55;
+    }
+
+    /* ── Notes section ─────────────────────────────────────────────── */
+
+    .notes-section {
+      background: #0f0f0f;
+      border-top: 1px solid #1e1e1e;
+      padding: 16px 20px 24px;
+    }
+
+    .notes-heading {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #333;
+      margin-bottom: 12px;
+    }
+
+    .notes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      list-style: none;
+    }
+
+    .notes-list li {
+      font-size: 11px;
+      color: #3e3e3e;
+      line-height: 1.5;
+      padding-left: 12px;
+      position: relative;
+    }
+
+    .notes-list li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: #2e2e2e;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Prototype header ──────────────────────────────────────────────── -->
+  <div class="proto-header">
+    <div class="proto-title">PixelShop — <em>Tiled Mode</em></div>
+    <div class="hdiv"></div>
+    <span class="state-label">Canvas state:</span>
+    <div class="state-toggle">
+      <button class="state-btn active" id="btn-normal"    onclick="setMode('normal')">Normal Mode</button>
+      <button class="state-btn"        id="btn-tiled"     onclick="setMode('tiled')">Tiled Mode</button>
+      <button class="state-btn"        id="btn-tiled-grid" onclick="setMode('tiled-grid')">Tiled + Grid</button>
+    </div>
+    <div class="hdiv"></div>
+    <span class="state-label">→ or open <strong style="color:#888">View</strong> menu above</span>
+    <span class="proto-hint">Interactive prototype — click View menu items to toggle modes</span>
+  </div>
+
+  <!-- ── App shell ─────────────────────────────────────────────────────── -->
+  <div class="app-shell">
+
+    <!-- TopBar -->
+    <div class="topbar">
+      <div class="topbar-left">
+
+        <!-- Logo -->
+        <button class="logo-btn" title="PixelShop">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16" aria-hidden="true">
+            <rect x="1" y="1" width="6" height="6" rx="1"/>
+            <rect x="9" y="1" width="6" height="6" rx="1"/>
+            <rect x="1" y="9" width="6" height="6" rx="1"/>
+            <rect x="9" y="9" width="6" height="6" rx="1"/>
+          </svg>
+        </button>
+
+        <div class="menu-divider"></div>
+
+        <!-- MenuBar -->
+        <nav class="menubar" id="menubar">
+
+          <!-- File -->
+          <div class="menu-entry">
+            <button class="menu-trigger" onclick="toggleMenu('file',this)" onmouseenter="enterMenu('file',this)">File</button>
+            <ul class="dropdown" id="menu-file">
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">New…</span><span class="item-shortcut">Ctrl+N</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Open…</span><span class="item-shortcut">Ctrl+O</span></button></li>
+              <li class="dropdown-sep"></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Save</span><span class="item-shortcut">Ctrl+S</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Export As…</span><span class="item-shortcut">Ctrl+E</span></button></li>
+            </ul>
+          </div>
+
+          <!-- Edit -->
+          <div class="menu-entry">
+            <button class="menu-trigger" onclick="toggleMenu('edit',this)" onmouseenter="enterMenu('edit',this)">Edit</button>
+            <ul class="dropdown" id="menu-edit">
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Undo</span><span class="item-shortcut">Ctrl+Z</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Redo</span><span class="item-shortcut">Ctrl+Y</span></button></li>
+            </ul>
+          </div>
+
+          <!-- Select -->
+          <div class="menu-entry">
+            <button class="menu-trigger" onclick="toggleMenu('select',this)" onmouseenter="enterMenu('select',this)">Select</button>
+            <ul class="dropdown" id="menu-select">
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Select All</span><span class="item-shortcut">Ctrl+A</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Deselect</span><span class="item-shortcut">Ctrl+D</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Invert Selection</span><span class="item-shortcut">Ctrl+Shift+I</span></button></li>
+            </ul>
+          </div>
+
+          <!-- Layer -->
+          <div class="menu-entry">
+            <button class="menu-trigger" onclick="toggleMenu('layer',this)" onmouseenter="enterMenu('layer',this)">Layer</button>
+            <ul class="dropdown" id="menu-layer">
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">New Layer</span><span class="item-shortcut">Ctrl+Shift+N</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Duplicate Layer</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Delete Layer</span></button></li>
+              <li class="dropdown-sep"></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Flatten Image</span></button></li>
+            </ul>
+          </div>
+
+          <!-- View — the key menu for this feature -->
+          <div class="menu-entry">
+            <button class="menu-trigger" id="view-trigger" onclick="toggleMenu('view',this)" onmouseenter="enterMenu('view',this)">View</button>
+            <ul class="dropdown" id="menu-view">
+
+              <!-- Zoom items -->
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom In</span><span class="item-shortcut">Ctrl+=</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom Out</span><span class="item-shortcut">Ctrl+−</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Fit to Window</span><span class="item-shortcut">Ctrl+0</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Actual Size</span><span class="item-shortcut">Ctrl+1</span></button></li>
+
+              <li class="dropdown-sep"></li>
+
+              <!-- Rulers / guides -->
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Rulers</span><span class="item-shortcut">Ctrl+R</span></button></li>
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Grid</span><span class="item-shortcut">Ctrl+'</span></button></li>
+
+              <li class="dropdown-sep"></li>
+
+              <!-- ── Mode group ── -->
+              <li>
+                <button class="menu-item" id="item-normal-mode" onclick="menuSetMode('normal')">
+                  <span class="check-mark" id="check-normal">✓</span>
+                  <span class="item-label">Normal Mode</span>
+                </button>
+              </li>
+              <li>
+                <button class="menu-item" id="item-tiled-mode" onclick="menuSetMode('tiled')">
+                  <span class="check-mark" id="check-tiled"></span>
+                  <span class="item-label">Tiled Mode</span>
+                </button>
+              </li>
+
+              <li class="dropdown-sep"></li>
+
+              <!-- ── Tiled-mode sub-item ── -->
+              <li>
+                <button class="menu-item" id="item-show-grid" onclick="menuToggleTileGrid()" disabled>
+                  <span class="check-mark" id="check-show-grid"></span>
+                  <span class="item-label">Show Tile Grid</span>
+                </button>
+              </li>
+
+            </ul>
+          </div>
+
+          <!-- Help -->
+          <div class="menu-entry">
+            <button class="menu-trigger" onclick="toggleMenu('help',this)" onmouseenter="enterMenu('help',this)">Help</button>
+            <ul class="dropdown" id="menu-help">
+              <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">About PixelShop</span></button></li>
+            </ul>
+          </div>
+
+        </nav>
+      </div>
+
+      <!-- Center: doc title + mode badge -->
+      <div class="topbar-center">
+        <span class="doc-title">texture_grass_01.png — 256×256 px</span>
+        <span class="mode-badge" id="mode-badge">TILED</span>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tabbar">
+      <button class="tab active">texture_grass_01.png</button>
+      <button class="tab">brick_wall_02.png</button>
+      <button class="tab">sky_clouds.png</button>
+    </div>
+
+    <!-- Workspace -->
+    <div class="workspace-row">
+
+      <!-- Left toolbar -->
+      <div class="toolbar">
+        <!-- Move -->
+        <button class="tool-btn" title="Move">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <path d="M7 1l2 3H8v2h2V5l3 2-3 2V8H8v2h1L7 13 5 10h1V8H4v1L1 7l3-2v1h2V4H5L7 1z"/>
+          </svg>
+        </button>
+        <div class="tool-sep"></div>
+        <!-- Brush (active) -->
+        <button class="tool-btn active" title="Brush">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <circle cx="4" cy="10" r="2.5"/>
+            <rect x="5.5" y="2" width="3" height="7" rx="1.5" transform="rotate(-35 7 5.5)"/>
+          </svg>
+        </button>
+        <!-- Eraser -->
+        <button class="tool-btn" title="Eraser">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <rect x="1" y="7" width="12" height="4" rx="1" transform="rotate(-20 7 9)"/>
+          </svg>
+        </button>
+        <!-- Pencil -->
+        <button class="tool-btn" title="Pencil">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <path d="M2 10l1.5-1.5L11 1l2 2-7.5 7.5L2 12z"/>
+          </svg>
+        </button>
+        <div class="tool-sep"></div>
+        <!-- Rect selection -->
+        <button class="tool-btn" title="Rectangular Selection">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 1.5">
+            <rect x="2" y="2" width="10" height="10" rx="1"/>
+          </svg>
+        </button>
+        <!-- Lasso -->
+        <button class="tool-btn" title="Lasso Selection">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M7 2C4 2 2 4 2 7c0 2.5 1.5 4 3.5 4 1 0 1.5-.5 1.5-1.5 0-2 3-2 3 0 0 1.5.5 2.5 2.5 2.5"/>
+          </svg>
+        </button>
+        <div class="tool-sep"></div>
+        <!-- Eyedropper -->
+        <button class="tool-btn" title="Eyedropper">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <path d="M10.5 2.5a1.5 1.5 0 012.1 2.1L11 6.2l.8.8-4.5 4.5-1.5.5.5-1.5 4.5-4.5.8.8zM3 10l1-1 1.5 1.5L4 11.5l-1.5.5z"/>
+          </svg>
+        </button>
+        <!-- Clone stamp -->
+        <button class="tool-btn" title="Clone Stamp">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <circle cx="5" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M7 7l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="9" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.5 1"/>
+          </svg>
+        </button>
+        <div class="tool-sep"></div>
+        <!-- Zoom -->
+        <button class="tool-btn" title="Zoom">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <circle cx="6" cy="6" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9 9l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M4.5 6h3M6 4.5v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Canvas area -->
+      <div class="canvas-area" id="canvas-area">
+
+        <!-- Normal mode: single canvas -->
+        <div class="canvas-normal" id="canvas-normal">
+          <canvas id="cnv-normal" width="240" height="240"></canvas>
+        </div>
+
+        <!-- Tiled mode: 3×3 grid -->
+        <div class="canvas-tiled" id="canvas-tiled">
+          <div class="tile-grid" id="tile-grid">
+            <!-- 9 tiles, all showing the same pattern canvas -->
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+            <div class="tile"><canvas class="tile-cnv" width="80" height="80"></canvas></div>
+          </div>
+
+          <!-- Grid overlay — drawn via SVG over the 3×3 -->
+          <div class="grid-overlay" id="grid-overlay">
+            <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+              <!-- Vertical seam lines at x=80 and x=160 -->
+              <line x1="80"  y1="0" x2="80"  y2="240" stroke="rgba(0,220,200,0.55)" stroke-width="0.75"/>
+              <line x1="160" y1="0" x2="160" y2="240" stroke="rgba(0,220,200,0.55)" stroke-width="0.75"/>
+              <!-- Horizontal seam lines at y=80 and y=160 -->
+              <line x1="0" y1="80"  x2="240" y2="80"  stroke="rgba(0,220,200,0.55)" stroke-width="0.75"/>
+              <line x1="0" y1="160" x2="240" y2="160" stroke="rgba(0,220,200,0.55)" stroke-width="0.75"/>
+            </svg>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right panel -->
+      <div class="right-panel">
+
+        <!-- Colors -->
+        <div class="panel-section">
+          <div class="panel-header">Color</div>
+          <div class="panel-body">
+            <div class="color-swatches">
+              <div class="swatch-primary" title="Foreground color"></div>
+              <div class="swatch-secondary" title="Background color"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layers -->
+        <div class="panel-section" style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+          <div class="panel-header">
+            Layers
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor" style="opacity:.4">
+              <rect x="1" y="1" width="4" height="4" rx="0.5"/>
+              <rect x="6" y="1" width="4" height="4" rx="0.5"/>
+              <rect x="1" y="6" width="4" height="4" rx="0.5"/>
+              <rect x="6" y="6" width="4" height="4" rx="0.5"/>
+            </svg>
+          </div>
+          <div class="panel-body" style="flex:1; overflow-y:auto;">
+            <div class="layer-list">
+              <div class="layer-item selected">
+                <div class="layer-vis">●</div>
+                <div class="layer-thumb"><div class="layer-thumb-fill" style="background:#2266cc"></div></div>
+                <span class="layer-name">Paint strokes</span>
+              </div>
+              <div class="layer-item">
+                <div class="layer-vis">●</div>
+                <div class="layer-thumb"><div class="layer-thumb-fill" style="background:#4a7c3f; opacity:0.8"></div></div>
+                <span class="layer-name">Base fill</span>
+              </div>
+              <div class="layer-item">
+                <div class="layer-vis" style="opacity:0.3">●</div>
+                <div class="layer-thumb"></div>
+                <span class="layer-name" style="opacity:0.4">Background</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div><!-- /workspace-row -->
+
+    <!-- Status bar -->
+    <div class="statusbar">
+      <span class="status-item"><span id="status-mode">Normal Mode</span></span>
+      <span class="status-item">256×256 px</span>
+      <span class="status-item">Zoom: <span>100%</span></span>
+      <span class="status-item">Brush — Size: <span>12px</span></span>
+    </div>
+
+  </div><!-- /app-shell -->
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- Static comparison section -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+
+  <div class="comparison-section">
+    <div class="comparison-heading">View menu — all states</div>
+    <div class="comparison-grid">
+
+      <!-- State 1: Normal Mode active -->
+      <div class="comparison-case">
+        <div class="case-label">
+          <span class="case-badge normal">NORMAL</span>
+          Normal Mode active
+        </div>
+        <ul class="static-dropdown">
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom In</span><span class="item-shortcut">Ctrl+=</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom Out</span><span class="item-shortcut">Ctrl+−</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Fit to Window</span><span class="item-shortcut">Ctrl+0</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Actual Size</span><span class="item-shortcut">Ctrl+1</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Rulers</span><span class="item-shortcut">Ctrl+R</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Grid</span><span class="item-shortcut">Ctrl+'</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark" style="color:var(--color-text-dim)">✓</span><span class="item-label">Normal Mode</span></button></li>
+          <li><button class="menu-item pre-hover"><span class="check-mark"></span><span class="item-label">Tiled Mode</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item" disabled><span class="check-mark"></span><span class="item-label">Show Tile Grid</span></button></li>
+        </ul>
+        <p class="case-note">Checkmark on Normal Mode. "Show Tile Grid" is disabled (greyed out) — it only applies when Tiled Mode is active.</p>
+      </div>
+
+      <!-- State 2: Tiled Mode active, grid off -->
+      <div class="comparison-case">
+        <div class="case-label">
+          <span class="case-badge tiled">TILED</span>
+          Tiled Mode active, grid off
+        </div>
+        <ul class="static-dropdown">
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom In</span><span class="item-shortcut">Ctrl+=</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom Out</span><span class="item-shortcut">Ctrl+−</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Fit to Window</span><span class="item-shortcut">Ctrl+0</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Actual Size</span><span class="item-shortcut">Ctrl+1</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Rulers</span><span class="item-shortcut">Ctrl+R</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Grid</span><span class="item-shortcut">Ctrl+'</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Normal Mode</span></button></li>
+          <li><button class="menu-item pre-hover"><span class="check-mark" style="color:var(--color-text-dim)">✓</span><span class="item-label">Tiled Mode</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Tile Grid</span></button></li>
+        </ul>
+        <p class="case-note">Checkmark moves to Tiled Mode. "Show Tile Grid" is now enabled (no checkmark = grid is off).</p>
+      </div>
+
+      <!-- State 3: Tiled Mode active, grid on -->
+      <div class="comparison-case">
+        <div class="case-label">
+          <span class="case-badge grid">TILED + GRID</span>
+          Tiled Mode active, grid on
+        </div>
+        <ul class="static-dropdown">
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom In</span><span class="item-shortcut">Ctrl+=</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Zoom Out</span><span class="item-shortcut">Ctrl+−</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Fit to Window</span><span class="item-shortcut">Ctrl+0</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Actual Size</span><span class="item-shortcut">Ctrl+1</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Rulers</span><span class="item-shortcut">Ctrl+R</span></button></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Show Grid</span><span class="item-shortcut">Ctrl+'</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item"><span class="check-mark"></span><span class="item-label">Normal Mode</span></button></li>
+          <li><button class="menu-item"><span class="check-mark" style="color:var(--color-text-dim)">✓</span><span class="item-label">Tiled Mode</span></button></li>
+          <li class="dropdown-sep"></li>
+          <li><button class="menu-item pre-hover"><span class="check-mark" style="color:rgba(0,220,200,0.8)">✓</span><span class="item-label">Show Tile Grid</span></button></li>
+        </ul>
+        <p class="case-note">Both Tiled Mode and Show Tile Grid have checkmarks. The grid checkmark uses the tile-seam cyan color as a visual cue distinguishing it from the mode checkmark.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Design notes -->
+  <div class="notes-section">
+    <div class="notes-heading">Design decisions</div>
+    <ul class="notes-list">
+      <li>Tiles share zero gap between them — seam-checking is the point, so visual tile boundaries must come solely from the grid overlay, not a structural gap. A gap would introduce false seam appearance.</li>
+      <li>Grid overlay color is #00dcc8 (cyan) at ~55% opacity with a 0.75 px stroke. Cyan is maximally distinct from the warm browns/greens of typical texture content, and the low opacity ensures it does not mask pixel detail at the seam.</li>
+      <li>"Show Tile Grid" is disabled in Normal Mode to make it unambiguous that the option only applies to the tiled view. When disabled it renders at 35% opacity and the cursor is not-allowed.</li>
+      <li>A small "TILED" badge appears in the top bar center next to the document title whenever Tiled Mode is active. This gives a persistent, non-intrusive mode indicator without modifying any toolbar or status bar layout.</li>
+      <li>Fit to Window (Ctrl+0) description in the spec states it should fit all 9 tiles — the status bar would show a zoom level roughly 1/3 of the Normal Mode fit-to-window zoom.</li>
+      <li>No visual distinction between the center tile and the 8 surrounding tiles by default (per spec). The user identifies the editable tile by position. The grid overlay, when on, makes tile boundaries clear but does not highlight the center cell.</li>
+      <li>Wrap-around-capable tools (Brush, Eraser, Pencil, Clone Stamp, selection tools) are noted in the spec — no UI change is needed for these tools; they just behave differently when Tiled Mode is active.</li>
+    </ul>
+  </div>
+
+  <!-- ── Scripts ──────────────────────────────────────────────────────── -->
+  <script>
+    /* ── State ──────────────────────────────────────────────────────── */
+    let appMode = 'normal';      // 'normal' | 'tiled'
+    let tileGridOn = false;
+
+    /* ── Canvas painting ─────────────────────────────────────────────
+       Draw a simple procedural grass-texture-like pattern so tiles look
+       like real content rather than a placeholder label.
+    ──────────────────────────────────────────────────────────────── */
+    function drawTileContent(ctx, w, h) {
+      // Base: dark green fill
+      ctx.fillStyle = '#2d4a22';
+      ctx.fillRect(0, 0, w, h);
+
+      // Checker underlay (represents transparency layer below)
+      const cs = Math.max(4, Math.floor(w / 16));
+      for (let y = 0; y < h; y += cs) {
+        for (let x = 0; x < w; x += cs) {
+          const odd = ((x / cs) + (y / cs)) % 2;
+          ctx.fillStyle = odd ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
+          ctx.fillRect(x, y, cs, cs);
+        }
+      }
+
+      // Some random-ish blobs of lighter/darker greens — seeded by position
+      const seed = 42;
+      const rand = (n) => {
+        let s = n * 9301 + seed * 49297;
+        return (s % 233280) / 233280;
+      };
+
+      for (let i = 0; i < 40; i++) {
+        const bx = rand(i * 7 + 1) * w;
+        const by = rand(i * 7 + 2) * h;
+        const br = rand(i * 7 + 3) * (w * 0.14) + 2;
+        const lightness = rand(i * 7 + 4) > 0.5 ? 1 : -1;
+        const alpha = rand(i * 7 + 5) * 0.22 + 0.08;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fillStyle = lightness > 0
+          ? `rgba(80,130,50,${alpha})`
+          : `rgba(10,30,5,${alpha})`;
+        ctx.fill();
+      }
+
+      // Horizontal blade-like strokes for texture feel
+      for (let i = 0; i < 60; i++) {
+        const bx = rand(i * 3 + 10) * w;
+        const by = rand(i * 3 + 11) * h;
+        const len = rand(i * 3 + 12) * (w * 0.18) + 2;
+        const angle = (rand(i * 3 + 13) - 0.5) * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(angle) * len, by + Math.sin(angle) * len * 0.3);
+        ctx.strokeStyle = `rgba(100,180,70,${rand(i * 3 + 14) * 0.3 + 0.1})`;
+        ctx.lineWidth = rand(i * 3 + 15) * 0.8 + 0.3;
+        ctx.stroke();
+      }
+
+      // A single blue brush stroke — to demonstrate editing
+      ctx.beginPath();
+      ctx.moveTo(w * 0.2, h * 0.55);
+      ctx.bezierCurveTo(w * 0.35, h * 0.4, w * 0.65, h * 0.7, w * 0.82, h * 0.52);
+      ctx.strokeStyle = 'rgba(40,100,210,0.7)';
+      ctx.lineWidth = Math.max(1.5, w * 0.035);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+
+    function initCanvases() {
+      // Normal mode canvas (240×240)
+      const cnvNormal = document.getElementById('cnv-normal');
+      const ctxN = cnvNormal.getContext('2d');
+      drawTileContent(ctxN, 240, 240);
+
+      // Tiled mode: 9 tiles, each 80×80
+      const tileCnvs = document.querySelectorAll('.tile-cnv');
+      tileCnvs.forEach(cnv => {
+        const ctx = cnv.getContext('2d');
+        // Scale down from the 240×240 source — draw at full resolution then scale
+        // Use the same drawTileContent to ensure pixel-identical tiles
+        drawTileContent(ctx, 80, 80);
+      });
+    }
+
+    /* ── Menu machinery ──────────────────────────────────────────────── */
+    let openMenuId = null;
+
+    function closeAll() {
+      document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
+      document.querySelectorAll('.menu-trigger').forEach(t => t.classList.remove('open'));
+      openMenuId = null;
+    }
+
+    function toggleMenu(id, trigger) {
+      const wasOpen = openMenuId === id;
+      closeAll();
+      if (!wasOpen) {
+        document.getElementById('menu-' + id).classList.add('open');
+        trigger.classList.add('open');
+        openMenuId = id;
+      }
+    }
+
+    function enterMenu(id, trigger) {
+      if (openMenuId !== null && openMenuId !== id) {
+        closeAll();
+        document.getElementById('menu-' + id).classList.add('open');
+        trigger.classList.add('open');
+        openMenuId = id;
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.menu-entry')) closeAll();
+    });
+
+    /* ── Mode switching ──────────────────────────────────────────────── */
+    function applyMode() {
+      const isTiled = appMode === 'tiled';
+
+      // Toggle canvas containers
+      document.getElementById('canvas-normal').style.display = isTiled ? 'none' : 'block';
+      document.getElementById('canvas-tiled').style.display  = isTiled ? 'block' : 'none';
+
+      // Mode badge in topbar
+      const badge = document.getElementById('mode-badge');
+      badge.classList.toggle('visible', isTiled);
+
+      // Status bar
+      document.getElementById('status-mode').textContent = isTiled ? 'Tiled Mode' : 'Normal Mode';
+
+      // Menu checkmarks
+      document.getElementById('check-normal').textContent = isTiled ? '' : '✓';
+      document.getElementById('check-tiled').textContent  = isTiled ? '✓' : '';
+
+      // "Show Tile Grid" item — enabled only in tiled mode
+      const gridItem = document.getElementById('item-show-grid');
+      gridItem.disabled = !isTiled;
+
+      // Grid overlay visibility
+      const overlay = document.getElementById('grid-overlay');
+      overlay.classList.toggle('visible', isTiled && tileGridOn);
+
+      // Grid checkmark
+      document.getElementById('check-show-grid').textContent = (isTiled && tileGridOn) ? '✓' : '';
+
+      // Proto header button states
+      document.getElementById('btn-normal').classList.toggle('active', !isTiled);
+      document.getElementById('btn-tiled').classList.toggle('active', isTiled && !tileGridOn);
+      document.getElementById('btn-tiled-grid').classList.toggle('active', isTiled && tileGridOn);
+    }
+
+    // Called from View menu items
+    function menuSetMode(mode) {
+      if (mode === 'normal') {
+        appMode = 'normal';
+        tileGridOn = false;
+      } else {
+        appMode = (appMode === 'tiled') ? 'normal' : 'tiled'; // toggle
+        if (appMode === 'normal') tileGridOn = false;
+      }
+      applyMode();
+      closeAll();
+    }
+
+    function menuToggleTileGrid() {
+      if (appMode !== 'tiled') return;
+      tileGridOn = !tileGridOn;
+      applyMode();
+      closeAll();
+    }
+
+    // Called from proto header buttons
+    function setMode(state) {
+      if (state === 'normal') {
+        appMode = 'normal';
+        tileGridOn = false;
+      } else if (state === 'tiled') {
+        appMode = 'tiled';
+        tileGridOn = false;
+      } else if (state === 'tiled-grid') {
+        appMode = 'tiled';
+        tileGridOn = true;
+      }
+      applyMode();
+    }
+
+    /* ── Init ────────────────────────────────────────────────────────── */
+    initCanvases();
+    applyMode();
+  </script>
+
+</body>
+</html>

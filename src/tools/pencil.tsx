@@ -312,11 +312,13 @@ function paintBrushPixel(
   opacity: number,
   touched: Map<number, number>,
   sel?: { mask: Uint8Array; width: number } | null,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
   const bx = ((canvasX % brush.width)  + brush.width)  % brush.width
   const by = ((canvasY % brush.height) + brush.height) % brush.height
   if (pixels[(by * brush.width + bx) * 4 + 3] === 0) return
-  blendPixelOver(renderer, layer, canvasX, canvasY, r, g, b, a, opacity, touched, sel ?? undefined)
+  blendPixelOver(renderer, layer, canvasX, canvasY, r, g, b, a, opacity, touched, sel ?? undefined, tiledW, tiledH)
 }
 
 /**
@@ -336,10 +338,12 @@ function paintBrushStamp(
   shape: BrushShape,
   touched: Map<number, number>,
   sel?: { mask: Uint8Array; width: number } | null,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
   const pixels = getBrushPixels(brush)
   if (size <= 1) {
-    paintBrushPixel(renderer, layer, cx, cy, brush, pixels, r, g, b, a, opacity, touched, sel)
+    paintBrushPixel(renderer, layer, cx, cy, brush, pixels, r, g, b, a, opacity, touched, sel, tiledW, tiledH)
     return
   }
   // Iterate a size×size axis-aligned bounding box so the painted footprint is
@@ -362,7 +366,7 @@ function paintBrushStamp(
         inside = ox * ox + oy * oy <= radius * radius
       }
       if (!inside) continue
-      paintBrushPixel(renderer, layer, cx + dx, cy + dy, brush, pixels, r, g, b, a, opacity, touched, sel)
+      paintBrushPixel(renderer, layer, cx + dx, cy + dy, brush, pixels, r, g, b, a, opacity, touched, sel, tiledW, tiledH)
     }
   }
 }
@@ -392,7 +396,9 @@ function createPencilHandler(): ToolHandler {
     const { r, g, b, a } = primaryColor
     growLayerToFit(px, py, 2)
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
-    blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched ?? undefined, sel)
+    const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+    const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
+    blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched ?? undefined, sel, tiledW, tiledH)
   }
 
   /**
@@ -497,10 +503,12 @@ function createPencilHandler(): ToolHandler {
         if (brush) {
           const pad = Math.ceil(pencilOptions.size / 2) + 2
           growLayerToFit(px, py, pad)
-          paintBrushStamp(renderer, layer, px, py, brush, r, g, b, a, pencilOptions.opacity, pencilOptions.size, pencilOptions.shape, touched, sel ?? null)
+          paintBrushStamp(renderer, layer, px, py, brush, r, g, b, a, pencilOptions.opacity, pencilOptions.size, pencilOptions.shape, touched, sel ?? null, ctx.tiledMode ? renderer.pixelWidth : undefined, ctx.tiledMode ? renderer.pixelHeight : undefined)
         } else {
           growLayerToFit(px, py, 2)
-          blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched, sel)
+          const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+          const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
+          blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched, sel, tiledW, tiledH)
         }
         lastPx    = { x: px, y: py }
         ppPrev    = { x: px, y: py }
@@ -550,9 +558,11 @@ function createPencilHandler(): ToolHandler {
         if (brush) {
           // Walk each Bresenham pixel and stamp a disk using the tiling brush mask
           const pad = Math.ceil(pencilOptions.size / 2) + 2
+          const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+          const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
           bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
             growLayerToFit(px, py, pad)
-            paintBrushStamp(renderer, layer, px, py, brush, r, g, b, a, pencilOptions.opacity, pencilOptions.size, pencilOptions.shape, touched!, sel ?? null)
+            paintBrushStamp(renderer, layer, px, py, brush, r, g, b, a, pencilOptions.opacity, pencilOptions.size, pencilOptions.shape, touched!, sel ?? null, tiledW, tiledH)
           })
           lastPx = { x: x1, y: y1 }
         } else {

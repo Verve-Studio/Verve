@@ -53,6 +53,8 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     savedLayerData: null,
     savedHistory: null,
     canvasKey: 1,
+    tiledMode: false,
+    showTileGrid: false,
   }])
   const [activeTabId, setActiveTabId]         = useState(initialTabId)
   const [pendingLayerData, setPendingLayerData] = useState<Map<string, string> | null>(null)
@@ -134,6 +136,8 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
         layers:         toTab.snapshot.layers,
         activeLayerId:  toTab.snapshot.activeLayerId,
         zoom:           toTab.snapshot.zoom,
+        tiledMode:      toTab.tiledMode    ?? false,
+        showTileGrid:   toTab.showTileGrid ?? false,
       },
     })
     dispatch({ type: 'SET_SWATCHES', payload: toTab.snapshot.swatches ?? DEFAULT_SWATCHES })
@@ -146,7 +150,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     const snapshot        = captureActiveSnapshot()
     const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
     const savedLayerData  = serializeActiveTabPixels()
-    const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t)
+    const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid } : t)
     setTabs(updated)
     switchToTab(toId, updated)
   }, [activeTabId, tabs, captureActiveSnapshot, serializeActiveTabPixels, switchToTab])

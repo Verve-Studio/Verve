@@ -70,7 +70,16 @@ export function blendPixelOver(
   opacity: number, // 0-100, already includes geometric coverage for AA paths
   touched?: Map<number, number>,
   sel?: SelMask,
+  tiledW?: number,
+  tiledH?: number,
 ): void {
+  // Apply modular wrap BEFORE bounds check and touched-map key computation.
+  // This ensures a pixel at (-1, 0) and (W-1, 0) share the same touched-map
+  // entry, correctly preventing double-opacity accumulation across tile edges.
+  if (tiledW !== undefined && tiledH !== undefined) {
+    canvasX = ((canvasX % tiledW) + tiledW) % tiledW
+    canvasY = ((canvasY % tiledH) + tiledH) % tiledH
+  }
   // Reject pixels outside the canvas BEFORE any row-major index math, otherwise
   // a negative or oversized canvasX wraps `canvasY * W + canvasX` onto an
   // adjacent row — corrupting the touched-map (causing visible "holes" on the

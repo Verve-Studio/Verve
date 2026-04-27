@@ -26,6 +26,14 @@ interface UseKeyboardShortcutsOptions {
   handleFindLayers?:        () => void
   handleCycleLasso?:        () => void
   handleCycleWand?:         () => void
+  handleNew?:               () => void
+  handleOpen?:              () => void
+  handleSave?:              () => void
+  handleSaveAs?:            () => void
+  handleExport?:            () => void
+  handleNewLayer?:          () => void
+  handleGroupLayers?:       () => void
+  handleUngroupLayers?:     () => void
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -52,6 +60,14 @@ export function useKeyboardShortcuts({
   handleFindLayers,
   handleCycleLasso,
   handleCycleWand,
+  handleNew,
+  handleOpen,
+  handleSave,
+  handleSaveAs,
+  handleExport,
+  handleNewLayer,
+  handleGroupLayers,
+  handleUngroupLayers,
 }: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -66,23 +82,37 @@ export function useKeyboardShortcuts({
         if (e.key === 'w' || e.key === 'W') { e.preventDefault(); handleCycleWand?.(); return }
       }
       if (!e.ctrlKey && !e.metaKey) return
-      if      (e.key === 'z')              { e.preventDefault(); handleUndo() }
-      else if (e.key === 'y')              { e.preventDefault(); handleRedo() }
-      else if (e.key === 'c')              { e.preventDefault(); handleCopy() }
-      else if (e.key === 'x')              { e.preventDefault(); handleCut() }
-      else if (e.key === 'v')              { e.preventDefault(); handlePaste() }
-      else if (e.key === '=' || e.key === '+') { e.preventDefault(); handleZoomIn() }
-      else if (e.key === '-')              { e.preventDefault(); handleZoomOut() }
-      else if (e.key === '0')              { e.preventDefault(); handleFitToWindow() }
-      else if (e.key === 'g')              { e.preventDefault(); handleToggleGrid() }
-      else if (e.key === 't')              { e.preventDefault(); handleFreeTransform?.() }
-      else if (e.key === 'i' && e.shiftKey) { e.preventDefault(); handleInvertSelection?.() }
-      else if (e.key === 'a' && !e.altKey)  { e.preventDefault(); handleSelectAll?.() }
-      else if (e.key === 'd' && !e.altKey)  { e.preventDefault(); handleDeselect?.() }
-      else if (e.key === 'a' &&  e.altKey)  { e.preventDefault(); handleSelectAllLayers?.() }
-      else if (e.key === 'f' && e.altKey && e.shiftKey) { e.preventDefault(); handleFindLayers?.() }
+      // Ctrl-modified shortcuts. Note `e.key` is lowercase when Shift isn't held,
+      // uppercase when it is — match both forms with toLowerCase() so Ctrl+Shift+S
+      // dispatches as expected on all keyboard layouts.
+      const k = e.key.toLowerCase()
+      if      (k === 'z')                              { e.preventDefault(); handleUndo() }
+      else if (k === 'y')                              { e.preventDefault(); handleRedo() }
+      else if (k === 'c')                              { e.preventDefault(); handleCopy() }
+      else if (k === 'x')                              { e.preventDefault(); handleCut() }
+      else if (k === 'v')                              { e.preventDefault(); handlePaste() }
+      else if (k === '=' || k === '+')                 { e.preventDefault(); handleZoomIn() }
+      else if (k === '-')                              { e.preventDefault(); handleZoomOut() }
+      else if (k === '0')                              { e.preventDefault(); handleFitToWindow() }
+      else if (k === '\'' || k === '"')                { e.preventDefault(); handleToggleGrid() }
+      else if (k === 't')                              { e.preventDefault(); handleFreeTransform?.() }
+      else if (k === 'i' && e.shiftKey)                { e.preventDefault(); handleInvertSelection?.() }
+      else if (k === 'a' && !e.altKey)                 { e.preventDefault(); handleSelectAll?.() }
+      else if (k === 'd' && !e.altKey)                 { e.preventDefault(); handleDeselect?.() }
+      else if (k === 'a' &&  e.altKey)                 { e.preventDefault(); handleSelectAllLayers?.() }
+      else if (k === 'f' && e.altKey && e.shiftKey)    { e.preventDefault(); handleFindLayers?.() }
+      // File menu
+      else if (k === 'n' && e.shiftKey)                { e.preventDefault(); handleNewLayer?.() }
+      else if (k === 'n')                              { e.preventDefault(); handleNew?.() }
+      else if (k === 'o')                              { e.preventDefault(); handleOpen?.() }
+      else if (k === 's' && e.shiftKey)                { e.preventDefault(); handleSaveAs?.() }
+      else if (k === 's')                              { e.preventDefault(); handleSave?.() }
+      else if (k === 'e')                              { e.preventDefault(); handleExport?.() }
+      // Layer menu — Ctrl+G group, Ctrl+Shift+G ungroup
+      else if (k === 'g' && e.shiftKey)                { e.preventDefault(); handleUngroupLayers?.() }
+      else if (k === 'g')                              { e.preventDefault(); handleGroupLayers?.() }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [handleUndo, handleRedo, handleCopy, handleCut, handlePaste, handleDelete, handleZoomIn, handleZoomOut, handleFitToWindow, handleToggleGrid, handleKeyboardShortcuts, handleFreeTransform, handleInvertSelection, handleSelectAll, handleDeselect, handleSelectAllLayers, handleCloneStamp, handleContentAwareDelete, handleFindLayers, handleCycleLasso, handleCycleWand])
+  }, [handleUndo, handleRedo, handleCopy, handleCut, handlePaste, handleDelete, handleZoomIn, handleZoomOut, handleFitToWindow, handleToggleGrid, handleKeyboardShortcuts, handleFreeTransform, handleInvertSelection, handleSelectAll, handleDeselect, handleSelectAllLayers, handleCloneStamp, handleContentAwareDelete, handleFindLayers, handleCycleLasso, handleCycleWand, handleNew, handleOpen, handleSave, handleSaveAs, handleExport, handleNewLayer, handleGroupLayers, handleUngroupLayers])
 }
