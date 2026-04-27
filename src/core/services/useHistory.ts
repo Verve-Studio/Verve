@@ -1,6 +1,7 @@
 import type { AppAction } from '@/core/store/AppContext'
 import type { ClearHistoryOptions } from '@/core/store/historyStore'
 import { historyStore } from '@/core/store/historyStore'
+import { f32TransferStore } from '@/core/store/layerDataTransfer'
 import type { TabRecord } from '@/core/store/tabTypes'
 import type { AppState, RGBAColor } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
@@ -99,14 +100,28 @@ export function useHistory({
           const geo = entry.layerGeometry?.get(id)
           const lw = geo?.layerWidth ?? entry.canvasWidth
           const lh = geo?.layerHeight ?? entry.canvasHeight
-          const tmp = document.createElement('canvas')
-          tmp.width = lw; tmp.height = lh
-          const ctx2d = tmp.getContext('2d')!
-          ctx2d.putImageData(
-            new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), lw, lh),
-            0, 0
-          )
-          encoded.set(id, tmp.toDataURL('image/png'))
+          if ((pixels as unknown) instanceof Float32Array) {
+            f32TransferStore.set(id, pixels as unknown as Float32Array)
+            encoded.set(id, `data:raw/f32-ref;id=${id}`)
+          } else if (pixels.length === lw * lh) {
+            // indexed8 — 1 byte/pixel
+            const u8 = pixels as Uint8Array
+            const CHUNK = 65535
+            let b64 = ''
+            for (let i = 0; i < u8.length; i += CHUNK) {
+              b64 += btoa(String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))))
+            }
+            encoded.set(id, `data:raw/indexed8;base64,${b64}`)
+          } else {
+            const tmp = document.createElement('canvas')
+            tmp.width = lw; tmp.height = lh
+            const ctx2d = tmp.getContext('2d')!
+            ctx2d.putImageData(
+              new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), lw, lh),
+              0, 0
+            )
+            encoded.set(id, tmp.toDataURL('image/png'))
+          }
           if (geo) encoded.set(`${id}:geo`, JSON.stringify(geo))
         }
         for (const [layerId, maskPixels] of entry.adjustmentMasks) {
@@ -137,6 +152,8 @@ export function useHistory({
             layers: entry.layerState,
             activeLayerId: entry.activeLayerId,
             zoom: stateRef.current.canvas.zoom,
+            tiledMode: stateRef.current.canvas.tiledMode,
+            showTileGrid: stateRef.current.canvas.showTileGrid,
           },
         })
         if (entry.swatches) {

@@ -105,6 +105,15 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
         // rgba32f layer — store directly, avoid base64 roundtrip
         f32TransferStore.set(id, pixels as unknown as Float32Array)
         result.set(id, `data:raw/f32-ref;id=${id}`)
+      } else if (pixels.length === lw * lh) {
+        // indexed8 layer — 1 byte/pixel palette indices, base64-encode
+        const u8 = pixels as Uint8Array
+        const CHUNK = 65535
+        let b64 = ''
+        for (let i = 0; i < u8.length; i += CHUNK) {
+          b64 += btoa(String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))))
+        }
+        result.set(id, `data:raw/indexed8;base64,${b64}`)
       } else {
         const tmp = document.createElement('canvas')
         tmp.width = lw; tmp.height = lh

@@ -34,14 +34,14 @@ export interface CanvasHandle {
   /** Zero out every pixel in a layer that is covered by the selection mask (canvas-space), then flush+render. */
   clearLayerPixels: (layerId: string, mask: Uint8Array) => void
   /** Snapshot all current layers' raw pixel data + geometry for history. */
-  captureAllLayerPixels: () => Map<string, Uint8Array>
+  captureAllLayerPixels: () => Map<string, Uint8Array | Float32Array>
   /** Snapshot per-layer geometry (width/height/offset). */
   captureAllLayerGeometry: () => Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>
   /** Snapshot baked selection masks for adjustment layers. */
   captureAllAdjustmentMasks: () => Map<string, Uint8Array>
   /** Restore previously snapshotted pixel data + geometry and flush+render for each layer.
    * Pass layerStateForRender (the history snapshot's layer state) so the render uses the correct mask map. */
-  restoreAllLayerPixels: (data: Map<string, Uint8Array>, geometry?: Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>, layerStateForRender?: readonly LayerState[]) => void
+  restoreAllLayerPixels: (data: Map<string, Uint8Array | Float32Array>, geometry?: Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>, layerStateForRender?: readonly LayerState[]) => void
   /** Restore baked selection masks for adjustment layers and re-render. */
   restoreAllAdjustmentMasks: (masks: Map<string, Uint8Array>) => void
   /** Return full-canvas RGBA pixels that feed into the target adjustment layer. */
@@ -337,10 +337,13 @@ export function useCanvasHandle({
       for (const [id, pixels] of data) {
         const geo = geometry?.get(id)
         let layer = glLayersRef.current.get(id)
+        const isF32 = (pixels as unknown) instanceof Float32Array
+        const isIndexed8 = !isF32 && pixels.length !== (geo?.layerWidth ?? renderer.pixelWidth) * (geo?.layerHeight ?? renderer.pixelHeight) * 4
+        const fmt = isF32 ? 'rgba32f' : isIndexed8 ? 'indexed8' : 'rgba8'
         if (geo) {
-          if (!layer || layer.layerWidth !== geo.layerWidth || layer.layerHeight !== geo.layerHeight) {
+          if (!layer || layer.layerWidth !== geo.layerWidth || layer.layerHeight !== geo.layerHeight || layer.format !== fmt) {
             if (layer) renderer.destroyLayer(layer)
-            layer = renderer.createLayer(id, layer?.name ?? 'Restored', geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY)
+            layer = renderer.createLayer(id, layer?.name ?? 'Restored', geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY, fmt)
             glLayersRef.current.set(id, layer)
           } else {
             layer.offsetX = geo.offsetX
@@ -348,11 +351,11 @@ export function useCanvasHandle({
           }
         }
         if (!layer) {
-          layer = renderer.createLayer(id, 'Restored')
+          layer = renderer.createLayer(id, 'Restored', renderer.pixelWidth, renderer.pixelHeight, 0, 0, fmt)
           glLayersRef.current.set(id, layer)
         }
-        layer.data.set(pixels)
-        renderer.flushLayer(layer)
+        layer.data.set(pixels as Uint8Array)
+        renderer.flushLayer(layer, fmt === 'indexed8' ? swatchesRef.current as import('@/types').RGBAColor[] : undefined)
       }
       // Note: layerStateForRender is currently unused — Canvas.tsx's doRender
       // builds the plan from the live state.layers via buildRenderPlan().

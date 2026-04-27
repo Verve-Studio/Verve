@@ -6,8 +6,8 @@ export interface HistoryEntry {
   id: string
   label: string
   timestamp: number
-  /** Raw RGBA pixel data snapshot per layer, keyed by layer ID. */
-  layerPixels: Map<string, Uint8Array>
+  /** Raw pixel data snapshot per layer, keyed by layer ID. Uint8Array for rgba8/indexed8, Float32Array for rgba32f. */
+  layerPixels: Map<string, Uint8Array | Float32Array>
   /** Per-layer dimensions and canvas-space offset at the time of the snapshot. */
   layerGeometry: Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>
   /** Baked adjustment mask pixels keyed by adjustment layer ID. */
@@ -24,9 +24,13 @@ export interface ClearHistoryOptions {
   recaptureSnapshot?: boolean
 }
 
-function cloneLayerPixels(layerPixels: Map<string, Uint8Array>): Map<string, Uint8Array> {
-  const cloned = new Map<string, Uint8Array>()
-  for (const [layerId, pixels] of layerPixels) cloned.set(layerId, new Uint8Array(pixels))
+function cloneLayerPixels(layerPixels: Map<string, Uint8Array | Float32Array>): Map<string, Uint8Array | Float32Array> {
+  const cloned = new Map<string, Uint8Array | Float32Array>()
+  for (const [layerId, pixels] of layerPixels) {
+    cloned.set(layerId, (pixels as unknown) instanceof Float32Array
+      ? new Float32Array(pixels as Float32Array)
+      : new Uint8Array(pixels as Uint8Array))
+  }
   return cloned
 }
 
