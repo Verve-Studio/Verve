@@ -143,3 +143,5 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .DS_Store
 docs/.DS_Store
+release/
+
