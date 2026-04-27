@@ -89,7 +89,7 @@ Every handler factory receives a **`ToolContext`** on each pointer event:
 - `ctx.layers` — all `GpuLayer` objects
 - `ctx.primaryColor`, `ctx.secondaryColor`, `ctx.zoom`, `ctx.selectionMask`, etc.
 
-**Coordinate spaces:** `GpuLayer.data` is in **layer-local** space (`layerWidth × layerHeight × 4`). Canvas-space operations (e.g. `selectionStore.floodFillSelect`) require a canvas-sized buffer. When sampling only the active layer at canvas-space coordinates, scatter `layer.data` into a canvas-sized `Uint8Array` offset by `layer.offsetX, layer.offsetY`.
+**Coordinate spaces:** `GpuLayer.data` is in **layer-local** space. The stride depends on `layer.format` (see Pixel Formats below). Canvas-space operations (e.g. `selectionStore.floodFillSelect`) require a canvas-sized buffer. When sampling only the active layer at canvas-space coordinates, scatter `layer.data` into a canvas-sized buffer offset by `layer.offsetX, layer.offsetY`.
 
 ### State
 
@@ -106,6 +106,34 @@ Avoid re-initializing canvas layers in effects that list `rendererRef.current` a
 
 **`selectedLayerIds`** is kept in `AppState` (not as local panel state) so that hooks like `useLayers` can act on multi-layer selections. Any action that resets the layer stack (`SET_ACTIVE_LAYER`, `REORDER_LAYERS`, `RESTORE_LAYERS`, `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB`) also resets `selectedLayerIds` to `[]`.
 
+### Pixel Formats
+
+Every layer and every document has a `PixelFormat`:
+
+| Value | `layer.data` type | Bytes/pixel | Notes |
+|---|---|---|---|
+| `'rgba8'` | `Uint8Array` | 4 | Standard 8-bit RGBA (0–255 per channel) |
+| `'rgba32f'` | `Float32Array` | 16 | 32-bit float RGBA (0.0–1.0 per channel) |
+| `'indexed8'` | `Uint8Array` | 1 | Palette indices (0–254); 255 = transparent sentinel |
+
+`PixelFormat` is defined in `src/types/index.ts`. `AppState.pixelFormat` holds the document-level format and is set by the `SET_PIXEL_FORMAT`, `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, and `SWITCH_TAB` actions. `TabRecord.pixelFormat` mirrors it and is kept in sync by a `useEffect` in `App.tsx`.
+
+**Key format rules for tool authors:**
+- `blendPixelOver` (`src/tools/algorithm/primitives.ts`) always receives `r/g/b/a` as **0–255** from callers, regardless of format. It normalizes internally for `rgba32f`.
+- `renderer.samplePixel(layer, lx, ly)` returns `[r, g, b, a]` where values are 0–255 for `rgba8`, 0.0–1.0 for `rgba32f`, and `[index, 0, 0, 255]` for `indexed8`.
+- `renderer.drawPixel(layer, lx, ly, r, g, b, a)` expects values in the layer's native range (0–255 or 0.0–1.0).
+- `renderer.flushLayer(layer, palette?)` — must pass `palette` (the current `state.swatches`) when `layer.format === 'indexed8'`; it expands indices to RGBA for GPU upload.
+- Any code that reads `layer.data[i+3] / 255` or writes `Math.round(outA * 255)` directly is broken for `rgba32f`. Any code that reads/writes 4 bytes per pixel is broken for `indexed8`.
+- `readLayerPixels(layer)` and `readFlattenedPixels(layers)` return `Float32Array` for `rgba32f` layers — never type-assert the result as `Uint8Array`.
+
+**Tab serialization:** `serializeActiveTabPixels` and the history-jump path encode indexed8 layers as `data:raw/indexed8;base64,…` and rgba32f layers via `f32TransferStore`. The history store (`historyStore.ts`) holds `layerPixels: Map<string, Uint8Array | Float32Array>`.
+
+**New Image dialog:** the Color Mode selector lets users pick `rgba8`, `rgba32f`, or `indexed8` when creating a new document.
+
+**Tab bar and status bar** both show the active document's pixel format.
+
+---
+
 ### WebGPU (`src/graphicspipeline/webgpu/`)
 
 `rendering/WebGPURenderer.ts` is the GPU pixel read/write layer. `AdjustmentEncoder.ts` owns the compute pipelines for color adjustments and real-time effects. `compute/filterCompute.ts` owns the compute pipelines for filter layers (gaussian/box/radial/motion/lens blur, sharpen variants, noise, median, bilateral, reduce-noise, clouds, pixelate, etc.) and is dispatched non-destructively from the render plan. It operates on `GpuLayer` objects:
@@ -115,7 +143,8 @@ interface GpuLayer {
   id: string
   name: string
   texture: GPUTexture
-  data: Uint8Array        // layer-local RGBA, layerWidth × layerHeight × 4
+  data: Uint8Array | Float32Array  // format-dependent (see Pixel Formats above)
+  format: PixelFormat
   layerWidth: number
   layerHeight: number
   offsetX: number         // position of layer top-left on the canvas
@@ -124,13 +153,15 @@ interface GpuLayer {
   visible: boolean
   blendMode: string
   dirtyRect: { lx: number; ly: number; rx: number; ry: number } | null
+  contentVersion: number  // incremented by flushLayer; used by render cache
 }
 ```
 
 Key methods used by tools and layer operations:
-- `readLayerPixels(layer)` → `Uint8Array` in **layer-local** space
+- `readLayerPixels(layer)` → `Uint8Array | Float32Array` in **layer-local** space
 - `readFlattenedPixels(layers)` → async, canvas-sized composite buffer
-- `flushLayer(layer)` — uploads `layer.data` to GPU texture
+- `flushLayer(layer, palette?)` — uploads `layer.data` to GPU texture; pass `palette` for `indexed8`
+- `growLayerToFit(layer, canvasX, canvasY, extraRadius?)` — expands layer buffer; correctly allocates `Float32Array` for `rgba32f` and 1-byte `Uint8Array` for `indexed8`
 
 Do not bypass `WebGPURenderer` to manipulate pixel data directly.
 
@@ -203,9 +234,11 @@ CPU fallback policy:
 
 ### Drawing / Pixel Operations
 
-- All pixel blending uses **Porter-Duff "over" compositing** via `blendPixelOver` in `bresenham.ts`.
+- All pixel blending uses **Porter-Duff "over" compositing** via `blendPixelOver` in `src/tools/algorithm/primitives.ts`.
+- `blendPixelOver` callers always pass `r/g/b/a` as **0–255**. The function branches on `layer.format` to normalize and write in the correct native range.
 - Track per-stroke coverage with a `Map<number, number>` (key = packed pixel index, value = max effective alpha applied) to prevent opacity accumulation within a single stroke.
 - Thick brush shapes: **circle stamp** for hard edges; **capsule SDF** for anti-aliased thick lines. Both helpers live in `src/tools/algorithm/bresenham.ts`.
+- When adding a new drawing operation, always branch on `layer.format` for `rgba32f` (float math, no rounding) and `indexed8` (palette-index write, no alpha blending). Do not assume `rgba8`.
 
 ## Conventions
 
