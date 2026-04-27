@@ -137,9 +137,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         item('Content-Aware Fill',   'contentAwareFill'),
         item('Content-Aware Delete', 'contentAwareDelete', { accelerator: 'Shift+Delete' }),
         sep(),
-        item('Resize Image\u2026',        'resizeImage'),
-        item('Resize Image Canvas\u2026', 'resizeCanvas'),
-        sep(),
+
         item('Transform\u2026', 'freeTransform', { accelerator: 'CmdOrCtrl+T', noIntercept: true }),
       ],
     },
@@ -177,6 +175,24 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         item('Merge Down',      'mergeDown'),
         item('Merge Visible',   'mergeVisible'),
         item('Flatten Image',   'flattenImage'),
+      ],
+    },
+
+    // Image
+    {
+      label: 'Image',
+      submenu: [
+        {
+          label: 'Color Mode',
+          submenu: [
+            item('RGB/8',        'colorMode:rgba8'),
+            item('RGB/32 Float', 'colorMode:rgba32f'),
+            item('Indexed/8',    'colorMode:indexed8'),
+          ],
+        },
+        sep(),
+        item('Resize Image\u2026',        'resizeImage'),
+        item('Resize Image Canvas\u2026', 'resizeCanvas'),
       ],
     },
 

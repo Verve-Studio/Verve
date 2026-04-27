@@ -126,9 +126,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
         { label: 'Paste',  shortcut: 'Ctrl+V', action: onPaste },
         { label: 'Delete', shortcut: 'Del',    action: onDelete },
         { separator: true, label: '' },
-        { label: 'Resize Image…',        action: onResizeImage },
-        { label: 'Resize Image Canvas…', action: onResizeCanvas },
-        { separator: true, label: '' },
+
         { label: 'Content-Aware Fill',   action: onContentAwareFill },
         { label: 'Content-Aware Delete', shortcut: 'Shift+Del', action: onContentAwareDelete },
         { separator: true, label: '' },        { label: 'Transform\u2026', shortcut: 'Ctrl+T', disabled: !isFreeTransformEnabled, action: onFreeTransform },
@@ -178,6 +176,9 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
             { label: 'Indexed/8',    checked: pixelFormat === 'indexed8', action: () => onSetColorMode?.('indexed8') },
           ],
         },
+        { separator: true, label: '' },
+        { label: 'Resize Image…',        action: onResizeImage },
+        { label: 'Resize Image Canvas…', action: onResizeCanvas },
       ],
     },
     {
