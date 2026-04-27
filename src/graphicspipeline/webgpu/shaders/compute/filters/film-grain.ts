@@ -1,15 +1,16 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_FILM_GRAIN_NOISE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct FilmGrainNoiseParams {
-  seed  : u32,
-  _pad0 : u32,
-  _pad1 : u32,
-  _pad2 : u32,
+  seed     : u32,
+  imgWidth : u32,
+  _pad0    : u32,
+  _pad1    : u32,
 }
 
-@group(0) @binding(0) var noiseTex : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var<uniform> params : FilmGrainNoiseParams;
+@group(0) @binding(0) var<uniform> params : FilmGrainNoiseParams;
 
 fn lcg_next(s: u32) -> u32 {
   return 1664525u * s + 1013904223u;
@@ -20,12 +21,11 @@ fn pcg_hash(v: u32) -> u32 {
   return ((word >> ((word >> 28u) + 4u)) ^ word) * 277803737u;
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_film_grain_noise(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(noiseTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-
-  let idx   = id.y * dims.x + id.x;
+@fragment
+fn fs_film_grain_noise(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let ix  = u32(in.pos.x);
+  let iy  = u32(in.pos.y);
+  let idx = iy * params.imgWidth + ix;
   var state = pcg_hash(params.seed ^ pcg_hash(idx));
 
   var sum = 0.0;
@@ -33,14 +33,14 @@ fn cs_film_grain_noise(@builtin(global_invocation_id) id: vec3u) {
     state = lcg_next(state);
     sum += f32(state >> 16u) / 32767.5;
   }
-  let noise    = sum / 4.0 - 1.0;                   // [-1, 1]
-  let encoded  = clamp((noise + 1.0) * 0.5, 0.0, 1.0);  // [0, 1]
-
-  textureStore(noiseTex, vec2i(id.xy), vec4f(encoded, encoded, encoded, encoded));
+  let noise   = sum / 4.0 - 1.0;
+  let encoded = clamp((noise + 1.0) * 0.5, 0.0, 1.0);
+  return vec4f(encoded, encoded, encoded, encoded);
 }
 `
 
 export const FILTER_FILM_GRAIN_COMBINE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct FilmGrainCombineParams {
   intensity : u32,  // 1–200 (%)
   roughness : u32,  // 0–100
@@ -48,20 +48,18 @@ struct FilmGrainCombineParams {
   _pad1     : u32,
 }
 
-@group(0) @binding(0) var srcTex   : texture_2d<f32>;
-@group(0) @binding(1) var noiseTex : texture_2d<f32>;
-@group(0) @binding(2) var dstTex   : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
+@group(0) @binding(2) var noiseTex        : texture_2d<f32>;
 @group(0) @binding(3) var<uniform> params : FilmGrainCombineParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_film_grain_combine(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
+@fragment
+fn fs_film_grain_combine(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let coord      = vec2i(i32(in.pos.x), i32(in.pos.y));
+  let orig       = textureLoad(srcTex,   coord, 0);
+  let noiseTexel = textureLoad(noiseTex, coord, 0);
 
-  let orig       = textureLoad(srcTex,   vec2i(id.xy), 0);
-  let noiseTexel = textureLoad(noiseTex, vec2i(id.xy), 0);
-
-  let noiseVal   = noiseTexel.r * 2.0 - 1.0;    // decode [0,1] → [-1,1]
+  let noiseVal   = noiseTexel.r * 2.0 - 1.0;
   let intensityF = f32(params.intensity) / 100.0;
   let roughnessF = f32(params.roughness) / 100.0;
 
@@ -71,17 +69,16 @@ fn cs_film_grain_combine(@builtin(global_invocation_id) id: vec3u) {
   let grainVal = noiseVal * (127.0 / 255.0) * weight * intensityF;
 
   let outRGB = clamp(orig.rgb + grainVal, vec3f(0.0), vec3f(1.0));
-  textureStore(dstTex, vec2i(id.xy), vec4f(outRGB, orig.a));
+  return vec4f(outRGB, orig.a);
 }
 `
 
 export async function runFilmGrain(
   device: GPUDevice,
-  noisePipeline: GPUComputePipeline,
-  combinePipeline: GPUComputePipeline,
-  boxH: GPUComputePipeline,
-  boxV: GPUComputePipeline,
-  intermediate0: GPUTexture,
+  noisePipeline: GPURenderPipeline,
+  combinePipeline: GPURenderPipeline,
+  boxH: GPURenderPipeline,
+  boxV: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
@@ -91,6 +88,7 @@ export async function runFilmGrain(
   seed: number,
 ): Promise<Uint8Array> {
   const blurRadius = grainSize > 1 ? Math.min(5, Math.floor(grainSize / 10)) : 0
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
   const srcTex = device.createTexture({
     size: { width: w, height: h },
@@ -107,96 +105,64 @@ export async function runFilmGrain(
   const noiseTexA = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   })
 
   const noiseParamsBuf = createUniformBuffer(device, 16)
-  writeUniformBuffer(device, noiseParamsBuf, new Uint32Array([seed >>> 0, 0, 0, 0]))
+  writeUniformBuffer(device, noiseParamsBuf, new Uint32Array([seed >>> 0, w, 0, 0]))
 
   const encoder = device.createCommandEncoder()
+  const encRP = (pipeline: GPURenderPipeline, dst: GPUTexture, entries: GPUBindGroupEntry[]) => {
+    const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries })
+    const p = encoder.beginRenderPass({ colorAttachments: [{ view: dst.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
+    p.setPipeline(pipeline); p.setBindGroup(0, bg); p.draw(6); p.end()
+  }
 
   // Pass 1: Generate noise → noiseTexA
-  const noisePass = encoder.beginComputePass()
-  noisePass.setPipeline(noisePipeline)
-  noisePass.setBindGroup(0, device.createBindGroup({
-    layout: noisePipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: noiseTexA.createView() },
-      { binding: 1, resource: { buffer: noiseParamsBuf } },
-    ],
-  }))
-  noisePass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-  noisePass.end()
+  encRP(noisePipeline, noiseTexA, [{ binding: 0, resource: { buffer: noiseParamsBuf } }])
 
   let finalNoiseTex: GPUTexture
   let noiseTexB: GPUTexture | null = null
   let boxParamsBuf: GPUBuffer | null = null
+  let intermediateTex: GPUTexture | null = null
 
   if (blurRadius > 0) {
     noiseTexB = device.createTexture({
       size: { width: w, height: h },
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    })
+    intermediateTex = device.createTexture({
+      size: { width: w, height: h },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     })
     boxParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, boxParamsBuf, new Uint32Array([blurRadius, 0, 0, 0]))
 
-    // Pass 2: Box H — noiseTexA (rgba8unorm) → intermediate0 (rgba16float)
-    const bHPass = encoder.beginComputePass()
-    bHPass.setPipeline(boxH)
-    bHPass.setBindGroup(0, device.createBindGroup({
-      layout: boxH.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: noiseTexA.createView() },
-        { binding: 1, resource: intermediate0.createView() },
-        { binding: 2, resource: { buffer: boxParamsBuf } },
-      ],
-    }))
-    bHPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    bHPass.end()
-
-    // Pass 3: Box V — intermediate0 (rgba16float) → noiseTexB (rgba8unorm)
-    const bVPass = encoder.beginComputePass()
-    bVPass.setPipeline(boxV)
-    bVPass.setBindGroup(0, device.createBindGroup({
-      layout: boxV.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: intermediate0.createView() },
-        { binding: 1, resource: noiseTexB.createView() },
-        { binding: 2, resource: { buffer: boxParamsBuf } },
-      ],
-    }))
-    bVPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    bVPass.end()
+    encRP(boxH, intermediateTex, [{ binding: 0, resource: noiseTexA.createView() }, { binding: 1, resource: smp }, { binding: 2, resource: { buffer: boxParamsBuf } }])
+    encRP(boxV, noiseTexB, [{ binding: 0, resource: intermediateTex.createView() }, { binding: 1, resource: smp }, { binding: 2, resource: { buffer: boxParamsBuf } }])
 
     finalNoiseTex = noiseTexB
   } else {
     finalNoiseTex = noiseTexA
   }
 
-  // Final pass: Combine
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const combineParamsBuf = createUniformBuffer(device, 16)
   writeUniformBuffer(device, combineParamsBuf, new Uint32Array([intensity, roughness, 0, 0]))
 
-  const combinePass = encoder.beginComputePass()
-  combinePass.setPipeline(combinePipeline)
-  combinePass.setBindGroup(0, device.createBindGroup({
-    layout: combinePipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: finalNoiseTex.createView() },
-      { binding: 2, resource: outTex.createView() },
-      { binding: 3, resource: { buffer: combineParamsBuf } },
-    ],
-  }))
-  combinePass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-  combinePass.end()
+  encRP(combinePipeline, outTex, [
+    { binding: 0, resource: srcTex.createView() },
+    { binding: 1, resource: smp },
+    { binding: 2, resource: finalNoiseTex.createView() },
+    { binding: 3, resource: { buffer: combineParamsBuf } },
+  ])
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256
   const readbuf    = createReadbackBuffer(device, alignedBpr * h)
@@ -215,6 +181,7 @@ export async function runFilmGrain(
   srcTex.destroy()
   noiseTexA.destroy()
   noiseTexB?.destroy()
+  intermediateTex?.destroy()
   outTex.destroy()
   noiseParamsBuf.destroy()
   boxParamsBuf?.destroy()

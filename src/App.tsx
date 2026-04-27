@@ -22,6 +22,7 @@ import { GeneratePaletteDialog } from '@/ux/modals/GeneratePaletteDialog/Generat
 import { ColorDitheringSetupModal } from '@/ux/modals/ColorDitheringSetupModal/ColorDitheringSetupModal'
 import { ContentAwareFillProgress } from '@/ux'
 import { ContentAwareFillOptionsDialog } from '@/ux/modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog'
+import { ConvertColorModeDialog } from '@/ux/modals/ConvertColorModeDialog/ConvertColorModeDialog'
 import { useTabs } from '@/core/services/useTabs'
 import { useHistory } from '@/core/services/useHistory'
 import { useFileOps } from '@/core/services/useFileOps'
@@ -37,12 +38,13 @@ import { useTransform } from '@/core/services/useTransform'
 import { usePolygonalSelection } from '@/core/services/usePolygonalSelection'
 import { useObjectSelection } from '@/core/services/useObjectSelection'
 import { useContentAwareFill } from '@/core/services/useContentAwareFill'
+import { useColorMode } from '@/core/services/useColorMode'
 import { transformStore } from '@/core/store/transformStore'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { pixelBrushStore } from '@/core/store/pixelBrushStore'
 import { ModalDialog } from '@/ux/modals/ModalDialog/ModalDialog'
 import { DialogButton } from '@/ux/widgets/DialogButton/DialogButton'
-import type { Tool, LayerState, AdjustmentType } from '@/types'
+import type { Tool, LayerState, AdjustmentType, PixelFormat } from '@/types'
 import { ADJUSTMENT_REGISTRY } from '@/core/operations/adjustments/registry'
 import type { AdjustmentRegistrationEntry } from '@/core/operations/adjustments/registry'
 import { FILTER_REGISTRY } from '@/core/operations/filters/registry'
@@ -85,6 +87,7 @@ function AppContent(): React.JSX.Element {
   const [hasSelection,                 setHasSelection]                 = useState(false)
   const [recentFiles,                  setRecentFiles]                  = useState<string[]>([])
   const [findLayersCounter,            setFindLayersCounter]            = useState(0)
+  const [pendingConversion,            setPendingConversion]            = useState<PixelFormat | null>(null)
 
   // ── Pixel brush store init ────────────────────────────────────────
   useEffect(() => { void pixelBrushStore.init() }, [])
@@ -319,6 +322,57 @@ function AppContent(): React.JSX.Element {
     dispatch({ type: 'SET_SELECTED_LAYERS', payload: [] })
   }, [dispatch])
 
+  // ── Color mode ────────────────────────────────────────────────────
+  const handleFormatRemount = useCallback((toFormat: PixelFormat): void => {
+    const handle = canvasHandleRef.current
+    if (!handle) return
+    const layerGeo = handle.captureAllLayerGeometry()
+    const encoded = new Map<string, string>()
+    for (const ls of stateRef.current.layers) {
+      if ('type' in ls) continue
+      const raw = handle.getLayerRawData(ls.id)
+      if (!raw) continue
+      const geo = layerGeo.get(ls.id)
+      if (geo) encoded.set(`${ls.id}:geo`, JSON.stringify(geo))
+      const CHUNK = 65535
+      if (toFormat === 'rgba32f') {
+        const bytes = new Uint8Array((raw as Float32Array).buffer)
+        let b64 = ''
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          b64 += btoa(String.fromCharCode(...Array.from(bytes.subarray(i, i + CHUNK))))
+        }
+        encoded.set(ls.id, `data:raw/f32;base64,${b64}`)
+      } else if (toFormat === 'indexed8') {
+        const u8 = raw as Uint8Array
+        let b64 = ''
+        for (let i = 0; i < u8.length; i += CHUNK) {
+          b64 += btoa(String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))))
+        }
+        encoded.set(ls.id, `data:raw/indexed8;base64,${b64}`)
+      } else {
+        const lw = geo?.layerWidth ?? stateRef.current.canvas.width
+        const lh = geo?.layerHeight ?? stateRef.current.canvas.height
+        const tmp = document.createElement('canvas')
+        tmp.width = lw; tmp.height = lh
+        const ctx2d = tmp.getContext('2d')!
+        ctx2d.putImageData(new ImageData(new Uint8ClampedArray((raw as Uint8Array).buffer as ArrayBuffer), lw, lh), 0, 0)
+        encoded.set(ls.id, tmp.toDataURL('image/png'))
+      }
+    }
+    setPendingLayerData(encoded)
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, canvasKey: t.canvasKey + 1 } : t))
+    captureHistory('Convert Color Mode')
+  }, [canvasHandleRef, stateRef, activeTabId, setTabs, setPendingLayerData, captureHistory])
+
+  const colorMode = useColorMode({
+    canvasHandleRef,
+    state,
+    dispatch,
+    captureHistory,
+    onFormatChangeRequiresRemount: handleFormatRemount,
+    onRequestConversionDialog: setPendingConversion,
+  })
+
   // ── Polygonal selection keyboard handling ───────────────────────
   usePolygonalSelection()
 
@@ -523,6 +577,9 @@ function AppContent(): React.JSX.Element {
       case 'toggleTileGrid':  handleToggleTileGrid(); break
       case 'about':           setShowAboutDialog(true); break
       case 'keyboardShortcuts': setShowShortcutsDialog(true); break
+      case 'colorMode-rgba8':    colorMode.handleConvertColorMode('rgba8');    break
+      case 'colorMode-rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
+      case 'colorMode-indexed8': colorMode.handleConvertColorMode('indexed8'); break
       case 'openDevTools':    window.api.openDevTools(); break
     }
   }, [
@@ -539,6 +596,7 @@ function AppContent(): React.JSX.Element {
     handleFindLayers,
     handleOpenCafDialog,
     state.activeLayerId, effectiveSelectedIds,
+    colorMode,
   ])
 
   // Build the native menu once on mount (sends the dynamic items list to the main process).
@@ -662,6 +720,8 @@ function AppContent(): React.JSX.Element {
         onSelectAllLayers={handleSelectAllLayers}
         onDeselectLayers={handleDeselectLayers}
         onFindLayers={handleFindLayers}
+        pixelFormat={state.pixelFormat}
+        onSetColorMode={(fmt) => colorMode.handleConvertColorMode(fmt)}
       />
       <ToolOptionsBar />
       <TabBar
@@ -829,6 +889,16 @@ function AppContent(): React.JSX.Element {
           <DialogButton onClick={handleTransformGuardApply} primary>Apply</DialogButton>
         </div>
       </ModalDialog>
+
+      {pendingConversion !== null && (
+        <ConvertColorModeDialog
+          open={true}
+          fromFormat={state.pixelFormat}
+          toFormat={pendingConversion}
+          onConfirm={() => { void colorMode.executeConversion(pendingConversion); setPendingConversion(null) }}
+          onCancel={() => setPendingConversion(null)}
+        />
+      )}
     </div>
   )
 }

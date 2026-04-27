@@ -29,11 +29,11 @@ export function uploadTextureData(
   texture: GPUTexture,
   width: number,
   height: number,
-  data: Uint8Array,
+  data: ArrayBufferView,
 ): void {
   device.queue.writeTexture(
     { texture },
-    data as Uint8Array<ArrayBuffer>,
+    data,
     { bytesPerRow: width * 4, rowsPerImage: height },
     { width, height },
   )
@@ -49,13 +49,47 @@ export function uploadTexturePatch(
   texture: GPUTexture,
   fullWidth: number,
   x: number, y: number, w: number, h: number,
-  data: Uint8Array,
+  data: ArrayBufferView,
 ): void {
   if (w <= 0 || h <= 0) return
   device.queue.writeTexture(
     { texture, origin: { x, y } },
-    data as Uint8Array<ArrayBuffer>,
+    data,
     { offset: (y * fullWidth + x) * 4, bytesPerRow: fullWidth * 4 },
+    { width: w, height: h },
+  )
+}
+
+export function uploadF32TextureData(
+  device: GPUDevice,
+  texture: GPUTexture,
+  width: number,
+  height: number,
+  data: Float32Array,
+): void {
+  device.queue.writeTexture(
+    { texture },
+    data,
+    { bytesPerRow: width * 16, rowsPerImage: height },
+    { width, height },
+  )
+}
+
+export function uploadF32TexturePatch(
+  device: GPUDevice,
+  texture: GPUTexture,
+  textureWidth: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  data: Float32Array,
+): void {
+  if (w <= 0 || h <= 0) return
+  device.queue.writeTexture(
+    { texture, origin: { x, y } },
+    data,
+    { offset: (y * textureWidth + x) * 16, bytesPerRow: textureWidth * 16 },
     { width: w, height: h },
   )
 }

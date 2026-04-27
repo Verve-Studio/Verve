@@ -1,8 +1,9 @@
+import { ADJ_VERTEX_SHADER, MASK_FLAGS_STRUCT } from './helpers'
+
 export const BLOOM_EXTRACT_COMPUTE = /* wgsl */ `
-struct MaskFlags {
-  hasMask : u32,
-  _pad    : vec3u,
-}
+${ADJ_VERTEX_SHADER}
+${MASK_FLAGS_STRUCT}
+
 
 struct BloomExtractParams {
   threshold : f32,
@@ -12,17 +13,14 @@ struct BloomExtractParams {
 }
 
 @group(0) @binding(0) var srcTex     : texture_2d<f32>;
-@group(0) @binding(1) var dstTex     : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp        : sampler;
 @group(0) @binding(2) var<uniform> params    : BloomExtractParams;
 @group(0) @binding(3) var selMask    : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
 
-@compute @workgroup_size(8, 8)
-fn cs_bloom_extract(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord = vec2i(id.xy);
-  let src = textureLoad(srcTex, coord, 0);
+@fragment
+fn fs_bloom_extract(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src = textureSample(srcTex, smp, in.uv);
 
   let lum = dot(src.rgb, vec3f(0.2126, 0.7152, 0.0722));
   let t   = params.threshold;
@@ -32,14 +30,16 @@ fn cs_bloom_extract(@builtin(global_invocation_id) id: vec3u) {
 
   var out = glow;
   if (maskFlags.hasMask != 0u) {
-    let mask = textureLoad(selMask, coord, 0).r;
+    let mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r;
     out = glow * mask;
   }
-  textureStore(dstTex, coord, out);
+  return out;
 }
 ` as const
 
 export const BLOOM_DOWNSAMPLE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
+
 struct BloomDownsampleParams {
   scale : u32,
   _pad0 : u32,
@@ -48,31 +48,32 @@ struct BloomDownsampleParams {
 }
 
 @group(0) @binding(0) var srcTex  : texture_2d<f32>;
-@group(0) @binding(1) var dstTex  : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp     : sampler;
 @group(0) @binding(2) var<uniform> params : BloomDownsampleParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_bloom_downsample(@builtin(global_invocation_id) id: vec3u) {
-  let dstDims = textureDimensions(dstTex);
-  if (id.x >= dstDims.x || id.y >= dstDims.y) { return; }
-
+@fragment
+fn fs_bloom_downsample(in: AdjVertOut) -> @location(0) vec4<f32> {
   let srcDims = textureDimensions(srcTex);
-  let scale = params.scale;
-  var acc = vec4f(0.0);
-  let count = f32(scale * scale);
+  let dstX    = i32(in.pos.x);
+  let dstY    = i32(in.pos.y);
+  let scale   = i32(params.scale);
+  var acc     = vec4f(0.0);
+  let count   = f32(scale * scale);
 
-  for (var dy: u32 = 0u; dy < scale; dy++) {
-    for (var dx: u32 = 0u; dx < scale; dx++) {
-      let sx = min(id.x * scale + dx, srcDims.x - 1u);
-      let sy = min(id.y * scale + dy, srcDims.y - 1u);
-      acc += textureLoad(srcTex, vec2i(i32(sx), i32(sy)), 0);
+  for (var dy: i32 = 0; dy < scale; dy++) {
+    for (var dx: i32 = 0; dx < scale; dx++) {
+      let sx = clamp(dstX * scale + dx, 0, i32(srcDims.x) - 1);
+      let sy = clamp(dstY * scale + dy, 0, i32(srcDims.y) - 1);
+      acc += textureLoad(srcTex, vec2i(sx, sy), 0);
     }
   }
-  textureStore(dstTex, vec2i(id.xy), acc / count);
+  return acc / count;
 }
 ` as const
 
 export const BLOOM_BLUR_H_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
+
 struct BloomBlurParams {
   radius : u32,
   _pad0  : u32,
@@ -81,28 +82,29 @@ struct BloomBlurParams {
 }
 
 @group(0) @binding(0) var srcTex  : texture_2d<f32>;
-@group(0) @binding(1) var dstTex  : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp     : sampler;
 @group(0) @binding(2) var<uniform> params : BloomBlurParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_bloom_blur_h(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-
-  let r = i32(params.radius);
-  var acc = vec4f(0.0);
+@fragment
+fn fs_bloom_blur_h(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = textureDimensions(srcTex);
+  let r     = i32(params.radius);
+  var acc   = vec4f(0.0);
   let count = f32(2 * r + 1);
-  let y = i32(id.y);
+  let x     = i32(in.pos.x);
+  let y     = i32(in.pos.y);
 
   for (var dx: i32 = -r; dx <= r; dx++) {
-    let sx = clamp(i32(id.x) + dx, 0, i32(dims.x) - 1);
+    let sx = clamp(x + dx, 0, i32(dims.x) - 1);
     acc += textureLoad(srcTex, vec2i(sx, y), 0);
   }
-  textureStore(dstTex, vec2i(id.xy), acc / count);
+  return acc / count;
 }
 ` as const
 
 export const BLOOM_BLUR_V_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
+
 struct BloomBlurParams {
   radius : u32,
   _pad0  : u32,
@@ -111,32 +113,29 @@ struct BloomBlurParams {
 }
 
 @group(0) @binding(0) var srcTex  : texture_2d<f32>;
-@group(0) @binding(1) var dstTex  : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp     : sampler;
 @group(0) @binding(2) var<uniform> params : BloomBlurParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_bloom_blur_v(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-
-  let r = i32(params.radius);
-  var acc = vec4f(0.0);
+@fragment
+fn fs_bloom_blur_v(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = textureDimensions(srcTex);
+  let r     = i32(params.radius);
+  var acc   = vec4f(0.0);
   let count = f32(2 * r + 1);
-  let x = i32(id.x);
+  let x     = i32(in.pos.x);
+  let y     = i32(in.pos.y);
 
   for (var dy: i32 = -r; dy <= r; dy++) {
-    let sy = clamp(i32(id.y) + dy, 0, i32(dims.y) - 1);
+    let sy = clamp(y + dy, 0, i32(dims.y) - 1);
     acc += textureLoad(srcTex, vec2i(x, sy), 0);
   }
-  textureStore(dstTex, vec2i(id.xy), acc / count);
+  return acc / count;
 }
 ` as const
 
 export const BLOOM_COMPOSITE_COMPUTE = /* wgsl */ `
-struct MaskFlags {
-  hasMask : u32,
-  _pad    : vec3u,
-}
+${ADJ_VERTEX_SHADER}
+${MASK_FLAGS_STRUCT}
 
 struct BloomCompositeParams {
   strength : f32,
@@ -146,43 +145,21 @@ struct BloomCompositeParams {
 }
 
 @group(0) @binding(0) var srcTex       : texture_2d<f32>;
-@group(0) @binding(1) var glowTex      : texture_2d<f32>;
-@group(0) @binding(2) var dstTex       : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp          : sampler;
+@group(0) @binding(2) var glowTex      : texture_2d<f32>;
 @group(0) @binding(3) var<uniform> params    : BloomCompositeParams;
 @group(0) @binding(4) var selMask      : texture_2d<f32>;
 @group(0) @binding(5) var<uniform> maskFlags : MaskFlags;
 
-// textureSample is illegal in compute shaders — implement bilinear manually.
-fn sampleBilinear(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
-  let sz  = vec2f(textureDimensions(tex));
-  let p   = uv * sz - 0.5;
-  let p0  = vec2i(floor(p));
-  let fr  = fract(p);
-  let d   = vec2i(textureDimensions(tex)) - vec2i(1, 1);
-  let c00 = textureLoad(tex, clamp(p0,                  vec2i(0), d), 0);
-  let c10 = textureLoad(tex, clamp(vec2i(p0.x+1, p0.y), vec2i(0), d), 0);
-  let c01 = textureLoad(tex, clamp(vec2i(p0.x, p0.y+1), vec2i(0), d), 0);
-  let c11 = textureLoad(tex, clamp(p0 + vec2i(1, 1),    vec2i(0), d), 0);
-  return mix(mix(c00, c10, fr.x), mix(c01, c11, fr.x), fr.y);
-}
-
-@compute @workgroup_size(8, 8)
-fn cs_bloom_composite(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord = vec2i(id.xy);
-  let uv    = (vec2f(f32(id.x), f32(id.y)) + 0.5) / vec2f(f32(dims.x), f32(dims.y));
-
-  let src  = textureLoad(srcTex, coord, 0);
-  let glow = sampleBilinear(glowTex, uv);
+@fragment
+fn fs_bloom_composite(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src  = textureSample(srcTex,  smp, in.uv);
+  let glow = textureSample(glowTex, smp, in.uv);
   let g    = clamp(glow.rgb * params.strength, vec3f(0.0), vec3f(1.0));
   let out  = vec4f(1.0 - (1.0 - src.rgb) * (1.0 - g), src.a);
 
-  if (maskFlags.hasMask != 0u) {
-    let mask = textureLoad(selMask, coord, 0).r;
-    textureStore(dstTex, coord, mix(src, out, mask));
-  } else {
-    textureStore(dstTex, coord, out);
-  }
+  var mask = 1.0f;
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return mix(src, out, mask);
 }
 ` as const

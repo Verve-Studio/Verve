@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_ADD_NOISE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct AddNoiseParams {
   amount        : u32,  // 1–400 (%)
   distribution  : u32,  // 0=uniform, 1=gaussian
@@ -8,8 +10,8 @@ struct AddNoiseParams {
   seed          : u32,
 }
 
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var dstTex : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : AddNoiseParams;
 
 fn lcg_next(s: u32) -> u32 {
@@ -39,22 +41,19 @@ fn sample_gaussian(state: ptr<function, u32>, range: u32, maxDelta: u32) -> i32 
   return sum / 4 - i32(maxDelta);
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_add_noise(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
+@fragment
+fn fs_add_noise(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = textureDimensions(srcTex);
+  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
 
   let maxDelta = params.amount * 127u / 100u;
+  let orig = textureLoad(srcTex, coord, 0);
   if (maxDelta == 0u) {
-    let orig = textureLoad(srcTex, vec2i(id.xy), 0);
-    textureStore(dstTex, vec2i(id.xy), orig);
-    return;
+    return orig;
   }
   let range = 2u * maxDelta + 1u;
-  let idx   = id.y * dims.x + id.x;
+  let idx   = u32(coord.y) * dims.x + u32(coord.x);
   var state = pixel_rng_seed(params.seed, idx);
-
-  let orig = textureLoad(srcTex, vec2i(id.xy), 0);
 
   var dR: i32; var dG: i32; var dB: i32;
 
@@ -75,13 +74,13 @@ fn cs_add_noise(@builtin(global_invocation_id) id: vec3u) {
   let outG = clamp(orig.g + f32(dG) / 255.0, 0.0, 1.0);
   let outB = clamp(orig.b + f32(dB) / 255.0, 0.0, 1.0);
 
-  textureStore(dstTex, vec2i(id.xy), vec4f(outR, outG, outB, orig.a));
+  return vec4f(outR, outG, outB, orig.a);
 }
-`
+` as const
 
 export async function runAddNoise(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
@@ -90,6 +89,8 @@ export async function runAddNoise(
   monochromatic: number,
   seed: number,
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -105,27 +106,28 @@ export async function runAddNoise(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const paramsData = new Uint32Array([amount, distribution, monochromatic, seed >>> 0])
   const paramsBuf  = createUniformBuffer(device, 16)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
-  const encoder = device.createCommandEncoder()
+  const encoder   = device.createCommandEncoder()
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

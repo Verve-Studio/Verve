@@ -55,7 +55,99 @@ import {
   flushFilterComputeDestroys,
 } from './compute/filterCompute'
 
-// ─── Free helper ──────────────────────────────────────────────────────────────
+// ─── Pipeline pair type ──────────────────────────────────────────────────────
+
+type AdjPipelinePair = { s8: GPURenderPipeline; f32: GPURenderPipeline; bgl: GPUBindGroupLayout }
+
+// ─── Pipeline factory helpers ────────────────────────────────────────────────
+
+// Binding kinds for explicit BGL construction. Texture bindings default to
+// 'unfilterable-float' so they accept rgba32float source layer textures
+// (which only support 'unfilterable-float' sampling).
+type AdjBinding = 'tex' | 'tex-f' | 'sampler' | 'sampler-f' | 'uniform' | 'storage'
+
+function createAdjBGL(device: GPUDevice, bindings: AdjBinding[]): GPUBindGroupLayout {
+  return device.createBindGroupLayout({
+    entries: bindings.map((b, i): GPUBindGroupLayoutEntry => {
+      if (b === 'tex') {
+        return { binding: i, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }
+      }
+      if (b === 'tex-f') {
+        return { binding: i, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }
+      }
+      if (b === 'sampler') {
+        return { binding: i, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } }
+      }
+      if (b === 'sampler-f') {
+        return { binding: i, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }
+      }
+      if (b === 'storage') {
+        return { binding: i, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+      }
+      return { binding: i, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+    }),
+  })
+}
+
+function createAdjRenderPipeline(
+  device: GPUDevice,
+  wgsl: string,
+  fsEntry: string,
+  format: GPUTextureFormat,
+  bgl: GPUBindGroupLayout,
+): GPURenderPipeline {
+  const module = device.createShaderModule({ code: wgsl })
+  return device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+    vertex:    { module, entryPoint: 'vs_adj' },
+    fragment:  { module, entryPoint: fsEntry, targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  })
+}
+
+function createAdjRenderPipelinePair(
+  device: GPUDevice,
+  wgsl: string,
+  fsEntry: string,
+  bindings: AdjBinding[],
+): AdjPipelinePair {
+  const bgl = createAdjBGL(device, bindings)
+  return {
+    s8:  createAdjRenderPipeline(device, wgsl, fsEntry, 'rgba8unorm',  bgl),
+    f32: createAdjRenderPipeline(device, wgsl, fsEntry, 'rgba32float', bgl),
+    bgl,
+  }
+}
+
+// Single-format render pipeline with explicit BGL (used by intermediate passes
+// that sample the layer source texture which may be rgba32float).
+function createAdjRenderPipelineWithBGL(
+  device: GPUDevice,
+  wgsl: string,
+  fsEntry: string,
+  format: GPUTextureFormat,
+  bindings: AdjBinding[],
+): { pipeline: GPURenderPipeline; bgl: GPUBindGroupLayout } {
+  const bgl = createAdjBGL(device, bindings)
+  return { pipeline: createAdjRenderPipeline(device, wgsl, fsEntry, format, bgl), bgl }
+}
+
+// Plain auto-layout single-format render pipeline. Retained for intermediate
+// pipelines that only sample rgba8unorm scratch textures.
+function createAdjRenderPipelineAuto(
+  device: GPUDevice,
+  wgsl: string,
+  fsEntry: string,
+  format: GPUTextureFormat,
+): GPURenderPipeline {
+  const module = device.createShaderModule({ code: wgsl })
+  return device.createRenderPipeline({
+    layout: 'auto',
+    vertex:    { module, entryPoint: 'vs_adj' },
+    fragment:  { module, entryPoint: fsEntry, targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  })
+}
 
 function createComputePipeline(device: GPUDevice, wgsl: string, entryPoint: string): GPUComputePipeline {
   const module = device.createShaderModule({ code: wgsl })
@@ -68,7 +160,7 @@ function createComputePipeline(device: GPUDevice, wgsl: string, entryPoint: stri
 // ─── AdjustmentEncoder ────────────────────────────────────────────────────────
 
 /**
- * Owns all adjustment compute pipelines and pass encoders.
+ * Owns all adjustment render/compute pipelines and pass encoders.
  * WebGPURenderer delegates `encodeAdjustmentOp` calls here.
  * Not part of the public API — internal to the renderer module.
  */
@@ -77,48 +169,42 @@ export class AdjustmentEncoder {
   readonly pixelWidth: number
   readonly pixelHeight: number
 
-  // Simple compute pipelines
-  private readonly bcPipeline:       GPUComputePipeline
-  private readonly hsPipeline:       GPUComputePipeline
-  private readonly vibPipeline:      GPUComputePipeline
-  private readonly cbPipeline:       GPUComputePipeline
-  private readonly bwPipeline:       GPUComputePipeline
-  private readonly tempPipeline:     GPUComputePipeline
-  private readonly invertPipeline:   GPUComputePipeline
-  private readonly selColorPipeline: GPUComputePipeline
-  private readonly curvesPipeline:   GPUComputePipeline
-  private readonly cgPipeline:       GPUComputePipeline
-  private readonly rcPipeline:       GPUComputePipeline
+  // Dual-format render pipeline pairs — write directly to dstTex (format-selectable)
+  private readonly bcPipeline:       AdjPipelinePair
+  private readonly hsPipeline:       AdjPipelinePair
+  private readonly vibPipeline:      AdjPipelinePair
+  private readonly cbPipeline:       AdjPipelinePair
+  private readonly bwPipeline:       AdjPipelinePair
+  private readonly tempPipeline:     AdjPipelinePair
+  private readonly invertPipeline:   AdjPipelinePair
+  private readonly selColorPipeline: AdjPipelinePair
+  private readonly curvesPipeline:   AdjPipelinePair
+  private readonly cgPipeline:       AdjPipelinePair
+  private readonly rcPipeline:       AdjPipelinePair
+  private readonly ditherPipeline:   AdjPipelinePair
+  private readonly ckPipeline:       AdjPipelinePair
 
-  // Color Dithering
-  private readonly ditherPipeline: GPUComputePipeline
+  // Bloom render pipelines — intermediate passes always target rgba8unorm scratch textures
+  private readonly bloomExtractPipeline:    GPURenderPipeline
+  private readonly bloomExtractBGL:         GPUBindGroupLayout
+  private readonly bloomDownsamplePipeline: GPURenderPipeline
+  private readonly bloomCompositePipeline:  AdjPipelinePair  // final pass: writes to dstTex
+  private readonly boxBlurHPipeline:        GPURenderPipeline
+  private readonly boxBlurVPipeline:        GPURenderPipeline
 
-  // Bloom compute pipelines
-  private readonly bloomExtractPipeline:    GPUComputePipeline
-  private readonly bloomDownsamplePipeline: GPUComputePipeline
-  private readonly bloomCompositePipeline:  GPUComputePipeline
+  // Halation render pipeline — intermediate extract targets rgba8unorm scratch texture
+  private readonly halationExtractPipeline: GPURenderPipeline
+  private readonly halationExtractBGL:      GPUBindGroupLayout
 
-  // Shared box-blur pipelines (used by both bloom and halation)
-  private readonly boxBlurHPipeline: GPUComputePipeline
-  private readonly boxBlurVPipeline: GPUComputePipeline
+  // Render pipeline pair for chromatic aberration (converted from compute)
+  private readonly caPipeline:               AdjPipelinePair
 
-  // Chromatic aberration
-  private readonly caPipeline: GPUComputePipeline
-
-  // Halation
-  private readonly halationExtractPipeline: GPUComputePipeline
-
-  // Color key
-  private readonly ckPipeline: GPUComputePipeline
-
-  // Drop shadow compute pipelines
-  private readonly shadowDilateHPipeline:   GPUComputePipeline
-  private readonly shadowDilateVPipeline:   GPUComputePipeline
-  private readonly shadowBlurHPipeline:     GPUComputePipeline
-  private readonly shadowBlurVPipeline:     GPUComputePipeline
-  private readonly shadowCompositePipeline: GPUComputePipeline
-
-  // Outline compute pipelines
+  // Compute pipelines — shaders still use cs_* entry + texture_storage_2d write
+  private readonly shadowDilateHPipeline:    GPUComputePipeline
+  private readonly shadowDilateVPipeline:    GPUComputePipeline
+  private readonly shadowBlurHPipeline:      GPUComputePipeline
+  private readonly shadowBlurVPipeline:      GPUComputePipeline
+  private readonly shadowCompositePipeline:  GPUComputePipeline
   private readonly outlineDilateHPipeline:   GPUComputePipeline
   private readonly outlineDilateVPipeline:   GPUComputePipeline
   private readonly outlineErodeHPipeline:    GPUComputePipeline
@@ -127,6 +213,9 @@ export class AdjustmentEncoder {
   private readonly outlineBlurHPipeline:     GPUComputePipeline
   private readonly outlineBlurVPipeline:     GPUComputePipeline
   private readonly outlineCompositePipeline: GPUComputePipeline
+
+  // Render pipeline pair for halftone (converted from compute)
+  private readonly halftonePipeline:         AdjPipelinePair
 
   // Bloom intermediate texture cache — invalidated when quality changes
   private bloomTexCache: {
@@ -145,8 +234,8 @@ export class AdjustmentEncoder {
   // Outline texture cache
   private outlineTexCache: { tempA: GPUTexture; tempB: GPUTexture; tempC: GPUTexture } | null = null
 
-  // Halftone
-  private readonly halftonePipeline: GPUComputePipeline
+  // Nearest-neighbor sampler for texture reads in adjustment fragment shaders
+  private readonly adjSampler: GPUSampler
 
   // Linear sampler for LUT texture lookups
   private readonly lutSampler: GPUSampler
@@ -163,37 +252,58 @@ export class AdjustmentEncoder {
     this.pixelWidth  = pixelWidth
     this.pixelHeight = pixelHeight
 
-    this.bcPipeline       = createComputePipeline(device, BC_COMPUTE,        'cs_brightness_contrast')
-    this.hsPipeline       = createComputePipeline(device, HS_COMPUTE,        'cs_hue_saturation')
-    this.vibPipeline      = createComputePipeline(device, VIB_COMPUTE,       'cs_color_vibrance')
-    this.cbPipeline       = createComputePipeline(device, CB_COMPUTE,        'cs_color_balance')
-    this.bwPipeline       = createComputePipeline(device, BW_COMPUTE,        'cs_black_and_white')
-    this.tempPipeline     = createComputePipeline(device, TEMP_COMPUTE,      'cs_color_temperature')
-    this.invertPipeline   = createComputePipeline(device, INVERT_COMPUTE,    'cs_color_invert')
-    this.selColorPipeline = createComputePipeline(device, SEL_COLOR_COMPUTE, 'cs_selective_color')
-    this.curvesPipeline   = createComputePipeline(device, CURVES_COMPUTE,    'cs_curves')
-    this.cgPipeline       = createComputePipeline(device, CG_COMPUTE,        'cs_color_grading')
-    this.rcPipeline       = createComputePipeline(device, RC_COMPUTE,        'cs_reduce_colors')
+    // ── Dual-format render pipeline pairs ──────────────────────────────────────
+    // Standard adjustment binding pattern: srcTex, sampler, params, selMask, maskFlags
+    const STD: AdjBinding[] = ['tex', 'sampler', 'uniform', 'tex', 'uniform']
+    this.bcPipeline       = createAdjRenderPipelinePair(device, BC_COMPUTE,        'fs_brightness_contrast', STD)
+    this.hsPipeline       = createAdjRenderPipelinePair(device, HS_COMPUTE,        'fs_hue_saturation',      STD)
+    this.vibPipeline      = createAdjRenderPipelinePair(device, VIB_COMPUTE,       'fs_color_vibrance',      STD)
+    this.cbPipeline       = createAdjRenderPipelinePair(device, CB_COMPUTE,        'fs_color_balance',       STD)
+    this.bwPipeline       = createAdjRenderPipelinePair(device, BW_COMPUTE,        'fs_black_and_white',     STD)
+    this.tempPipeline     = createAdjRenderPipelinePair(device, TEMP_COMPUTE,      'fs_color_temperature',   STD)
+    // Invert: srcTex, sampler, selMask, maskFlags (no params uniform)
+    this.invertPipeline   = createAdjRenderPipelinePair(device, INVERT_COMPUTE,    'fs_color_invert',        ['tex', 'sampler', 'tex', 'uniform'])
+    this.selColorPipeline = createAdjRenderPipelinePair(device, SEL_COLOR_COMPUTE, 'fs_selective_color',     STD)
+    // Curves: srcTex, smp, selMask, maskFlags, lutSampler (filtering), rgbLut, redLut, greenLut, blueLut (filterable r8unorm)
+    this.curvesPipeline   = createAdjRenderPipelinePair(device, CURVES_COMPUTE,    'fs_curves',              ['tex', 'sampler', 'tex', 'uniform', 'sampler-f', 'tex-f', 'tex-f', 'tex-f', 'tex-f'])
+    this.cgPipeline       = createAdjRenderPipelinePair(device, CG_COMPUTE,        'fs_color_grading',       STD)
+    // Reduce-colors / dithering: standard 5 + storage palette buffer
+    this.rcPipeline       = createAdjRenderPipelinePair(device, RC_COMPUTE,        'fs_reduce_colors',       [...STD, 'storage'])
+    this.ditherPipeline   = createAdjRenderPipelinePair(device, DITHER_COMPUTE,    'fs_color_dithering',     [...STD, 'storage'])
+    this.ckPipeline       = createAdjRenderPipelinePair(device, CK_COMPUTE,        'fs_color_key',           STD)
 
-    this.ditherPipeline   = createComputePipeline(device, DITHER_COMPUTE,    'cs_color_dithering')
+    // ── Bloom render pipelines ──────────────────────────────────────────────────
+    // bloomExtract samples the layer source texture (rgba32float-capable) → explicit BGL
+    {
+      const ext = createAdjRenderPipelineWithBGL(device, BLOOM_EXTRACT_COMPUTE, 'fs_bloom_extract', 'rgba8unorm', STD)
+      this.bloomExtractPipeline = ext.pipeline
+      this.bloomExtractBGL      = ext.bgl
+    }
+    // Downsample/box-blur only sample rgba8unorm scratch textures → auto layout is fine
+    this.bloomDownsamplePipeline = createAdjRenderPipelineAuto(device, BLOOM_DOWNSAMPLE_COMPUTE, 'fs_bloom_downsample', 'rgba8unorm')
+    // Composite: srcTex, smp, glowTex, params, selMask, maskFlags
+    this.bloomCompositePipeline  = createAdjRenderPipelinePair(device, BLOOM_COMPOSITE_COMPUTE, 'fs_bloom_composite', ['tex', 'sampler', 'tex', 'uniform', 'tex', 'uniform'])
 
-    this.bloomExtractPipeline    = createComputePipeline(device, BLOOM_EXTRACT_COMPUTE,    'cs_bloom_extract')
-    this.bloomDownsamplePipeline = createComputePipeline(device, BLOOM_DOWNSAMPLE_COMPUTE, 'cs_bloom_downsample')
-    this.bloomCompositePipeline  = createComputePipeline(device, BLOOM_COMPOSITE_COMPUTE,  'cs_bloom_composite')
+    // Shared box-blur render pipelines (used by both bloom and halation; always rgba8unorm intermediate)
+    this.boxBlurHPipeline        = createAdjRenderPipelineAuto(device, BLOOM_BLUR_H_COMPUTE, 'fs_bloom_blur_h', 'rgba8unorm')
+    this.boxBlurVPipeline        = createAdjRenderPipelineAuto(device, BLOOM_BLUR_V_COMPUTE, 'fs_bloom_blur_v', 'rgba8unorm')
 
-    // Shared box-blur (used by both bloom and halation)
-    this.boxBlurHPipeline = createComputePipeline(device, BLOOM_BLUR_H_COMPUTE, 'cs_bloom_blur_h')
-    this.boxBlurVPipeline = createComputePipeline(device, BLOOM_BLUR_V_COMPUTE, 'cs_bloom_blur_v')
+    // Halation extract render pipeline (samples layer source texture → explicit BGL)
+    {
+      const ext = createAdjRenderPipelineWithBGL(device, HALATION_EXTRACT_COMPUTE, 'fs_halation_extract', 'rgba8unorm', STD)
+      this.halationExtractPipeline = ext.pipeline
+      this.halationExtractBGL      = ext.bgl
+    }
 
-    this.caPipeline              = createComputePipeline(device, CHROMATIC_ABERRATION_COMPUTE, 'cs_chromatic_aberration')
-    this.halationExtractPipeline = createComputePipeline(device, HALATION_EXTRACT_COMPUTE,     'cs_halation_extract')
-    this.ckPipeline              = createComputePipeline(device, CK_COMPUTE,                   'cs_color_key')
+    // ── Render pipelines for chromatic aberration and halftone ──────────────────
+    this.caPipeline              = createAdjRenderPipelinePair(device, CHROMATIC_ABERRATION_COMPUTE, 'fs_chromatic_aberration', STD)
 
-    this.shadowDilateHPipeline   = createComputePipeline(device, DROP_SHADOW_DILATE_H_COMPUTE,   'cs_shadow_dilate_h')
-    this.shadowDilateVPipeline   = createComputePipeline(device, DROP_SHADOW_DILATE_V_COMPUTE,   'cs_shadow_dilate_v')
-    this.shadowBlurHPipeline     = createComputePipeline(device, DROP_SHADOW_BLUR_H_COMPUTE,     'cs_shadow_blur_h')
-    this.shadowBlurVPipeline     = createComputePipeline(device, DROP_SHADOW_BLUR_V_COMPUTE,     'cs_shadow_blur_v')
-    this.shadowCompositePipeline = createComputePipeline(device, DROP_SHADOW_COMPOSITE_COMPUTE,  'cs_shadow_composite')
+    // ── Compute pipelines ───────────────────────────────────────────────────────
+    this.shadowDilateHPipeline   = createComputePipeline(device, DROP_SHADOW_DILATE_H_COMPUTE,  'cs_shadow_dilate_h')
+    this.shadowDilateVPipeline   = createComputePipeline(device, DROP_SHADOW_DILATE_V_COMPUTE,  'cs_shadow_dilate_v')
+    this.shadowBlurHPipeline     = createComputePipeline(device, DROP_SHADOW_BLUR_H_COMPUTE,    'cs_shadow_blur_h')
+    this.shadowBlurVPipeline     = createComputePipeline(device, DROP_SHADOW_BLUR_V_COMPUTE,    'cs_shadow_blur_v')
+    this.shadowCompositePipeline = createComputePipeline(device, DROP_SHADOW_COMPOSITE_COMPUTE, 'cs_shadow_composite')
 
     this.outlineDilateHPipeline   = createComputePipeline(device, OUTLINE_DILATE_H_COMPUTE,   'cs_outline_dilate_h')
     this.outlineDilateVPipeline   = createComputePipeline(device, OUTLINE_DILATE_V_COMPUTE,   'cs_outline_dilate_v')
@@ -204,7 +314,15 @@ export class AdjustmentEncoder {
     this.outlineBlurVPipeline     = createComputePipeline(device, OUTLINE_BLUR_V_COMPUTE,     'cs_outline_blur_v')
     this.outlineCompositePipeline = createComputePipeline(device, OUTLINE_COMPOSITE_COMPUTE,  'cs_outline_composite')
 
-    this.halftonePipeline = createComputePipeline(device, HALFTONE_COMPUTE, 'cs_halftone')
+    this.halftonePipeline = createAdjRenderPipelinePair(device, HALFTONE_COMPUTE, 'fs_halftone', STD)
+
+    // ── Samplers ────────────────────────────────────────────────────────────────
+    this.adjSampler = device.createSampler({
+      magFilter: 'nearest',
+      minFilter: 'nearest',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+    })
 
     this.lutSampler = device.createSampler({
       magFilter: 'linear',
@@ -219,26 +337,28 @@ export class AdjustmentEncoder {
   /**
    * Encode a single adjustment op into the provided command encoder.
    * Replaces the former `WebGPURenderer.encodeAdjustmentOp`.
+   * `format` must match the format of dstTex so the correct pipeline variant is selected.
    */
   encode(
     encoder: GPUCommandEncoder,
     entry: AdjustmentRenderOp,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
   ): void {
     if (entry.kind === 'brightness-contrast') {
       const params = new Float32Array([entry.brightness, entry.contrast, 0, 0])
-      this.encodeComputePass(encoder, this.bcPipeline, srcTex, dstTex, params, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.bcPipeline, srcTex, dstTex, format, params.buffer as ArrayBuffer, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'hue-saturation') {
       const params = new Float32Array([entry.hue, entry.saturation, entry.lightness, 0])
-      this.encodeComputePass(encoder, this.hsPipeline, srcTex, dstTex, params, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.hsPipeline, srcTex, dstTex, format, params.buffer as ArrayBuffer, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-vibrance') {
       const params = new Float32Array([entry.vibrance, entry.saturation, 0, 0])
-      this.encodeComputePass(encoder, this.vibPipeline, srcTex, dstTex, params, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.vibPipeline, srcTex, dstTex, format, params.buffer as ArrayBuffer, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-balance') {
@@ -250,58 +370,64 @@ export class AdjustmentEncoder {
       f[3] = p.midtones.cr;   f[4] = p.midtones.mg;   f[5] = p.midtones.yb
       f[6] = p.highlights.cr; f[7] = p.highlights.mg; f[8] = p.highlights.yb
       u[9] = p.preserveLuminosity ? 1 : 0
-      this.encodeComputePassRaw(encoder, this.cbPipeline, srcTex, dstTex, buf, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.cbPipeline, srcTex, dstTex, format, buf, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'black-and-white') {
       const p = entry.params
       const params = new Float32Array([p.reds, p.yellows, p.greens, p.cyans, p.blues, p.magentas, 0, 0])
-      this.encodeComputePass(encoder, this.bwPipeline, srcTex, dstTex, params, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.bwPipeline, srcTex, dstTex, format, params.buffer as ArrayBuffer, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-temperature') {
       const params = new Float32Array([entry.temperature, entry.tint, 0, 0])
-      this.encodeComputePass(encoder, this.tempPipeline, srcTex, dstTex, params, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.tempPipeline, srcTex, dstTex, format, params.buffer as ArrayBuffer, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-invert') {
-      this.encodeInvertPass(encoder, srcTex, dstTex, entry.selMaskLayer)
+      this.encodeInvertRenderPass(encoder, srcTex, dstTex, format, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'selective-color') {
-      this.encodeSelectiveColorPass(encoder, srcTex, dstTex, entry.params, entry.selMaskLayer)
+      this.encodeSelectiveColorRenderPass(encoder, srcTex, dstTex, format, entry.params, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'curves') {
-      this.encodeCurvesPass(encoder, srcTex, dstTex, entry.layerId, entry.luts, entry.selMaskLayer)
+      this.encodeCurvesRenderPass(encoder, srcTex, dstTex, format, entry.layerId, entry.luts, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-grading') {
-      this.encodeColorGradingPass(encoder, srcTex, dstTex, entry.params, entry.selMaskLayer)
+      this.encodeColorGradingRenderPass(encoder, srcTex, dstTex, format, entry.params, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'reduce-colors') {
-      this.encodeReduceColorsPass(encoder, srcTex, dstTex, entry.palette, entry.paletteCount, entry.selMaskLayer)
+      this.encodeReduceColorsRenderPass(encoder, srcTex, dstTex, format, entry.palette, entry.paletteCount, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-dithering') {
-      this.encodeColorDitheringPass(encoder, srcTex, dstTex, entry.palette, entry.paletteCount, entry.style, entry.opacity, entry.selMaskLayer)
+      this.encodeColorDitheringRenderPass(encoder, srcTex, dstTex, format, entry.palette, entry.paletteCount, entry.style, entry.opacity, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'bloom') {
-      this.encodeBloomPass(
-        encoder, srcTex, dstTex,
+      this.encodeBloomRenderPass(
+        encoder, srcTex, dstTex, format,
         entry.threshold, entry.strength, entry.spread, entry.quality,
         entry.selMaskLayer,
       )
       return
     }
     if (entry.kind === 'chromatic-aberration') {
-      this.encodeChromaticAberrationPass(encoder, srcTex, dstTex, entry.caType, entry.distance, entry.angle, entry.selMaskLayer)
+      const buf = new ArrayBuffer(16)
+      const u = new Uint32Array(buf)
+      const f = new Float32Array(buf)
+      u[0] = entry.caType === 'radial' ? 0 : 1
+      f[1] = entry.distance
+      f[2] = entry.angle
+      this.encodeStdAdjRenderPass(encoder, this.caPipeline, srcTex, dstTex, format, buf, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'halation') {
-      this.encodeHalationPass(encoder, srcTex, dstTex, entry.threshold, entry.spread, entry.blur, entry.strength, entry.selMaskLayer)
+      this.encodeHalationRenderPass(encoder, srcTex, dstTex, format, entry.threshold, entry.spread, entry.blur, entry.strength, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'color-key') {
@@ -309,7 +435,7 @@ export class AdjustmentEncoder {
         entry.keyR, entry.keyG, entry.keyB, entry.tolerance,
         entry.softness, entry.dilation, 0, 0,
       ])
-      this.encodeComputePass(encoder, this.ckPipeline, srcTex, dstTex, params, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.ckPipeline, srcTex, dstTex, format, params.buffer as ArrayBuffer, entry.selMaskLayer)
       return
     }
     if (entry.kind === 'drop-shadow') {
@@ -356,7 +482,7 @@ export class AdjustmentEncoder {
       f[3] = entry.offsetY
       f[4] = entry.offsetK
       u[5] = entry.mode === 'color' ? 0 : 1
-      this.encodeComputePassRaw(encoder, this.halftonePipeline, srcTex, dstTex, buf, entry.selMaskLayer)
+      this.encodeStdAdjRenderPass(encoder, this.halftonePipeline, srcTex, dstTex, format, buf, entry.selMaskLayer)
       return
     }
     const w = this.pixelWidth
@@ -464,28 +590,45 @@ export class AdjustmentEncoder {
     this.outlineTexCache = null
   }
 
-  // ─── Generic compute helpers ─────────────────────────────────────────────────
+  // ─── Generic render pass helpers ────────────────────────────────────────────
 
-  private encodeComputePass(
+  private encodeRenderPass(
     encoder: GPUCommandEncoder,
-    pipeline: GPUComputePipeline,
-    srcTex: GPUTexture,
+    pipeline: GPURenderPipeline,
+    bgl: GPUBindGroupLayout,
     dstTex: GPUTexture,
-    params: Float32Array,
-    selMaskLayer?: GpuLayer,
+    entries: GPUBindGroupEntry[],
   ): void {
-    this.encodeComputePassRaw(encoder, pipeline, srcTex, dstTex, params.buffer as ArrayBuffer, selMaskLayer)
+    const bindGroup = this.device.createBindGroup({
+      layout: bgl,
+      entries,
+    })
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: dstTex.createView(),
+        loadOp: 'clear',
+        storeOp: 'store',
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+      }],
+    })
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, bindGroup)
+    pass.draw(6)
+    pass.end()
   }
 
-  private encodeComputePassRaw(
+  // Standard adjustment render pass: binding 0=srcTex, 1=sampler, 2=params, 3=selMask, 4=maskFlags
+  private encodeStdAdjRenderPass(
     encoder: GPUCommandEncoder,
-    pipeline: GPUComputePipeline,
+    pair: AdjPipelinePair,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     paramsBuffer: ArrayBuffer,
     selMaskLayer?: GpuLayer,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
+    const pipeline = format === 'rgba32float' ? pair.f32 : pair.s8
 
     const alignedSize = Math.max(16, Math.ceil(paramsBuffer.byteLength / 16) * 16)
     const paramsBuf = createUniformBuffer(device, alignedSize)
@@ -497,35 +640,28 @@ export class AdjustmentEncoder {
 
     const dummyMask = selMaskLayer?.texture ?? srcTex
 
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: { buffer: paramsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(pipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
+    this.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(paramsBuf, maskFlagsBuf)
   }
 
-  // ─── Specialised pass encoders ───────────────────────────────────────────────
+  // ─── Specialised render pass encoders ────────────────────────────────────────
 
-  private encodeInvertPass(
+  private encodeInvertRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     selMaskLayer?: GpuLayer,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
+    const pipeline = format === 'rgba32float' ? this.invertPipeline.f32 : this.invertPipeline.s8
 
     const maskFlagsData = new Uint32Array(8); maskFlagsData[0] = selMaskLayer ? 1 : 0
     const maskFlagsBuf = createUniformBuffer(device, 32)
@@ -533,33 +669,26 @@ export class AdjustmentEncoder {
 
     const dummyMask = selMaskLayer?.texture ?? srcTex
 
-    const bindGroup = device.createBindGroup({
-      layout: this.invertPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: dummyMask.createView() },
-        { binding: 3, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(this.invertPipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
+    this.encodeRenderPass(encoder, pipeline, this.invertPipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: dummyMask.createView() },
+      { binding: 3, resource: { buffer: maskFlagsBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(maskFlagsBuf)
   }
 
-  private encodeSelectiveColorPass(
+  private encodeSelectiveColorRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     params: SelectiveColorPassParams,
     selMaskLayer?: GpuLayer,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
+    const pipeline = format === 'rgba32float' ? this.selColorPipeline.f32 : this.selColorPipeline.s8
 
     const RANGE_ORDER = [
       params.reds, params.yellows, params.greens,
@@ -591,22 +720,13 @@ export class AdjustmentEncoder {
 
     const dummyMask = selMaskLayer?.texture ?? srcTex
 
-    const bindGroup = device.createBindGroup({
-      layout: this.selColorPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: { buffer: paramsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(this.selColorPipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
+    this.encodeRenderPass(encoder, pipeline, this.selColorPipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(paramsBuf, maskFlagsBuf)
   }
@@ -648,15 +768,17 @@ export class AdjustmentEncoder {
     return next
   }
 
-  private encodeCurvesPass(
+  private encodeCurvesRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     layerId: string,
     luts: CurvesLuts,
     selMaskLayer?: GpuLayer,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
+    const pipeline = format === 'rgba32float' ? this.curvesPipeline.f32 : this.curvesPipeline.s8
     const textures = this.ensureCurvesLutTextures(layerId, luts)
 
     const maskFlagsData = new Uint32Array(8); maskFlagsData[0] = selMaskLayer ? 1 : 0
@@ -665,35 +787,26 @@ export class AdjustmentEncoder {
 
     const dummyMask = selMaskLayer?.texture ?? srcTex
 
-    // Note: curvesPipeline has its own bind group layout (no params uniform; uses LUT textures instead)
-    const bindGroup = device.createBindGroup({
-      layout: this.curvesPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: dummyMask.createView() },
-        { binding: 3, resource: { buffer: maskFlagsBuf } },
-        { binding: 4, resource: this.lutSampler },
-        { binding: 5, resource: textures.rgb.createView() },
-        { binding: 6, resource: textures.red.createView() },
-        { binding: 7, resource: textures.green.createView() },
-        { binding: 8, resource: textures.blue.createView() },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(this.curvesPipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
+    this.encodeRenderPass(encoder, pipeline, this.curvesPipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: dummyMask.createView() },
+      { binding: 3, resource: { buffer: maskFlagsBuf } },
+      { binding: 4, resource: this.lutSampler },
+      { binding: 5, resource: textures.rgb.createView() },
+      { binding: 6, resource: textures.red.createView() },
+      { binding: 7, resource: textures.green.createView() },
+      { binding: 8, resource: textures.blue.createView() },
+    ])
 
     this.pendingDestroyBuffers.push(maskFlagsBuf)
   }
 
-  private encodeColorGradingPass(
+  private encodeColorGradingRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     cgParams: ColorGradingPassParams,
     selMaskLayer?: GpuLayer,
   ): void {
@@ -717,18 +830,20 @@ export class AdjustmentEncoder {
     f[26] = cgParams.lumMix
     f[27] = 0 // _pad
 
-    this.encodeComputePassRaw(encoder, this.cgPipeline, srcTex, dstTex, buf, selMaskLayer)
+    this.encodeStdAdjRenderPass(encoder, this.cgPipeline, srcTex, dstTex, format, buf, selMaskLayer)
   }
 
-  private encodeReduceColorsPass(
+  private encodeReduceColorsRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     palette: Float32Array,
     paletteCount: number,
     selMaskLayer?: GpuLayer,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
+    const pipeline = format === 'rgba32float' ? this.rcPipeline.f32 : this.rcPipeline.s8
 
     const paramsData = new Uint32Array(8)
     paramsData[0] = paletteCount
@@ -745,38 +860,31 @@ export class AdjustmentEncoder {
 
     const dummyMask = selMaskLayer?.texture ?? srcTex
 
-    const bindGroup = device.createBindGroup({
-      layout: this.rcPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: { buffer: paramsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-        { binding: 5, resource: { buffer: palBuf } },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(this.rcPipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
+    this.encodeRenderPass(encoder, pipeline, this.rcPipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+      { binding: 5, resource: { buffer: palBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(paramsBuf, palBuf, maskFlagsBuf)
   }
 
-  private encodeColorDitheringPass(
+  private encodeColorDitheringRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
+    format: GPUTextureFormat,
     palette: Float32Array,
     paletteCount: number,
     style: number,
     opacity: number,
     selMaskLayer?: GpuLayer,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
+    const pipeline = format === 'rgba32float' ? this.ditherPipeline.f32 : this.ditherPipeline.s8
 
     const paramsData = new Uint32Array(8)
     paramsData[0] = paletteCount
@@ -795,23 +903,14 @@ export class AdjustmentEncoder {
 
     const dummyMask = selMaskLayer?.texture ?? srcTex
 
-    const bindGroup = device.createBindGroup({
-      layout: this.ditherPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: { buffer: paramsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-        { binding: 5, resource: { buffer: palBuf } },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(this.ditherPipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
+    this.encodeRenderPass(encoder, pipeline, this.ditherPipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+      { binding: 5, resource: { buffer: palBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(paramsBuf, palBuf, maskFlagsBuf)
   }
@@ -835,7 +934,7 @@ export class AdjustmentEncoder {
 
     const usage =
       GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.RENDER_ATTACHMENT |
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC
 
@@ -851,10 +950,11 @@ export class AdjustmentEncoder {
     return this.bloomTexCache
   }
 
-  private encodeBloomPass(
+  private encodeBloomRenderPass(
     encoder:      GPUCommandEncoder,
     srcTex:       GPUTexture,
     dstTex:       GPUTexture,
+    format:       GPUTextureFormat,
     threshold:    number,
     strength:     number,
     spread:       number,
@@ -877,21 +977,13 @@ export class AdjustmentEncoder {
     // ── Pass 1: Extract ──────────────────────────────────────────────────────
     const extractParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, extractParamsBuf, new Float32Array([threshold, 0, 0, 0]))
-    const extractBG = device.createBindGroup({
-      layout: this.bloomExtractPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: extractTex.createView() },
-        { binding: 2, resource: { buffer: extractParamsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-    const extractPass = encoder.beginComputePass()
-    extractPass.setPipeline(this.bloomExtractPipeline)
-    extractPass.setBindGroup(0, extractBG)
-    extractPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    extractPass.end()
+    this.encodeRenderPass(encoder, this.bloomExtractPipeline, this.bloomExtractBGL, extractTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: { buffer: extractParamsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+    ])
 
     // ── Pass 2: Downsample (skipped at Full quality) ─────────────────────────
     let workingSrc = blurATex
@@ -900,19 +992,11 @@ export class AdjustmentEncoder {
     if (quality !== 'full') {
       const dsParamsBuf = createUniformBuffer(device, 16)
       writeUniformBuffer(device, dsParamsBuf, new Uint32Array([scaleFactor, 0, 0, 0]))
-      const dsBG = device.createBindGroup({
-        layout: this.bloomDownsamplePipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: extractTex.createView() },
-          { binding: 1, resource: blurATex.createView() },
-          { binding: 2, resource: { buffer: dsParamsBuf } },
-        ],
-      })
-      const dsPass = encoder.beginComputePass()
-      dsPass.setPipeline(this.bloomDownsamplePipeline)
-      dsPass.setBindGroup(0, dsBG)
-      dsPass.dispatchWorkgroups(Math.ceil(bw / 8), Math.ceil(bh / 8))
-      dsPass.end()
+      this.encodeRenderPass(encoder, this.bloomDownsamplePipeline, this.bloomDownsamplePipeline.getBindGroupLayout(0), blurATex, [
+        { binding: 0, resource: extractTex.createView() },
+        { binding: 1, resource: this.adjSampler },
+        { binding: 2, resource: { buffer: dsParamsBuf } },
+      ])
       this.pendingDestroyBuffers.push(dsParamsBuf)
     } else {
       encoder.copyTextureToTexture(
@@ -925,109 +1009,39 @@ export class AdjustmentEncoder {
     // ── Passes 3–8: 3 × H+V box blur ────────────────────────────────────────
     const blurParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, blurParamsBuf, new Uint32Array([blurRadius, 0, 0, 0]))
+    const boxHBGL = this.boxBlurHPipeline.getBindGroupLayout(0)
+    const boxVBGL = this.boxBlurVPipeline.getBindGroupLayout(0)
 
     for (let i = 0; i < 3; i++) {
-      const hBG = device.createBindGroup({
-        layout: this.boxBlurHPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: workingSrc.createView() },
-          { binding: 1, resource: workingDst.createView() },
-          { binding: 2, resource: { buffer: blurParamsBuf } },
-        ],
-      })
-      const hPass = encoder.beginComputePass()
-      hPass.setPipeline(this.boxBlurHPipeline)
-      hPass.setBindGroup(0, hBG)
-      hPass.dispatchWorkgroups(Math.ceil(bw / 8), Math.ceil(bh / 8))
-      hPass.end()
+      this.encodeRenderPass(encoder, this.boxBlurHPipeline, boxHBGL, workingDst, [
+        { binding: 0, resource: workingSrc.createView() },
+        { binding: 1, resource: this.adjSampler },
+        { binding: 2, resource: { buffer: blurParamsBuf } },
+      ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
 
-      const vBG = device.createBindGroup({
-        layout: this.boxBlurVPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: workingSrc.createView() },
-          { binding: 1, resource: workingDst.createView() },
-          { binding: 2, resource: { buffer: blurParamsBuf } },
-        ],
-      })
-      const vPass = encoder.beginComputePass()
-      vPass.setPipeline(this.boxBlurVPipeline)
-      vPass.setBindGroup(0, vBG)
-      vPass.dispatchWorkgroups(Math.ceil(bw / 8), Math.ceil(bh / 8))
-      vPass.end()
+      this.encodeRenderPass(encoder, this.boxBlurVPipeline, boxVBGL, workingDst, [
+        { binding: 0, resource: workingSrc.createView() },
+        { binding: 1, resource: this.adjSampler },
+        { binding: 2, resource: { buffer: blurParamsBuf } },
+      ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
     }
 
     // ── Pass 9: Composite ────────────────────────────────────────────────────
+    const compPipeline = format === 'rgba32float' ? this.bloomCompositePipeline.f32 : this.bloomCompositePipeline.s8
     const compParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, compParamsBuf, new Float32Array([strength, 0, 0, 0]))
-    const compBG = device.createBindGroup({
-      layout: this.bloomCompositePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: workingSrc.createView() },
-        { binding: 2, resource: dstTex.createView() },
-        { binding: 3, resource: { buffer: compParamsBuf } },
-        { binding: 4, resource: dummyMask.createView() },
-        { binding: 5, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-    const compPass = encoder.beginComputePass()
-    compPass.setPipeline(this.bloomCompositePipeline)
-    compPass.setBindGroup(0, compBG)
-    compPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    compPass.end()
+    this.encodeRenderPass(encoder, compPipeline, this.bloomCompositePipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: workingSrc.createView() },
+      { binding: 3, resource: { buffer: compParamsBuf } },
+      { binding: 4, resource: dummyMask.createView() },
+      { binding: 5, resource: { buffer: maskFlagsBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(extractParamsBuf, blurParamsBuf, compParamsBuf, maskFlagsBuf)
-  }
-
-  private encodeChromaticAberrationPass(
-    encoder: GPUCommandEncoder,
-    srcTex: GPUTexture,
-    dstTex: GPUTexture,
-    caType: 'radial' | 'directional',
-    distance: number,
-    angle: number,
-    selMaskLayer?: GpuLayer,
-  ): void {
-    const { device } = this
-    const w = srcTex.width
-    const h = srcTex.height
-
-    const buf = new ArrayBuffer(16)
-    const u = new Uint32Array(buf)
-    const f = new Float32Array(buf)
-    u[0] = caType === 'radial' ? 0 : 1
-    f[1] = distance
-    f[2] = angle
-    // u[3] = 0 (padding)
-
-    const paramsBuf = createUniformBuffer(device, 16)
-    writeUniformBuffer(device, paramsBuf, buf)
-
-    const maskFlagsBuf = createUniformBuffer(device, 32)
-    writeUniformBuffer(device, maskFlagsBuf, new Uint32Array([selMaskLayer != null ? 1 : 0, 0, 0, 0, 0, 0, 0, 0]))
-
-    const dummyMask = selMaskLayer?.texture ?? srcTex
-
-    const bg = device.createBindGroup({
-      layout: this.caPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
-        { binding: 2, resource: { buffer: paramsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(this.caPipeline)
-    pass.setBindGroup(0, bg)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
-
-    this.pendingDestroyBuffers.push(paramsBuf, maskFlagsBuf)
   }
 
   private ensureHalationTextures(): { glowATex: GPUTexture; glowBTex: GPUTexture } {
@@ -1035,7 +1049,7 @@ export class AdjustmentEncoder {
     const { device, pixelWidth: w, pixelHeight: h } = this
     const usage =
       GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.RENDER_ATTACHMENT |
       GPUTextureUsage.COPY_DST
     const make = (): GPUTexture =>
       device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
@@ -1043,17 +1057,18 @@ export class AdjustmentEncoder {
     return this.halationTexCache
   }
 
-  private encodeHalationPass(
+  private encodeHalationRenderPass(
     encoder:      GPUCommandEncoder,
     srcTex:       GPUTexture,
     dstTex:       GPUTexture,
+    format:       GPUTextureFormat,
     threshold:    number,
     spread:       number,
     blur:         number,
     strength:     number,
     selMaskLayer: GpuLayer | undefined,
   ): void {
-    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { device } = this
     const { glowATex, glowBTex } = this.ensureHalationTextures()
 
     const dummyMask    = selMaskLayer?.texture ?? srcTex
@@ -1064,82 +1079,53 @@ export class AdjustmentEncoder {
     // ── Pass 1: Extract highlights with warm halation tint ───────────────────
     const extractParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, extractParamsBuf, new Float32Array([threshold, 0, 0, 0]))
-    const extractBG = device.createBindGroup({
-      layout: this.halationExtractPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: glowATex.createView() },
-        { binding: 2, resource: { buffer: extractParamsBuf } },
-        { binding: 3, resource: dummyMask.createView() },
-        { binding: 4, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-    const extractPass = encoder.beginComputePass()
-    extractPass.setPipeline(this.halationExtractPipeline)
-    extractPass.setBindGroup(0, extractBG)
-    extractPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    extractPass.end()
+    this.encodeRenderPass(encoder, this.halationExtractPipeline, this.halationExtractBGL, glowATex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: { buffer: extractParamsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+    ])
 
     // ── Passes 2–N: blur × H+V iterations (shared box-blur pipelines) ────────
     const blurRadius   = Math.max(1, Math.round(spread))
     const iterations   = Math.max(1, Math.min(5, Math.round(blur)))
     const blurParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, blurParamsBuf, new Uint32Array([blurRadius, 0, 0, 0]))
+    const boxHBGL = this.boxBlurHPipeline.getBindGroupLayout(0)
+    const boxVBGL = this.boxBlurVPipeline.getBindGroupLayout(0)
 
     let workingSrc = glowATex
     let workingDst = glowBTex
 
     for (let i = 0; i < iterations; i++) {
-      const hBG = device.createBindGroup({
-        layout: this.boxBlurHPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: workingSrc.createView() },
-          { binding: 1, resource: workingDst.createView() },
-          { binding: 2, resource: { buffer: blurParamsBuf } },
-        ],
-      })
-      const hPass = encoder.beginComputePass()
-      hPass.setPipeline(this.boxBlurHPipeline)
-      hPass.setBindGroup(0, hBG)
-      hPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-      hPass.end()
+      this.encodeRenderPass(encoder, this.boxBlurHPipeline, boxHBGL, workingDst, [
+        { binding: 0, resource: workingSrc.createView() },
+        { binding: 1, resource: this.adjSampler },
+        { binding: 2, resource: { buffer: blurParamsBuf } },
+      ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
 
-      const vBG = device.createBindGroup({
-        layout: this.boxBlurVPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: workingSrc.createView() },
-          { binding: 1, resource: workingDst.createView() },
-          { binding: 2, resource: { buffer: blurParamsBuf } },
-        ],
-      })
-      const vPass = encoder.beginComputePass()
-      vPass.setPipeline(this.boxBlurVPipeline)
-      vPass.setBindGroup(0, vBG)
-      vPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-      vPass.end()
+      this.encodeRenderPass(encoder, this.boxBlurVPipeline, boxVBGL, workingDst, [
+        { binding: 0, resource: workingSrc.createView() },
+        { binding: 1, resource: this.adjSampler },
+        { binding: 2, resource: { buffer: blurParamsBuf } },
+      ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
     }
 
     // ── Final pass: composite warm glow onto source (screen blend) ────────────
+    const compPipeline = format === 'rgba32float' ? this.bloomCompositePipeline.f32 : this.bloomCompositePipeline.s8
     const compParamsBuf = createUniformBuffer(device, 16)
     writeUniformBuffer(device, compParamsBuf, new Float32Array([strength, 0, 0, 0]))
-    const compBG = device.createBindGroup({
-      layout: this.bloomCompositePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: workingSrc.createView() },
-        { binding: 2, resource: dstTex.createView() },
-        { binding: 3, resource: { buffer: compParamsBuf } },
-        { binding: 4, resource: dummyMask.createView() },
-        { binding: 5, resource: { buffer: maskFlagsBuf } },
-      ],
-    })
-    const compPass = encoder.beginComputePass()
-    compPass.setPipeline(this.bloomCompositePipeline)
-    compPass.setBindGroup(0, compBG)
-    compPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    compPass.end()
+    this.encodeRenderPass(encoder, compPipeline, this.bloomCompositePipeline.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: this.adjSampler },
+      { binding: 2, resource: workingSrc.createView() },
+      { binding: 3, resource: { buffer: compParamsBuf } },
+      { binding: 4, resource: dummyMask.createView() },
+      { binding: 5, resource: { buffer: maskFlagsBuf } },
+    ])
 
     this.pendingDestroyBuffers.push(extractParamsBuf, blurParamsBuf, compParamsBuf, maskFlagsBuf)
   }

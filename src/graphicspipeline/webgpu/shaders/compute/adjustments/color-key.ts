@@ -1,6 +1,7 @@
-import { MASK_FLAGS_STRUCT } from './helpers'
+import { ADJ_VERTEX_SHADER, MASK_FLAGS_STRUCT } from './helpers'
 
 export const CK_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 ${MASK_FLAGS_STRUCT}
 
 // ── RGB → HSV conversion (H in 0..1) ────────────────────────────────────────
@@ -36,7 +37,7 @@ struct CKParams {
 }
 
 @group(0) @binding(0) var srcTex    : texture_2d<f32>;
-@group(0) @binding(1) var dstTex    : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp       : sampler;
 @group(0) @binding(2) var<uniform> params    : CKParams;
 @group(0) @binding(3) var selMask   : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
@@ -56,16 +57,15 @@ fn keyedAlpha(src: vec4f, kHsv: vec3f, tol: f32, soft: f32) -> f32 {
   return src.a;
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_color_key(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord = vec2i(id.xy);
-  let src = textureLoad(srcTex, coord, 0);
+@fragment
+fn fs_color_key(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src = textureSample(srcTex, smp, in.uv);
 
   // Already transparent — nothing to key; preserve as-is.
-  if (src.a < 0.0001) { textureStore(dstTex, coord, src); return; }
+  if (src.a < 0.0001) { return src; }
 
+  let dims = textureDimensions(srcTex);
+  let coord = vec2i(in.pos.xy);
   let kHsv = rgb2hsv(params.keyColor);
   let tol  = params.tolerance;
   let soft = params.softness;
@@ -74,8 +74,6 @@ fn cs_color_key(@builtin(global_invocation_id) id: vec3u) {
   var alpha = keyedAlpha(src, kHsv, tol, soft);
 
   // Dilation: expand the keyed-out region by sampling the neighborhood.
-  // For each pixel, take the minimum alpha across all pixels within radius.
-  // This erodes the "keep" mask, making the transparent zone larger.
   let dilRad = i32(params.dilation);
   if (dilRad > 0 && alpha > 0.0) {
     let kw   = 2 * dilRad + 1;
@@ -83,8 +81,7 @@ fn cs_color_key(@builtin(global_invocation_id) id: vec3u) {
     for (var ki = 0; ki < kTot; ki++) {
       let dy = ki / kw - dilRad;
       let dx = ki % kw - dilRad;
-      let nc = vec2i(coord.x + dx, coord.y + dy);
-      if (nc.x < 0 || nc.x >= i32(dims.x) || nc.y < 0 || nc.y >= i32(dims.y)) { continue; }
+      let nc = clamp(coord + vec2i(dx, dy), vec2i(0), vec2i(i32(dims.x) - 1, i32(dims.y) - 1));
       let nsrc = textureLoad(srcTex, nc, 0);
       let nAlpha = keyedAlpha(nsrc, kHsv, tol, soft);
       if (nAlpha < alpha) { alpha = nAlpha; }
@@ -93,7 +90,7 @@ fn cs_color_key(@builtin(global_invocation_id) id: vec3u) {
 
   let adjusted = vec4f(src.rgb, alpha);
   var mask = 1.0f;
-  if (maskFlags.hasMask != 0u) { mask = textureLoad(selMask, coord, 0).r; }
-  textureStore(dstTex, coord, mix(src, adjusted, mask));
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return mix(src, adjusted, mask);
 }
 ` as const

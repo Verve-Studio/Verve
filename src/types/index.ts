@@ -842,6 +842,8 @@ export interface PixelBrush {
   createdAt: number
 }
 
+export type PixelFormat = 'rgba8' | 'rgba32f' | 'indexed8'
+
 export interface AppState {
   activeTool: Tool
   activeShape: ShapeType
@@ -861,4 +863,5 @@ export interface AppState {
     canRedo: boolean
   }
   openAdjustmentLayerId: string | null
+  pixelFormat: PixelFormat
 }

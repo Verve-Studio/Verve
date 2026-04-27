@@ -12,6 +12,7 @@
 
 #include <emscripten/emscripten.h>
 #include <cstdint>
+#include <climits>
 
 #include "fill.h"
 #include "filters.h"
@@ -181,6 +182,34 @@ void pixelops_grabcut_mincut(
     const uint8_t* trimap, int width, int height, uint8_t* labelOut
 ) {
     grabcut_mincut(capS, capT, hW, vW, trimap, width, height, labelOut);
+}
+
+// ─── Nearest-Palette-Index Mapping ──────────────────────────────────────────
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void matchPaletteIndices(
+  const uint8_t* rgba,       // input: pixelCount * 4 RGBA8 bytes
+  int pixelCount,
+  const uint8_t* palette,    // input: paletteSize * 4 RGBA8 entries
+  int paletteSize,
+  uint8_t* out,              // output: pixelCount bytes of palette indices
+  int transparentIdx         // index to write when alpha == 0 or palette is empty
+) {
+  for (int i = 0; i < pixelCount; i++) {
+    const uint8_t r = rgba[i*4], g = rgba[i*4+1], b = rgba[i*4+2], a = rgba[i*4+3];
+    if (a == 0 || paletteSize == 0) { out[i] = (uint8_t)transparentIdx; continue; }
+    int bestIdx = 0;
+    long bestDist = LONG_MAX;
+    for (int j = 0; j < paletteSize; j++) {
+      int dr = (int)r - palette[j*4];
+      int dg = (int)g - palette[j*4+1];
+      int db = (int)b - palette[j*4+2];
+      int da = (int)a - palette[j*4+3];
+      long d = (long)dr*dr + (long)dg*dg + (long)db*db + (long)da*da;
+      if (d < bestDist) { bestDist = d; bestIdx = j; }
+    }
+    out[i] = (uint8_t)bestIdx;
+  }
 }
 
 } // extern "C"

@@ -1,6 +1,7 @@
-import { MASK_FLAGS_STRUCT, HSL_HELPERS, HUE_DIST } from './helpers'
+import { ADJ_VERTEX_SHADER, MASK_FLAGS_STRUCT, HSL_HELPERS, HUE_DIST } from './helpers'
 
 export const SEL_COLOR_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 ${MASK_FLAGS_STRUCT}
 ${HSL_HELPERS}
 ${HUE_DIST}
@@ -23,18 +24,15 @@ fn scGetF32(arr: array<vec4f, 3>, i: u32) -> f32 {
 }
 
 @group(0) @binding(0) var srcTex   : texture_2d<f32>;
-@group(0) @binding(1) var dstTex   : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp      : sampler;
 @group(0) @binding(2) var<uniform> params    : SelectiveColorParams;
 @group(0) @binding(3) var selMask  : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
 
-@compute @workgroup_size(8, 8)
-fn cs_selective_color(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord = vec2i(id.xy);
-  let src = textureLoad(srcTex, coord, 0);
-  if (src.a < 0.0001) { textureStore(dstTex, coord, src); return; }
+@fragment
+fn fs_selective_color(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src = textureSample(srcTex, smp, in.uv);
+  if (src.a < 0.0001) { return src; }
 
   let rgb = src.rgb;
   let hsl = rgb2hsl(rgb);
@@ -97,7 +95,7 @@ fn cs_selective_color(@builtin(global_invocation_id) id: vec3u) {
   let kComp = 1.0 - K2;
   let adjusted = vec4f((1.0-C2)*kComp, (1.0-M2)*kComp, (1.0-Y2)*kComp, src.a);
   var mask = 1.0f;
-  if (maskFlags.hasMask != 0u) { mask = textureLoad(selMask, coord, 0).r; }
-  textureStore(dstTex, coord, mix(src, adjusted, mask));
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return mix(src, adjusted, mask);
 }
 ` as const

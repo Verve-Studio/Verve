@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_LENS_BLUR_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct LensBlurParams {
   kernelCount : u32,
   _pad0       : u32,
@@ -15,9 +17,9 @@ struct KernelEntry {
   _pad   : f32,
 }
 
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var dstTex : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(2) var<uniform> params : LensBlurParams;
+@group(0) @binding(0) var srcTex                      : texture_2d<f32>;
+@group(0) @binding(1) var smp                         : sampler;
+@group(0) @binding(2) var<uniform> params             : LensBlurParams;
 @group(0) @binding(3) var<storage, read> kernelEntries : array<KernelEntry>;
 
 fn sampleBilinear(coord: vec2f, dims: vec2u) -> vec4f {
@@ -33,13 +35,12 @@ fn sampleBilinear(coord: vec2f, dims: vec2u) -> vec4f {
   return mix(mix(p00, p10, fx), mix(p01, p11, fx), fy);
 }
 
-@compute @workgroup_size(16, 16)
-fn cs_lens_blur(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-
-  let px = f32(id.x);
-  let py = f32(id.y);
+@fragment
+fn fs_lens_blur(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = textureDimensions(srcTex);
+  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
+  let px    = f32(coord.x);
+  let py    = f32(coord.y);
   var colorSum = vec4f(0.0);
 
   for (var i = 0u; i < params.kernelCount; i++) {
@@ -47,7 +48,7 @@ fn cs_lens_blur(@builtin(global_invocation_id) id: vec3u) {
     colorSum += sampleBilinear(vec2f(px + e.kx, py + e.ky), dims) * e.weight;
   }
 
-  textureStore(dstTex, vec2i(id.xy), colorSum);
+  return colorSum;
 }
 ` as const
 
@@ -101,13 +102,15 @@ export function buildKernelEntries(
 
 export async function runLensBlur(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
   kernelBuf: GPUBuffer,
   kernelCount: number,
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -123,29 +126,29 @@ export async function runLensBlur(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const paramsData = new Uint32Array([kernelCount, 0, 0, 0])
   const paramsBuf  = createUniformBuffer(device, 16)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
-  const encoder = device.createCommandEncoder()
-
+  const encoder  = device.createCommandEncoder()
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: { buffer: kernelBuf } },
     ],
   })
-
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 16), Math.ceil(h / 16))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

@@ -4,7 +4,7 @@ import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
 import { IMAGE_EXTENSIONS, EXT_TO_MIME, loadImagePixels } from '@/core/io/imageLoader'
 import { makeTabId, fileTitle, DEFAULT_SWATCHES } from '@/core/store/tabTypes'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
-import type { LayerState, BackgroundFill, AppState, SwatchGroup, PixelBrush } from '@/types'
+import type { LayerState, BackgroundFill, AppState, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
 import type { AppAction } from '@/core/store/AppContext'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import { showOperationError } from '@/utils/userFeedback'
@@ -36,6 +36,27 @@ export interface UseFileOpsReturn {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Encode a Float32Array as base64 using chunked approach to avoid stack overflow. */
+function f32ToBase64(arr: Float32Array): string {
+  const bytes = new Uint8Array(arr.buffer)
+  let str = ''
+  const CHUNK = 65536
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    str += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(str)
+}
+
+/** Encode a Uint8Array as base64 using chunked approach to avoid stack overflow. */
+function uint8ToBase64(arr: Uint8Array): string {
+  let str = ''
+  const CHUNK = 65536
+  for (let i = 0; i < arr.length; i += CHUNK) {
+    str += String.fromCharCode(...arr.subarray(i, i + CHUNK))
+  }
+  return btoa(str)
+}
 
 function isValidSwatchArray(val: unknown): val is { r: number; g: number; b: number; a: number }[] {
   if (!Array.isArray(val)) return false
@@ -105,10 +126,11 @@ export function useFileOps({
       swatches: DEFAULT_SWATCHES,
       swatchGroups: [],
       pixelBrushes: [],
+      pixelFormat: 'rgba8',
     }
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false },
+      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat },
     ]
     setTabs(updated)
     setActiveTabId(newId)
@@ -138,6 +160,7 @@ export function useFileOps({
         swatches: DEFAULT_SWATCHES,
         swatchGroups: [],
         pixelBrushes: [],
+        pixelFormat: 'rgba8',
       }
       const snapshot      = captureActiveSnapshot()
       const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
@@ -145,7 +168,7 @@ export function useFileOps({
       const newId          = makeTabId()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false },
+        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat },
       ]
       setTabs(updated)
       setActiveTabId(newId)
@@ -165,10 +188,13 @@ export function useFileOps({
     const json = await window.api.openPxshopFile(path)
     const doc  = JSON.parse(json) as {
       version: number
+      pixelFormat?: string
       canvas: { width: number; height: number; backgroundFill?: BackgroundFill }
       activeLayerId: string | null
       layers: Array<LayerState & {
         pngData?: string | null
+        layerDataF32?: string | null
+        layerDataIndexed?: string | null
         layerGeo?: { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number } | null
         adjustmentMaskPng?: string | null
       }>
@@ -178,8 +204,10 @@ export function useFileOps({
     }
 
     const layerData = new Map<string, string>()
-    const layers: LayerState[] = doc.layers.map(({ pngData, layerGeo, adjustmentMaskPng, ...meta }) => {
+    const layers: LayerState[] = doc.layers.map(({ pngData, layerDataF32, layerDataIndexed, layerGeo, adjustmentMaskPng, ...meta }) => {
       if (pngData)  layerData.set(meta.id, pngData)
+      if (layerDataF32) layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`)
+      if (layerDataIndexed) layerData.set(meta.id, `data:raw/indexed8;base64,${layerDataIndexed}`)
       if (layerGeo) layerData.set(`${meta.id}:geo`, JSON.stringify(layerGeo))
       if (adjustmentMaskPng) layerData.set(`${meta.id}:adjustment-mask`, adjustmentMaskPng)
       return meta as LayerState
@@ -207,12 +235,22 @@ export function useFileOps({
     if (doc.version >= 4 && Array.isArray(doc.pixelBrushes)) {
       docPixelBrushes = doc.pixelBrushes as PixelBrush[]
     }
+    let docPixelFormat: PixelFormat = 'rgba8'
+    if (doc.version >= 5) {
+      const fmt = doc.pixelFormat
+      if (fmt !== 'rgba8' && fmt !== 'rgba32f' && fmt !== 'indexed8') {
+        showOperationError('Could not open file.', 'This document uses an unsupported pixel format and cannot be opened.')
+        return
+      }
+      docPixelFormat = fmt as PixelFormat
+    }
     const newSnapshot: TabSnapshot = {
       canvasWidth: doc.canvas.width, canvasHeight: doc.canvas.height, backgroundFill: bg,
       layers, activeLayerId: doc.activeLayerId ?? layers[0]?.id ?? null, zoom: 1,
       swatches: docSwatches,
       swatchGroups: docSwatchGroups,
       pixelBrushes: docPixelBrushes,
+      pixelFormat: docPixelFormat,
     }
     const snapshot      = captureActiveSnapshot()
     const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
@@ -220,13 +258,13 @@ export function useFileOps({
     const newId          = makeTabId()
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false },
+      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: docPixelFormat },
     ]
     setTabs(updated)
     setActiveTabId(newId)
     historyStore.clear({ recaptureSnapshot: false })
     setPendingLayerData(null)
-    dispatch({ type: 'SWITCH_TAB', payload: { width: doc.canvas.width, height: doc.canvas.height, backgroundFill: bg, layers, activeLayerId: newSnapshot.activeLayerId, zoom: 1, tiledMode: false, showTileGrid: false } })
+    dispatch({ type: 'SWITCH_TAB', payload: { width: doc.canvas.width, height: doc.canvas.height, backgroundFill: bg, layers, activeLayerId: newSnapshot.activeLayerId, zoom: 1, tiledMode: false, showTileGrid: false, pixelFormat: docPixelFormat } })
     dispatch({ type: 'SET_SWATCHES', payload: docSwatches })
     dispatch({ type: 'SET_SWATCH_GROUPS', payload: docSwatchGroups })
     dispatch({ type: 'SET_PIXEL_BRUSHES', payload: docPixelBrushes })
@@ -253,13 +291,38 @@ export function useFileOps({
     }
 
     const layerPngs: Record<string, string>  = {}
+    const layerF32Data: Record<string, string> = {}
+    const layerIndexedData: Record<string, string> = {}
     const adjustmentMaskPngs: Record<string, string> = {}
     const layerGeos: Record<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }> = {}
+
+    // Get all layer geometries at once (used for non-rgba8 pixel layers)
+    const allGeos = canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map()
+    for (const [id, geo] of allGeos) { layerGeos[id] = geo }
+
     for (const layer of state.layers) {
-      const result = canvasHandleRef.current?.exportLayerPng(layer.id)
-      if (result) {
-        layerPngs[layer.id] = result.png
-        layerGeos[layer.id] = { layerWidth: result.layerWidth, layerHeight: result.layerHeight, offsetX: result.offsetX, offsetY: result.offsetY }
+      if (!('type' in layer)) {
+        // Pixel layer — use format-specific export
+        if (state.pixelFormat === 'rgba8') {
+          const result = canvasHandleRef.current?.exportLayerPng(layer.id)
+          if (result) {
+            layerPngs[layer.id] = result.png
+            layerGeos[layer.id] = { layerWidth: result.layerWidth, layerHeight: result.layerHeight, offsetX: result.offsetX, offsetY: result.offsetY }
+          }
+        } else if (state.pixelFormat === 'rgba32f') {
+          const f32 = canvasHandleRef.current?.exportLayerF32(layer.id)
+          if (f32) layerF32Data[layer.id] = f32ToBase64(f32)
+        } else {
+          const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id)
+          if (idx) layerIndexedData[layer.id] = uint8ToBase64(idx)
+        }
+      } else if (layer.type !== 'adjustment' && layer.type !== 'group') {
+        // Text, shape, mask layers — always serialized as PNG (they are always rgba8 internally)
+        const result = canvasHandleRef.current?.exportLayerPng(layer.id)
+        if (result) {
+          layerPngs[layer.id] = result.png
+          layerGeos[layer.id] = { layerWidth: result.layerWidth, layerHeight: result.layerHeight, offsetX: result.offsetX, offsetY: result.offsetY }
+        }
       }
       if ('type' in layer && layer.type === 'adjustment') {
         const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(layer.id)
@@ -267,12 +330,15 @@ export function useFileOps({
       }
     }
     const doc = {
-      version: 4,
+      version: 5,
+      pixelFormat: state.pixelFormat,
       canvas: { width: state.canvas.width, height: state.canvas.height, backgroundFill: state.canvas.backgroundFill },
       activeLayerId: state.activeLayerId,
       layers: state.layers.map(l => ({
         ...l,
         pngData: layerPngs[l.id] ?? null,
+        layerDataF32: layerF32Data[l.id] ?? null,
+        layerDataIndexed: layerIndexedData[l.id] ?? null,
         layerGeo: layerGeos[l.id] ?? null,
         adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
       })),
@@ -293,35 +359,60 @@ export function useFileOps({
     const path = await window.api.savePxshopDialog(activeTab?.filePath ?? undefined)
     if (!path) return
 
-    const layerPngs: Record<string, string>  = {}
-    const adjustmentMaskPngs: Record<string, string> = {}
-    const layerGeos: Record<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }> = {}
+    const layerPngs2: Record<string, string>  = {}
+    const layerF32Data2: Record<string, string> = {}
+    const layerIndexedData2: Record<string, string> = {}
+    const adjustmentMaskPngs2: Record<string, string> = {}
+    const layerGeos2: Record<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }> = {}
+
+    const allGeos2 = canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map()
+    for (const [id, geo] of allGeos2) { layerGeos2[id] = geo }
+
     for (const layer of state.layers) {
-      const result = canvasHandleRef.current?.exportLayerPng(layer.id)
-      if (result) {
-        layerPngs[layer.id] = result.png
-        layerGeos[layer.id] = { layerWidth: result.layerWidth, layerHeight: result.layerHeight, offsetX: result.offsetX, offsetY: result.offsetY }
+      if (!('type' in layer)) {
+        if (state.pixelFormat === 'rgba8') {
+          const result = canvasHandleRef.current?.exportLayerPng(layer.id)
+          if (result) {
+            layerPngs2[layer.id] = result.png
+            layerGeos2[layer.id] = { layerWidth: result.layerWidth, layerHeight: result.layerHeight, offsetX: result.offsetX, offsetY: result.offsetY }
+          }
+        } else if (state.pixelFormat === 'rgba32f') {
+          const f32 = canvasHandleRef.current?.exportLayerF32(layer.id)
+          if (f32) layerF32Data2[layer.id] = f32ToBase64(f32)
+        } else {
+          const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id)
+          if (idx) layerIndexedData2[layer.id] = uint8ToBase64(idx)
+        }
+      } else if (layer.type !== 'adjustment' && layer.type !== 'group') {
+        const result = canvasHandleRef.current?.exportLayerPng(layer.id)
+        if (result) {
+          layerPngs2[layer.id] = result.png
+          layerGeos2[layer.id] = { layerWidth: result.layerWidth, layerHeight: result.layerHeight, offsetX: result.offsetX, offsetY: result.offsetY }
+        }
       }
       if ('type' in layer && layer.type === 'adjustment') {
         const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(layer.id)
-        if (maskPng) adjustmentMaskPngs[layer.id] = maskPng
+        if (maskPng) adjustmentMaskPngs2[layer.id] = maskPng
       }
     }
-    const doc = {
-      version: 4,
+    const doc2 = {
+      version: 5,
+      pixelFormat: state.pixelFormat,
       canvas: { width: state.canvas.width, height: state.canvas.height, backgroundFill: state.canvas.backgroundFill },
       activeLayerId: state.activeLayerId,
       layers: state.layers.map(l => ({
         ...l,
-        pngData: layerPngs[l.id] ?? null,
-        layerGeo: layerGeos[l.id] ?? null,
-        adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
+        pngData: layerPngs2[l.id] ?? null,
+        layerDataF32: layerF32Data2[l.id] ?? null,
+        layerDataIndexed: layerIndexedData2[l.id] ?? null,
+        layerGeo: layerGeos2[l.id] ?? null,
+        adjustmentMaskPng: adjustmentMaskPngs2[l.id] ?? null,
       })),
       swatches: state.swatches,
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
     }
-    await window.api.savePxshopFile(path, JSON.stringify(doc))
+    await window.api.savePxshopFile(path, JSON.stringify(doc2))
     // The current tab's filePath is NOT updated — this is a copy.
   }, [tabs, activeTabId, state, canvasHandleRef])
 

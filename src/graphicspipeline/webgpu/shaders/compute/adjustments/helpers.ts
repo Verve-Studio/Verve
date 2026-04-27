@@ -1,3 +1,28 @@
+// ─── Shared fullscreen-quad vertex shader ────────────────────────────────────
+// Included at the top of every adjustment/filter fragment shader. Emits six
+// vertices (two triangles) covering the entire framebuffer in clip space and
+// passes interpolated UV coordinates (origin top-left, (1,1) bottom-right) to
+// the fragment stage. No vertex buffers needed — positions are built from
+// @builtin(vertex_index).
+export const ADJ_VERTEX_SHADER = /* wgsl */ `
+struct AdjVertOut {
+  @builtin(position) pos : vec4f,
+  @location(0) uv        : vec2f,
+}
+@vertex
+fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
+  let positions = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,  1.0),
+    vec2f(-1.0,  1.0), vec2f(1.0, -1.0), vec2f(1.0,  1.0),
+  );
+  let uvs = array<vec2f, 6>(
+    vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0),
+    vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0),
+  );
+  return AdjVertOut(vec4f(positions[vi], 0.0, 1.0), uvs[vi]);
+}
+`
+
 export const MASK_FLAGS_STRUCT = /* wgsl */ `
 struct MaskFlags {
   hasMask : u32,

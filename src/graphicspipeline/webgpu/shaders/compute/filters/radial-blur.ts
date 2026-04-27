@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_RADIAL_BLUR_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct RadialBlurParams {
   mode    : u32,
   amount  : u32,
@@ -12,8 +14,8 @@ struct RadialBlurParams {
   _pad2   : f32,
 }
 
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var dstTex : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : RadialBlurParams;
 
 fn sampleBilinear(coord: vec2f, dims: vec2u) -> vec4f {
@@ -31,13 +33,13 @@ fn sampleBilinear(coord: vec2f, dims: vec2u) -> vec4f {
   return mix(mix(p00, p10, fx), mix(p01, p11, fx), fy);
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_radial_blur(@builtin(global_invocation_id) id: vec3u) {
+@fragment
+fn fs_radial_blur(in: AdjVertOut) -> @location(0) vec4<f32> {
   let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
+  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
 
-  let px = f32(id.x);
-  let py = f32(id.y);
+  let px = f32(coord.x);
+  let py = f32(coord.y);
   let cx = params.centerX * f32(dims.x - 1u);
   let cy = params.centerY * f32(dims.y - 1u);
   let dx = px - cx;
@@ -51,8 +53,7 @@ fn cs_radial_blur(@builtin(global_invocation_id) id: vec3u) {
   if (params.mode == 0u) {
     let dist = sqrt(dx * dx + dy * dy);
     if (dist < 0.5) {
-      textureStore(dstTex, vec2i(id.xy), textureLoad(srcTex, vec2i(id.xy), 0));
-      return;
+      return textureLoad(srcTex, coord, 0);
     }
     let spinAngle = f32(params.amount) * 3.14159265358979323846 / 1800.0;
     let baseAngle = atan2(dy, dx);
@@ -63,8 +64,7 @@ fn cs_radial_blur(@builtin(global_invocation_id) id: vec3u) {
     }
   } else {
     if (abs(dx) < 0.5 && abs(dy) < 0.5) {
-      textureStore(dstTex, vec2i(id.xy), textureLoad(srcTex, vec2i(id.xy), 0));
-      return;
+      return textureLoad(srcTex, coord, 0);
     }
     let scale = f32(params.amount) * 0.005;
     for (var s = 0u; s < numSamples; s++) {
@@ -74,13 +74,13 @@ fn cs_radial_blur(@builtin(global_invocation_id) id: vec3u) {
     }
   }
 
-  textureStore(dstTex, vec2i(id.xy), colorSum * (1.0 / f32(numSamples)));
+  return colorSum * (1.0 / f32(numSamples));
 }
 ` as const
 
 export async function runRadialBlur(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
@@ -89,7 +89,10 @@ export async function runRadialBlur(
   centerX: number,
   centerY: number,
   quality: number,
+  format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -105,7 +108,7 @@ export async function runRadialBlur(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const buf = new ArrayBuffer(32)
@@ -123,19 +126,20 @@ export async function runRadialBlur(
 
   const encoder = device.createCommandEncoder()
 
-  const bindGroup = device.createBindGroup({
+  const bg = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
-  pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.setBindGroup(0, bg)
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

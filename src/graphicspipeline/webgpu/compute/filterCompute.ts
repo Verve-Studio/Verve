@@ -16,36 +16,72 @@ import { FILTER_PIXELATE_COMPUTE, runPixelate } from '../shaders/compute/filters
 import { createUniformBuffer, writeUniformBuffer } from '../utils'
 import { FILTER_RMB_PSF_COMPUTE, FILTER_RMB_RATIO_COMPUTE, FILTER_RMB_UPDATE_COMPUTE, FILTER_RMB_FINAL_COMPUTE } from '../shaders/compute/filters/remove-motion-blur'
 
+// ─── Pipeline pair type ───────────────────────────────────────────────────────
+
+type FilterPipelinePair = { s8: GPURenderPipeline; f32: GPURenderPipeline }
+
+function createFilterRenderPipelinePair(
+  device: GPUDevice,
+  shaderModule: GPUShaderModule,
+  fragmentEntryPoint: string,
+): FilterPipelinePair {
+  const makePipeline = (format: GPUTextureFormat): GPURenderPipeline =>
+    device.createRenderPipeline({
+      layout: 'auto',
+      vertex:    { module: shaderModule, entryPoint: 'vs_adj' },
+      fragment:  { module: shaderModule, entryPoint: fragmentEntryPoint, targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+    })
+  return { s8: makePipeline('rgba8unorm'), f32: makePipeline('rgba32float') }
+}
+
+function createFilterRenderPipeline(
+  device: GPUDevice,
+  wgsl: string,
+  fragmentEntryPoint: string,
+  format: GPUTextureFormat,
+): GPURenderPipeline {
+  const module = device.createShaderModule({ code: wgsl })
+  return device.createRenderPipeline({
+    layout: 'auto',
+    vertex:    { module, entryPoint: 'vs_adj' },
+    fragment:  { module, entryPoint: fragmentEntryPoint, targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  })
+}
+
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 class FilterComputeEngine {
   private readonly device: GPUDevice
-  private readonly gaussianHPipeline: GPUComputePipeline
-  private readonly gaussianVPipeline: GPUComputePipeline
-  private readonly boxHPipeline: GPUComputePipeline
-  private readonly boxVPipeline: GPUComputePipeline
-  private readonly radialBlurPipeline: GPUComputePipeline
-  private readonly motionBlurPipeline: GPUComputePipeline
-  private readonly lensBlurPipeline: GPUComputePipeline
-  private readonly sharpenPipeline: GPUComputePipeline
-  private readonly sharpenMorePipeline: GPUComputePipeline
-  private readonly unsharpCombinePipeline: GPUComputePipeline
-  private readonly smartSharpenGaussCombinePipeline: GPUComputePipeline
-  private readonly smartSharpenLensPipeline: GPUComputePipeline
-  private readonly smartSharpenBlendPipeline: GPUComputePipeline
-  private readonly addNoisePipeline: GPUComputePipeline
-  private readonly filmGrainNoisePipeline: GPUComputePipeline
-  private readonly filmGrainCombinePipeline: GPUComputePipeline
-  private readonly cloudsPipeline: GPUComputePipeline
-  private readonly medianPipeline: GPUComputePipeline
-  private readonly bilateralPipeline: GPUComputePipeline
-  private readonly reduceNoisePipeline: GPUComputePipeline
-  private readonly lensFlareRenderPipeline: GPUComputePipeline
-  private readonly pixelatePipeline: GPUComputePipeline
-  private readonly rmbPsfPipeline: GPUComputePipeline
-  private readonly rmbRatioPipeline: GPUComputePipeline
-  private readonly rmbUpdatePipeline: GPUComputePipeline
-  private readonly rmbFinalPipeline: GPUComputePipeline
+  private readonly format: GPUTextureFormat
+  private readonly sampler: GPUSampler
+  private readonly gaussianHPipeline: FilterPipelinePair
+  private readonly gaussianVPipeline: FilterPipelinePair
+  private readonly boxHPipeline: FilterPipelinePair
+  private readonly boxVPipeline: FilterPipelinePair
+  private readonly radialBlurPipeline: FilterPipelinePair
+  private readonly motionBlurPipeline: FilterPipelinePair
+  private readonly lensBlurPipeline: FilterPipelinePair
+  private readonly sharpenPipeline: FilterPipelinePair
+  private readonly sharpenMorePipeline: FilterPipelinePair
+  private readonly unsharpCombinePipeline: FilterPipelinePair
+  private readonly smartSharpenGaussCombinePipeline: FilterPipelinePair
+  private readonly smartSharpenLensPipeline: FilterPipelinePair
+  private readonly smartSharpenBlendPipeline: FilterPipelinePair
+  private readonly addNoisePipeline: FilterPipelinePair
+  private readonly filmGrainNoisePipeline: GPURenderPipeline
+  private readonly filmGrainCombinePipeline: FilterPipelinePair
+  private readonly cloudsPipeline: FilterPipelinePair
+  private readonly medianPipeline: FilterPipelinePair
+  private readonly bilateralPipeline: FilterPipelinePair
+  private readonly reduceNoisePipeline: FilterPipelinePair
+  private readonly lensFlareRenderPipeline: GPURenderPipeline
+  private readonly pixelatePipeline: FilterPipelinePair
+  private readonly rmbPsfPipeline: GPURenderPipeline
+  private readonly rmbRatioPipeline: GPURenderPipeline
+  private readonly rmbUpdatePipeline: GPURenderPipeline
+  private readonly rmbFinalPipeline: FilterPipelinePair
   private readonly intermediate0: GPUTexture
   private cachedKernelKey: string = ''
   private cachedKernelBuf: GPUBuffer | null = null
@@ -53,43 +89,50 @@ class FilterComputeEngine {
   pendingDestroyBuffers: GPUBuffer[] = []
   pendingDestroyTextures: GPUTexture[] = []
 
-  private constructor(device: GPUDevice, width: number, height: number) {
+  private constructor(device: GPUDevice, width: number, height: number, format: GPUTextureFormat) {
     this.device = device
+    this.format = format
+    this.sampler = device.createSampler({
+      magFilter: 'nearest',
+      minFilter: 'nearest',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+    })
     this.intermediate0 = device.createTexture({
       size: { width, height },
-      format: 'rgba16float',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+      format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     })
-    this.gaussianHPipeline = this.makePipeline(FILTER_GAUSSIAN_H_COMPUTE, 'cs_gaussian_h')
-    this.gaussianVPipeline = this.makePipeline(FILTER_GAUSSIAN_V_COMPUTE, 'cs_gaussian_v')
-    this.boxHPipeline = this.makePipeline(FILTER_BOX_H_COMPUTE, 'cs_box_h')
-    this.boxVPipeline = this.makePipeline(FILTER_BOX_V_COMPUTE, 'cs_box_v')
-    this.radialBlurPipeline = this.makePipeline(FILTER_RADIAL_BLUR_COMPUTE, 'cs_radial_blur')
-    this.motionBlurPipeline = this.makePipeline(FILTER_MOTION_BLUR_COMPUTE, 'cs_motion_blur')
-    this.lensBlurPipeline = this.makePipeline(FILTER_LENS_BLUR_COMPUTE, 'cs_lens_blur')
-    this.sharpenPipeline = this.makePipeline(FILTER_SHARPEN_COMPUTE, 'cs_sharpen')
-    this.sharpenMorePipeline = this.makePipeline(FILTER_SHARPEN_MORE_COMPUTE, 'cs_sharpen_more')
-    this.unsharpCombinePipeline = this.makePipeline(FILTER_UNSHARP_COMBINE_COMPUTE, 'cs_unsharp_combine')
-    this.smartSharpenGaussCombinePipeline = this.makePipeline(FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE, 'cs_smart_sharpen_gauss')
-    this.smartSharpenLensPipeline = this.makePipeline(FILTER_SMART_SHARPEN_LENS_COMPUTE, 'cs_smart_sharpen_lens')
-    this.smartSharpenBlendPipeline = this.makePipeline(FILTER_SMART_SHARPEN_BLEND_COMPUTE, 'cs_smart_sharpen_blend')
-    this.addNoisePipeline = this.makePipeline(FILTER_ADD_NOISE_COMPUTE, 'cs_add_noise')
-    this.filmGrainNoisePipeline = this.makePipeline(FILTER_FILM_GRAIN_NOISE_COMPUTE, 'cs_film_grain_noise')
-    this.filmGrainCombinePipeline = this.makePipeline(FILTER_FILM_GRAIN_COMBINE_COMPUTE, 'cs_film_grain_combine')
-    this.cloudsPipeline = this.makePipeline(FILTER_CLOUDS_COMPUTE, 'cs_clouds')
-    this.medianPipeline = this.makePipeline(FILTER_MEDIAN_COMPUTE, 'cs_median')
-    this.bilateralPipeline = this.makePipeline(FILTER_BILATERAL_COMPUTE, 'cs_bilateral')
-    this.reduceNoisePipeline = this.makePipeline(FILTER_REDUCE_NOISE_COMPUTE, 'cs_reduce_noise')
-    this.lensFlareRenderPipeline = this.makePipeline(FILTER_LENS_FLARE_COMPUTE, 'cs_lens_flare')
-    this.pixelatePipeline = this.makePipeline(FILTER_PIXELATE_COMPUTE, 'cs_pixelate')
-    this.rmbPsfPipeline    = this.makePipeline(FILTER_RMB_PSF_COMPUTE,    'cs_rmb_psf')
-    this.rmbRatioPipeline  = this.makePipeline(FILTER_RMB_RATIO_COMPUTE,  'cs_rmb_ratio')
-    this.rmbUpdatePipeline = this.makePipeline(FILTER_RMB_UPDATE_COMPUTE, 'cs_rmb_update')
-    this.rmbFinalPipeline  = this.makePipeline(FILTER_RMB_FINAL_COMPUTE,  'cs_rmb_final')
+    this.gaussianHPipeline               = this.makePair(FILTER_GAUSSIAN_H_COMPUTE, 'fs_gaussian_h')
+    this.gaussianVPipeline               = this.makePair(FILTER_GAUSSIAN_V_COMPUTE, 'fs_gaussian_v')
+    this.boxHPipeline                    = this.makePair(FILTER_BOX_H_COMPUTE, 'fs_box_h')
+    this.boxVPipeline                    = this.makePair(FILTER_BOX_V_COMPUTE, 'fs_box_v')
+    this.radialBlurPipeline              = this.makePair(FILTER_RADIAL_BLUR_COMPUTE, 'fs_radial_blur')
+    this.motionBlurPipeline              = this.makePair(FILTER_MOTION_BLUR_COMPUTE, 'fs_motion_blur')
+    this.lensBlurPipeline                = this.makePair(FILTER_LENS_BLUR_COMPUTE, 'fs_lens_blur')
+    this.sharpenPipeline                 = this.makePair(FILTER_SHARPEN_COMPUTE, 'fs_sharpen')
+    this.sharpenMorePipeline             = this.makePair(FILTER_SHARPEN_MORE_COMPUTE, 'fs_sharpen_more')
+    this.unsharpCombinePipeline          = this.makePair(FILTER_UNSHARP_COMBINE_COMPUTE, 'fs_unsharp_combine')
+    this.smartSharpenGaussCombinePipeline = this.makePair(FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE, 'fs_smart_sharpen_gauss')
+    this.smartSharpenLensPipeline        = this.makePair(FILTER_SMART_SHARPEN_LENS_COMPUTE, 'fs_smart_sharpen_lens')
+    this.smartSharpenBlendPipeline       = this.makePair(FILTER_SMART_SHARPEN_BLEND_COMPUTE, 'fs_smart_sharpen_blend')
+    this.addNoisePipeline                = this.makePair(FILTER_ADD_NOISE_COMPUTE, 'fs_add_noise')
+    this.filmGrainNoisePipeline          = createFilterRenderPipeline(device, FILTER_FILM_GRAIN_NOISE_COMPUTE, 'fs_film_grain_noise', 'rgba8unorm')
+    this.filmGrainCombinePipeline        = this.makePair(FILTER_FILM_GRAIN_COMBINE_COMPUTE, 'fs_film_grain_combine')
+    this.cloudsPipeline                  = this.makePair(FILTER_CLOUDS_COMPUTE, 'fs_clouds')
+    this.medianPipeline                  = this.makePair(FILTER_MEDIAN_COMPUTE, 'fs_median')
+    this.bilateralPipeline               = this.makePair(FILTER_BILATERAL_COMPUTE, 'fs_bilateral')
+    this.reduceNoisePipeline             = this.makePair(FILTER_REDUCE_NOISE_COMPUTE, 'fs_reduce_noise')
+    this.lensFlareRenderPipeline         = createFilterRenderPipeline(device, FILTER_LENS_FLARE_COMPUTE, 'fs_lens_flare', 'rgba8unorm')
+    this.pixelatePipeline                = this.makePair(FILTER_PIXELATE_COMPUTE, 'fs_pixelate')
+    this.rmbPsfPipeline                  = createFilterRenderPipeline(device, FILTER_RMB_PSF_COMPUTE, 'fs_rmb_psf', 'rgba16float')
+    this.rmbRatioPipeline                = createFilterRenderPipeline(device, FILTER_RMB_RATIO_COMPUTE, 'fs_rmb_ratio', 'rgba16float')
+    this.rmbUpdatePipeline               = createFilterRenderPipeline(device, FILTER_RMB_UPDATE_COMPUTE, 'fs_rmb_update', 'rgba16float')
+    this.rmbFinalPipeline                = this.makePair(FILTER_RMB_FINAL_COMPUTE, 'fs_rmb_final')
   }
 
-  static create(device: GPUDevice, width: number, height: number): FilterComputeEngine {
-    return new FilterComputeEngine(device, width, height)
+  static create(device: GPUDevice, width: number, height: number, format: GPUTextureFormat = 'rgba8unorm'): FilterComputeEngine {
+    return new FilterComputeEngine(device, width, height, format)
   }
 
   destroy(): void {
@@ -98,25 +141,29 @@ class FilterComputeEngine {
     this.cachedKernelBuf = null
   }
 
-  private makePipeline(wgsl: string, entryPoint: string): GPUComputePipeline {
+  private makePair(wgsl: string, entryPoint: string): FilterPipelinePair {
     const module = this.device.createShaderModule({ code: wgsl })
-    return this.device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint } })
+    return createFilterRenderPipelinePair(this.device, module, entryPoint)
+  }
+
+  private selectPipeline(pair: FilterPipelinePair, dstTex: GPUTexture): GPURenderPipeline {
+    return dstTex.format === 'rgba32float' ? pair.f32 : pair.s8
   }
 
   async gaussianBlur(pixels: Uint8Array, width: number, height: number, radius: number): Promise<Uint8Array> {
-    return runGaussianBlur(this.device, this.gaussianHPipeline, this.gaussianVPipeline, this.intermediate0, pixels, width, height, radius)
+    return runGaussianBlur(this.device, this.gaussianHPipeline.s8, this.gaussianVPipeline.s8, pixels, width, height, radius)
   }
 
   async boxBlur(pixels: Uint8Array, width: number, height: number, radius: number): Promise<Uint8Array> {
-    return runBoxBlur(this.device, this.boxHPipeline, this.boxVPipeline, this.intermediate0, pixels, width, height, radius)
+    return runBoxBlur(this.device, this.boxHPipeline.s8, this.boxVPipeline.s8, pixels, width, height, radius)
   }
 
   async radialBlur(pixels: Uint8Array, width: number, height: number, mode: number, amount: number, centerX: number, centerY: number, quality: number): Promise<Uint8Array> {
-    return runRadialBlur(this.device, this.radialBlurPipeline, pixels, width, height, mode, amount, centerX, centerY, quality)
+    return runRadialBlur(this.device, this.radialBlurPipeline.s8, pixels, width, height, mode, amount, centerX, centerY, quality)
   }
 
   async motionBlur(pixels: Uint8Array, width: number, height: number, angleDeg: number, distance: number): Promise<Uint8Array> {
-    return runMotionBlur(this.device, this.motionBlurPipeline, pixels, width, height, angleDeg, distance)
+    return runMotionBlur(this.device, this.motionBlurPipeline.s8, pixels, width, height, angleDeg, distance)
   }
 
   async lensBlur(pixels: Uint8Array, width: number, height: number, radius: number, bladeCount: number, bladeCurvature: number, rotation: number): Promise<Uint8Array> {
@@ -130,47 +177,47 @@ class FilterComputeEngine {
       this.cachedKernelKey = key
       this.cachedKernelCount = entries.length / 4
     }
-    return runLensBlur(this.device, this.lensBlurPipeline, pixels, width, height, this.cachedKernelBuf!, this.cachedKernelCount)
+    return runLensBlur(this.device, this.lensBlurPipeline.s8, pixels, width, height, this.cachedKernelBuf!, this.cachedKernelCount)
   }
 
   async sharpen(pixels: Uint8Array, width: number, height: number): Promise<Uint8Array> {
-    return runSharpen(this.device, this.sharpenPipeline, pixels, width, height)
+    return runSharpen(this.device, this.sharpenPipeline.s8, pixels, width, height)
   }
 
   async sharpenMore(pixels: Uint8Array, width: number, height: number): Promise<Uint8Array> {
-    return runSharpenMore(this.device, this.sharpenMorePipeline, pixels, width, height)
+    return runSharpenMore(this.device, this.sharpenMorePipeline.s8, pixels, width, height)
   }
 
   async unsharpMask(pixels: Uint8Array, width: number, height: number, amount: number, radius: number, threshold: number): Promise<Uint8Array> {
-    return runUnsharpMask(this.device, this.gaussianHPipeline, this.gaussianVPipeline, this.unsharpCombinePipeline, this.intermediate0, pixels, width, height, amount, radius, threshold)
+    return runUnsharpMask(this.device, this.gaussianHPipeline.s8, this.gaussianVPipeline.s8, this.unsharpCombinePipeline.s8, pixels, width, height, amount, radius, threshold)
   }
 
   async smartSharpen(pixels: Uint8Array, width: number, height: number, amount: number, radius: number, reduceNoise: number, remove: number): Promise<Uint8Array> {
-    return runSmartSharpen(this.device, this.gaussianHPipeline, this.gaussianVPipeline, this.boxHPipeline, this.boxVPipeline, this.smartSharpenGaussCombinePipeline, this.smartSharpenLensPipeline, this.smartSharpenBlendPipeline, this.intermediate0, pixels, width, height, amount, radius, reduceNoise, remove)
+    return runSmartSharpen(this.device, this.gaussianHPipeline.s8, this.gaussianVPipeline.s8, this.boxHPipeline.s8, this.boxVPipeline.s8, this.smartSharpenGaussCombinePipeline.s8, this.smartSharpenLensPipeline.s8, this.smartSharpenBlendPipeline.s8, pixels, width, height, amount, radius, reduceNoise, remove)
   }
 
   async addNoise(pixels: Uint8Array, width: number, height: number, amount: number, distribution: number, monochromatic: number, seed: number): Promise<Uint8Array> {
-    return runAddNoise(this.device, this.addNoisePipeline, pixels, width, height, amount, distribution, monochromatic, seed)
+    return runAddNoise(this.device, this.addNoisePipeline.s8, pixels, width, height, amount, distribution, monochromatic, seed)
   }
 
   async filmGrain(pixels: Uint8Array, width: number, height: number, grainSize: number, intensity: number, roughness: number, seed: number): Promise<Uint8Array> {
-    return runFilmGrain(this.device, this.filmGrainNoisePipeline, this.filmGrainCombinePipeline, this.boxHPipeline, this.boxVPipeline, this.intermediate0, pixels, width, height, grainSize, intensity, roughness, seed)
+    return runFilmGrain(this.device, this.filmGrainNoisePipeline, this.filmGrainCombinePipeline.s8, this.boxHPipeline.s8, this.boxVPipeline.s8, pixels, width, height, grainSize, intensity, roughness, seed)
   }
 
   async clouds(pixels: Uint8Array, width: number, height: number, scale: number, opacity: number, colorMode: number, fgR: number, fgG: number, fgB: number, bgR: number, bgG: number, bgB: number, seed: number): Promise<Uint8Array> {
-    return runClouds(this.device, this.cloudsPipeline, pixels, width, height, scale, opacity, colorMode, fgR, fgG, fgB, bgR, bgG, bgB, seed)
+    return runClouds(this.device, this.cloudsPipeline.s8, pixels, width, height, scale, opacity, colorMode, fgR, fgG, fgB, bgR, bgG, bgB, seed)
   }
 
   async median(pixels: Uint8Array, width: number, height: number, radius: number): Promise<Uint8Array> {
-    return runMedian(this.device, this.medianPipeline, pixels, width, height, radius)
+    return runMedian(this.device, this.medianPipeline.s8, pixels, width, height, radius)
   }
 
   async bilateral(pixels: Uint8Array, width: number, height: number, radius: number, sigmaSpatial: number, sigmaColor: number): Promise<Uint8Array> {
-    return runBilateral(this.device, this.bilateralPipeline, pixels, width, height, radius, sigmaSpatial, sigmaColor)
+    return runBilateral(this.device, this.bilateralPipeline.s8, pixels, width, height, radius, sigmaSpatial, sigmaColor)
   }
 
   async reduceNoise(pixels: Uint8Array, width: number, height: number, strength: number, preserveDetails: number, reduceColorNoise: number, sharpenDetails: number): Promise<Uint8Array> {
-    return runReduceNoise(this.device, this.reduceNoisePipeline, pixels, width, height, strength, preserveDetails, reduceColorNoise, sharpenDetails, (p, w, h, a, r, t) => this.unsharpMask(p, w, h, a, r, t))
+    return runReduceNoise(this.device, this.reduceNoisePipeline.s8, pixels, width, height, strength, preserveDetails, reduceColorNoise, sharpenDetails, (p, w, h, a, r, t) => this.unsharpMask(p, w, h, a, r, t))
   }
 
   async renderLensFlare(width: number, height: number, centerX: number, centerY: number, brightness: number, lensType: number, ringOpacity: number, streakStrength: number, streakWidth: number, streakRotation: number): Promise<Uint8Array> {
@@ -178,7 +225,7 @@ class FilterComputeEngine {
   }
 
   async pixelate(pixels: Uint8Array, width: number, height: number, blockSize: number): Promise<Uint8Array> {
-    return runPixelate(this.device, this.pixelatePipeline, pixels, width, height, blockSize)
+    return runPixelate(this.device, this.pixelatePipeline.s8, pixels, width, height, blockSize)
   }
 
   // ─── Encode methods (synchronous, record into an existing GPUCommandEncoder) ──
@@ -194,7 +241,7 @@ class FilterComputeEngine {
     const tex = this.device.createTexture({
       size: { width: w, height: h },
       format: 'rgba16float',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     })
     this.pendingDestroyTextures.push(tex)
     return tex
@@ -204,7 +251,7 @@ class FilterComputeEngine {
     const tex = this.device.createTexture({
       size: { width: w, height: h },
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     })
     this.pendingDestroyTextures.push(tex)
     return tex
@@ -218,43 +265,43 @@ class FilterComputeEngine {
     return buf
   }
 
-  private encodePass(encoder: GPUCommandEncoder, pipeline: GPUComputePipeline, entries: GPUBindGroupEntry[], wgX: number, wgY: number): void {
-    const bg = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries })
-    const pass = encoder.beginComputePass()
+  private encodeRenderPass(encoder: GPUCommandEncoder, pipeline: GPURenderPipeline, entries: GPUBindGroupEntry[], dstTex: GPUTexture): void {
+    const bg   = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries })
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{ view: dstTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+    })
     pass.setPipeline(pipeline)
     pass.setBindGroup(0, bg)
-    pass.dispatchWorkgroups(wgX, wgY)
+    pass.draw(6)
     pass.end()
   }
 
   encodeGaussianBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
-    const wgx = Math.ceil(w / 8); const wgy = Math.ceil(h / 8)
-    this.encodePass(encoder, this.gaussianHPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.intermediate0.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], wgx, wgy)
-    this.encodePass(encoder, this.gaussianVPipeline, [
+    ], this.intermediate0)
+    this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianVPipeline, dstTex), [
       { binding: 0, resource: this.intermediate0.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], wgx, wgy)
+    ], dstTex)
   }
 
   encodeBoxBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
-    const wgx = Math.ceil(w / 8); const wgy = Math.ceil(h / 8)
-    this.encodePass(encoder, this.boxHPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.intermediate0.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], wgx, wgy)
-    this.encodePass(encoder, this.boxVPipeline, [
+    ], this.intermediate0)
+    this.encodeRenderPass(encoder, this.selectPipeline(this.boxVPipeline, dstTex), [
       { binding: 0, resource: this.intermediate0.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], wgx, wgy)
+    ], dstTex)
   }
 
   encodeRadialBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, mode: number, amount: number, centerX: number, centerY: number, quality: number): void {
@@ -263,11 +310,11 @@ class FilterComputeEngine {
     dv.setUint32(0, mode, true); dv.setUint32(4, amount, true); dv.setUint32(8, quality, true); dv.setUint32(12, 0, true)
     dv.setFloat32(16, centerX, true); dv.setFloat32(20, centerY, true); dv.setFloat32(24, 0, true); dv.setFloat32(28, 0, true)
     const paramsBuf = this.makeParamsBuf(buf)
-    this.encodePass(encoder, this.radialBlurPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.radialBlurPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+    ], dstTex)
   }
 
   encodeMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number): void {
@@ -275,16 +322,14 @@ class FilterComputeEngine {
     const dv = new DataView(buf)
     dv.setFloat32(0, angle, true); dv.setUint32(4, distance, true); dv.setUint32(8, 0, true); dv.setUint32(12, 0, true)
     const paramsBuf = this.makeParamsBuf(buf)
-    this.encodePass(encoder, this.motionBlurPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.motionBlurPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+    ], dstTex)
   }
 
   encodeRemoveMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number, noiseReduction: number): void {
-    const wgx = Math.ceil(w / 8)
-    const wgy = Math.ceil(h / 8)
     // 8–15 iterations: noiseReduction=0 → 15, noiseReduction=100 → 8
     const iterations = 8 + Math.round((100 - noiseReduction) / 14)
     const blendBack  = (noiseReduction / 100) * 0.35
@@ -308,51 +353,45 @@ class FilterComputeEngine {
     const temp  = this.makeRgba16FloatTex(w, h) // PSF scratch (reused for fwd + back)
     const ratio = this.makeRgba16FloatTex(w, h) // ratio = input / PSF(est)
 
-    // For iteration 0 the estimate starts as srcTex (rgba8unorm — compatible with
-    // texture_2d<f32> reads). Subsequent iterations use the computed estA / estB.
+    // For iteration 0 the estimate starts as srcTex. Subsequent iterations use estA / estB.
     let curEst: GPUTexture = srcTex
 
     for (let i = 0; i < iterations; i++) {
       const nextEst = (i % 2 === 0) ? estA : estB
 
       // Step 1 — Forward PSF: PSF(curEst) → temp
-      this.encodePass(encoder, this.rmbPsfPipeline, [
+      this.encodeRenderPass(encoder, this.rmbPsfPipeline, [
         { binding: 0, resource: curEst.createView() },
-        { binding: 1, resource: temp.createView() },
-        { binding: 2, resource: { buffer: psfParamsBuf } },
-      ], wgx, wgy)
+        { binding: 1, resource: { buffer: psfParamsBuf } },
+      ], temp)
 
       // Step 2 — Ratio: input / PSF(est) → ratio
-      this.encodePass(encoder, this.rmbRatioPipeline, [
+      this.encodeRenderPass(encoder, this.rmbRatioPipeline, [
         { binding: 0, resource: srcTex.createView() },
         { binding: 1, resource: temp.createView() },
-        { binding: 2, resource: ratio.createView() },
-      ], wgx, wgy)
+      ], ratio)
 
       // Step 3 — Back-projection: PSF(ratio) → temp  (reuse temp; ratio is done)
-      this.encodePass(encoder, this.rmbPsfPipeline, [
+      this.encodeRenderPass(encoder, this.rmbPsfPipeline, [
         { binding: 0, resource: ratio.createView() },
-        { binding: 1, resource: temp.createView() },
-        { binding: 2, resource: { buffer: psfParamsBuf } },
-      ], wgx, wgy)
+        { binding: 1, resource: { buffer: psfParamsBuf } },
+      ], temp)
 
       // Step 4 — RL Update: est * PSF(ratio) → nextEst
-      this.encodePass(encoder, this.rmbUpdatePipeline, [
+      this.encodeRenderPass(encoder, this.rmbUpdatePipeline, [
         { binding: 0, resource: curEst.createView() },
         { binding: 1, resource: temp.createView() },
-        { binding: 2, resource: nextEst.createView() },
-      ], wgx, wgy)
+      ], nextEst)
 
       curEst = nextEst
     }
 
-    // Final pass — blend deblurred estimate with original → rgba8unorm dstTex
-    this.encodePass(encoder, this.rmbFinalPipeline, [
+    // Final pass — blend deblurred estimate with original → dstTex
+    this.encodeRenderPass(encoder, this.selectPipeline(this.rmbFinalPipeline, dstTex), [
       { binding: 0, resource: curEst.createView() },
       { binding: 1, resource: srcTex.createView() },
-      { binding: 2, resource: dstTex.createView() },
-      { binding: 3, resource: { buffer: finalParamsBuf } },
-    ], wgx, wgy)
+      { binding: 2, resource: { buffer: finalParamsBuf } },
+    ], dstTex)
   }
 
   encodeLensBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number, bladeCount: number, bladeCurvature: number, rotation: number): void {
@@ -367,192 +406,188 @@ class FilterComputeEngine {
       this.cachedKernelCount = entries.length / 4
     }
     const paramsBuf = this.makeParamsBuf(new Uint32Array([this.cachedKernelCount, 0, 0, 0]))
-    this.encodePass(encoder, this.lensBlurPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.lensBlurPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: { buffer: this.cachedKernelBuf! } },
-    ], Math.ceil(w / 16), Math.ceil(h / 16))
+    ], dstTex)
   }
 
   encodeSharpen(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void {
-    this.encodePass(encoder, this.sharpenPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.sharpenPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+      { binding: 1, resource: this.sampler },
+    ], dstTex)
   }
 
   encodeSharpenMore(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void {
-    this.encodePass(encoder, this.sharpenMorePipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.sharpenMorePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+      { binding: 1, resource: this.sampler },
+    ], dstTex)
   }
 
   encodeUnsharpMask(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, amount: number, radius: number, threshold: number): void {
-    const wgx = Math.ceil(w / 8); const wgy = Math.ceil(h / 8)
     const gaussParamsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     const blurredTex = this.makeRgba8Tex(w, h)
-    this.encodePass(encoder, this.gaussianHPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.intermediate0.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: gaussParamsBuf } },
-    ], wgx, wgy)
-    this.encodePass(encoder, this.gaussianVPipeline, [
+    ], this.intermediate0)
+    this.encodeRenderPass(encoder, this.gaussianVPipeline.s8, [
       { binding: 0, resource: this.intermediate0.createView() },
-      { binding: 1, resource: blurredTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: gaussParamsBuf } },
-    ], wgx, wgy)
+    ], blurredTex)
     const combineParamsBuf = this.makeParamsBuf(new Uint32Array([amount, threshold, 0, 0]))
-    this.encodePass(encoder, this.unsharpCombinePipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.unsharpCombinePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: blurredTex.createView() },
-      { binding: 2, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
+      { binding: 2, resource: blurredTex.createView() },
       { binding: 3, resource: { buffer: combineParamsBuf } },
-    ], wgx, wgy)
+    ], dstTex)
   }
 
   encodeSmartSharpen(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, amount: number, radius: number, reduceNoise: number, remove: number): void {
-    const wgx = Math.ceil(w / 8); const wgy = Math.ceil(h / 8)
     if (remove === 0) {
       const gaussParamsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
       const blurredTex = this.makeRgba8Tex(w, h)
-      this.encodePass(encoder, this.gaussianHPipeline, [
+      this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
         { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: this.intermediate0.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
-      ], wgx, wgy)
-      this.encodePass(encoder, this.gaussianVPipeline, [
+      ], this.intermediate0)
+      this.encodeRenderPass(encoder, this.gaussianVPipeline.s8, [
         { binding: 0, resource: this.intermediate0.createView() },
-        { binding: 1, resource: blurredTex.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
-      ], wgx, wgy)
+      ], blurredTex)
       if (reduceNoise > 0) {
         const sharpenedTex = this.makeRgba8Tex(w, h)
         const combineParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
-        this.encodePass(encoder, this.smartSharpenGaussCombinePipeline, [
+        this.encodeRenderPass(encoder, this.smartSharpenGaussCombinePipeline.s8, [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: blurredTex.createView() },
-          { binding: 2, resource: sharpenedTex.createView() },
+          { binding: 1, resource: this.sampler },
+          { binding: 2, resource: blurredTex.createView() },
           { binding: 3, resource: { buffer: combineParamsBuf } },
-        ], wgx, wgy)
+        ], sharpenedTex)
         const boxParamsBuf = this.makeParamsBuf(new Uint32Array([1, 0, 0, 0]))
         const smoothedTex = this.makeRgba8Tex(w, h)
-        this.encodePass(encoder, this.boxHPipeline, [
+        this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: this.intermediate0.createView() },
+          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
-        ], wgx, wgy)
-        this.encodePass(encoder, this.boxVPipeline, [
+        ], this.intermediate0)
+        this.encodeRenderPass(encoder, this.boxVPipeline.s8, [
           { binding: 0, resource: this.intermediate0.createView() },
-          { binding: 1, resource: smoothedTex.createView() },
+          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
-        ], wgx, wgy)
+        ], smoothedTex)
         const blendParamsBuf = this.makeParamsBuf(new Uint32Array([reduceNoise, 0, 0, 0]))
-        this.encodePass(encoder, this.smartSharpenBlendPipeline, [
+        this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenBlendPipeline, dstTex), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: smoothedTex.createView() },
-          { binding: 2, resource: dstTex.createView() },
+          { binding: 1, resource: this.sampler },
+          { binding: 2, resource: smoothedTex.createView() },
           { binding: 3, resource: { buffer: blendParamsBuf } },
-        ], wgx, wgy)
+        ], dstTex)
       } else {
         const combineParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
-        this.encodePass(encoder, this.smartSharpenGaussCombinePipeline, [
+        this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenGaussCombinePipeline, dstTex), [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: blurredTex.createView() },
-          { binding: 2, resource: dstTex.createView() },
+          { binding: 1, resource: this.sampler },
+          { binding: 2, resource: blurredTex.createView() },
           { binding: 3, resource: { buffer: combineParamsBuf } },
-        ], wgx, wgy)
+        ], dstTex)
       }
     } else {
       if (reduceNoise > 0) {
         const sharpenedTex = this.makeRgba8Tex(w, h)
         const lensParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
-        this.encodePass(encoder, this.smartSharpenLensPipeline, [
+        this.encodeRenderPass(encoder, this.smartSharpenLensPipeline.s8, [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: sharpenedTex.createView() },
+          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: lensParamsBuf } },
-        ], wgx, wgy)
+        ], sharpenedTex)
         const boxParamsBuf = this.makeParamsBuf(new Uint32Array([1, 0, 0, 0]))
         const smoothedTex = this.makeRgba8Tex(w, h)
-        this.encodePass(encoder, this.boxHPipeline, [
+        this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: this.intermediate0.createView() },
+          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
-        ], wgx, wgy)
-        this.encodePass(encoder, this.boxVPipeline, [
+        ], this.intermediate0)
+        this.encodeRenderPass(encoder, this.boxVPipeline.s8, [
           { binding: 0, resource: this.intermediate0.createView() },
-          { binding: 1, resource: smoothedTex.createView() },
+          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
-        ], wgx, wgy)
+        ], smoothedTex)
         const blendParamsBuf = this.makeParamsBuf(new Uint32Array([reduceNoise, 0, 0, 0]))
-        this.encodePass(encoder, this.smartSharpenBlendPipeline, [
+        this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenBlendPipeline, dstTex), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: smoothedTex.createView() },
-          { binding: 2, resource: dstTex.createView() },
+          { binding: 1, resource: this.sampler },
+          { binding: 2, resource: smoothedTex.createView() },
           { binding: 3, resource: { buffer: blendParamsBuf } },
-        ], wgx, wgy)
+        ], dstTex)
       } else {
         const lensParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
-        this.encodePass(encoder, this.smartSharpenLensPipeline, [
+        this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenLensPipeline, dstTex), [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: dstTex.createView() },
+          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: lensParamsBuf } },
-        ], wgx, wgy)
+        ], dstTex)
       }
     }
   }
 
   encodeAddNoise(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, amount: number, distribution: number, monochromatic: number, seed: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([amount, distribution, monochromatic, seed]))
-    this.encodePass(encoder, this.addNoisePipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.addNoisePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+    ], dstTex)
   }
 
   encodeFilmGrain(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, grainSize: number, intensity: number, roughness: number, seed: number): void {
     const blurRadius = grainSize > 1 ? Math.min(5, Math.floor(grainSize / 10)) : 0
     const noiseTexA = this.makeRgba8Tex(w, h)
-    const wgx = Math.ceil(w / 8); const wgy = Math.ceil(h / 8)
-    const noiseParamsBuf = this.makeParamsBuf(new Uint32Array([seed, 0, 0, 0]))
-    this.encodePass(encoder, this.filmGrainNoisePipeline, [
-      { binding: 0, resource: noiseTexA.createView() },
-      { binding: 1, resource: { buffer: noiseParamsBuf } },
-    ], wgx, wgy)
+    const noiseParamsBuf = this.makeParamsBuf(new Uint32Array([seed, w, 0, 0]))
+    this.encodeRenderPass(encoder, this.filmGrainNoisePipeline, [
+      { binding: 0, resource: { buffer: noiseParamsBuf } },
+    ], noiseTexA)
     let finalNoiseTex = noiseTexA
     if (blurRadius > 0) {
       const noiseTexB = this.makeRgba8Tex(w, h)
       const blurParamsBuf = this.makeParamsBuf(new Uint32Array([blurRadius, 0, 0, 0]))
-      this.encodePass(encoder, this.boxHPipeline, [
+      this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
         { binding: 0, resource: noiseTexA.createView() },
-        { binding: 1, resource: this.intermediate0.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
-      ], wgx, wgy)
-      this.encodePass(encoder, this.boxVPipeline, [
+      ], this.intermediate0)
+      this.encodeRenderPass(encoder, this.boxVPipeline.s8, [
         { binding: 0, resource: this.intermediate0.createView() },
-        { binding: 1, resource: noiseTexB.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
-      ], wgx, wgy)
+      ], noiseTexB)
       finalNoiseTex = noiseTexB
     }
     const combineParamsBuf = this.makeParamsBuf(new Uint32Array([intensity, roughness, 0, 0]))
-    this.encodePass(encoder, this.filmGrainCombinePipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.filmGrainCombinePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: finalNoiseTex.createView() },
-      { binding: 2, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
+      { binding: 2, resource: finalNoiseTex.createView() },
       { binding: 3, resource: { buffer: combineParamsBuf } },
-    ], wgx, wgy)
+    ], dstTex)
   }
 
   encodeMedian(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
-    this.encodePass(encoder, this.medianPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.medianPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+    ], dstTex)
   }
 
   encodeBilateral(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number, sigmaSpatial: number, sigmaColor: number): void {
@@ -561,49 +596,48 @@ class FilterComputeEngine {
     dv.setUint32(0, radius, true); dv.setUint32(4, 0, true)
     dv.setFloat32(8, sigmaSpatial, true); dv.setFloat32(12, sigmaColor, true)
     const paramsBuf = this.makeParamsBuf(buf)
-    this.encodePass(encoder, this.bilateralPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.bilateralPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+    ], dstTex)
   }
 
   encodeReduceNoise(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, strength: number, preserveDetails: number, reduceColorNoise: number, sharpenDetails: number): void {
-    const wgx = Math.ceil(w / 8); const wgy = Math.ceil(h / 8)
     if (sharpenDetails > 0) {
       const tempTex = this.makeRgba8Tex(w, h)
       const rndParamsBuf = this.makeParamsBuf(new Uint32Array([strength, preserveDetails, reduceColorNoise, 0]))
-      this.encodePass(encoder, this.reduceNoisePipeline, [
+      this.encodeRenderPass(encoder, this.reduceNoisePipeline.s8, [
         { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: tempTex.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: rndParamsBuf } },
-      ], wgx, wgy)
+      ], tempTex)
       const gaussParamsBuf = this.makeParamsBuf(new Uint32Array([1, 0, 0, 0]))
       const blurredTex = this.makeRgba8Tex(w, h)
-      this.encodePass(encoder, this.gaussianHPipeline, [
+      this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
         { binding: 0, resource: tempTex.createView() },
-        { binding: 1, resource: this.intermediate0.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
-      ], wgx, wgy)
-      this.encodePass(encoder, this.gaussianVPipeline, [
+      ], this.intermediate0)
+      this.encodeRenderPass(encoder, this.gaussianVPipeline.s8, [
         { binding: 0, resource: this.intermediate0.createView() },
-        { binding: 1, resource: blurredTex.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
-      ], wgx, wgy)
+      ], blurredTex)
       const unsharpParamsBuf = this.makeParamsBuf(new Uint32Array([Math.round(sharpenDetails * 1.5), 0, 0, 0]))
-      this.encodePass(encoder, this.unsharpCombinePipeline, [
+      this.encodeRenderPass(encoder, this.selectPipeline(this.unsharpCombinePipeline, dstTex), [
         { binding: 0, resource: tempTex.createView() },
-        { binding: 1, resource: blurredTex.createView() },
-        { binding: 2, resource: dstTex.createView() },
+        { binding: 1, resource: this.sampler },
+        { binding: 2, resource: blurredTex.createView() },
         { binding: 3, resource: { buffer: unsharpParamsBuf } },
-      ], wgx, wgy)
+      ], dstTex)
     } else {
       const rndParamsBuf = this.makeParamsBuf(new Uint32Array([strength, preserveDetails, reduceColorNoise, 0]))
-      this.encodePass(encoder, this.reduceNoisePipeline, [
+      this.encodeRenderPass(encoder, this.selectPipeline(this.reduceNoisePipeline, dstTex), [
         { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: dstTex.createView() },
+        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: rndParamsBuf } },
-      ], wgx, wgy)
+      ], dstTex)
     }
   }
 
@@ -621,21 +655,21 @@ class FilterComputeEngine {
     const permBuf = this.device.createBuffer({ size: Math.max(perm.byteLength, 16), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
     this.device.queue.writeBuffer(permBuf, 0, perm)
     this.pendingDestroyBuffers.push(permBuf)
-    this.encodePass(encoder, this.cloudsPipeline, [
+    this.encodeRenderPass(encoder, this.selectPipeline(this.cloudsPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: { buffer: permBuf } },
-    ], Math.ceil(w / 8), Math.ceil(h / 8))
+    ], dstTex)
   }
 
   encodePixelate(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, blockSize: number): void {
-    const paramsBuf = this.makeParamsBuf(new Uint32Array([blockSize, w, h, 0]))
-    this.encodePass(encoder, this.pixelatePipeline, [
+    const paramsBuf = this.makeParamsBuf(new Uint32Array([blockSize, 0, 0, 0]))
+    this.encodeRenderPass(encoder, this.selectPipeline(this.pixelatePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: dstTex.createView() },
+      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
-    ], Math.ceil(Math.ceil(w / blockSize) / 8), Math.ceil(Math.ceil(h / blockSize) / 8))
+    ], dstTex)
   }
 
 }
@@ -644,9 +678,9 @@ class FilterComputeEngine {
 
 let _engine: FilterComputeEngine | null = null
 
-export function initFilterCompute(device: GPUDevice, width: number, height: number): void {
+export function initFilterCompute(device: GPUDevice, width: number, height: number, format: GPUTextureFormat = 'rgba8unorm'): void {
   _engine?.destroy()
-  _engine = FilterComputeEngine.create(device, width, height)
+  _engine = FilterComputeEngine.create(device, width, height, format)
 }
 
 export async function gaussianBlur(pixels: Uint8Array, width: number, height: number, radius: number): Promise<Uint8Array> { return _engine!.gaussianBlur(pixels, width, height, radius) }

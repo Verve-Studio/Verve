@@ -2,6 +2,8 @@ import {
   createGpuTexture,
   uploadTextureData,
   uploadTexturePatch,
+  uploadF32TextureData,
+  uploadF32TexturePatch,
   createUniformBuffer,
   createReadbackBuffer,
   createVertexBuffer,
@@ -32,6 +34,7 @@ export { BLEND_MODE_INDEX, WebGPUUnavailableError } from '../types'
 
 import type { GpuLayer, RenderPlanEntry, AdjustmentRenderOp } from '../types'
 import { BLEND_MODE_INDEX, WebGPUUnavailableError } from '../types'
+import type { PixelFormat, RGBAColor } from '@/types'
 
 // ─── Render cache helpers ─────────────────────────────────────────────────────
 
@@ -78,8 +81,10 @@ export class WebGPURenderer {
 
   // Render pipelines
   private readonly compositePipeline: GPURenderPipeline  // renders to rgba8unorm internal textures
+  private readonly compositeBGL: GPUBindGroupLayout
   private readonly checkerPipeline: GPURenderPipeline    // renders to screen (canvasFormat)
   private readonly blitPipeline: GPURenderPipeline       // renders to screen (canvasFormat)
+  private readonly blitBGL: GPUBindGroupLayout
 
   // Adjustment compute encoder (owns all 25 compute pipelines + texture caches)
   private readonly adjEncoder: AdjustmentEncoder
@@ -148,6 +153,8 @@ export class WebGPURenderer {
 
   readonly pixelWidth: number
   readonly pixelHeight: number
+  private readonly internalFormat: GPUTextureFormat
+  private readonly pixelFormat: PixelFormat
   deferFlush = false
 
   // ─── Factory ────────────────────────────────────────────────────────────────
@@ -156,6 +163,7 @@ export class WebGPURenderer {
     canvas: HTMLCanvasElement,
     pixelWidth: number,
     pixelHeight: number,
+    pixelFormat: PixelFormat = 'rgba8',
   ): Promise<WebGPURenderer> {
     if (!navigator.gpu) {
       throw new WebGPUUnavailableError(
@@ -175,7 +183,8 @@ export class WebGPURenderer {
     }
     const format = navigator.gpu.getPreferredCanvasFormat()
     ctx.configure({ device, format, alphaMode: 'premultiplied' })
-    return new WebGPURenderer(device, ctx, format, pixelWidth, pixelHeight)
+    const internalFormat: GPUTextureFormat = pixelFormat === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
+    return new WebGPURenderer(device, ctx, format, pixelWidth, pixelHeight, internalFormat, pixelFormat)
   }
 
   private constructor(
@@ -184,11 +193,15 @@ export class WebGPURenderer {
     canvasFormat: GPUTextureFormat,
     pixelWidth: number,
     pixelHeight: number,
+    internalFormat: GPUTextureFormat,
+    pixelFormat: PixelFormat,
   ) {
     this.device = device
     this.context = context
     this.pixelWidth = pixelWidth
     this.pixelHeight = pixelHeight
+    this.internalFormat = internalFormat
+    this.pixelFormat = pixelFormat
 
     // Samplers
     this.sampler = device.createSampler({
@@ -228,9 +241,30 @@ export class WebGPURenderer {
     this.groupPongTex = this.createPingPongTex(pixelWidth, pixelHeight, texUsage)
 
     // Render pipelines — composite targets internal rgba8unorm textures; checker/blit target the screen
-    this.compositePipeline = this.createCompositePipeline('rgba8unorm')
+    // Build explicit BGLs first so composite/blit pipelines accept rgba32float layer textures
+    // (auto-layout would infer sampleType:'float', which is incompatible with rgba32float).
+    this.compositeBGL = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        // Vertex stage reads `res` for NDC conversion in vs_composite.
+        { binding: 5, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    })
+    this.blitBGL = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        // Vertex stage reads `u.resolution` for NDC conversion in vs_blit.
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    })
+    this.compositePipeline = this.createCompositePipeline(this.internalFormat, this.compositeBGL)
     this.checkerPipeline   = this.createCheckerPipeline(canvasFormat)
-    this.blitPipeline      = this.createBlitPipeline(canvasFormat)
+    this.blitPipeline      = this.createBlitPipeline(canvasFormat, this.blitBGL)
     this.checkerBindGroup  = device.createBindGroup({
       layout: this.checkerPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.checkerUniformBuf } }],
@@ -239,24 +273,26 @@ export class WebGPURenderer {
     // Adjustment compute encoder (owns all 25 compute pipelines + texture caches)
     this.adjEncoder = new AdjustmentEncoder(device, pixelWidth, pixelHeight)
 
-    initFilterCompute(this.device, this.pixelWidth, this.pixelHeight)
+    initFilterCompute(this.device, this.pixelWidth, this.pixelHeight, this.internalFormat)
     initGrabCutCompute(this.device)
   }
+
+  get internalTextureFormat(): GPUTextureFormat { return this.internalFormat }
 
   // ─── Pipeline factories ─────────────────────────────────────────────────────
 
   private createPingPongTex(w: number, h: number, usage: GPUTextureUsageFlags): GPUTexture {
     return this.device.createTexture({
       size: { width: w, height: h },
-      format: 'rgba8unorm',
+      format: this.internalFormat,
       usage,
     })
   }
 
-  private createCompositePipeline(format: GPUTextureFormat): GPURenderPipeline {
+  private createCompositePipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
     const module = this.device.createShaderModule({ code: COMPOSITE_SHADER })
     return this.device.createRenderPipeline({
-      layout: 'auto',
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
       vertex: {
         module,
         entryPoint: 'vs_composite',
@@ -295,10 +331,10 @@ export class WebGPURenderer {
     })
   }
 
-  private createBlitPipeline(format: GPUTextureFormat): GPURenderPipeline {
+  private createBlitPipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
     const module = this.device.createShaderModule({ code: BLIT_SHADER })
     return this.device.createRenderPipeline({
-      layout: 'auto',
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
       vertex: {
         module,
         entryPoint: 'vs_blit',
@@ -335,22 +371,81 @@ export class WebGPURenderer {
     lh = this.pixelHeight,
     ox = 0,
     oy = 0,
+    format: PixelFormat = 'rgba8',
   ): GpuLayer {
-    const data = new Uint8Array(lw * lh * 4)
-    const texture = createGpuTexture(this.device, lw, lh, data)
-    return { id, name, texture, data, layerWidth: lw, layerHeight: lh, offsetX: ox, offsetY: oy, opacity: 1, visible: true, blendMode: 'normal', dirtyRect: null, contentVersion: 0 }
+    const data: Uint8Array | Float32Array =
+      format === 'rgba32f'
+        ? new Float32Array(lw * lh * 4)
+        : format === 'indexed8'
+          ? new Uint8Array(lw * lh)
+          : new Uint8Array(lw * lh * 4)
+    const textureFormat: GPUTextureFormat =
+      format === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
+    const texture = createGpuTexture(this.device, lw, lh, null, textureFormat)
+    return { id, name, texture, data, format, layerWidth: lw, layerHeight: lh, offsetX: ox, offsetY: oy, opacity: 1, visible: true, blendMode: 'normal', dirtyRect: null, contentVersion: 0 }
   }
 
-  flushLayer(layer: GpuLayer): void {
+  flushLayer(layer: GpuLayer, palette?: RGBAColor[]): void {
     if (this.deferFlush) return
     layer.contentVersion++
+
+    if (layer.format === 'indexed8') {
+      const expanded = this.expandIndicesToRgba8(layer.data as Uint8Array, palette ?? [])
+      uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, expanded)
+      return
+    }
+
+    if (layer.format === 'rgba32f') {
+      if (layer.dirtyRect) {
+        const { lx, ly, rx, ry } = layer.dirtyRect
+        layer.dirtyRect = null
+        uploadF32TexturePatch(this.device, layer.texture, layer.layerWidth, lx, ly, rx - lx, ry - ly, layer.data as Float32Array)
+      } else {
+        uploadF32TextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, layer.data as Float32Array)
+      }
+      return
+    }
+
+    // rgba8 — existing path
     if (layer.dirtyRect) {
       const { lx, ly, rx, ry } = layer.dirtyRect
       layer.dirtyRect = null
-      uploadTexturePatch(this.device, layer.texture, layer.layerWidth, lx, ly, rx - lx, ry - ly, layer.data)
+      uploadTexturePatch(this.device, layer.texture, layer.layerWidth, lx, ly, rx - lx, ry - ly, layer.data as Uint8Array)
     } else {
-      uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, layer.data)
+      uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, layer.data as Uint8Array)
     }
+  }
+
+  private expandIndicesToRgba8(indices: Uint8Array, palette: RGBAColor[]): Uint8Array {
+    const out = new Uint8Array(indices.length * 4)
+    for (let i = 0; i < indices.length; i++) {
+      const idx = indices[i]
+      if (idx < palette.length) {
+        const c = palette[idx]
+        out[i * 4]     = c.r
+        out[i * 4 + 1] = c.g
+        out[i * 4 + 2] = c.b
+        out[i * 4 + 3] = c.a
+      }
+      // else: idx >= palette.length → [0,0,0,0] (already zero from new Uint8Array)
+    }
+    return out
+  }
+
+  replaceLayerData(
+    layer: GpuLayer,
+    newData: Uint8Array | Float32Array,
+    newFormat: PixelFormat,
+    palette?: RGBAColor[],
+  ): void {
+    layer.texture.destroy()
+    const textureFormat: GPUTextureFormat =
+      newFormat === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
+    layer.texture = createGpuTexture(this.device, layer.layerWidth, layer.layerHeight, null, textureFormat)
+    layer.data = newData
+    layer.format = newFormat
+    layer.dirtyRect = null
+    this.flushLayer(layer, palette)
   }
 
   destroyLayer(layer: GpuLayer): void {
@@ -495,11 +590,11 @@ export class WebGPURenderer {
 
   // ─── Flatten / readback ─────────────────────────────────────────────────────
 
-  readLayerPixels(layer: GpuLayer): Uint8Array {
-    return layer.data.slice()
+  readLayerPixels(layer: GpuLayer): Uint8Array | Float32Array {
+    return layer.data.slice() as Uint8Array | Float32Array
   }
 
-  async readFlattenedPixels(layers: GpuLayer[], maskMap?: Map<string, GpuLayer>): Promise<Uint8Array> {
+  async readFlattenedPixels(layers: GpuLayer[], maskMap?: Map<string, GpuLayer>): Promise<Uint8Array | Float32Array> {
     const plan: RenderPlanEntry[] = layers.map(layer => ({
       kind: 'layer' as const,
       layer,
@@ -508,12 +603,13 @@ export class WebGPURenderer {
     return this.readFlattenedPlan(plan)
   }
 
-  async readFlattenedPlan(plan: RenderPlanEntry[]): Promise<Uint8Array> {
+  async readFlattenedPlan(plan: RenderPlanEntry[]): Promise<Uint8Array | Float32Array> {
     const { device, pixelWidth: w, pixelHeight: h } = this
     const encoder = device.createCommandEncoder()
     const finalTex = this.encodePlanToComposite(encoder, plan)
 
-    const alignedBpr = Math.ceil(w * 4 / 256) * 256
+    const bytesPerPixel = this.internalFormat === 'rgba32float' ? 16 : 4
+    const alignedBpr = Math.ceil(w * bytesPerPixel / 256) * 256
     const readbuf = createReadbackBuffer(device, alignedBpr * h)
     encoder.copyTextureToBuffer(
       { texture: finalTex },
@@ -524,7 +620,10 @@ export class WebGPURenderer {
     this.flushPendingDestroys()
 
     await readbuf.mapAsync(GPUMapMode.READ)
-    const result = this.unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
+    const raw = readbuf.getMappedRange()
+    const result = this.internalFormat === 'rgba32float'
+      ? this.unpackF32Rows(new Float32Array(raw), w, h, alignedBpr / 4)
+      : this.unpackRows(new Uint8Array(raw), w, h, alignedBpr)
     readbuf.unmap()
     readbuf.destroy()
     return result
@@ -558,7 +657,7 @@ export class WebGPURenderer {
     for (let i = 0; i < targetIndex; i++) {
       const op = groupEntry.adjustments[i]
       if (!op.visible) continue
-      this.adjEncoder.encode(encoder, op, srcTex, dstTex)
+      this.adjEncoder.encode(encoder, op, srcTex, dstTex, this.internalFormat)
       ;[srcTex, dstTex] = [dstTex, srcTex]
     }
 
@@ -588,6 +687,17 @@ export class WebGPURenderer {
     const out = new Uint8Array(packedBpr * h)
     for (let row = 0; row < h; row++) {
       out.set(src.subarray(row * alignedBpr, row * alignedBpr + packedBpr), row * packedBpr)
+    }
+    return out
+  }
+
+  /** Remove per-row GPU alignment padding for float32 readback and return a tightly-packed RGBA float buffer. */
+  private unpackF32Rows(src: Float32Array, w: number, h: number, alignedStride: number): Float32Array {
+    const packedStride = w * 4
+    if (alignedStride === packedStride) return src.slice()
+    const out = new Float32Array(packedStride * h)
+    for (let row = 0; row < h; row++) {
+      out.set(src.subarray(row * alignedStride, row * alignedStride + packedStride), row * packedStride)
     }
     return out
   }
@@ -696,7 +806,7 @@ export class WebGPURenderer {
               GPUTextureUsage.RENDER_ATTACHMENT
             const cacheTex = cached?.tex ?? this.device.createTexture({
               size: { width: this.pixelWidth, height: this.pixelHeight },
-              format: 'rgba8unorm',
+              format: this.internalFormat,
               usage: texUsage,
             })
             encoder.copyTextureToTexture(
@@ -750,7 +860,7 @@ export class WebGPURenderer {
             continue
           }
           // Cache miss: encode normally, then snapshot dst into cache.
-          this.adjEncoder.encode(encoder, op, src, dst)
+          this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat)
           ;[src, dst] = [dst, src]
           const texUsage =
             GPUTextureUsage.TEXTURE_BINDING |
@@ -759,7 +869,7 @@ export class WebGPURenderer {
             GPUTextureUsage.RENDER_ATTACHMENT
           const cacheTex = cached?.tex ?? this.device.createTexture({
             size: { width: this.pixelWidth, height: this.pixelHeight },
-            format: 'rgba8unorm',
+            format: this.internalFormat,
             usage: texUsage,
           })
           // After the swap, the op's output now lives in `src`.
@@ -771,7 +881,7 @@ export class WebGPURenderer {
           this.standaloneOpCache.set(op.layerId, { inputFp, paramsKey: opParamsKey, tex: cacheTex })
           inputFp += `|SO:${op.layerId}:${opParamsKey}`
         } else {
-          this.adjEncoder.encode(encoder, op, src, dst)
+          this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat)
           ;[src, dst] = [dst, src]
           inputFp += `|SO:${op.layerId}:${opParamsKey}`
         }
@@ -825,7 +935,7 @@ export class WebGPURenderer {
   private encodeBlitToView(encoder: GPUCommandEncoder, srcTex: GPUTexture, view: GPUTextureView): void {
     // Uses pre-allocated frameUniformBuf + canvasQuadVertBuf
     const bindGroup = this.device.createBindGroup({
-      layout: this.blitPipeline.getBindGroupLayout(0),
+      layout: this.blitBGL,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: srcTex.createView() },
@@ -895,7 +1005,7 @@ export class WebGPURenderer {
     const dummyMaskTex = maskLayer?.texture ?? srcTex // use any fallback if no mask
 
     const bindGroup = device.createBindGroup({
-      layout: this.compositePipeline.getBindGroupLayout(0),
+      layout: this.compositeBGL,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: layer.texture.createView() },
@@ -944,6 +1054,7 @@ export class WebGPURenderer {
       name: 'group',
       texture,
       data: new Uint8Array(0),
+      format: this.pixelFormat,
       layerWidth:  this.pixelWidth,
       layerHeight: this.pixelHeight,
       offsetX: 0,
@@ -973,7 +1084,7 @@ export class WebGPURenderer {
 
     for (const op of entry.adjustments) {
       if (!op.visible) continue
-      this.adjEncoder.encode(encoder, op, srcTex, dstTex)
+      this.adjEncoder.encode(encoder, op, srcTex, dstTex, this.internalFormat)
       ;[srcTex, dstTex] = [dstTex, srcTex]
     }
 

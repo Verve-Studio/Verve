@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_REDUCE_NOISE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct ReduceNoiseParams {
   strength         : u32,
   preserveDetails  : u32,
@@ -8,18 +10,18 @@ struct ReduceNoiseParams {
   _pad0            : u32,
 }
 
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var dstTex : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : ReduceNoiseParams;
 
 fn luma(c: vec3f) -> f32 {
   return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_reduce_noise(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
+@fragment
+fn fs_reduce_noise(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims   = textureDimensions(srcTex);
+  let coord  = vec2i(i32(in.pos.x), i32(in.pos.y));
 
   let sigmaLuma   = f32(params.strength)         / 10.0  * 0.3;
   let sigmaChroma = f32(params.reduceColorNoise) / 100.0 * 0.4;
@@ -36,7 +38,7 @@ fn cs_reduce_noise(@builtin(global_invocation_id) id: vec3u) {
   let inv2SigmaL2 = select(0.0, 1.0 / (2.0 * sigmaLuma   * sigmaLuma),   useLuma);
   let inv2SigmaC2 = select(0.0, 1.0 / (2.0 * sigmaChroma * sigmaChroma), useChroma);
 
-  let center     = textureLoad(srcTex, vec2i(id.xy), 0);
+  let center     = textureLoad(srcTex, coord, 0);
   let centerLuma = luma(center.rgb);
   let r          = i32(spatialR);
 
@@ -45,8 +47,8 @@ fn cs_reduce_noise(@builtin(global_invocation_id) id: vec3u) {
 
   for (var ky = -r; ky <= r; ky++) {
     for (var kx = -r; kx <= r; kx++) {
-      let sx = clamp(i32(id.x) + kx, 0, i32(dims.x) - 1);
-      let sy = clamp(i32(id.y) + ky, 0, i32(dims.y) - 1);
+      let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
+      let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
       let neighbor     = textureLoad(srcTex, vec2i(sx, sy), 0);
       let neighborLuma = luma(neighbor.rgb);
 
@@ -66,13 +68,13 @@ fn cs_reduce_noise(@builtin(global_invocation_id) id: vec3u) {
   }
 
   let result = colorSum * (1.0 / max(weightSum, 0.0001));
-  textureStore(dstTex, vec2i(id.xy), vec4f(result, center.a));
+  return vec4f(result, center.a);
 }
 ` as const
 
 export async function runReduceNoise(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
@@ -82,6 +84,8 @@ export async function runReduceNoise(
   sharpenDetails: number,
   unsharpMaskFn: (pixels: Uint8Array, w: number, h: number, amount: number, radius: number, threshold: number) => Promise<Uint8Array>,
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -97,27 +101,28 @@ export async function runReduceNoise(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const paramsData = new Uint32Array([strength, preserveDetails, reduceColorNoise, 0])
   const paramsBuf  = createUniformBuffer(device, 16)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
-  const encoder = device.createCommandEncoder()
+  const encoder   = device.createCommandEncoder()
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

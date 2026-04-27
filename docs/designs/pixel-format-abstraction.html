@@ -1,0 +1,2309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PixelShop — Pixel Format / Color Mode Design</title>
+  <style>
+    :root {
+      --color-bg:               #3c3c3c;
+      --color-surface:          #2d2d2d;
+      --color-surface-2:        #323232;
+      --color-surface-hover:    #4a4a4a;
+      --color-surface-selected: #404040;
+      --color-border:           #191919;
+      --color-border-light:     #555555;
+      --color-text:             #d4d4d4;
+      --color-text-dim:         #aaaaaa;
+      --color-text-muted:       #7a7a7a;
+      --color-accent:           #0699fb;
+      --color-accent-hover:     #1aa3ff;
+      --color-accent-glow:      rgba(6, 153, 251, 0.18);
+      --color-accent-border:    rgba(6, 153, 251, 0.45);
+      --color-danger:           #c04040;
+      --color-warning-bg:       rgba(200, 150, 40, 0.08);
+      --color-warning-border:   rgba(200, 150, 40, 0.25);
+      --color-warning-text:     #c8a030;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #161616;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      font-size: 12px;
+    }
+
+    /* ── Prototype chrome ──────────────────────────────────────────────── */
+
+    .proto-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #252525;
+    }
+
+    .proto-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .proto-title em {
+      color: var(--color-accent);
+      font-style: normal;
+    }
+
+    .hdiv {
+      width: 1px;
+      height: 14px;
+      background: #262626;
+      flex-shrink: 0;
+    }
+
+    .state-label {
+      font-size: 10px;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .state-toggle {
+      display: flex;
+      gap: 2px;
+      background: #1a1a1a;
+      border: 1px solid #252525;
+      border-radius: 3px;
+      padding: 2px;
+    }
+
+    .state-btn {
+      height: 20px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      color: #4a4a4a;
+      background: transparent;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+    }
+
+    .state-btn:hover { color: #888; }
+    .state-btn.active { background: var(--color-surface); color: var(--color-text); }
+
+    .proto-hint {
+      margin-left: auto;
+      font-size: 10px;
+      color: #333;
+      white-space: nowrap;
+    }
+
+    /* ── App shell ─────────────────────────────────────────────────────── */
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      height: 36px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      user-select: none;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    .logo-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--color-accent);
+      border-radius: 3px;
+      cursor: default;
+    }
+
+    .menu-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--color-border-light);
+      margin: 0 4px;
+    }
+
+    .menubar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 2px;
+    }
+
+    .menu-trigger {
+      height: 22px;
+      padding: 0 8px;
+      border: none;
+      background: transparent;
+      cursor: default;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      border-radius: 3px;
+    }
+
+    .menu-trigger.menu-active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    .topbar-center {
+      flex: 1;
+      padding: 0 8px;
+    }
+
+    .doc-title {
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    /* ── Tool options bar ──────────────────────────────────────────────── */
+    .tool-options-bar {
+      height: 28px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 6px;
+    }
+
+    /* ── Main body ─────────────────────────────────────────────────────── */
+
+    .app-body {
+      display: flex;
+      height: 480px;
+      position: relative;
+    }
+
+    /* ── Left toolbar ──────────────────────────────────────────────────── */
+
+    .toolbar-strip {
+      width: 52px;
+      background: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 4px;
+      gap: 1px;
+    }
+
+    .tool-btn {
+      width: 38px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--color-text-muted);
+      cursor: default;
+      position: relative;
+      transition: background 80ms, color 80ms;
+    }
+
+    .tool-btn:hover:not(.tool-disabled) {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    .tool-btn.tool-active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    /* Disabled tool state: grayed out, cursor blocked */
+    .tool-btn.tool-disabled {
+      opacity: 0.32;
+      cursor: not-allowed;
+      color: var(--color-text-muted);
+    }
+
+    /* Tooltip */
+    .tool-btn .tip {
+      display: none;
+      position: absolute;
+      left: calc(100% + 7px);
+      top: 50%;
+      transform: translateY(-50%);
+      white-space: nowrap;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 4px 7px;
+      font-size: 10px;
+      color: var(--color-text-dim);
+      pointer-events: none;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    .tool-btn .tip::before {
+      content: '';
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      border: 4px solid transparent;
+      border-right-color: #333;
+    }
+
+    .tool-btn .tip::after {
+      content: '';
+      position: absolute;
+      right: calc(100% + 1px);
+      top: 50%;
+      transform: translateY(-50%);
+      border: 4px solid transparent;
+      border-right-color: #1a1a1a;
+    }
+
+    .tool-btn.tool-disabled:hover .tip {
+      display: block;
+    }
+
+    .tip-title {
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: 2px;
+    }
+
+    .tip-reason {
+      color: var(--color-warning-text);
+    }
+
+    .tool-sep {
+      width: 28px;
+      height: 1px;
+      background: var(--color-border);
+      margin: 3px 0;
+    }
+
+    /* ── Canvas workspace ──────────────────────────────────────────────── */
+
+    .workspace {
+      flex: 1;
+      background: var(--color-bg);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas-mock {
+      width: 360px;
+      height: 280px;
+      position: relative;
+      border: 1px solid #2a2a2a;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .canvas-mock::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-conic-gradient(#3d3d3d 0% 25%, #4d4d4d 0% 50%);
+      background-size: 16px 16px;
+    }
+
+    .canvas-content {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #1a3a5c 0%, #2a6090 35%, #c87040 65%, #e09050 100%);
+    }
+
+    /* Modal scrim */
+    .modal-scrim {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 40;
+      display: none;
+    }
+
+    .modal-scrim.visible { display: block; }
+
+    /* ── Right panel ───────────────────────────────────────────────────── */
+
+    .right-panel {
+      width: 240px;
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .rp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 26px;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-header-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .rp-blend-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-select {
+      flex: 1;
+      min-width: 0;
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .rp-opacity-label {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    .rp-opacity-input {
+      width: 36px;
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      text-align: right;
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .rp-layer-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    .layer-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 5px;
+      min-height: 36px;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      transition: background 80ms;
+    }
+
+    .layer-row:hover { background: var(--color-surface-hover); }
+    .layer-row.active { background: #3a6ea8; }
+    .layer-row.active .layer-name { color: #fff; }
+
+    /* Suspended adjustment layer: dimmed, italic notice */
+    .layer-row.suspended { opacity: 0.45; }
+    .layer-row.suspended .layer-name { font-style: italic; }
+
+    .layer-eye {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      cursor: default;
+    }
+
+    .layer-thumb {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.1);
+      background-image: repeating-conic-gradient(#3d3d3d 0% 25%, #4d4d4d 0% 50%);
+      background-size: 7px 7px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .layer-thumb-img {
+      position: absolute;
+      inset: 0;
+    }
+
+    .layer-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .layer-name {
+      font-size: 11px;
+      color: var(--color-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .layer-badge {
+      display: inline-block;
+      font-size: 9px;
+      padding: 0 4px;
+      border-radius: 2px;
+      line-height: 14px;
+      background: rgba(255,255,255,0.07);
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+
+    .layer-badge.suspended-badge {
+      background: rgba(200, 150, 40, 0.12);
+      color: var(--color-warning-text);
+    }
+
+    .rp-footer {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px 4px;
+      border-top: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-footer-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      cursor: default;
+      transition: color 80ms;
+    }
+
+    .rp-footer-btn:hover:not(:disabled) { color: var(--color-text); }
+    .rp-footer-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── Status bar ────────────────────────────────────────────────────── */
+
+    .statusbar {
+      height: 24px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      gap: 0;
+    }
+
+    .status-item {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .status-sep {
+      width: 1px;
+      height: 12px;
+      background: var(--color-border-light);
+      flex-shrink: 0;
+    }
+
+    /* Color mode pill in the status bar — clickable */
+    .status-mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 16px;
+      padding: 0 6px;
+      border: none;
+      border-radius: 2px;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 10px;
+      font-family: var(--font-sans);
+      cursor: default;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+      margin: 0 2px;
+    }
+
+    .status-mode-btn:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    /* Small dot indicator that changes color per mode */
+    .mode-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .mode-dot.rgba8   { background: #52a878; }   /* muted green — standard */
+    .mode-dot.rgba32f { background: #7ab4e8; }   /* muted blue — float/HDR */
+    .mode-dot.indexed { background: #c89050; }   /* amber — indexed/palette */
+
+    /* ── Dropdown / Context Menu ───────────────────────────────────────── */
+
+    .dropdown-menu {
+      position: absolute;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 1px 4px rgba(0,0,0,0.4);
+      min-width: 160px;
+      padding: 3px 0;
+      z-index: 200;
+      user-select: none;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      height: 22px;
+      padding: 0 10px 0 26px;
+      font-size: 12px;
+      color: var(--color-text);
+      cursor: default;
+      position: relative;
+      transition: background 60ms;
+    }
+
+    .menu-item:hover {
+      background: var(--color-accent);
+      color: #fff;
+    }
+
+    .menu-item.menu-item-checked::before {
+      content: '✓';
+      position: absolute;
+      left: 8px;
+      font-size: 11px;
+      color: inherit;
+    }
+
+    .menu-item-muted {
+      color: var(--color-text-muted);
+      font-size: 11px;
+      padding-left: 26px;
+    }
+
+    .menu-separator {
+      height: 1px;
+      background: var(--color-border);
+      margin: 3px 0;
+    }
+
+    /* submenu arrow */
+    .menu-item-arrow::after {
+      content: '▶';
+      position: absolute;
+      right: 8px;
+      font-size: 8px;
+      color: var(--color-text-muted);
+    }
+
+    .menu-item-arrow:hover::after {
+      color: rgba(255,255,255,0.7);
+    }
+
+    /* "Image" top-level menu opened state */
+    .image-menu-open {
+      position: absolute;
+      top: 58px;   /* below topbar + tool-options */
+      left: 140px; /* rough x offset under "Image" menu trigger */
+      z-index: 150;
+    }
+
+    /* Color Mode submenu — appears to the right of parent menu */
+    .color-mode-submenu {
+      position: absolute;
+      top: -3px;
+      left: calc(100% - 1px);
+      z-index: 160;
+    }
+
+    /* ── Conversion dialog ─────────────────────────────────────────────── */
+
+    .convert-dialog {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -52%);
+      width: 340px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.7), 0 2px 6px rgba(0,0,0,0.5);
+      z-index: 50;
+      user-select: none;
+    }
+
+    /* title bar */
+    .dlg-titlebar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 6px 0 8px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+      border-radius: 3px 3px 0 0;
+      cursor: default;
+      gap: 5px;
+    }
+
+    .dlg-icon {
+      flex-shrink: 0;
+      color: var(--color-accent);
+      display: flex;
+      align-items: center;
+    }
+
+    .dlg-title {
+      flex: 1;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text);
+      letter-spacing: 0.01em;
+    }
+
+    .dlg-close-btn {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      font-size: 14px;
+      line-height: 1;
+      cursor: default;
+      transition: background 80ms, color 80ms;
+    }
+
+    .dlg-close-btn:hover {
+      background: rgba(192, 64, 64, 0.2);
+      color: #e07070;
+    }
+
+    /* dialog body */
+    .dlg-body {
+      padding: 12px 14px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Mode conversion "from → to" indicator */
+    .convert-mode-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+    }
+
+    .convert-mode-tag {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .convert-arrow {
+      font-size: 11px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    /* Main dialog description text */
+    .dlg-desc {
+      font-size: 11px;
+      color: var(--color-text-dim);
+      line-height: 1.5;
+    }
+
+    /* Warning / info note block */
+    .dlg-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 6px 8px;
+      border-radius: 2px;
+    }
+
+    .dlg-note.note-warning {
+      background: var(--color-warning-bg);
+      border: 1px solid var(--color-warning-border);
+    }
+
+    .dlg-note.note-info {
+      background: rgba(6, 153, 251, 0.06);
+      border: 1px solid rgba(6, 153, 251, 0.18);
+    }
+
+    .dlg-note-icon {
+      flex-shrink: 0;
+      margin-top: 1px;
+      display: flex;
+      align-items: center;
+    }
+
+    .dlg-note-text {
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .dlg-note.note-warning .dlg-note-text { color: var(--color-warning-text); }
+    .dlg-note.note-info .dlg-note-text { color: var(--color-accent); }
+
+    /* footer */
+    .dlg-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      padding: 7px 10px 9px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .btn-cancel {
+      height: 22px;
+      padding: 0 12px;
+      background: transparent;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      cursor: default;
+      transition: background 80ms, color 80ms, border-color 80ms;
+      white-space: nowrap;
+    }
+
+    .btn-cancel:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-text-muted);
+      color: var(--color-text);
+    }
+
+    .btn-convert {
+      height: 22px;
+      padding: 0 14px;
+      background: var(--color-accent);
+      border: 1px solid transparent;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: #fff;
+      font-weight: 500;
+      cursor: default;
+      transition: background 80ms;
+      white-space: nowrap;
+    }
+
+    .btn-convert:hover {
+      background: var(--color-accent-hover);
+    }
+
+    /* ── Annotation section ─────────────────────────────────────────────── */
+
+    .annotation-section {
+      background: #111;
+      border-top: 1px solid #232323;
+      padding: 20px 24px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .ann-heading {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #333;
+    }
+
+    .ann-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .ann-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .ann-card {
+      background: #181818;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ann-card-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #222;
+    }
+
+    /* ── Mini menu (annotation) ─────────────────────────────────────────── */
+
+    .mini-menu {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+      padding: 3px 0;
+      width: 100%;
+    }
+
+    .mini-menu-item {
+      display: flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 8px 0 22px;
+      font-size: 11px;
+      color: var(--color-text);
+      position: relative;
+      transition: background 60ms;
+    }
+
+    .mini-menu-item:hover {
+      background: var(--color-accent);
+      color: #fff;
+    }
+
+    .mini-menu-item.checked::before {
+      content: '✓';
+      position: absolute;
+      left: 7px;
+      font-size: 10px;
+      color: inherit;
+    }
+
+    .mini-menu-item.active-item {
+      background: var(--color-accent);
+      color: #fff;
+    }
+
+    .mini-menu-item.sub-item {
+      padding-left: 22px;
+      font-size: 11px;
+    }
+
+    .mini-menu-sep {
+      height: 1px;
+      background: var(--color-border);
+      margin: 3px 0;
+    }
+
+    .mini-menu-header {
+      display: flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 8px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-text-muted);
+    }
+
+    .mini-menu-item.sub-arrow::after {
+      content: '▶';
+      position: absolute;
+      right: 7px;
+      font-size: 8px;
+      color: var(--color-text-muted);
+    }
+
+    .mini-menu-item.sub-arrow:hover::after {
+      color: rgba(255,255,255,0.7);
+    }
+
+    /* ── Mini dialog (annotation) ───────────────────────────────────────── */
+
+    .mini-dialog {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+      width: 100%;
+    }
+
+    .mini-titlebar {
+      display: flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 6px 0 8px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+      border-radius: 3px 3px 0 0;
+      gap: 5px;
+    }
+
+    .mini-icon { flex-shrink: 0; color: var(--color-accent); display: flex; align-items: center; }
+    .mini-title { flex: 1; font-size: 11px; font-weight: 600; color: var(--color-text); }
+    .mini-close {
+      width: 16px; height: 16px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 2px;
+      color: var(--color-text-muted); font-size: 13px;
+    }
+
+    .mini-body {
+      padding: 10px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .mini-convert-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+    }
+
+    .mini-mode-tag {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .mini-arrow { font-size: 10px; color: var(--color-text-muted); }
+
+    .mini-desc {
+      font-size: 10px;
+      color: var(--color-text-dim);
+      line-height: 1.5;
+    }
+
+    .mini-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+      padding: 4px 6px;
+      border-radius: 2px;
+    }
+
+    .mini-note.warn {
+      background: var(--color-warning-bg);
+      border: 1px solid var(--color-warning-border);
+    }
+
+    .mini-note.info {
+      background: rgba(6, 153, 251, 0.06);
+      border: 1px solid rgba(6, 153, 251, 0.18);
+    }
+
+    .mini-note-icon { flex-shrink: 0; display: flex; align-items: center; margin-top: 1px; }
+    .mini-note-text { font-size: 9px; line-height: 1.45; }
+    .mini-note.warn .mini-note-text { color: var(--color-warning-text); }
+    .mini-note.info .mini-note-text { color: var(--color-accent); }
+
+    .mini-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 5px;
+      padding: 5px 8px 7px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .mini-cancel {
+      height: 19px; padding: 0 9px;
+      background: transparent;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 10px; font-family: var(--font-sans);
+      color: var(--color-text-dim);
+    }
+
+    .mini-cancel.hov {
+      background: var(--color-surface-hover);
+      border-color: var(--color-text-muted);
+      color: var(--color-text);
+    }
+
+    .mini-convert {
+      height: 19px; padding: 0 10px;
+      background: var(--color-accent);
+      border: 1px solid transparent;
+      border-radius: 2px;
+      font-size: 10px; font-family: var(--font-sans);
+      color: #fff; font-weight: 500;
+    }
+
+    .mini-convert.hov { background: var(--color-accent-hover); }
+
+    /* ── Mini status bar strip (annotation) ────────────────────────────── */
+
+    .mini-statusbar {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 0;
+    }
+
+    .mini-status-item {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      padding: 0 6px;
+    }
+
+    .mini-status-sep {
+      width: 1px;
+      height: 12px;
+      background: var(--color-border-light);
+    }
+
+    .mini-mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 16px;
+      padding: 0 6px;
+      border: none;
+      border-radius: 2px;
+      background: transparent;
+      font-size: 10px;
+      font-family: var(--font-sans);
+      cursor: default;
+      white-space: nowrap;
+      margin: 0 1px;
+    }
+
+    .mini-mode-btn.normal { color: var(--color-text-muted); }
+
+    .mini-mode-btn.hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    .mini-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .mini-dot.rgba8   { background: #52a878; }
+    .mini-dot.rgba32f { background: #7ab4e8; }
+    .mini-dot.indexed { background: #c89050; }
+
+    /* ── Mini toolbar strip (annotation) ───────────────────────────────── */
+
+    .mini-toolbar {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      width: fit-content;
+    }
+
+    .mini-tool-btn {
+      width: 34px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--color-text-muted);
+      cursor: default;
+      position: relative;
+    }
+
+    .mini-tool-btn.enabled:hover { background: var(--color-surface-hover); color: var(--color-text); }
+    .mini-tool-btn.t-active { background: var(--color-surface-selected); color: var(--color-text); }
+    .mini-tool-btn.t-disabled { opacity: 0.32; cursor: not-allowed; }
+
+    .mini-tool-sep { width: 24px; height: 1px; background: var(--color-border); margin: 2px auto; }
+
+    .mini-tool-tip {
+      position: absolute;
+      left: calc(100% + 7px);
+      top: 50%;
+      transform: translateY(-50%);
+      white-space: nowrap;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 4px 7px;
+      font-size: 9px;
+      color: var(--color-text-dim);
+      pointer-events: none;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    .mini-tool-tip::before {
+      content: '';
+      position: absolute;
+      right: 100%; top: 50%;
+      transform: translateY(-50%);
+      border: 4px solid transparent;
+      border-right-color: #333;
+    }
+
+    .mini-tool-tip::after {
+      content: '';
+      position: absolute;
+      right: calc(100% + 1px); top: 50%;
+      transform: translateY(-50%);
+      border: 4px solid transparent;
+      border-right-color: #1a1a1a;
+    }
+
+    .tip-name { font-weight: 600; color: var(--color-text); margin-bottom: 1px; }
+    .tip-why  { color: var(--color-warning-text); }
+
+    /* Annotation description text */
+    .ann-desc {
+      font-size: 10px;
+      color: #444;
+      line-height: 1.5;
+    }
+
+    .ann-note {
+      font-size: 10px;
+      color: #3a6ea8;
+      padding: 4px 6px;
+      background: rgba(6, 153, 251, 0.04);
+      border-left: 2px solid rgba(6, 153, 251, 0.2);
+      border-radius: 1px;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- ── Prototype header ─────────────────────────────────────────────── -->
+  <div class="proto-header">
+    <div class="proto-title">PixelShop — <em>Pixel Format / Color Mode</em></div>
+    <div class="hdiv"></div>
+    <span class="state-label">Mode:</span>
+    <div class="state-toggle">
+      <button class="state-btn active" id="btn-rgba8"   onclick="setMode('rgba8')">RGB/8 (default)</button>
+      <button class="state-btn"        id="btn-rgba32f" onclick="setMode('rgba32f')">RGB/32F</button>
+      <button class="state-btn"        id="btn-indexed" onclick="setMode('indexed')">Indexed/8</button>
+    </div>
+    <div class="hdiv"></div>
+    <span class="state-label">Dialog:</span>
+    <div class="state-toggle">
+      <button class="state-btn active" id="btn-no-dlg"  onclick="setDialog(false)">Hidden</button>
+      <button class="state-btn"        id="btn-show-dlg" onclick="setDialog(true)">Conversion dialog</button>
+    </div>
+    <span class="proto-hint">Toggle mode and dialog state above ↑</span>
+  </div>
+
+  <!-- ── App shell ────────────────────────────────────────────────────── -->
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="logo-btn" title="PixelShop">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+          <rect x="1" y="1" width="6" height="6" rx="1"/>
+          <rect x="9" y="1" width="6" height="6" rx="1"/>
+          <rect x="1" y="9" width="6" height="6" rx="1"/>
+          <rect x="9" y="9" width="6" height="6" rx="1"/>
+        </svg>
+      </button>
+      <div class="menu-divider"></div>
+      <nav class="menubar">
+        <button class="menu-trigger">File</button>
+        <button class="menu-trigger">Edit</button>
+        <button class="menu-trigger">Select</button>
+        <!-- Image menu is active: user opened Color Mode from here -->
+        <button class="menu-trigger menu-active" id="image-menu-trigger">Image</button>
+        <button class="menu-trigger">Layer</button>
+        <!-- Adjustments menu grayed out when indexed -->
+        <button class="menu-trigger" id="adj-menu-trigger">Adjustments</button>
+        <button class="menu-trigger" id="effects-menu-trigger">Effects</button>
+        <button class="menu-trigger" id="filters-menu-trigger">Filters</button>
+        <button class="menu-trigger">View</button>
+        <button class="menu-trigger">Help</button>
+      </nav>
+    </div>
+    <div class="topbar-center">
+      <span class="doc-title" id="doc-title">portrait_raw.pxshop @ 100% — RGB/8</span>
+    </div>
+  </div>
+
+  <!-- Tool options bar -->
+  <div class="tool-options-bar">
+    <span style="font-size:11px;color:var(--color-text-muted);">Brush</span>
+    <div style="width:1px;height:14px;background:var(--color-border-light);"></div>
+    <span style="font-size:11px;color:var(--color-text-muted);">Size: 24px &nbsp; Hardness: 80% &nbsp; Opacity: 100%</span>
+  </div>
+
+  <!-- ── Main body ─────────────────────────────────────────────────────── -->
+  <div class="app-body">
+
+    <!-- Left toolbar strip -->
+    <div class="toolbar-strip">
+      <!-- Move -->
+      <button class="tool-btn tool-active" title="Move (V)">
+        <svg viewBox="0 0 14 14" fill="currentColor" width="14" height="14"><path d="M7 1 L9 4 H8V6H10V5L13 7L10 9V8H8V10H9L7 13L5 10H6V8H4V9L1 7L4 5V6H6V4H5Z"/></svg>
+      </button>
+      <!-- Brush -->
+      <button class="tool-btn" id="tool-brush" title="Brush (B)">
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <path d="M9 2 L12 5 L5 12 C4 13 2 13 1 12 C0 11 0 9 1 8 Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+          <line x1="7" y1="4" x2="10" y2="7" stroke="currentColor" stroke-width="1"/>
+        </svg>
+        <div class="tip">
+          <div class="tip-title">Brush — Unavailable</div>
+          <div class="tip-reason">Brush requires RGB/8 or RGB/32F mode.</div>
+        </div>
+      </button>
+      <!-- Pencil -->
+      <button class="tool-btn" id="tool-pencil" title="Pencil (P)">
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <path d="M10 2L12 4L4 12H2V10Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+        </svg>
+        <div class="tip"></div>
+      </button>
+      <!-- Eraser -->
+      <button class="tool-btn" id="tool-eraser" title="Eraser (E)">
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <rect x="2" y="5" width="10" height="6" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+          <line x1="7" y1="5" x2="7" y2="11" stroke="currentColor" stroke-width="1"/>
+        </svg>
+        <div class="tip"></div>
+      </button>
+      <!-- Fill -->
+      <button class="tool-btn" id="tool-fill" title="Fill (G)">
+        <svg viewBox="0 0 14 14" fill="currentColor" width="14" height="14">
+          <path d="M2 2H7L12 7L7 12H2Z" opacity="0.8"/>
+          <circle cx="11" cy="10" r="2" opacity="0.6"/>
+        </svg>
+        <div class="tip"></div>
+      </button>
+      <!-- Gradient -->
+      <button class="tool-btn" id="tool-gradient" title="Gradient">
+        <svg viewBox="0 0 14 14" width="14" height="14">
+          <defs>
+            <linearGradient id="gg" x1="0" x2="1">
+              <stop offset="0" stop-color="#d4d4d4" stop-opacity="1"/>
+              <stop offset="1" stop-color="#d4d4d4" stop-opacity="0.1"/>
+            </linearGradient>
+          </defs>
+          <rect x="1" y="3" width="12" height="8" rx="1" fill="url(#gg)"/>
+        </svg>
+        <div class="tip">
+          <div class="tip-title">Gradient — Unavailable</div>
+          <div class="tip-reason">Gradient requires RGB/8 or RGB/32F mode.</div>
+        </div>
+      </button>
+
+      <div class="tool-sep"></div>
+
+      <!-- Clone Stamp -->
+      <button class="tool-btn" id="tool-stamp" title="Clone Stamp (S)">
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <circle cx="5" cy="5" r="3" stroke="currentColor" stroke-width="1.1"/>
+          <path d="M5 8V12M3 10H7" stroke="currentColor" stroke-width="1.1"/>
+          <circle cx="10" cy="9" r="2.5" stroke="currentColor" stroke-width="1" stroke-dasharray="1.5 1"/>
+        </svg>
+        <div class="tip">
+          <div class="tip-title">Clone Stamp — Unavailable</div>
+          <div class="tip-reason">Clone Stamp requires RGB/8 or RGB/32F mode.</div>
+        </div>
+      </button>
+      <!-- Dodge -->
+      <button class="tool-btn" id="tool-dodge" title="Dodge (O)">
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <circle cx="7" cy="6" r="3.5" stroke="currentColor" stroke-width="1.1"/>
+          <line x1="7" y1="9.5" x2="7" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <div class="tip">
+          <div class="tip-title">Dodge — Unavailable</div>
+          <div class="tip-reason">Dodge requires RGB/8 or RGB/32F mode.</div>
+        </div>
+      </button>
+      <!-- Burn -->
+      <button class="tool-btn" id="tool-burn" title="Burn">
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <path d="M7 1 C5 4 3 5 3 8 C3 10.8 4.8 12.5 7 12.5 C9.2 12.5 11 10.8 11 8 C11 5 9 4 7 1Z" stroke="currentColor" stroke-width="1.1"/>
+        </svg>
+        <div class="tip">
+          <div class="tip-title">Burn — Unavailable</div>
+          <div class="tip-reason">Burn requires RGB/8 or RGB/32F mode.</div>
+        </div>
+      </button>
+    </div>
+
+    <!-- Canvas workspace -->
+    <div class="workspace">
+      <div class="canvas-mock">
+        <div class="canvas-content"></div>
+      </div>
+
+      <!-- Modal scrim -->
+      <div class="modal-scrim" id="modal-scrim"></div>
+
+      <!-- Color Mode submenu (floating, shown when "Image" menu is open) -->
+      <div class="image-menu-open" id="image-menu" style="display:none;">
+        <!-- Image menu -->
+        <div class="dropdown-menu" style="min-width:180px;">
+          <div class="menu-item menu-item-arrow" id="color-mode-parent">Color Mode</div>
+          <div class="menu-separator"></div>
+          <div class="menu-item">Canvas Size…</div>
+          <div class="menu-item">Image Size…</div>
+          <div class="menu-separator"></div>
+          <div class="menu-item">Crop to Selection</div>
+          <div class="menu-separator"></div>
+          <div class="menu-item">Flatten Image</div>
+
+          <!-- Color Mode submenu (expanded inline for prototype visibility) -->
+          <div class="color-mode-submenu" id="color-mode-submenu">
+            <div class="dropdown-menu" style="min-width:150px;">
+              <div class="menu-item menu-item-checked" id="cm-rgba8">RGB/8</div>
+              <div class="menu-item" id="cm-rgba32f">RGB/32 Float</div>
+              <div class="menu-item" id="cm-indexed">Indexed/8</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Conversion dialog (floats above scrim) -->
+      <div class="convert-dialog" id="convert-dialog" style="display:none;">
+        <div class="dlg-titlebar">
+          <span class="dlg-icon">
+            <!-- swap/convert icon: two opposing arrows -->
+            <svg viewBox="0 0 12 12" fill="none" width="12" height="12">
+              <path d="M2 4H10M8 2L10 4L8 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M10 8H2M4 6L2 8L4 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="dlg-title" id="dlg-title">Convert Color Mode</span>
+          <button class="dlg-close-btn" title="Cancel (Esc)" onclick="setDialog(false)">×</button>
+        </div>
+
+        <div class="dlg-body">
+          <!-- From → To indicator -->
+          <div class="convert-mode-row">
+            <div class="convert-mode-tag" id="dlg-from-tag">
+              <span class="mode-dot rgba8"></span>
+              <span>RGB/8</span>
+            </div>
+            <span class="convert-arrow">→</span>
+            <div class="convert-mode-tag" id="dlg-to-tag">
+              <span class="mode-dot rgba32f"></span>
+              <span>RGB/32 Float</span>
+            </div>
+          </div>
+
+          <!-- Main description -->
+          <div class="dlg-desc" id="dlg-desc">
+            Convert document to RGB/32 Float? This will convert all raster layer data.
+            This operation can be undone.
+          </div>
+
+          <!-- HDR clamp warning (shown when target is rgba8/indexed and source may be rgba32f) -->
+          <div class="dlg-note note-warning" id="dlg-hdr-warn" style="display:none;">
+            <span class="dlg-note-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                <path d="M6 1L11 10H1Z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+                <line x1="6" y1="4.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="6" cy="8.5" r="0.6" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="dlg-note-text">Out-of-range (HDR) pixel values will be clamped to the 0–255 range.</span>
+          </div>
+
+          <!-- Adjustment layers suspended warning (shown when converting to indexed) -->
+          <div class="dlg-note note-warning" id="dlg-adj-warn" style="display:none;">
+            <span class="dlg-note-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                <path d="M6 1L11 10H1Z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+                <line x1="6" y1="4.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="6" cy="8.5" r="0.6" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="dlg-note-text">All adjustment layers will be suspended in Indexed/8 mode.</span>
+          </div>
+
+          <!-- Info note: conversion is lossless -->
+          <div class="dlg-note note-info" id="dlg-lossless-note" style="display:none;">
+            <span class="dlg-note-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/>
+                <line x1="6" y1="5" x2="6" y2="8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="6" cy="3.5" r="0.6" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="dlg-note-text">This conversion is lossless — full color fidelity is preserved.</span>
+          </div>
+        </div>
+
+        <div class="dlg-footer">
+          <button class="btn-cancel" onclick="setDialog(false)">Cancel</button>
+          <button class="btn-convert">Convert</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right panel (Layers) -->
+    <div class="right-panel">
+      <div class="rp-header">
+        <span class="rp-header-title">Layers</span>
+      </div>
+      <div class="rp-blend-row">
+        <select class="rp-select"><option>Normal</option></select>
+        <span class="rp-opacity-label">Opacity</span>
+        <input type="number" class="rp-opacity-input" value="100">
+        <span style="font-size:10px;color:var(--color-text-muted);">%</span>
+      </div>
+      <ul class="rp-layer-list" id="layer-list">
+        <!-- populated by JS -->
+      </ul>
+      <div class="rp-footer">
+        <button class="rp-footer-btn" title="New layer">
+          <svg viewBox="0 0 12 12" fill="currentColor" width="12" height="12">
+            <path d="M6 2V10M2 6H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </button>
+        <button class="rp-footer-btn" title="Add adjustment layer">
+          <svg viewBox="0 0 12 12" fill="none" width="12" height="12">
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M4 6H8M6 4V8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="rp-footer-btn" title="Delete layer" style="margin-left:auto;">
+          <svg viewBox="0 0 12 12" fill="none" width="12" height="12">
+            <path d="M2 3h8M5 3V2h2v1M4 3v6.5a.5.5 0 00.5.5h3a.5.5 0 00.5-.5V3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ── Status bar ─────────────────────────────────────────────────────── -->
+  <div class="statusbar">
+    <span class="status-item" id="sb-zoom">100%</span>
+    <div class="status-sep"></div>
+    <span class="status-item" id="sb-dims">3024 × 4032 px</span>
+    <div class="status-sep"></div>
+    <!-- Color mode indicator — clickable pill -->
+    <button class="status-mode-btn" id="sb-mode-btn" onclick="toggleImageMenu()" title="Click to change Color Mode">
+      <span class="mode-dot rgba8" id="sb-dot"></span>
+      <span id="sb-mode-label">RGB/8</span>
+    </button>
+    <div class="status-sep" style="margin-left:2px;"></div>
+    <span class="status-item">3 layers</span>
+    <div class="status-sep"></div>
+    <span class="status-item" id="sb-file-size">~14.6 MB</span>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- ANNOTATION SECTION                                                  -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div class="annotation-section">
+
+    <!-- ── Surface 1: Color Mode Submenu ─────────────────────────────── -->
+    <div class="ann-heading">Surface 1 — Image → Color Mode Submenu</div>
+    <div class="ann-grid">
+
+      <!-- RGB/8 active -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/8 active (default)</div>
+        <div class="mini-menu">
+          <div class="mini-menu-item sub-arrow" style="background:var(--color-surface-selected);color:var(--color-text);">Color Mode</div>
+        </div>
+        <!-- Submenu -->
+        <div class="mini-menu" style="margin-top:2px;">
+          <div class="mini-menu-item checked" style="background:var(--color-accent);color:#fff;">RGB/8</div>
+          <div class="mini-menu-item">RGB/32 Float</div>
+          <div class="mini-menu-item">Indexed/8</div>
+        </div>
+        <p class="ann-desc">Checkmark on the active mode only. Selecting the checked item is a no-op — no dialog, no undo entry.</p>
+      </div>
+
+      <!-- RGB/32F active -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/32 Float active</div>
+        <div class="mini-menu">
+          <div class="mini-menu-item sub-arrow" style="background:var(--color-surface-selected);color:var(--color-text);">Color Mode</div>
+        </div>
+        <div class="mini-menu" style="margin-top:2px;">
+          <div class="mini-menu-item">RGB/8</div>
+          <div class="mini-menu-item checked" style="background:var(--color-accent);color:#fff;">RGB/32 Float</div>
+          <div class="mini-menu-item">Indexed/8</div>
+        </div>
+        <p class="ann-desc">Same structure. The hovered/highlighted item is always the currently-active mode in this annotation — in real use it is whichever the cursor is over.</p>
+      </div>
+
+      <!-- Indexed/8 active -->
+      <div class="ann-card">
+        <div class="ann-card-title">Indexed/8 active</div>
+        <div class="mini-menu">
+          <div class="mini-menu-item sub-arrow" style="background:var(--color-surface-selected);color:var(--color-text);">Color Mode</div>
+        </div>
+        <div class="mini-menu" style="margin-top:2px;">
+          <div class="mini-menu-item">RGB/8</div>
+          <div class="mini-menu-item">RGB/32 Float</div>
+          <div class="mini-menu-item checked" style="background:var(--color-accent);color:#fff;">Indexed/8</div>
+        </div>
+        <p class="ann-desc">When in Indexed/8, Adjustments and Effects top-menu items are disabled (grayed out, non-interactive).</p>
+      </div>
+
+    </div>
+
+    <!-- ── Surface 2: Conversion Dialog variants ─────────────────────── -->
+    <div class="ann-heading">Surface 2 — Conversion Confirmation Dialog (all variants)</div>
+    <div class="ann-grid">
+
+      <!-- Variant A: rgba8 → rgba32f (lossless) -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/8 → RGB/32 Float (lossless)</div>
+        <div class="mini-dialog">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                <path d="M2 4H10M8 2L10 4L8 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 8H2M4 6L2 8L4 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="mini-title">Convert Color Mode</span>
+            <button class="mini-close">×</button>
+          </div>
+          <div class="mini-body">
+            <div class="mini-convert-row">
+              <div class="mini-mode-tag"><span class="mini-dot rgba8"></span> RGB/8</div>
+              <span class="mini-arrow">→</span>
+              <div class="mini-mode-tag"><span class="mini-dot rgba32f"></span> RGB/32 Float</div>
+            </div>
+            <p class="mini-desc">Convert document to RGB/32 Float? This will convert all raster layer data. This operation can be undone.</p>
+            <div class="mini-note info">
+              <span class="mini-note-icon">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/>
+                  <line x1="6" y1="5" x2="6" y2="8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="6" cy="3.5" r="0.6" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="mini-note-text">This conversion is lossless — full color fidelity is preserved.</span>
+            </div>
+          </div>
+          <div class="mini-footer">
+            <button class="mini-cancel">Cancel</button>
+            <button class="mini-convert">Convert</button>
+          </div>
+        </div>
+        <p class="ann-desc">Blue info note for lossless paths (rgba8 → rgba32f). No data loss occurs.</p>
+      </div>
+
+      <!-- Variant B: rgba32f → rgba8 (HDR clamp warning) -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/32 Float → RGB/8 (HDR clamp)</div>
+        <div class="mini-dialog">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                <path d="M2 4H10M8 2L10 4L8 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 8H2M4 6L2 8L4 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="mini-title">Convert Color Mode</span>
+            <button class="mini-close">×</button>
+          </div>
+          <div class="mini-body">
+            <div class="mini-convert-row">
+              <div class="mini-mode-tag"><span class="mini-dot rgba32f"></span> RGB/32 Float</div>
+              <span class="mini-arrow">→</span>
+              <div class="mini-mode-tag"><span class="mini-dot rgba8"></span> RGB/8</div>
+            </div>
+            <p class="mini-desc">Convert document to RGB/8? This will convert all raster layer data. This operation can be undone.</p>
+            <div class="mini-note warn">
+              <span class="mini-note-icon">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <path d="M6 1L11 10H1Z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+                  <line x1="6" y1="4.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="6" cy="8.5" r="0.6" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="mini-note-text">Out-of-range (HDR) pixel values will be clamped to the 0–255 range.</span>
+            </div>
+          </div>
+          <div class="mini-footer">
+            <button class="mini-cancel">Cancel</button>
+            <button class="mini-convert">Convert</button>
+          </div>
+        </div>
+        <p class="ann-desc">Amber warning for any conversion that could clamp HDR data (rgba32f → rgba8 or rgba32f → indexed8).</p>
+      </div>
+
+      <!-- Variant C: rgba8 → indexed8 (adj layers suspended warning) -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/8 → Indexed/8 (adj. suspended)</div>
+        <div class="mini-dialog">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                <path d="M2 4H10M8 2L10 4L8 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 8H2M4 6L2 8L4 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="mini-title">Convert Color Mode</span>
+            <button class="mini-close">×</button>
+          </div>
+          <div class="mini-body">
+            <div class="mini-convert-row">
+              <div class="mini-mode-tag"><span class="mini-dot rgba8"></span> RGB/8</div>
+              <span class="mini-arrow">→</span>
+              <div class="mini-mode-tag"><span class="mini-dot indexed"></span> Indexed/8</div>
+            </div>
+            <p class="mini-desc">Convert document to Indexed/8? This will convert all raster layer data. This operation can be undone.</p>
+            <div class="mini-note warn">
+              <span class="mini-note-icon">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <path d="M6 1L11 10H1Z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+                  <line x1="6" y1="4.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="6" cy="8.5" r="0.6" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="mini-note-text">All adjustment layers will be suspended in Indexed/8 mode.</span>
+            </div>
+          </div>
+          <div class="mini-footer">
+            <button class="mini-cancel">Cancel</button>
+            <button class="mini-convert">Convert</button>
+          </div>
+        </div>
+        <p class="ann-desc">Any conversion targeting Indexed/8 always shows the adjustment-suspension warning. Palette-quantization loss is implicit in the description text.</p>
+      </div>
+
+      <!-- Variant D: rgba32f → indexed8 (BOTH warnings simultaneously) -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/32 Float → Indexed/8 (both warnings)</div>
+        <div class="mini-dialog">
+          <div class="mini-titlebar">
+            <span class="mini-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                <path d="M2 4H10M8 2L10 4L8 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 8H2M4 6L2 8L4 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="mini-title">Convert Color Mode</span>
+            <button class="mini-close">×</button>
+          </div>
+          <div class="mini-body">
+            <div class="mini-convert-row">
+              <div class="mini-mode-tag"><span class="mini-dot rgba32f"></span> RGB/32 Float</div>
+              <span class="mini-arrow">→</span>
+              <div class="mini-mode-tag"><span class="mini-dot indexed"></span> Indexed/8</div>
+            </div>
+            <p class="mini-desc">Convert document to Indexed/8? This will convert all raster layer data. This operation can be undone.</p>
+            <!-- HDR clamp warning -->
+            <div class="mini-note warn">
+              <span class="mini-note-icon">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <path d="M6 1L11 10H1Z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+                  <line x1="6" y1="4.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="6" cy="8.5" r="0.6" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="mini-note-text">Out-of-range (HDR) pixel values will be clamped to the 0–255 range.</span>
+            </div>
+            <!-- Adjustment suspension warning -->
+            <div class="mini-note warn">
+              <span class="mini-note-icon">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <path d="M6 1L11 10H1Z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+                  <line x1="6" y1="4.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="6" cy="8.5" r="0.6" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="mini-note-text">All adjustment layers will be suspended in Indexed/8 mode.</span>
+            </div>
+          </div>
+          <div class="mini-footer">
+            <button class="mini-cancel">Cancel</button>
+            <button class="mini-convert">Convert</button>
+          </div>
+        </div>
+        <p class="ann-desc">Worst-case: both warnings stack. HDR clamp fires because source is rgba32f; adjustment suspension fires because target is Indexed/8. Declaration order is fixed: HDR clamp first, adjustment suspension second.</p>
+      </div>
+
+    </div>
+
+    <!-- ── Surface 3: Status bar indicator ───────────────────────────── -->
+    <div class="ann-heading">Surface 3 — Status Bar Color Mode Indicator</div>
+    <div class="ann-grid">
+
+      <!-- RGB/8 normal -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/8 — idle</div>
+        <div class="mini-statusbar">
+          <span class="mini-status-item">100%</span>
+          <div class="mini-status-sep"></div>
+          <span class="mini-status-item">3024 × 4032</span>
+          <div class="mini-status-sep"></div>
+          <button class="mini-mode-btn normal"><span class="mini-dot rgba8"></span>RGB/8</button>
+          <div class="mini-status-sep"></div>
+          <span class="mini-status-item">3 layers</span>
+        </div>
+        <p class="ann-desc">Default idle state. Muted text, small green dot. The pill is subtly interactive — no border in idle state, border appears on hover.</p>
+      </div>
+
+      <!-- RGB/32F hovered -->
+      <div class="ann-card">
+        <div class="ann-card-title">RGB/32 Float — hovered</div>
+        <div class="mini-statusbar">
+          <span class="mini-status-item">100%</span>
+          <div class="mini-status-sep"></div>
+          <span class="mini-status-item">3024 × 4032</span>
+          <div class="mini-status-sep"></div>
+          <button class="mini-mode-btn hover"><span class="mini-dot rgba32f"></span>RGB/32F</button>
+          <div class="mini-status-sep"></div>
+          <span class="mini-status-item">3 layers</span>
+        </div>
+        <p class="ann-desc">Hover: background fill #4a4a4a, text brightens to --color-text. Blue dot for float/HDR mode. Cursor: default (tool-software convention).</p>
+      </div>
+
+      <!-- Indexed/8 normal -->
+      <div class="ann-card">
+        <div class="ann-card-title">Indexed/8 — idle</div>
+        <div class="mini-statusbar">
+          <span class="mini-status-item">100%</span>
+          <div class="mini-status-sep"></div>
+          <span class="mini-status-item">3024 × 4032</span>
+          <div class="mini-status-sep"></div>
+          <button class="mini-mode-btn normal"><span class="mini-dot indexed"></span>Indexed/8</button>
+          <div class="mini-status-sep"></div>
+          <span class="mini-status-item">3 layers</span>
+        </div>
+        <p class="ann-desc">Amber dot signals palette-indexed mode at a glance. Label is "Indexed/8" matching the spec's required display string.</p>
+      </div>
+
+    </div>
+
+    <!-- ── Surface 4: Disabled tool visual treatment ───────────────────── -->
+    <div class="ann-heading">Surface 4 — Disabled Tool Treatment (Indexed/8 mode)</div>
+    <div class="ann-grid-2">
+
+      <!-- Toolbar strip: enabled vs disabled -->
+      <div class="ann-card">
+        <div class="ann-card-title">Toolbar — RGB/8 (all tools enabled)</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;">
+          <div class="mini-toolbar">
+            <!-- All enabled -->
+            <button class="mini-tool-btn enabled t-active" title="Move">
+              <svg viewBox="0 0 14 14" fill="currentColor" width="12" height="12"><path d="M7 1 L9 4 H8V6H10V5L13 7L10 9V8H8V10H9L7 13L5 10H6V8H4V9L1 7L4 5V6H6V4H5Z"/></svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Brush">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <path d="M9 2 L12 5 L5 12 C4 13 2 13 1 12 C0 11 0 9 1 8 Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Pencil">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <path d="M10 2L12 4L4 12H2V10Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Eraser">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <rect x="2" y="5" width="10" height="6" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Fill">
+              <svg viewBox="0 0 14 14" fill="currentColor" width="12" height="12"><path d="M2 2H7L12 7L7 12H2Z" opacity="0.8"/></svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Gradient">
+              <svg viewBox="0 0 14 14" width="12" height="12">
+                <defs><linearGradient id="gg2" x1="0" x2="1"><stop offset="0" stop-color="#d4d4d4" stop-opacity="1"/><stop offset="1" stop-color="#d4d4d4" stop-opacity="0.1"/></linearGradient></defs>
+                <rect x="1" y="3" width="12" height="8" rx="1" fill="url(#gg2)"/>
+              </svg>
+            </button>
+            <div class="mini-tool-sep"></div>
+            <button class="mini-tool-btn enabled" title="Clone Stamp">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <circle cx="5" cy="5" r="3" stroke="currentColor" stroke-width="1.1"/>
+                <path d="M5 8V12M3 10H7" stroke="currentColor" stroke-width="1.1"/>
+              </svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Dodge">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <circle cx="7" cy="6" r="3.5" stroke="currentColor" stroke-width="1.1"/>
+                <line x1="7" y1="9.5" x2="7" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button class="mini-tool-btn enabled" title="Burn">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <path d="M7 1 C5 4 3 5 3 8 C3 10.8 4.8 12.5 7 12.5 C9.2 12.5 11 10.8 11 8 C11 5 9 4 7 1Z" stroke="currentColor" stroke-width="1.1"/>
+              </svg>
+            </button>
+          </div>
+          <div>
+            <p class="ann-desc" style="margin-bottom:6px;">In RGB/8 and RGB/32F modes: all tools fully enabled. Active tool has a surface-selected background. Standard icon color.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toolbar strip: Indexed/8 — disabled tools with tooltip -->
+      <div class="ann-card">
+        <div class="ann-card-title">Toolbar — Indexed/8 (5 tools disabled)</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;">
+          <div class="mini-toolbar" style="overflow:visible;position:relative;">
+            <!-- Move: enabled -->
+            <button class="mini-tool-btn enabled t-active" title="Move">
+              <svg viewBox="0 0 14 14" fill="currentColor" width="12" height="12"><path d="M7 1 L9 4 H8V6H10V5L13 7L10 9V8H8V10H9L7 13L5 10H6V8H4V9L1 7L4 5V6H6V4H5Z"/></svg>
+            </button>
+            <!-- Brush: disabled + tooltip visible -->
+            <button class="mini-tool-btn t-disabled" title="Brush">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <path d="M9 2 L12 5 L5 12 C4 13 2 13 1 12 C0 11 0 9 1 8 Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+              <div class="mini-tool-tip" style="display:block;left:40px;top:-2px;">
+                <div class="tip-name">Brush — Unavailable</div>
+                <div class="tip-why">Requires RGB/8 or RGB/32F mode.</div>
+              </div>
+            </button>
+            <!-- Pencil: enabled -->
+            <button class="mini-tool-btn enabled" title="Pencil">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <path d="M10 2L12 4L4 12H2V10Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+            </button>
+            <!-- Eraser: enabled -->
+            <button class="mini-tool-btn enabled" title="Eraser">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <rect x="2" y="5" width="10" height="6" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              </svg>
+            </button>
+            <!-- Fill: enabled -->
+            <button class="mini-tool-btn enabled" title="Fill">
+              <svg viewBox="0 0 14 14" fill="currentColor" width="12" height="12"><path d="M2 2H7L12 7L7 12H2Z" opacity="0.8"/></svg>
+            </button>
+            <!-- Gradient: disabled -->
+            <button class="mini-tool-btn t-disabled" title="Gradient">
+              <svg viewBox="0 0 14 14" width="12" height="12">
+                <defs><linearGradient id="gg3" x1="0" x2="1"><stop offset="0" stop-color="#d4d4d4" stop-opacity="1"/><stop offset="1" stop-color="#d4d4d4" stop-opacity="0.1"/></linearGradient></defs>
+                <rect x="1" y="3" width="12" height="8" rx="1" fill="url(#gg3)"/>
+              </svg>
+            </button>
+            <div class="mini-tool-sep"></div>
+            <!-- Clone Stamp: disabled -->
+            <button class="mini-tool-btn t-disabled" title="Clone Stamp">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <circle cx="5" cy="5" r="3" stroke="currentColor" stroke-width="1.1"/>
+                <path d="M5 8V12M3 10H7" stroke="currentColor" stroke-width="1.1"/>
+              </svg>
+            </button>
+            <!-- Dodge: disabled -->
+            <button class="mini-tool-btn t-disabled" title="Dodge">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <circle cx="7" cy="6" r="3.5" stroke="currentColor" stroke-width="1.1"/>
+                <line x1="7" y1="9.5" x2="7" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <!-- Burn: disabled -->
+            <button class="mini-tool-btn t-disabled" title="Burn">
+              <svg viewBox="0 0 14 14" fill="none" width="12" height="12">
+                <path d="M7 1 C5 4 3 5 3 8 C3 10.8 4.8 12.5 7 12.5 C9.2 12.5 11 10.8 11 8 C11 5 9 4 7 1Z" stroke="currentColor" stroke-width="1.1"/>
+              </svg>
+            </button>
+          </div>
+          <div>
+            <p class="ann-desc" style="margin-bottom:6px;">In Indexed/8: Brush, Gradient, Clone Stamp, Dodge, and Burn are disabled at opacity 0.32. <code style="font-size:9px;color:#555;">cursor: not-allowed</code></p>
+            <p class="ann-desc">On hover over a disabled tool, a tooltip appears showing the tool name and the reason: "Requires RGB/8 or RGB/32F mode."</p>
+          </div>
+        </div>
+
+        <!-- Suspended adjustment layers in layer panel -->
+        <div style="margin-top:8px;border-top:1px solid #222;padding-top:8px;">
+          <div style="font-size:9px;color:#444;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Layer panel — suspended adj. layers</div>
+          <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:2px;overflow:hidden;">
+            <!-- Normal pixel layer: active -->
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 5px;min-height:34px;border-bottom:1px solid var(--color-border);background:#3a6ea8;">
+              <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.6);">
+                <svg viewBox="0 0 10 10" fill="currentColor" width="10" height="10"><ellipse cx="5" cy="5" rx="3" ry="2"/></svg>
+              </div>
+              <div style="width:28px;height:28px;flex-shrink:0;border:1px solid rgba(255,255,255,0.15);background:linear-gradient(135deg,#c87040,#2a6090);"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Background</div>
+              </div>
+            </div>
+            <!-- Adj layer: suspended -->
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 5px;min-height:34px;border-bottom:1px solid var(--color-border);opacity:0.42;">
+              <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);">
+                <svg viewBox="0 0 10 10" fill="currentColor" width="10" height="10"><ellipse cx="5" cy="5" rx="3" ry="2"/></svg>
+              </div>
+              <div style="width:28px;height:28px;flex-shrink:0;border:1px solid rgba(255,255,255,0.08);background:var(--color-bg);display:flex;align-items:center;justify-content:center;">
+                <svg viewBox="0 0 10 10" fill="none" width="10" height="10"><circle cx="5" cy="5" r="3.5" stroke="#7a7a7a" stroke-width="1"/><line x1="3" y1="5" x2="7" y2="5" stroke="#7a7a7a" stroke-width="1"/></svg>
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;color:var(--color-text);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Curves</div>
+                <div style="display:inline-block;font-size:9px;padding:0 4px;border-radius:2px;line-height:14px;background:rgba(200,150,40,0.12);color:var(--color-warning-text);">suspended</div>
+              </div>
+            </div>
+            <!-- Another pixel layer -->
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 5px;min-height:34px;opacity:0.42;">
+              <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);">
+                <svg viewBox="0 0 10 10" fill="currentColor" width="10" height="10"><ellipse cx="5" cy="5" rx="3" ry="2"/></svg>
+              </div>
+              <div style="width:28px;height:28px;flex-shrink:0;border:1px solid rgba(255,255,255,0.08);background:var(--color-bg);display:flex;align-items:center;justify-content:center;">
+                <svg viewBox="0 0 10 10" fill="none" width="10" height="10"><circle cx="5" cy="5" r="3.5" stroke="#7a7a7a" stroke-width="1"/><path d="M3 5H7M5 3V7" stroke="#7a7a7a" stroke-width="1"/></svg>
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;color:var(--color-text);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Brightness/Contrast</div>
+                <div style="display:inline-block;font-size:9px;padding:0 4px;border-radius:2px;line-height:14px;background:rgba(200,150,40,0.12);color:var(--color-warning-text);">suspended</div>
+              </div>
+            </div>
+          </div>
+          <p class="ann-desc" style="margin-top:6px;">Suspended adj. layers: opacity 0.42, italic name, amber "suspended" badge. The layer data and parameters are preserved; GPU passes are skipped.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Color dot legend ───────────────────────────────────────────── -->
+    <div class="ann-heading">Color Mode Dot Legend</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="mode-dot rgba8" style="display:inline-block;width:8px;height:8px;"></span>
+        <span style="font-size:10px;color:#555;">RGB/8 — <code style="color:#444;">#52a878</code> muted green (standard 8-bit, the default)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="mode-dot rgba32f" style="display:inline-block;width:8px;height:8px;"></span>
+        <span style="font-size:10px;color:#555;">RGB/32F — <code style="color:#444;">#7ab4e8</code> muted blue (float/HDR, expanded range)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="mode-dot indexed" style="display:inline-block;width:8px;height:8px;"></span>
+        <span style="font-size:10px;color:#555;">Indexed/8 — <code style="color:#444;">#c89050</code> amber (palette-indexed, constrained)</span>
+      </div>
+    </div>
+
+  </div><!-- /annotation-section -->
+
+
+  <script>
+    /* ── State ──────────────────────────────────────────────────────────── */
+    let currentMode = 'rgba8';
+    let dialogVisible = false;
+
+    const modeLabels = {
+      rgba8:   'RGB/8',
+      rgba32f: 'RGB/32F',
+      indexed: 'Indexed/8',
+    };
+
+    const modeDocTitle = {
+      rgba8:   'portrait_raw.pxshop @ 100% — RGB/8',
+      rgba32f: 'portrait_raw.pxshop @ 100% — RGB/32F',
+      indexed: 'portrait_raw.pxshop @ 100% — Indexed/8',
+    };
+
+    const modeDotClass = {
+      rgba8:   'rgba8',
+      rgba32f: 'rgba32f',
+      indexed: 'indexed',
+    };
+
+    const dialogFromLabel = {
+      rgba8:   'RGB/8',
+      rgba32f: 'RGB/32 Float',
+      indexed: 'Indexed/8',
+    };
+
+    /* Layer stacks per mode */
+    const layerData = {
+      rgba8: [
+        { name: 'Curves', type: 'adj', badge: 'Adjustment', active: false },
+        { name: 'Brightness/Contrast', type: 'adj', badge: 'Adjustment', active: false },
+        { name: 'Background', type: 'pixel', active: true },
+      ],
+      rgba32f: [
+        { name: 'Curves', type: 'adj', badge: 'Adjustment', active: false },
+        { name: 'Background', type: 'pixel', active: true },
+      ],
+      indexed: [
+        { name: 'Curves', type: 'adj-suspended', badge: 'suspended', active: false },
+        { name: 'Brightness/Contrast', type: 'adj-suspended', badge: 'suspended', active: false },
+        { name: 'Background', type: 'pixel', active: true },
+      ],
+    };
+
+    /* ── Helpers ────────────────────────────────────────────────────────── */
+
+    function setMode(mode) {
+      currentMode = mode;
+
+      // Proto toggle buttons
+      document.querySelectorAll('[id^="btn-"]').forEach(b => {
+        if (b.id === 'btn-' + mode || b.id === 'btn-rgba8' && mode === 'rgba8' ||
+            b.id === 'btn-rgba32f' && mode === 'rgba32f' ||
+            b.id === 'btn-indexed' && mode === 'indexed') {
+          b.classList.add('active');
+        }
+      });
+      document.getElementById('btn-rgba8').classList.toggle('active', mode === 'rgba8');
+      document.getElementById('btn-rgba32f').classList.toggle('active', mode === 'rgba32f');
+      document.getElementById('btn-indexed').classList.toggle('active', mode === 'indexed');
+
+      // Status bar
+      const dot = document.getElementById('sb-dot');
+      dot.className = 'mode-dot ' + modeDotClass[mode];
+      document.getElementById('sb-mode-label').textContent = modeLabels[mode];
+
+      // Doc title
+      document.getElementById('doc-title').textContent = modeDocTitle[mode];
+
+      // File size estimate
+      const fileSizes = { rgba8: '~14.6 MB', rgba32f: '~58.4 MB', indexed: '~3.7 MB' };
+      document.getElementById('sb-file-size').textContent = fileSizes[mode];
+
+      // Color mode submenu checkmarks
+      document.getElementById('cm-rgba8').classList.toggle('menu-item-checked', mode === 'rgba8');
+      document.getElementById('cm-rgba32f').classList.toggle('menu-item-checked', mode === 'rgba32f');
+      document.getElementById('cm-indexed').classList.toggle('menu-item-checked', mode === 'indexed');
+
+      // Grayed-out menu items when in indexed mode
+      const adjTrigger = document.getElementById('adj-menu-trigger');
+      const effectsTrigger = document.getElementById('effects-menu-trigger');
+      const filtersTrigger = document.getElementById('filters-menu-trigger');
+      const isIndexed = mode === 'indexed';
+      adjTrigger.style.opacity = isIndexed ? '0.3' : '';
+      adjTrigger.style.pointerEvents = isIndexed ? 'none' : '';
+      effectsTrigger.style.opacity = isIndexed ? '0.3' : '';
+      effectsTrigger.style.pointerEvents = isIndexed ? 'none' : '';
+      filtersTrigger.style.opacity = isIndexed ? '0.3' : '';
+      filtersTrigger.style.pointerEvents = isIndexed ? 'none' : '';
+
+      // Tools disabled in indexed mode
+      const disabledInIndexed = ['tool-brush', 'tool-gradient', 'tool-stamp', 'tool-dodge', 'tool-burn'];
+      disabledInIndexed.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.toggle('tool-disabled', isIndexed);
+      });
+
+      // Layer list
+      renderLayers(mode);
+
+      // Close image menu if open
+      document.getElementById('image-menu').style.display = 'none';
+      document.getElementById('modal-scrim').classList.remove('visible');
+    }
+
+    function renderLayers(mode) {
+      const list = document.getElementById('layer-list');
+      list.innerHTML = '';
+      const layers = layerData[mode] || layerData.rgba8;
+      layers.forEach(layer => {
+        const li = document.createElement('li');
+        li.className = 'layer-row' +
+          (layer.active ? ' active' : '') +
+          (layer.type === 'adj-suspended' ? ' suspended' : '');
+
+        const eyeColor = layer.active ? 'rgba(255,255,255,0.7)' : 'var(--color-text-muted)';
+        const thumbBg = layer.type === 'pixel'
+          ? 'background:linear-gradient(135deg,#c87040,#2a6090);'
+          : 'background:var(--color-bg);';
+
+        let badgeHtml = '';
+        if (layer.badge === 'suspended') {
+          badgeHtml = `<span class="layer-badge suspended-badge">suspended</span>`;
+        } else if (layer.type === 'adj') {
+          badgeHtml = `<span class="layer-badge">${layer.badge}</span>`;
+        }
+
+        li.innerHTML = `
+          <button class="layer-eye">
+            <svg viewBox="0 0 10 10" fill="currentColor" width="10" height="10" style="color:${eyeColor}">
+              <ellipse cx="5" cy="5" rx="3" ry="2"/>
+            </svg>
+          </button>
+          <div class="layer-thumb"><div class="layer-thumb-img" style="${thumbBg}"></div></div>
+          <div class="layer-info">
+            <div class="layer-name">${layer.name}</div>
+            ${badgeHtml}
+          </div>
+        `;
+        list.appendChild(li);
+      });
+    }
+
+    function setDialog(show) {
+      dialogVisible = show;
+      document.getElementById('btn-no-dlg').classList.toggle('active', !show);
+      document.getElementById('btn-show-dlg').classList.toggle('active', show);
+      document.getElementById('convert-dialog').style.display = show ? '' : 'none';
+      document.getElementById('modal-scrim').classList.toggle('visible', show);
+
+      if (show) {
+        updateDialogForMode();
+        // Close image menu
+        document.getElementById('image-menu').style.display = 'none';
+      }
+    }
+
+    function updateDialogForMode() {
+      // Show a plausible "converting to next mode" scenario
+      const nextMode = {
+        rgba8:   { id: 'rgba32f', label: 'RGB/32 Float', dot: 'rgba32f' },
+        rgba32f: { id: 'rgba8',   label: 'RGB/8',        dot: 'rgba8'   },
+        indexed: { id: 'rgba8',   label: 'RGB/8',        dot: 'rgba8'   },
+      };
+      const fromLabel = {
+        rgba8:   { label: 'RGB/8',        dot: 'rgba8'   },
+        rgba32f: { label: 'RGB/32 Float', dot: 'rgba32f' },
+        indexed: { label: 'Indexed/8',    dot: 'indexed' },
+      };
+      const from = fromLabel[currentMode];
+      const to   = nextMode[currentMode];
+
+      document.getElementById('dlg-from-tag').innerHTML =
+        `<span class="mode-dot ${from.dot}" style="width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;background:${dotColor(from.dot)}"></span><span>${from.label}</span>`;
+      document.getElementById('dlg-to-tag').innerHTML =
+        `<span class="mode-dot ${to.dot}" style="width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;background:${dotColor(to.dot)}"></span><span>${to.label}</span>`;
+
+      document.getElementById('dlg-desc').textContent =
+        `Convert document to ${to.label}? This will convert all raster layer data. This operation can be undone.`;
+
+      // HDR clamp warning: shown when from=rgba32f and to is rgba8 or indexed
+      const showHdrWarn = currentMode === 'rgba32f';
+      document.getElementById('dlg-hdr-warn').style.display = showHdrWarn ? '' : 'none';
+
+      // Adj suspended warning: shown when to=indexed
+      const showAdjWarn = to.id === 'indexed' || currentMode === 'rgba8' && to.id === 'indexed'
+        || (to.id === 'indexed');
+      // Simplify: show if going to indexed
+      const goingToIndexed = to.id === 'indexed';
+      document.getElementById('dlg-adj-warn').style.display = goingToIndexed ? '' : 'none';
+
+      // Lossless info: shown only for rgba8→rgba32f
+      const isLossless = currentMode === 'rgba8' && to.id === 'rgba32f';
+      document.getElementById('dlg-lossless-note').style.display = isLossless ? '' : 'none';
+    }
+
+    function dotColor(cls) {
+      return cls === 'rgba8' ? '#52a878' : cls === 'rgba32f' ? '#7ab4e8' : '#c89050';
+    }
+
+    function toggleImageMenu() {
+      const menu = document.getElementById('image-menu');
+      const open = menu.style.display === 'none';
+      menu.style.display = open ? '' : 'none';
+      document.getElementById('modal-scrim').classList.toggle('visible', open);
+    }
+
+    // Close menu on scrim click
+    document.getElementById('modal-scrim').addEventListener('click', () => {
+      document.getElementById('image-menu').style.display = 'none';
+      document.getElementById('modal-scrim').classList.remove('visible');
+      setDialog(false);
+    });
+
+    // Color mode submenu item clicks (open dialog for non-current mode)
+    document.getElementById('cm-rgba32f').addEventListener('click', () => {
+      if (currentMode !== 'rgba32f') {
+        document.getElementById('image-menu').style.display = 'none';
+        setDialog(true);
+      }
+    });
+    document.getElementById('cm-rgba8').addEventListener('click', () => {
+      if (currentMode !== 'rgba8') {
+        document.getElementById('image-menu').style.display = 'none';
+        setDialog(true);
+      }
+    });
+    document.getElementById('cm-indexed').addEventListener('click', () => {
+      if (currentMode !== 'indexed') {
+        document.getElementById('image-menu').style.display = 'none';
+        setDialog(true);
+      }
+    });
+
+    /* ── Init ───────────────────────────────────────────────────────────── */
+    setMode('rgba8');
+    setDialog(false);
+  </script>
+</body>
+</html>

@@ -3,12 +3,20 @@ import { useAppContext } from '@/core/store/AppContext'
 import { cursorStore } from '@/core/store/cursorStore'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import { ColorSwatch } from '@/ux/widgets/ColorSwatch/ColorSwatch'
+import type { PixelFormat } from '@/types'
 import styles from './StatusBar.module.scss'
+
+const FORMAT_LABELS: Record<PixelFormat, string> = {
+  rgba8: 'RGB/8',
+  rgba32f: 'RGB/32F',
+  indexed8: 'Indexed/8',
+}
 
 export function StatusBar(): React.JSX.Element {
   const { state, dispatch } = useAppContext()
   const zoom = Math.round(state.canvas.zoom * 100)
   const { width, height, showGrid, gridSize, gridColor, gridType } = state.canvas
+  const formatLabel = FORMAT_LABELS[state.pixelFormat ?? 'rgba8']
 
   const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean }>({
     x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible,
@@ -26,7 +34,7 @@ export function StatusBar(): React.JSX.Element {
       <div className={styles.docInfo}>
         <span className={styles.infoItem}>{width} × {height} px</span>
         <span className={styles.sep} />
-        <span className={styles.infoItem}>RGB/8</span>
+        <span className={styles.infoItem}>{formatLabel}</span>
         {/* Right: zoom */}
         <div className={styles.zoom}>
           <span className={styles.infoItem}>{zoom}%</span>

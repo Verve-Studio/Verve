@@ -1,0 +1,2699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PixelShop — HDR FP32 Mode Design</title>
+  <style>
+    :root {
+      --color-bg:               #3c3c3c;
+      --color-surface:          #2d2d2d;
+      --color-surface-2:        #323232;
+      --color-surface-hover:    #4a4a4a;
+      --color-surface-selected: #404040;
+      --color-border:           #191919;
+      --color-border-light:     #555555;
+      --color-text:             #d4d4d4;
+      --color-text-dim:         #aaaaaa;
+      --color-text-muted:       #7a7a7a;
+      --color-accent:           #0699fb;
+      --color-accent-hover:     #1aa3ff;
+      --color-accent-glow:      rgba(6, 153, 251, 0.18);
+      --color-accent-border:    rgba(6, 153, 251, 0.45);
+      --color-danger:           #c04040;
+      --color-warning-bg:       rgba(200, 150, 40, 0.08);
+      --color-warning-border:   rgba(200, 150, 40, 0.25);
+      --color-warning-text:     #c8a030;
+      --color-hdr-bg:           rgba(255, 160, 40, 0.10);
+      --color-hdr-border:       rgba(255, 160, 40, 0.30);
+      --color-hdr-text:         #e8a040;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #161616;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      font-size: 12px;
+    }
+
+    /* ── Prototype chrome ──────────────────────────────────────────────── */
+
+    .proto-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #252525;
+    }
+
+    .proto-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .proto-title em {
+      color: var(--color-accent);
+      font-style: normal;
+    }
+
+    .hdiv {
+      width: 1px;
+      height: 14px;
+      background: #262626;
+      flex-shrink: 0;
+    }
+
+    .state-label {
+      font-size: 10px;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .state-toggle {
+      display: flex;
+      gap: 2px;
+      background: #1a1a1a;
+      border: 1px solid #252525;
+      border-radius: 3px;
+      padding: 2px;
+    }
+
+    .state-btn {
+      height: 20px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      color: #4a4a4a;
+      background: transparent;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+    }
+
+    .state-btn:hover { color: #888; }
+    .state-btn.active { background: var(--color-surface); color: var(--color-text); }
+
+    .proto-hint {
+      margin-left: auto;
+      font-size: 10px;
+      color: #333;
+      white-space: nowrap;
+    }
+
+    /* ── App shell ─────────────────────────────────────────────────────── */
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      height: 36px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      user-select: none;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    .logo-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--color-accent);
+      border-radius: 3px;
+      cursor: default;
+    }
+
+    .menu-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--color-border-light);
+      margin: 0 4px;
+    }
+
+    .menubar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 2px;
+    }
+
+    .menu-trigger {
+      height: 22px;
+      padding: 0 8px;
+      border: none;
+      background: transparent;
+      cursor: default;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      border-radius: 3px;
+    }
+
+    .topbar-center {
+      flex: 1;
+      padding: 0 8px;
+    }
+
+    .doc-title {
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    /* ── Canvas toolbar (below tab bar, above canvas) ──────────────────── */
+
+    .canvas-toolbar {
+      height: 28px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 6px;
+    }
+
+    /* ── Tool options bar ──────────────────────────────────────────────── */
+
+    .tool-options-bar {
+      height: 28px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 6px;
+    }
+
+    /* ── Main body ─────────────────────────────────────────────────────── */
+
+    .app-body {
+      display: flex;
+      height: 460px;
+      position: relative;
+    }
+
+    /* ── Left toolbar ──────────────────────────────────────────────────── */
+
+    .toolbar-strip {
+      width: 52px;
+      background: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 4px;
+      gap: 1px;
+    }
+
+    .tool-btn {
+      width: 38px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--color-text-muted);
+      cursor: default;
+    }
+
+    .tool-btn.tool-active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    .tool-sep {
+      width: 28px;
+      height: 1px;
+      background: var(--color-border);
+      margin: 3px 0;
+    }
+
+    /* Swatch area at bottom of toolbar */
+    .swatch-area {
+      margin-top: auto;
+      margin-bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .swatch-stack {
+      position: relative;
+      width: 36px;
+      height: 34px;
+    }
+
+    .swatch-bg {
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 22px; height: 22px;
+      border: 1px solid #444;
+      background: #1a1a1a;
+    }
+
+    .swatch-fg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 22px; height: 22px;
+      border: 1px solid #666;
+      background: #d4d4d4;
+    }
+
+    /* ── Canvas workspace ──────────────────────────────────────────────── */
+
+    .workspace {
+      flex: 1;
+      background: var(--color-bg);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas-mock {
+      width: 340px;
+      height: 260px;
+      position: relative;
+      border: 1px solid #2a2a2a;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .canvas-mock::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-conic-gradient(#3d3d3d 0% 25%, #4d4d4d 0% 50%);
+      background-size: 16px 16px;
+    }
+
+    /* HDR scene: brighter, desaturated, high-range look */
+    .canvas-content {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg,
+        #0a1828 0%,
+        #1a4878 30%,
+        #e8b860 55%,
+        #fff8e8 70%,
+        #ffffff 80%,
+        #ffd090 100%
+      );
+    }
+
+    /* Clipping highlight indicator in top-right of canvas */
+    .canvas-clip-indicator {
+      position: absolute;
+      top: 6px; right: 6px;
+      background: rgba(255,100,0,0.75);
+      border-radius: 2px;
+      padding: 2px 5px;
+      font-size: 9px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+    }
+
+    /* ── Right panel ───────────────────────────────────────────────────── */
+
+    .right-panel {
+      width: 240px;
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .rp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 26px;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-header-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .rp-blend-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-select {
+      flex: 1;
+      min-width: 0;
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .rp-opacity-label {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    .rp-opacity-input {
+      width: 36px;
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      text-align: right;
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .rp-layer-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    .layer-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 5px;
+      min-height: 36px;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+    }
+
+    .layer-row.active { background: #3a6ea8; }
+    .layer-row.active .layer-name { color: #fff; }
+
+    .layer-eye {
+      width: 18px; height: 18px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      background: transparent; border: none; border-radius: 2px;
+      color: var(--color-text-muted);
+    }
+
+    .layer-thumb {
+      width: 28px; height: 28px;
+      flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.1);
+      background-image: repeating-conic-gradient(#3d3d3d 0% 25%, #4d4d4d 0% 50%);
+      background-size: 7px 7px;
+      position: relative; overflow: hidden;
+    }
+
+    .layer-thumb-img {
+      position: absolute; inset: 0;
+    }
+
+    .layer-info {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column; gap: 1px;
+    }
+
+    .layer-name {
+      font-size: 11px;
+      color: var(--color-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .layer-badge {
+      display: inline-block;
+      font-size: 9px;
+      padding: 0 4px;
+      border-radius: 2px;
+      line-height: 14px;
+      background: rgba(255,255,255,0.07);
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+
+    .rp-footer {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px 4px;
+      border-top: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .rp-footer-btn {
+      width: 24px; height: 24px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 2px;
+      color: var(--color-text-muted); cursor: default;
+    }
+
+    /* ── Status bar ────────────────────────────────────────────────────── */
+
+    .statusbar {
+      height: 24px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      gap: 0;
+      position: relative;
+    }
+
+    .status-item {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .status-sep {
+      width: 1px;
+      height: 12px;
+      background: var(--color-border-light);
+      flex-shrink: 0;
+    }
+
+    .status-mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 16px;
+      padding: 0 6px;
+      border: none;
+      border-radius: 2px;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 10px;
+      font-family: var(--font-sans);
+      cursor: default;
+      white-space: nowrap;
+      margin: 0 2px;
+    }
+
+    .status-mode-btn.fp32 {
+      color: #7ab4e8;
+    }
+
+    .mode-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .mode-dot.rgba8   { background: #52a878; }
+    .mode-dot.rgba32f { background: #7ab4e8; }
+    .mode-dot.indexed { background: #c89050; }
+
+    /* ── EV Exposure slider (canvas toolbar) ───────────────────────────── */
+
+    .ev-control {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: auto;
+    }
+
+    .ev-view-badge {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--color-text-muted);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid #383838;
+      border-radius: 2px;
+      padding: 0 5px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .ev-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .ev-slider-track {
+      position: relative;
+      width: 100px;
+      height: 4px;
+      background: #383838;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+
+    .ev-slider-fill {
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 50%;
+      width: 30%;         /* +1.2 EV: 50% + 30%/2 */
+      background: var(--color-accent);
+      border-radius: 2px;
+    }
+
+    .ev-slider-center {
+      position: absolute;
+      top: -2px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1px;
+      height: 8px;
+      background: #555;
+    }
+
+    .ev-slider-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 10px;
+      height: 10px;
+      background: var(--color-text-dim);
+      border: 1px solid #888;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    /* thumb at +1.2 EV: center + (1.2/4)*50% = 50% + 15% = 65% */
+    .ev-slider-thumb { left: 65%; }
+    .ev-slider-fill { left: 50%; width: 15%; }
+
+    .ev-input {
+      width: 38px;
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-accent);
+      text-align: right;
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .ev-reset-btn {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 2px;
+      color: var(--color-text-muted);
+      cursor: default;
+      font-size: 12px;
+      transition: background 80ms, border-color 80ms, color 80ms;
+    }
+
+    .ev-reset-btn:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-border-light);
+      color: var(--color-text);
+    }
+
+    /* ── HDR Color Picker (right panel embedded) ───────────────────────── */
+
+    .cp-panel {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      width: 220px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .cp-titlebar {
+      display: flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 6px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+      gap: 5px;
+    }
+
+    .cp-title {
+      flex: 1;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--color-text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* Spectrum / hue-saturation gradient area */
+    .cp-spectrum {
+      position: relative;
+      width: 100%;
+      height: 120px;
+      background:
+        linear-gradient(to top, #000, transparent),
+        linear-gradient(to right, #fff, transparent),
+        hsl(30, 100%, 50%);
+      cursor: crosshair;
+      flex-shrink: 0;
+    }
+
+    .cp-spectrum-cursor {
+      position: absolute;
+      top: 28%;
+      left: 72%;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 0 1px #000;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Hue strip */
+    .cp-hue-strip {
+      width: 100%;
+      height: 12px;
+      background: linear-gradient(to right,
+        hsl(0,100%,50%),hsl(30,100%,50%),hsl(60,100%,50%),hsl(90,100%,50%),
+        hsl(120,100%,50%),hsl(150,100%,50%),hsl(180,100%,50%),hsl(210,100%,50%),
+        hsl(240,100%,50%),hsl(270,100%,50%),hsl(300,100%,50%),hsl(330,100%,50%),
+        hsl(360,100%,50%));
+      position: relative;
+      margin: 0 8px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .cp-hue-thumb {
+      position: absolute;
+      top: 50%;
+      left: 8.3%;     /* hue ~30° (orange) */
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 0 1px #333;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Alpha strip */
+    .cp-alpha-strip {
+      width: 100%;
+      height: 12px;
+      position: relative;
+      margin: 0 8px;
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .cp-alpha-strip::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-conic-gradient(#555 0% 25%, #333 0% 50%);
+      background-size: 8px 8px;
+    }
+
+    .cp-alpha-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to right, transparent, #e08828);
+      border-radius: 2px;
+    }
+
+    .cp-alpha-thumb {
+      position: absolute;
+      top: 50%;
+      right: 1%;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 0 1px #333;
+      transform: translate(50%, -50%);
+    }
+
+    .cp-sliders-area {
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    /* Strips + sliders row */
+    .cp-strip-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cp-swatch-preview {
+      width: 24px;
+      height: 24px;
+      border: 1px solid #555;
+      border-radius: 2px;
+      flex-shrink: 0;
+      background: #e08828;
+      position: relative;
+    }
+
+    /* The strips in column */
+    .cp-strip-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    /* Channel readout rows (float display) */
+    .cp-channel-grid {
+      display: grid;
+      grid-template-columns: 14px 1fr 50px;
+      gap: 2px 4px;
+      align-items: center;
+      padding: 4px 8px 2px;
+    }
+
+    .cp-ch-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-align: right;
+    }
+
+    .cp-ch-slider-track {
+      height: 4px;
+      border-radius: 2px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .cp-ch-slider-track.r-track { background: linear-gradient(to right, #2d2d2d, #e04040); }
+    .cp-ch-slider-track.g-track { background: linear-gradient(to right, #2d2d2d, #40c060); }
+    .cp-ch-slider-track.b-track { background: linear-gradient(to right, #2d2d2d, #4080e0); }
+    .cp-ch-slider-track.a-track { background: linear-gradient(to right, #2d2d2d, #d4d4d4); }
+
+    .cp-ch-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid #ccc;
+      box-shadow: 0 0 0 1px #222;
+      background: #d4d4d4;
+    }
+
+    .cp-ch-input {
+      height: 18px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 10px;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      text-align: right;
+      padding: 0 3px;
+      outline: none;
+    }
+
+    .cp-hex-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px 4px;
+    }
+
+    .cp-hex-label {
+      font-size: 10px;
+      color: var(--color-text-muted);
+    }
+
+    .cp-hex-input {
+      flex: 1;
+      height: 18px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--color-text);
+      padding: 0 5px;
+      outline: none;
+    }
+
+    /* ── HDR Intensity section ─────────────────────────────────────────── */
+
+    .cp-hdr-divider {
+      height: 1px;
+      background: var(--color-border);
+      margin: 2px 0;
+    }
+
+    .cp-intensity-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 8px;
+      background: rgba(6, 153, 251, 0.04);
+    }
+
+    .cp-intensity-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+
+    .cp-intensity-slider-track {
+      flex: 1;
+      height: 4px;
+      background: linear-gradient(to right, #2d2d2d, #0699fb);
+      border-radius: 2px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .cp-intensity-thumb {
+      position: absolute;
+      top: 50%;
+      /* 2.5 / 16 = 15.6% */
+      left: 15.6%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid var(--color-accent);
+      box-shadow: 0 0 0 1px #222;
+      background: #d4d4d4;
+    }
+
+    .cp-intensity-input {
+      width: 42px;
+      height: 18px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-accent-border);
+      border-radius: 2px;
+      font-size: 10px;
+      font-family: var(--font-sans);
+      color: var(--color-accent);
+      text-align: right;
+      padding: 0 3px;
+      outline: none;
+    }
+
+    /* HDR overflow indicator badge */
+    .hdr-overflow-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--color-hdr-text);
+      background: var(--color-hdr-bg);
+      border: 1px solid var(--color-hdr-border);
+      border-radius: 2px;
+      padding: 0 5px;
+      height: 14px;
+      white-space: nowrap;
+    }
+
+    .hdr-overflow-badge::before {
+      content: '▲';
+      font-size: 7px;
+    }
+
+    /* float readout area below intensity row */
+    .cp-float-readout {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2px;
+      padding: 4px 8px 6px;
+      background: rgba(0,0,0,0.15);
+    }
+
+    .cp-float-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .cp-float-ch-label {
+      font-size: 9px;
+      color: var(--color-text-muted);
+      font-weight: 600;
+    }
+
+    .cp-float-value {
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--color-text);
+      white-space: nowrap;
+    }
+
+    .cp-float-value.over-one {
+      color: var(--color-hdr-text);
+    }
+
+    /* ── Export dialog ─────────────────────────────────────────────────── */
+
+    .export-dialog {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -52%);
+      width: 420px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.7), 0 2px 6px rgba(0,0,0,0.5);
+      z-index: 50;
+      user-select: none;
+    }
+
+    .dlg-titlebar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 6px 0 8px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+      border-radius: 3px 3px 0 0;
+      gap: 5px;
+    }
+
+    .dlg-icon { flex-shrink: 0; color: var(--color-accent); display: flex; align-items: center; }
+    .dlg-title { flex: 1; font-size: 11px; font-weight: 600; color: var(--color-text); }
+    .dlg-close-btn {
+      width: 18px; height: 18px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 2px;
+      color: var(--color-text-muted); font-size: 14px; line-height: 1; cursor: default;
+    }
+
+    .dlg-body {
+      padding: 10px 14px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dlg-section-label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--color-text-muted);
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    /* Format button grid */
+    .format-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .format-btn {
+      height: 24px;
+      padding: 0 10px;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      background: var(--color-bg);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      cursor: default;
+      transition: background 80ms, border-color 80ms, color 80ms;
+      white-space: nowrap;
+    }
+
+    .format-btn:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-text-muted);
+      color: var(--color-text);
+    }
+
+    .format-btn.selected {
+      background: var(--color-accent);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .format-btn.hdr-format {
+      border-color: rgba(6, 153, 251, 0.4);
+      color: #7ab4e8;
+    }
+
+    .format-btn.hdr-format:hover {
+      background: rgba(6, 153, 251, 0.10);
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
+
+    /* A visual separator inside the format grid */
+    .format-grid-sep {
+      width: 1px;
+      height: 24px;
+      background: var(--color-border-light);
+      align-self: center;
+      flex-shrink: 0;
+    }
+
+    /* EXR options (shown when EXR is selected) */
+    .exr-options {
+      background: rgba(6, 153, 251, 0.04);
+      border: 1px solid rgba(6, 153, 251, 0.15);
+      border-radius: 2px;
+      padding: 7px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .exr-options-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #7ab4e8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .exr-opt-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 12px;
+    }
+
+    .exr-opt-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .exr-opt-label {
+      font-size: 10px;
+      color: var(--color-text-dim);
+      white-space: nowrap;
+      min-width: 76px;
+    }
+
+    .exr-radio-group {
+      display: flex;
+      gap: 3px;
+    }
+
+    .exr-radio-btn {
+      height: 18px;
+      padding: 0 7px;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      background: var(--color-bg);
+      font-size: 10px;
+      font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      cursor: default;
+      transition: background 80ms, border-color 80ms, color 80ms;
+    }
+
+    .exr-radio-btn.selected {
+      background: rgba(6, 153, 251, 0.15);
+      border-color: var(--color-accent-border);
+      color: var(--color-accent);
+    }
+
+    .exr-checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .exr-checkbox {
+      width: 12px; height: 12px;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      background: var(--color-bg);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .exr-checkbox.checked {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+    }
+
+    .exr-checkbox.checked::after {
+      content: '✓';
+      font-size: 9px;
+      color: #fff;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .exr-checkbox-label {
+      font-size: 10px;
+      color: var(--color-text-dim);
+    }
+
+    /* Warning notice */
+    .dlg-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 6px 8px;
+      border-radius: 2px;
+    }
+
+    .dlg-note.note-warning {
+      background: var(--color-warning-bg);
+      border: 1px solid var(--color-warning-border);
+    }
+
+    .dlg-note.note-info {
+      background: rgba(6, 153, 251, 0.06);
+      border: 1px solid rgba(6, 153, 251, 0.18);
+    }
+
+    .dlg-note-icon { flex-shrink: 0; margin-top: 1px; display: flex; align-items: center; }
+
+    .dlg-note-text {
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .dlg-note.note-warning .dlg-note-text { color: var(--color-warning-text); }
+    .dlg-note.note-info .dlg-note-text { color: #7ab4e8; }
+
+    .dlg-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      padding: 7px 10px 9px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .btn-cancel {
+      height: 22px; padding: 0 12px;
+      background: transparent;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 11px; font-family: var(--font-sans);
+      color: var(--color-text-dim);
+      cursor: default;
+    }
+
+    .btn-cancel:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-text-muted);
+      color: var(--color-text);
+    }
+
+    .btn-primary {
+      height: 22px; padding: 0 14px;
+      background: var(--color-accent);
+      border: 1px solid transparent;
+      border-radius: 2px;
+      font-size: 11px; font-family: var(--font-sans);
+      color: #fff; font-weight: 500;
+      cursor: default;
+    }
+
+    .btn-primary:hover { background: var(--color-accent-hover); }
+
+    /* ── Import toast notification ─────────────────────────────────────── */
+
+    .toast {
+      position: absolute;
+      bottom: 36px;   /* just above status bar */
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e2a36;
+      border: 1px solid rgba(6, 153, 251, 0.35);
+      border-radius: 3px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+      padding: 7px 12px 7px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      z-index: 80;
+      white-space: nowrap;
+    }
+
+    .toast-icon {
+      flex-shrink: 0;
+      color: var(--color-accent);
+      display: flex;
+      align-items: center;
+    }
+
+    .toast-text {
+      font-size: 11px;
+      color: var(--color-text-dim);
+      line-height: 1.4;
+    }
+
+    .toast-text strong {
+      color: var(--color-text);
+      font-weight: 600;
+    }
+
+    .toast-badge {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #7ab4e8;
+      background: rgba(6, 153, 251, 0.10);
+      border: 1px solid rgba(6, 153, 251, 0.25);
+      border-radius: 2px;
+      padding: 0 6px;
+      height: 16px;
+    }
+
+    .toast-close {
+      margin-left: 4px;
+      width: 14px; height: 14px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 2px;
+      color: var(--color-text-muted);
+      font-size: 12px; line-height: 1;
+      pointer-events: auto; cursor: default;
+    }
+
+    /* ── Modal scrim ───────────────────────────────────────────────────── */
+
+    .modal-scrim {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 40;
+    }
+
+    /* ── Annotation section ─────────────────────────────────────────────── */
+
+    .annotation-section {
+      background: #111;
+      border-top: 1px solid #232323;
+      padding: 20px 24px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .ann-heading {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #333;
+    }
+
+    .ann-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .ann-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .ann-card {
+      background: #181818;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ann-card-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #222;
+    }
+
+    .ann-desc {
+      font-size: 10px;
+      color: #444;
+      line-height: 1.5;
+    }
+
+    .ann-note {
+      font-size: 10px;
+      color: #3a6ea8;
+      padding: 4px 6px;
+      background: rgba(6, 153, 251, 0.04);
+      border-left: 2px solid rgba(6, 153, 251, 0.2);
+      border-radius: 1px;
+    }
+
+    /* Mini widgets for annotation cards */
+
+    .mini-statusbar {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      padding: 0 6px;
+      gap: 0;
+    }
+
+    .mini-status-item {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      padding: 0 5px;
+      white-space: nowrap;
+    }
+
+    .mini-status-sep {
+      width: 1px;
+      height: 11px;
+      background: var(--color-border-light);
+      flex-shrink: 0;
+    }
+
+    .mini-mode-btn {
+      display: flex; align-items: center; gap: 4px;
+      height: 14px; padding: 0 5px;
+      border: none; border-radius: 2px;
+      background: transparent;
+      font-size: 10px; font-family: var(--font-sans);
+      cursor: default; white-space: nowrap;
+    }
+
+    .mini-mode-btn.fp32 { color: #7ab4e8; }
+    .mini-mode-btn.rgba8 { color: var(--color-text-muted); }
+
+    .mini-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%; flex-shrink: 0;
+    }
+
+    .mini-dot.rgba8   { background: #52a878; }
+    .mini-dot.rgba32f { background: #7ab4e8; }
+
+    /* Mini EV toolbar strip */
+    .mini-toolbar-strip {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      padding: 0 6px;
+      gap: 5px;
+    }
+
+    .mini-ev-label {
+      font-size: 10px; font-weight: 600;
+      color: var(--color-text-muted);
+    }
+
+    .mini-ev-track {
+      width: 72px; height: 4px;
+      background: #383838; border-radius: 2px;
+      position: relative;
+    }
+
+    .mini-ev-fill {
+      position: absolute; top: 0; bottom: 0;
+      left: 50%; width: 15%;
+      background: var(--color-accent); border-radius: 2px;
+    }
+
+    .mini-ev-center {
+      position: absolute; top: -2px; left: 50%;
+      transform: translateX(-50%);
+      width: 1px; height: 8px; background: #555;
+    }
+
+    .mini-ev-thumb {
+      position: absolute; top: 50%; left: 65%;
+      transform: translate(-50%, -50%);
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid #aaa;
+      background: #bbb;
+    }
+
+    .mini-ev-input {
+      width: 32px; height: 16px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      font-size: 10px; font-family: var(--font-sans);
+      color: var(--color-accent);
+      text-align: right; padding: 0 3px; outline: none;
+    }
+
+    .mini-ev-reset {
+      width: 16px; height: 16px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 2px;
+      color: var(--color-text-muted); font-size: 11px;
+    }
+
+    .mini-view-badge {
+      font-size: 8px; font-weight: 600; letter-spacing: 0.05em;
+      color: var(--color-text-muted);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid #383838;
+      border-radius: 2px; padding: 0 4px;
+      height: 14px; display: flex; align-items: center;
+    }
+
+    /* Mini color picker for annotation */
+    .mini-cp {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      overflow: hidden;
+      width: 180px;
+    }
+
+    .mini-cp-spectrum {
+      width: 100%; height: 80px;
+      background:
+        linear-gradient(to top, #000, transparent),
+        linear-gradient(to right, #fff, transparent),
+        hsl(30, 100%, 50%);
+      position: relative;
+    }
+
+    .mini-cp-cursor {
+      position: absolute; top: 28%; left: 72%;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 0 1px #000;
+      transform: translate(-50%, -50%);
+    }
+
+    .mini-cp-strips {
+      padding: 4px 6px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+
+    .mini-cp-hue {
+      height: 8px;
+      background: linear-gradient(to right,
+        hsl(0,100%,50%),hsl(60,100%,50%),hsl(120,100%,50%),
+        hsl(180,100%,50%),hsl(240,100%,50%),hsl(300,100%,50%),hsl(360,100%,50%));
+      border-radius: 2px; position: relative;
+    }
+
+    .mini-cp-hue-thumb {
+      position: absolute; top: 50%; left: 8%;
+      transform: translate(-50%, -50%);
+      width: 7px; height: 7px; border-radius: 50%;
+      border: 1.5px solid #fff; box-shadow: 0 0 0 1px #333;
+    }
+
+    .mini-cp-hdr-row {
+      display: flex; align-items: center; gap: 4px;
+      padding: 4px 6px;
+      background: rgba(6, 153, 251, 0.04);
+      border-top: 1px solid var(--color-border);
+    }
+
+    .mini-cp-int-label {
+      font-size: 9px; font-weight: 600;
+      color: var(--color-text-muted);
+    }
+
+    .mini-cp-int-track {
+      flex: 1; height: 4px;
+      background: linear-gradient(to right, #2d2d2d, #0699fb);
+      border-radius: 2px; position: relative;
+    }
+
+    .mini-cp-int-thumb {
+      position: absolute; top: 50%; left: 15.6%;
+      transform: translate(-50%, -50%);
+      width: 7px; height: 7px; border-radius: 50%;
+      border: 1.5px solid var(--color-accent);
+      background: #d4d4d4;
+    }
+
+    .mini-cp-int-input {
+      width: 32px; height: 16px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-accent-border);
+      border-radius: 2px;
+      font-size: 9px; font-family: var(--font-sans);
+      color: var(--color-accent);
+      text-align: right; padding: 0 3px; outline: none;
+    }
+
+    .mini-cp-float-row {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: rgba(0,0,0,0.15);
+      padding: 4px 6px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .mini-cp-float-cell {
+      display: flex; flex-direction: column; align-items: center; gap: 1px;
+    }
+
+    .mini-cp-float-ch { font-size: 8px; font-weight: 600; color: var(--color-text-muted); }
+    .mini-cp-float-val { font-size: 9px; font-family: monospace; color: var(--color-text); }
+    .mini-cp-float-val.over { color: var(--color-hdr-text); }
+
+    .mini-cp-hdr-badge {
+      display: inline-flex; align-items: center; gap: 2px;
+      font-size: 8px; font-weight: 700; letter-spacing: 0.07em;
+      color: var(--color-hdr-text);
+      background: var(--color-hdr-bg);
+      border: 1px solid var(--color-hdr-border);
+      border-radius: 2px; padding: 0 4px; height: 12px;
+      margin: 0 4px;
+    }
+
+    /* Mini export dialog for annotation */
+    .mini-export {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .mini-export-title {
+      display: flex; align-items: center; gap: 5px;
+      height: 22px; padding: 0 6px 0 8px;
+      background: #262626;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .mini-export-title-text {
+      font-size: 10px; font-weight: 600; color: var(--color-text); flex: 1;
+    }
+
+    .mini-export-body {
+      padding: 7px 8px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+
+    .mini-fmt-grid {
+      display: flex; flex-wrap: wrap; gap: 3px;
+    }
+
+    .mini-fmt-btn {
+      height: 18px; padding: 0 7px;
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      background: var(--color-bg);
+      font-size: 9px; font-family: var(--font-sans);
+      color: var(--color-text-dim);
+    }
+
+    .mini-fmt-btn.sel {
+      background: var(--color-accent);
+      border-color: transparent; color: #fff; font-weight: 500;
+    }
+
+    .mini-fmt-btn.hdr {
+      border-color: rgba(6,153,251,0.4); color: #7ab4e8;
+    }
+
+    .mini-fmt-sep {
+      width: 1px; height: 18px; background: var(--color-border-light); align-self: center;
+    }
+
+    /* Mini toast for annotation */
+    .mini-toast {
+      background: #1e2a36;
+      border: 1px solid rgba(6, 153, 251, 0.35);
+      border-radius: 3px;
+      padding: 5px 10px 5px 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .mini-toast-icon { flex-shrink: 0; color: var(--color-accent); }
+
+    .mini-toast-text {
+      font-size: 10px; color: var(--color-text-dim); line-height: 1.4;
+    }
+
+    .mini-toast-text strong { color: var(--color-text); }
+
+    .mini-toast-badge {
+      display: flex; align-items: center; gap: 2px;
+      font-size: 9px; font-weight: 600; color: #7ab4e8;
+      background: rgba(6,153,251,0.10);
+      border: 1px solid rgba(6,153,251,0.25);
+      border-radius: 2px; padding: 0 5px; height: 14px;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- ── Prototype header ─────────────────────────────────────────────── -->
+  <div class="proto-header">
+    <div class="proto-title">PixelShop — <em>HDR FP32 Mode</em></div>
+    <div class="hdiv"></div>
+    <span class="state-label">Scene:</span>
+    <div class="state-toggle">
+      <button class="state-btn active" id="btn-hdr" onclick="setScene('hdr')">RGB/32F (HDR open)</button>
+      <button class="state-btn"        id="btn-import" onclick="setScene('import')">Import toast</button>
+      <button class="state-btn"        id="btn-export" onclick="setScene('export')">Export dialog</button>
+    </div>
+    <span class="proto-hint">Toggle scenes above ↑</span>
+  </div>
+
+  <!-- ── App shell ────────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="logo-btn">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+          <rect x="1" y="1" width="6" height="6" rx="1"/>
+          <rect x="9" y="1" width="6" height="6" rx="1"/>
+          <rect x="1" y="9" width="6" height="6" rx="1"/>
+          <rect x="9" y="9" width="6" height="6" rx="1"/>
+        </svg>
+      </button>
+      <div class="menu-divider"></div>
+      <nav class="menubar">
+        <button class="menu-trigger">File</button>
+        <button class="menu-trigger">Edit</button>
+        <button class="menu-trigger">Select</button>
+        <button class="menu-trigger">Image</button>
+        <button class="menu-trigger">Layer</button>
+        <button class="menu-trigger">Adjustments</button>
+        <button class="menu-trigger">Effects</button>
+        <button class="menu-trigger">Filters</button>
+        <button class="menu-trigger">View</button>
+        <button class="menu-trigger">Help</button>
+      </nav>
+    </div>
+    <div class="topbar-center">
+      <span class="doc-title">interior_hdr_probe.exr @ 67% — RGB/32F</span>
+    </div>
+  </div>
+
+  <!-- Tool options bar -->
+  <div class="tool-options-bar">
+    <span style="font-size:11px;color:var(--color-text-muted);">Brush</span>
+    <div style="width:1px;height:14px;background:var(--color-border-light);"></div>
+    <span style="font-size:11px;color:var(--color-text-muted);">Size: 18px &nbsp; Hardness: 60% &nbsp; Opacity: 100%</span>
+  </div>
+
+  <!-- Canvas toolbar — contains EV exposure control when RGB/32F -->
+  <div class="canvas-toolbar">
+    <!-- Left side: zoom indicator + document info -->
+    <span style="font-size:11px;color:var(--color-text-muted);">67%</span>
+    <div style="width:1px;height:14px;background:var(--color-border-light);flex-shrink:0;"></div>
+    <span style="font-size:10px;color:var(--color-text-muted);">2048 × 1024 px</span>
+
+    <!-- EV control — only shown in RGB/32F mode -->
+    <div class="ev-control" id="ev-control">
+      <!-- VIEW ONLY badge -->
+      <div class="ev-view-badge">VIEW ONLY</div>
+
+      <!-- EV label -->
+      <span class="ev-label">EV</span>
+
+      <!-- Slider track: -4 to +4, current = +1.2 -->
+      <div class="ev-slider-track">
+        <div class="ev-slider-center"></div>
+        <div class="ev-slider-fill"></div>
+        <div class="ev-slider-thumb"></div>
+      </div>
+
+      <!-- Numeric input showing current value -->
+      <input class="ev-input" type="text" value="+1.2" readonly>
+
+      <!-- Reset to 0 button -->
+      <button class="ev-reset-btn" title="Reset to 0 EV">
+        <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+          <path d="M10 6A4 4 0 1 1 6 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <path d="M6 0 L6 3 L9 1.5Z" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Main body ─────────────────────────────────────────────────────── -->
+  <div class="app-body">
+
+    <!-- Left toolbar strip -->
+    <div class="toolbar-strip">
+      <button class="tool-btn tool-active">
+        <!-- Move icon -->
+        <svg viewBox="0 0 14 14" fill="currentColor" width="14" height="14">
+          <path d="M7 1L9 4H8V6H10V5L13 7L10 9V8H8V10H9L7 13L5 10H6V8H4V9L1 7L4 5V6H6V4H5Z"/>
+        </svg>
+      </button>
+      <button class="tool-btn">
+        <!-- Brush icon -->
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <path d="M9 2L12 5L5 12C4 13 2 13 1 12C0 11 0 9 1 8Z" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="7" y1="4" x2="10" y2="7" stroke="currentColor" stroke-width="1"/>
+        </svg>
+      </button>
+      <button class="tool-btn">
+        <!-- Eyedropper -->
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <path d="M10 3L11 4L6 9L4 10L5 8Z" stroke="currentColor" stroke-width="1.2"/>
+          <circle cx="3" cy="11" r="1.5" stroke="currentColor" stroke-width="1.1"/>
+        </svg>
+      </button>
+      <div class="tool-sep"></div>
+      <button class="tool-btn">
+        <!-- Rect select -->
+        <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+          <rect x="2" y="2" width="10" height="10" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.5"/>
+        </svg>
+      </button>
+
+      <!-- Swatch area -->
+      <div class="swatch-area">
+        <div class="swatch-stack">
+          <div class="swatch-bg"></div>
+          <!-- Primary swatch: warm orange, HDR intensity -->
+          <div class="swatch-fg" style="background:#e08828;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canvas workspace -->
+    <div class="workspace" id="workspace">
+
+      <!-- HDR canvas content -->
+      <div class="canvas-mock" id="canvas-mock">
+        <div class="canvas-content"></div>
+        <!-- Pixel info crosshair hint -->
+        <div class="canvas-clip-indicator">HDR</div>
+      </div>
+
+      <!-- Import toast — shown when a .exr/.hdr file was opened -->
+      <div class="toast" id="import-toast" style="display:none;">
+        <div class="toast-icon">
+          <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+            <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
+            <line x1="7" y1="4" x2="7" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            <circle cx="7" cy="10.5" r="0.8" fill="currentColor"/>
+          </svg>
+        </div>
+        <span class="toast-text">
+          <strong>interior_hdr_probe.exr</strong> opened in
+        </span>
+        <div class="toast-badge">
+          <div class="mini-dot rgba32f"></div>
+          RGB/32F
+        </div>
+        <span class="toast-text">mode</span>
+        <button class="toast-close">×</button>
+      </div>
+
+      <!-- Export dialog scrim + dialog -->
+      <div class="modal-scrim" id="modal-scrim" style="display:none;"></div>
+
+      <div class="export-dialog" id="export-dialog" style="display:none;">
+        <div class="dlg-titlebar">
+          <div class="dlg-icon">
+            <svg viewBox="0 0 14 14" fill="none" width="13" height="13">
+              <path d="M7 2V9M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="dlg-title">Export As — interior_hdr_probe</span>
+          <button class="dlg-close-btn">×</button>
+        </div>
+
+        <div class="dlg-body">
+
+          <!-- HDR info note -->
+          <div class="dlg-note note-info">
+            <div class="dlg-note-icon">
+              <div class="mini-dot rgba32f" style="margin-top:1px;"></div>
+            </div>
+            <div class="dlg-note-text">
+              This document is <strong>RGB/32F</strong>. EXR, HDR, and TIFF 32-bit export will preserve full floating-point precision. Exporting to LDR formats will apply Reinhard tone-mapping.
+            </div>
+          </div>
+
+          <!-- Format selection -->
+          <div>
+            <div class="dlg-section-label">Format</div>
+            <div style="height:6px;"></div>
+            <div class="format-grid">
+              <!-- LDR formats -->
+              <button class="format-btn">PNG</button>
+              <button class="format-btn">JPEG</button>
+              <button class="format-btn">WEBP</button>
+              <button class="format-btn">TIFF</button>
+              <button class="format-btn">TGA</button>
+              <button class="format-btn">DDS</button>
+              <!-- Visual divider before HDR formats -->
+              <div class="format-grid-sep"></div>
+              <!-- HDR-native formats — highlighted -->
+              <button class="format-btn hdr-format selected">EXR</button>
+              <button class="format-btn hdr-format">HDR</button>
+              <button class="format-btn hdr-format">TIFF 32-bit</button>
+            </div>
+          </div>
+
+          <!-- EXR-specific options (shown when EXR is selected) -->
+          <div class="exr-options" id="exr-options">
+            <div class="exr-options-title">EXR Options</div>
+            <div class="exr-opt-grid">
+              <!-- Compression type -->
+              <div class="exr-opt-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+                <div class="exr-opt-label">Compression</div>
+                <div class="exr-radio-group">
+                  <button class="exr-radio-btn selected">ZIP</button>
+                  <button class="exr-radio-btn">ZIPS</button>
+                  <button class="exr-radio-btn">PIZ</button>
+                  <button class="exr-radio-btn">None</button>
+                </div>
+              </div>
+              <!-- Channel precision -->
+              <div class="exr-opt-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+                <div class="exr-opt-label">Channel precision</div>
+                <div class="exr-radio-group">
+                  <button class="exr-radio-btn selected">32-bit float</button>
+                  <button class="exr-radio-btn">16-bit half</button>
+                </div>
+              </div>
+            </div>
+            <!-- Half-float note -->
+            <div style="font-size:9px;color:var(--color-text-muted);line-height:1.5;">
+              16-bit half produces smaller files with ~3.3 decimal digits of precision. Values above ~65504 will be clipped.
+            </div>
+          </div>
+
+        </div>
+
+        <div class="dlg-footer">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-primary">Export</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right panel: Layers + HDR-aware Color Picker -->
+    <div class="right-panel">
+      <div class="rp-header">
+        <span class="rp-header-title">Layers</span>
+      </div>
+      <div class="rp-blend-row">
+        <select class="rp-select"><option>Normal</option></select>
+        <span class="rp-opacity-label">Opacity</span>
+        <input class="rp-opacity-input" type="text" value="100%">
+      </div>
+      <ul class="rp-layer-list">
+        <li class="layer-row active">
+          <button class="layer-eye">
+            <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11">
+              <ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1" fill="none"/>
+              <circle cx="6" cy="6" r="1.5"/>
+            </svg>
+          </button>
+          <div class="layer-thumb">
+            <div class="layer-thumb-img" style="background:linear-gradient(135deg,#0a1828,#e8b860,#fff);"></div>
+          </div>
+          <div class="layer-info">
+            <span class="layer-name">beauty.RGBA</span>
+            <span class="layer-badge">Float32 · 2048×1024</span>
+          </div>
+        </li>
+        <li class="layer-row">
+          <button class="layer-eye">
+            <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11">
+              <ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1" fill="none"/>
+              <circle cx="6" cy="6" r="1.5"/>
+            </svg>
+          </button>
+          <div class="layer-thumb">
+            <div class="layer-thumb-img" style="background:linear-gradient(135deg,#1a3a5c,#2a608a);"></div>
+          </div>
+          <div class="layer-info">
+            <span class="layer-name">diffuse.RGBA</span>
+            <span class="layer-badge">Float32 · 2048×1024</span>
+          </div>
+        </li>
+        <li class="layer-row">
+          <button class="layer-eye">
+            <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11">
+              <ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1" fill="none"/>
+              <circle cx="6" cy="6" r="1.5"/>
+            </svg>
+          </button>
+          <div class="layer-thumb">
+            <div class="layer-thumb-img" style="background:linear-gradient(135deg,#fff8c0,#fff,#f0d080);"></div>
+          </div>
+          <div class="layer-info">
+            <span class="layer-name">specular.RGBA</span>
+            <span class="layer-badge">Float32 · 2048×1024</span>
+          </div>
+        </li>
+      </ul>
+      <div class="rp-footer">
+        <button class="rp-footer-btn">
+          <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11">
+            <path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </button>
+        <button class="rp-footer-btn">
+          <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+            <rect x="1" y="1" width="10" height="10" rx="1" stroke="currentColor" stroke-width="1.1"/>
+            <rect x="3" y="3" width="6" height="6" rx="0.5" stroke="currentColor" stroke-width="1"/>
+          </svg>
+        </button>
+        <button class="rp-footer-btn">
+          <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+            <path d="M2 9h8M4 9V4l2-2 2 2v5" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- HDR-Aware Color Picker (embedded below layer panel) -->
+      <div style="border-top: 1px solid var(--color-border); padding: 8px;">
+        <div class="cp-panel" id="hdr-color-picker">
+          <div class="cp-titlebar">
+            <span class="cp-title">Color</span>
+            <!-- HDR overflow badge — visible when intensity > 1 or eyedropper sampled >1 -->
+            <div class="hdr-overflow-badge" id="hdr-badge">HDR</div>
+          </div>
+
+          <!-- Hue/Sat spectrum -->
+          <div class="cp-spectrum">
+            <div class="cp-spectrum-cursor"></div>
+          </div>
+
+          <!-- Sliders -->
+          <div class="cp-sliders-area">
+            <div class="cp-strip-row">
+              <div class="cp-swatch-preview"></div>
+              <div class="cp-strip-column">
+                <div class="cp-hue-strip">
+                  <div class="cp-hue-thumb"></div>
+                </div>
+                <div class="cp-alpha-strip">
+                  <div class="cp-alpha-overlay"></div>
+                  <div class="cp-alpha-thumb"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Channel sliders with float inputs -->
+          <div class="cp-channel-grid">
+            <!-- R -->
+            <span class="cp-ch-label">R</span>
+            <div class="cp-ch-slider-track r-track">
+              <div class="cp-ch-thumb" style="left:87.5%;"></div>
+            </div>
+            <input class="cp-ch-input" type="text" value="0.88">
+
+            <!-- G -->
+            <span class="cp-ch-label">G</span>
+            <div class="cp-ch-slider-track g-track">
+              <div class="cp-ch-thumb" style="left:53.3%;"></div>
+            </div>
+            <input class="cp-ch-input" type="text" value="0.53">
+
+            <!-- B -->
+            <span class="cp-ch-label">B</span>
+            <div class="cp-ch-slider-track b-track">
+              <div class="cp-ch-thumb" style="left:15.7%;"></div>
+            </div>
+            <input class="cp-ch-input" type="text" value="0.16">
+
+            <!-- A -->
+            <span class="cp-ch-label">A</span>
+            <div class="cp-ch-slider-track a-track">
+              <div class="cp-ch-thumb" style="left:100%;"></div>
+            </div>
+            <input class="cp-ch-input" type="text" value="1.00">
+          </div>
+
+          <!-- Hex input -->
+          <div class="cp-hex-row">
+            <span class="cp-hex-label">#</span>
+            <input class="cp-hex-input" type="text" value="E08828">
+          </div>
+
+          <!-- Divider before HDR section -->
+          <div class="cp-hdr-divider"></div>
+
+          <!-- Intensity multiplier row -->
+          <div class="cp-intensity-row">
+            <span class="cp-intensity-label">Intensity</span>
+            <div class="cp-intensity-slider-track">
+              <div class="cp-intensity-thumb"></div>
+            </div>
+            <input class="cp-intensity-input" type="text" value="2.50">
+          </div>
+
+          <!-- Float final value readout -->
+          <div class="cp-float-readout">
+            <div class="cp-float-cell">
+              <span class="cp-float-ch-label">R</span>
+              <span class="cp-float-value over-one">2.20</span>
+            </div>
+            <div class="cp-float-cell">
+              <span class="cp-float-ch-label">G</span>
+              <span class="cp-float-value over-one">1.33</span>
+            </div>
+            <div class="cp-float-cell">
+              <span class="cp-float-ch-label">B</span>
+              <span class="cp-float-value">0.40</span>
+            </div>
+            <div class="cp-float-cell">
+              <span class="cp-float-ch-label">A</span>
+              <span class="cp-float-value">1.00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <!-- RGB/32F mode indicator — blue accent -->
+    <button class="status-mode-btn fp32" id="status-mode">
+      <div class="mode-dot rgba32f"></div>
+      RGB/32F
+    </button>
+
+    <div class="status-sep"></div>
+    <span class="status-item">2048 × 1024 px</span>
+    <div class="status-sep"></div>
+    <!-- Float pixel info — 4 decimal places per spec -->
+    <span class="status-item" id="status-pixel-info">R: 1.8423 &nbsp; G: 0.5310 &nbsp; B: 0.0034 &nbsp; A: 1.0000</span>
+    <div class="status-sep"></div>
+    <span class="status-item">3 layers</span>
+  </div>
+
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <!-- ── Annotation section ─────────────────────────────────────────── -->
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <div class="annotation-section">
+
+    <!-- Surface 1: EV Exposure slider -->
+    <div>
+      <div class="ann-heading">Surface 1 — Canvas Toolbar EV Exposure Control</div>
+      <div style="height:12px;"></div>
+      <div class="ann-grid">
+
+        <!-- Default: EV 0 -->
+        <div class="ann-card">
+          <div class="ann-card-title">EV 0 (default / reset state)</div>
+          <div class="mini-toolbar-strip">
+            <div class="mini-view-badge">VIEW ONLY</div>
+            <span class="mini-ev-label">EV</span>
+            <div class="mini-ev-track">
+              <div class="mini-ev-center"></div>
+              <!-- No fill at 0 EV -->
+              <div class="mini-ev-thumb" style="left:50%;"></div>
+            </div>
+            <input class="mini-ev-input" type="text" value=" 0.0" readonly>
+            <button class="mini-ev-reset">
+              <svg viewBox="0 0 10 10" fill="none" width="9" height="9">
+                <path d="M8 5A3 3 0 1 1 5 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path d="M5 0L5 2.5L7.5 1.2Z" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+          <div class="ann-desc">
+            At 0 EV the slider thumb is centered. The fill area is absent. The numeric input shows "0.0". The reset button is visible but has no effect at 0.
+          </div>
+        </div>
+
+        <!-- EV +2.0 -->
+        <div class="ann-card">
+          <div class="ann-card-title">EV +2.0 (brightened preview)</div>
+          <div class="mini-toolbar-strip">
+            <div class="mini-view-badge">VIEW ONLY</div>
+            <span class="mini-ev-label">EV</span>
+            <div class="mini-ev-track">
+              <div class="mini-ev-center"></div>
+              <!-- +2 EV: 50% + (2/4)×50% = 75% from left; fill from 50% to 75% = width 25% -->
+              <div class="mini-ev-fill" style="left:50%;width:25%;"></div>
+              <div class="mini-ev-thumb" style="left:75%;"></div>
+            </div>
+            <input class="mini-ev-input" type="text" value="+2.0" readonly style="color:var(--color-accent);">
+            <button class="mini-ev-reset">
+              <svg viewBox="0 0 10 10" fill="none" width="9" height="9">
+                <path d="M8 5A3 3 0 1 1 5 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path d="M5 0L5 2.5L7.5 1.2Z" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+          <div class="ann-desc">
+            Positive EV fills right of center with accent blue. The numeric input turns accent blue when non-zero. Canvas brightens visually — raw pixel data is unchanged.
+          </div>
+        </div>
+
+        <!-- EV -2.0 -->
+        <div class="ann-card">
+          <div class="ann-card-title">EV −2.0 (darkened / inspect overbrights)</div>
+          <div class="mini-toolbar-strip">
+            <div class="mini-view-badge">VIEW ONLY</div>
+            <span class="mini-ev-label">EV</span>
+            <div class="mini-ev-track">
+              <div class="mini-ev-center"></div>
+              <!-- -2 EV: left side; fill from 25% to 50% = width 25% starting at 25% -->
+              <div class="mini-ev-fill" style="left:25%;width:25%;background:rgba(6,153,251,0.4);"></div>
+              <div class="mini-ev-thumb" style="left:25%;"></div>
+            </div>
+            <input class="mini-ev-input" type="text" value="−2.0" readonly style="color:var(--color-accent);">
+            <button class="mini-ev-reset">
+              <svg viewBox="0 0 10 10" fill="none" width="9" height="9">
+                <path d="M8 5A3 3 0 1 1 5 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path d="M5 0L5 2.5L7.5 1.2Z" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+          <div class="ann-desc">
+            Negative EV fills left of center with a dimmer accent. Darkening the preview helps inspect what's above 1.0 (overbrights become visible gradations rather than blown-out white).
+          </div>
+        </div>
+
+      </div>
+      <div style="height:8px;"></div>
+      <div class="ann-note">
+        The EV control is <strong>hidden entirely</strong> when the document is RGB/8 or Indexed/8 — not greyed out. It appears exclusively in RGB/32F mode. The VIEW ONLY badge is always visible and distinguishes this from export/flatten controls.
+      </div>
+    </div>
+
+    <!-- Surface 2: HDR Color Picker states -->
+    <div>
+      <div class="ann-heading">Surface 2 — HDR-Aware Color Picker</div>
+      <div style="height:12px;"></div>
+      <div class="ann-grid">
+
+        <!-- Intensity = 1.0 (SDR, no HDR badge) -->
+        <div class="ann-card">
+          <div class="ann-card-title">Intensity 1.0 — SDR range</div>
+          <div class="mini-cp">
+            <div class="mini-cp-spectrum">
+              <div class="mini-cp-cursor"></div>
+            </div>
+            <div class="mini-cp-strips">
+              <div class="mini-cp-hue"><div class="mini-cp-hue-thumb"></div></div>
+            </div>
+            <div class="mini-cp-hdr-row">
+              <span class="mini-cp-int-label">Intensity</span>
+              <div class="mini-cp-int-track">
+                <!-- 1.0/16 = 6.25% -->
+                <div class="mini-cp-int-thumb" style="left:6.25%;"></div>
+              </div>
+              <input class="mini-cp-int-input" type="text" value="1.00">
+            </div>
+            <div class="mini-cp-float-row">
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">R</span>
+                <span class="mini-cp-float-val">0.88</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">G</span>
+                <span class="mini-cp-float-val">0.53</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">B</span>
+                <span class="mini-cp-float-val">0.16</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">A</span>
+                <span class="mini-cp-float-val">1.00</span>
+              </div>
+            </div>
+          </div>
+          <div class="ann-desc">
+            At intensity 1.0 all final float values are in [0.0, 1.0]. No HDR badge. Float readout values match the normalized base color exactly.
+          </div>
+        </div>
+
+        <!-- Intensity = 2.5 (HDR, badge lights up) -->
+        <div class="ann-card">
+          <div class="ann-card-title">Intensity 2.5 — HDR active</div>
+          <div class="mini-cp">
+            <div class="mini-cp-spectrum">
+              <div class="mini-cp-cursor"></div>
+            </div>
+            <div class="mini-cp-strips">
+              <div class="mini-cp-hue"><div class="mini-cp-hue-thumb"></div></div>
+            </div>
+            <div class="mini-cp-hdr-row" style="justify-content:space-between;">
+              <span class="mini-cp-int-label">Intensity</span>
+              <div class="mini-cp-int-track" style="flex:1;margin:0 4px;">
+                <div class="mini-cp-int-thumb" style="left:15.6%;"></div>
+              </div>
+              <div class="mini-cp-hdr-badge">▲ HDR</div>
+              <input class="mini-cp-int-input" type="text" value="2.50">
+            </div>
+            <div class="mini-cp-float-row">
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">R</span>
+                <span class="mini-cp-float-val over">2.20</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">G</span>
+                <span class="mini-cp-float-val over">1.33</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">B</span>
+                <span class="mini-cp-float-val">0.40</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">A</span>
+                <span class="mini-cp-float-val">1.00</span>
+              </div>
+            </div>
+          </div>
+          <div class="ann-desc">
+            When intensity &gt; 1.0, the HDR badge lights up next to the intensity input. Float values above 1.0 are shown in amber to reinforce they exceed display range.
+          </div>
+        </div>
+
+        <!-- Eyedropper sampled HDR pixel -->
+        <div class="ann-card">
+          <div class="ann-card-title">Eyedropper: sampled HDR pixel</div>
+          <div class="mini-cp">
+            <div class="mini-cp-spectrum" style="background:
+              linear-gradient(to top, #000, transparent),
+              linear-gradient(to right, #fff, transparent),
+              hsl(200,80%,55%);">
+              <div class="mini-cp-cursor"></div>
+            </div>
+            <div class="mini-cp-strips">
+              <div class="mini-cp-hue"><div class="mini-cp-hue-thumb" style="left:55%;"></div></div>
+            </div>
+            <div class="mini-cp-hdr-row" style="justify-content:space-between;">
+              <span class="mini-cp-int-label" style="color:var(--color-text-muted);">Sampled</span>
+              <div class="mini-cp-hdr-badge">▲ HDR</div>
+              <span style="font-size:9px;color:var(--color-text-muted);">Clipped for swatch</span>
+            </div>
+            <div class="mini-cp-float-row">
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">R</span>
+                <span class="mini-cp-float-val over">1.84</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">G</span>
+                <span class="mini-cp-float-val over">1.21</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">B</span>
+                <span class="mini-cp-float-val">0.89</span>
+              </div>
+              <div class="mini-cp-float-cell">
+                <span class="mini-cp-float-ch">A</span>
+                <span class="mini-cp-float-val">1.00</span>
+              </div>
+            </div>
+          </div>
+          <div class="ann-desc">
+            When any sampled channel exceeds 1.0 the HDR badge appears. A "Clipped for swatch" note explains why the swatch color appears muted (it's been clamped to 8-bit for storage).
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Surface 3: Status bar states -->
+    <div>
+      <div class="ann-heading">Surface 3 — Status Bar in RGB/32F Mode</div>
+      <div style="height:12px;"></div>
+      <div class="ann-grid">
+
+        <!-- RGB/32F status bar -->
+        <div class="ann-card">
+          <div class="ann-card-title">RGB/32F — cursor hovering canvas</div>
+          <div class="mini-statusbar">
+            <button class="mini-mode-btn fp32">
+              <div class="mini-dot rgba32f"></div>
+              RGB/32F
+            </button>
+            <div class="mini-status-sep"></div>
+            <span class="mini-status-item">2048×1024 px</span>
+            <div class="mini-status-sep"></div>
+            <span class="mini-status-item" style="font-family:monospace;font-size:9.5px;">R: 1.8423 &nbsp;G: 0.5310 &nbsp;B: 0.0034 &nbsp;A: 1.0000</span>
+          </div>
+          <div class="ann-desc">
+            Blue dot + "RGB/32F" label at left. Pixel info shows 4-decimal float values in monospace. The R channel value above 1.0 indicates HDR content.
+          </div>
+        </div>
+
+        <!-- RGB/8 for comparison -->
+        <div class="ann-card">
+          <div class="ann-card-title">RGB/8 — comparison (integer values)</div>
+          <div class="mini-statusbar">
+            <button class="mini-mode-btn rgba8">
+              <div class="mini-dot rgba8"></div>
+              RGB/8
+            </button>
+            <div class="mini-status-sep"></div>
+            <span class="mini-status-item">1920×1080 px</span>
+            <div class="mini-status-sep"></div>
+            <span class="mini-status-item">R: 214 &nbsp; G: 112 &nbsp; B: 38 &nbsp; A: 255</span>
+          </div>
+          <div class="ann-desc">
+            In RGB/8 mode the dot is green, label shows "RGB/8", and pixel values are integers 0–255 — no decimal places.
+          </div>
+        </div>
+
+        <!-- RGB/32F, cursor off canvas (no pixel info) -->
+        <div class="ann-card">
+          <div class="ann-card-title">RGB/32F — cursor off canvas</div>
+          <div class="mini-statusbar">
+            <button class="mini-mode-btn fp32">
+              <div class="mini-dot rgba32f"></div>
+              RGB/32F
+            </button>
+            <div class="mini-status-sep"></div>
+            <span class="mini-status-item">2048×1024 px</span>
+            <div class="mini-status-sep"></div>
+            <span class="mini-status-item" style="color:#3a3a3a;">—</span>
+          </div>
+          <div class="ann-desc">
+            When the cursor is not over the canvas the pixel info area is blank (dash). The mode indicator remains visible at all times.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Surface 4: Export dialog -->
+    <div>
+      <div class="ann-heading">Surface 4 — Export Dialog for RGB/32F Documents</div>
+      <div style="height:12px;"></div>
+      <div class="ann-grid-2">
+
+        <!-- EXR selected -->
+        <div class="ann-card">
+          <div class="ann-card-title">EXR selected — HDR-native export</div>
+          <div class="mini-export">
+            <div class="mini-export-title">
+              <div style="flex-shrink:0;color:var(--color-accent);margin-right:3px;">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <path d="M6 1v7M3.5 5.5l2.5 2.5 2.5-2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M1 10h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="mini-export-title-text">Export As — scene_beauty</span>
+            </div>
+            <div class="mini-export-body">
+              <div style="font-size:9px;color:#7ab4e8;background:rgba(6,153,251,0.06);border:1px solid rgba(6,153,251,0.18);border-radius:2px;padding:4px 6px;line-height:1.5;">
+                RGB/32F document. EXR / HDR / TIFF 32-bit preserve full precision.
+              </div>
+              <div class="mini-fmt-grid">
+                <button class="mini-fmt-btn">PNG</button>
+                <button class="mini-fmt-btn">JPEG</button>
+                <button class="mini-fmt-btn">WEBP</button>
+                <button class="mini-fmt-btn">TIFF</button>
+                <button class="mini-fmt-btn">TGA</button>
+                <button class="mini-fmt-btn">DDS</button>
+                <div class="mini-fmt-sep"></div>
+                <button class="mini-fmt-btn sel">EXR</button>
+                <button class="mini-fmt-btn hdr">HDR</button>
+                <button class="mini-fmt-btn hdr">TIFF 32-bit</button>
+              </div>
+              <div style="background:rgba(6,153,251,0.04);border:1px solid rgba(6,153,251,0.15);border-radius:2px;padding:5px 7px;display:flex;flex-direction:column;gap:4px;">
+                <div style="font-size:9px;font-weight:600;color:#7ab4e8;text-transform:uppercase;letter-spacing:0.07em;">EXR Options</div>
+                <div style="font-size:9px;color:var(--color-text-dim);">Compression: <span style="color:var(--color-accent);">ZIP</span> &nbsp;·&nbsp; ZIPS &nbsp;·&nbsp; PIZ &nbsp;·&nbsp; None</div>
+                <div style="font-size:9px;color:var(--color-text-dim);">Channels: <span style="color:var(--color-accent);">32-bit float</span> &nbsp;·&nbsp; 16-bit half</div>
+              </div>
+            </div>
+          </div>
+          <div class="ann-desc">
+            HDR-native formats (EXR, HDR, TIFF 32-bit) have a distinct blue border in the format grid. EXR and TIFF 32-bit show format-specific options when selected. No tone-mapping warning is shown.
+          </div>
+        </div>
+
+        <!-- PNG selected (LDR) — tone-mapping warning -->
+        <div class="ann-card">
+          <div class="ann-card-title">PNG selected — LDR export warning</div>
+          <div class="mini-export">
+            <div class="mini-export-title">
+              <div style="flex-shrink:0;color:var(--color-accent);margin-right:3px;">
+                <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+                  <path d="M6 1v7M3.5 5.5l2.5 2.5 2.5-2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M1 10h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="mini-export-title-text">Export As — scene_beauty</span>
+            </div>
+            <div class="mini-export-body">
+              <div class="mini-fmt-grid">
+                <button class="mini-fmt-btn sel">PNG</button>
+                <button class="mini-fmt-btn">JPEG</button>
+                <button class="mini-fmt-btn">WEBP</button>
+                <button class="mini-fmt-btn">TIFF</button>
+                <button class="mini-fmt-btn">TGA</button>
+                <button class="mini-fmt-btn">DDS</button>
+                <div class="mini-fmt-sep"></div>
+                <button class="mini-fmt-btn hdr">EXR</button>
+                <button class="mini-fmt-btn hdr">HDR</button>
+                <button class="mini-fmt-btn hdr">TIFF 32-bit</button>
+              </div>
+              <!-- Warning: HDR content will be tone-mapped -->
+              <div style="background:var(--color-warning-bg);border:1px solid var(--color-warning-border);border-radius:2px;padding:5px 7px;display:flex;align-items:flex-start;gap:5px;">
+                <div style="color:var(--color-warning-text);font-size:11px;flex-shrink:0;margin-top:1px;">⚠</div>
+                <div style="font-size:9px;color:var(--color-warning-text);line-height:1.5;">
+                  This document contains HDR data. The exported file will be tone-mapped to 8-bit using Reinhard. Values above 1.0 will be compressed or clipped.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="ann-desc">
+            Selecting a standard LDR format shows an amber warning that Reinhard tone-mapping will be applied at export. The user must confirm before proceeding.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Surface 5: Import toast -->
+    <div>
+      <div class="ann-heading">Surface 5 — Import Notification (EXR / HDR opened as RGB/32F)</div>
+      <div style="height:12px;"></div>
+      <div class="ann-grid">
+
+        <!-- EXR single layer -->
+        <div class="ann-card">
+          <div class="ann-card-title">Single-layer EXR opened</div>
+          <div class="mini-toast">
+            <div class="mini-toast-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/>
+                <line x1="6" y1="3.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="6" cy="8.8" r="0.7" fill="currentColor"/>
+              </svg>
+            </div>
+            <span class="mini-toast-text"><strong>env_probe.exr</strong> opened in</span>
+            <div class="mini-toast-badge">
+              <div class="mini-dot rgba32f"></div>
+              RGB/32F
+            </div>
+            <span class="mini-toast-text">mode</span>
+          </div>
+          <div class="ann-desc">
+            Brief dismissable toast appears above the status bar for ~4 seconds. Blue accent — matches the RGB/32F mode color language.
+          </div>
+        </div>
+
+        <!-- Multi-layer EXR -->
+        <div class="ann-card">
+          <div class="ann-card-title">Multi-layer EXR opened</div>
+          <div class="mini-toast" style="flex-direction:column;align-items:flex-start;gap:3px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="mini-toast-icon">
+                <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/>
+                  <line x1="6" y1="3.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="6" cy="8.8" r="0.7" fill="currentColor"/>
+                </svg>
+              </div>
+              <span class="mini-toast-text"><strong>interior_composite.exr</strong></span>
+              <div class="mini-toast-badge">
+                <div class="mini-dot rgba32f"></div>
+                RGB/32F
+              </div>
+            </div>
+            <span class="mini-toast-text" style="padding-left:17px;">Imported 4 layers: beauty, diffuse, specular, shadow</span>
+          </div>
+          <div class="ann-desc">
+            Multi-layer EXR adds a second line listing the imported layer names. Same blue accent. Up to ~60 chars before truncation.
+          </div>
+        </div>
+
+        <!-- Radiance HDR -->
+        <div class="ann-card">
+          <div class="ann-card-title">.hdr file opened</div>
+          <div class="mini-toast">
+            <div class="mini-toast-icon">
+              <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/>
+                <line x1="6" y1="3.5" x2="6" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="6" cy="8.8" r="0.7" fill="currentColor"/>
+              </svg>
+            </div>
+            <span class="mini-toast-text"><strong>sky_panorama.hdr</strong> opened in</span>
+            <div class="mini-toast-badge">
+              <div class="mini-dot rgba32f"></div>
+              RGB/32F
+            </div>
+            <span class="mini-toast-text">mode</span>
+          </div>
+          <div class="ann-desc">
+            Same toast design for Radiance .hdr files. No dialog needed — the file opens directly as RGB/32F at 0 EV preview.
+          </div>
+        </div>
+
+      </div>
+      <div style="height:8px;"></div>
+      <div class="ann-note">
+        The toast is <strong>informational only</strong> — no action required. It auto-dismisses after ~4 seconds or when the user clicks ×. It does not block interaction.
+      </div>
+    </div>
+
+  </div><!-- /annotation-section -->
+
+
+  <script>
+    // ── Scene switcher ────────────────────────────────────────────────────
+    function setScene(scene) {
+      // Reset all buttons
+      document.querySelectorAll('.state-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('btn-' + scene).classList.add('active');
+
+      const toast      = document.getElementById('import-toast');
+      const scrim      = document.getElementById('modal-scrim');
+      const exportDlg  = document.getElementById('export-dialog');
+      const evControl  = document.getElementById('ev-control');
+
+      // Hide everything
+      toast.style.display     = 'none';
+      scrim.style.display     = 'none';
+      exportDlg.style.display = 'none';
+
+      if (scene === 'hdr') {
+        evControl.style.display = 'flex';
+      } else if (scene === 'import') {
+        evControl.style.display = 'flex';
+        toast.style.display     = 'flex';
+      } else if (scene === 'export') {
+        evControl.style.display = 'flex';
+        scrim.style.display     = 'block';
+        exportDlg.style.display = 'block';
+      }
+    }
+
+    // ── Format button selection (export dialog) ────────────────────────
+    document.querySelectorAll('.format-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+
+        const label = btn.textContent.trim();
+        const exrOpts = document.getElementById('exr-options');
+        const dlgBody = document.querySelector('.dlg-body');
+
+        // Remove any existing warning
+        const existingWarn = document.querySelector('.dlg-note.note-warning');
+        if (existingWarn) existingWarn.remove();
+
+        // Show/hide EXR options
+        exrOpts.style.display = (label === 'EXR') ? 'flex' : 'none';
+
+        // Show LDR warning for non-HDR formats
+        const hdrFormats = ['EXR', 'HDR', 'TIFF 32-bit'];
+        if (!hdrFormats.includes(label)) {
+          const warn = document.createElement('div');
+          warn.className = 'dlg-note note-warning';
+          warn.innerHTML = `
+            <div class="dlg-note-icon">
+              <svg viewBox="0 0 14 14" fill="none" width="13" height="13">
+                <path d="M7 2L13 12H1Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <line x1="7" y1="6" x2="7" y2="9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="7" cy="11" r="0.7" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="dlg-note-text">
+              This document contains HDR data. The exported file will be tone-mapped to 8-bit using Reinhard. Values above 1.0 will be compressed or clipped.
+            </div>`;
+          dlgBody.appendChild(warn);
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

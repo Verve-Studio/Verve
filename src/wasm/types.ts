@@ -135,6 +135,15 @@ export interface PixelOpsModule {
     hWPtr: number, vWPtr: number,
     trimapPtr: number, width: number, height: number, labelOutPtr: number
   ): void
+
+  _matchPaletteIndices(
+    rgbaPtr: number,
+    pixelCount: number,
+    palettePtr: number,
+    paletteSize: number,
+    outPtr: number,
+    transparentIdx: number
+  ): void
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

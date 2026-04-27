@@ -1,0 +1,47 @@
+@use '@/styles/variables' as vars;
+
+// ─── Body ─────────────────────────────────────────────────────────────────────
+
+.body {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px 14px;
+  gap: 10px;
+}
+
+.message {
+  margin: 0;
+  font-size: vars.$font-size-base;
+  color: vars.$color-text;
+  line-height: 1.5;
+
+  strong {
+    color: vars.$color-text;
+    font-weight: 600;
+  }
+}
+
+// ─── Warning banner ───────────────────────────────────────────────────────────
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 10px;
+  background: rgba(200, 140, 0, 0.12);
+  border: 1px solid rgba(200, 140, 0, 0.35);
+  border-radius: vars.$radius-md;
+  font-size: vars.$font-size-sm;
+  color: #d4a832;
+  line-height: 1.45;
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid vars.$color-border;
+}

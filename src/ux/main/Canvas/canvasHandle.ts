@@ -1,7 +1,7 @@
 import { useImperativeHandle, useRef } from 'react'
 import type React from 'react'
 import type { GpuLayer, WebGPURenderer, RenderPlanEntry } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
-import type { LayerState, RGBAColor } from '@/types'
+import type { LayerState, RGBAColor, PixelFormat } from '@/types'
 import { isGroupLayer } from '@/types'
 import { buildRenderPlan as buildCanvasRenderPlan, buildSubPlan } from './canvasPlan'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
@@ -20,9 +20,9 @@ export interface CanvasHandle {
    * pixel data together with the image dimensions.
    * Returns null when the renderer is not yet initialised.
    */
-  rasterizeComposite: (reason: RasterReason) => Promise<{ data: Uint8Array; width: number; height: number; backendUsed: RasterBackend }>
+  rasterizeComposite: (reason: RasterReason) => Promise<{ data: Uint8Array | Float32Array; width: number; height: number; backendUsed: RasterBackend }>
   /** Rasterize a provided subset of layer state using the same plan builder logic as canvas rendering. */
-  rasterizeLayers: (layers: readonly LayerState[], reason: RasterReason) => Promise<{ data: Uint8Array; width: number; height: number; backendUsed: RasterBackend }>
+  rasterizeLayers: (layers: readonly LayerState[], reason: RasterReason) => Promise<{ data: Uint8Array | Float32Array; width: number; height: number; backendUsed: RasterBackend }>
   /** Return a copy of a layer's raw RGBA pixel data IN CANVAS-SIZE buffer (pixels outside layer bounds are transparent). */
   getLayerPixels: (layerId: string) => Uint8Array | null
   /**
@@ -64,6 +64,14 @@ export interface CanvasHandle {
    * The R channel of the resulting WebGL layer drives the shader blend weight.
    */
   registerAdjustmentSelectionMask: (layerId: string, selPixels: Uint8Array) => void
+  /** Get raw pixel data for a layer in its native format (Uint8Array for rgba8/indexed8, Float32Array for rgba32f). */
+  getLayerRawData: (layerId: string) => Uint8Array | Float32Array | null
+  /** Replace a layer's pixel data and GPU texture with new data in a new format. Flushes and re-renders. */
+  replaceLayerData: (layerId: string, newData: Uint8Array | Float32Array, newFormat: PixelFormat, palette?: RGBAColor[]) => void
+  /** Export raw Float32Array for an rgba32f layer. Returns null for non-f32 layers. */
+  exportLayerF32: (layerId: string) => Float32Array | null
+  /** Export raw Uint8Array for an indexed8 layer. Returns null for non-indexed layers. */
+  exportLayerIndexed: (layerId: string) => Uint8Array | null
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -455,6 +463,32 @@ export function useCanvasHandle({
       }
       renderer.flushLayer(maskLayer)
       renderFromPlan()
+    },
+
+    getLayerRawData: (layerId) => {
+      const layer = glLayersRef.current.get(layerId)
+      if (!layer) return null
+      return layer.data.slice() as Uint8Array | Float32Array
+    },
+
+    replaceLayerData: (layerId, newData, newFormat, palette) => {
+      const renderer = rendererRef.current
+      const layer = glLayersRef.current.get(layerId)
+      if (!renderer || !layer) return
+      renderer.replaceLayerData(layer, newData, newFormat, palette)
+      renderFromPlan()
+    },
+
+    exportLayerF32: (layerId) => {
+      const layer = glLayersRef.current.get(layerId)
+      if (!layer || layer.format !== 'rgba32f') return null
+      return (layer.data as Float32Array).slice()
+    },
+
+    exportLayerIndexed: (layerId) => {
+      const layer = glLayersRef.current.get(layerId)
+      if (!layer || layer.format !== 'indexed8') return null
+      return (layer.data as Uint8Array).slice()
     },
   }), [width, height]) // eslint-disable-line react-hooks/exhaustive-deps
 }

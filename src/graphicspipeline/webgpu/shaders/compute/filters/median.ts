@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_MEDIAN_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct MedianParams {
   radius : u32,
   _pad0  : u32,
@@ -8,8 +10,8 @@ struct MedianParams {
   _pad2  : u32,
 }
 
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var dstTex : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : MedianParams;
 
 // Three 256-bin histograms (one per channel) in private memory.
@@ -29,29 +31,25 @@ fn histMedian(hist: ptr<private, array<u32, 256>>, mid: u32) -> f32 {
   return 1.0;
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_median(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
+@fragment
+fn fs_median(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = textureDimensions(srcTex);
+  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
 
   let r   = min(params.radius, 10u);
   let n   = (2u * r + 1u) * (2u * r + 1u);
   let mid = n / 2u;
 
-  // Clear histograms.
   for (var i = 0u; i < 256u; i++) {
     histR[i] = 0u;
     histG[i] = 0u;
     histB[i] = 0u;
   }
 
-  // Single sampling pass — load all three channels at once.
-  // Previously the shader made 3 separate loops (1,323 texture reads at r=10);
-  // this reduces to 441 reads.
   for (var ky = -i32(r); ky <= i32(r); ky++) {
     for (var kx = -i32(r); kx <= i32(r); kx++) {
-      let sx = clamp(i32(id.x) + kx, 0, i32(dims.x) - 1);
-      let sy = clamp(i32(id.y) + ky, 0, i32(dims.y) - 1);
+      let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
+      let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
       let c  = textureLoad(srcTex, vec2i(sx, sy), 0);
       histR[u32(c.r * 255.0 + 0.5)] += 1u;
       histG[u32(c.g * 255.0 + 0.5)] += 1u;
@@ -59,24 +57,26 @@ fn cs_median(@builtin(global_invocation_id) id: vec3u) {
     }
   }
 
-  let orig = textureLoad(srcTex, vec2i(id.xy), 0);
-  textureStore(dstTex, vec2i(id.xy), vec4f(
+  let orig = textureLoad(srcTex, coord, 0);
+  return vec4f(
     histMedian(&histR, mid),
     histMedian(&histG, mid),
     histMedian(&histB, mid),
     orig.a,
-  ));
+  );
 }
 ` as const
 
 export async function runMedian(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
   radius: number,
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -92,27 +92,28 @@ export async function runMedian(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const paramsData = new Uint32Array([radius, 0, 0, 0])
   const paramsBuf  = createUniformBuffer(device, 16)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
-  const encoder = device.createCommandEncoder()
+  const encoder   = device.createCommandEncoder()
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

@@ -1,9 +1,8 @@
-export const HALFTONE_COMPUTE = /* wgsl */ `
+import { ADJ_VERTEX_SHADER, MASK_FLAGS_STRUCT } from './helpers'
 
-struct MaskFlags {
-  hasMask : u32,
-  _pad    : vec3u,
-}
+export const HALFTONE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
+${MASK_FLAGS_STRUCT}
 
 struct HalftoneParams {
   frequency : f32,
@@ -17,7 +16,7 @@ struct HalftoneParams {
 }
 
 @group(0) @binding(0) var srcTex     : texture_2d<f32>;
-@group(0) @binding(1) var dstTex     : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp        : sampler;
 @group(0) @binding(2) var<uniform>   params    : HalftoneParams;
 @group(0) @binding(3) var selMask    : texture_2d<f32>;
 @group(0) @binding(4) var<uniform>   maskFlags : MaskFlags;
@@ -80,12 +79,11 @@ fn screenDot(
   return clamp(0.5 - sdf, 0.0, 1.0) * step(0.001, dot_r);
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_halftone(@builtin(global_invocation_id) id: vec3u) {
+@fragment
+fn fs_halftone(in: AdjVertOut) -> @location(0) vec4<f32> {
   let dims = textureDimensions(srcTex);
-  if id.x >= dims.x || id.y >= dims.y { return; }
-  let coord  = vec2i(id.xy);
-  let coordf = vec2f(f32(id.x), f32(id.y));
+  let coord  = vec2i(i32(in.pos.x), i32(in.pos.y));
+  let coordf = vec2f(f32(coord.x), f32(coord.y));
 
   let cell_pitch = 100.0 / params.frequency;
 
@@ -145,11 +143,11 @@ fn cs_halftone(@builtin(global_invocation_id) id: vec3u) {
   }
 
   if maskFlags.hasMask != 0u {
-    let mask_val = textureLoad(selMask, coord, 0).r;
+    let mask_val = textureSampleLevel(selMask, smp, in.uv, 0.0).r;
     let src_color = textureLoad(srcTex, coord, 0);
-    out_color = mix(src_color, out_color, mask_val);
+    return mix(src_color, out_color, mask_val);
   }
 
-  textureStore(dstTex, coord, out_color);
+  return out_color;
 }
 `

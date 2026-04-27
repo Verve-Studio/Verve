@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_CLOUDS_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct CloudsParams {
   scale     : u32,
   opacity   : u32,
@@ -12,10 +14,10 @@ struct CloudsParams {
   _pad      : u32,
 }
 
-@group(0) @binding(0) var srcTex  : texture_2d<f32>;
-@group(0) @binding(1) var dstTex  : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(2) var<uniform> params : CloudsParams;
-@group(0) @binding(3) var<storage, read> perm : array<u32>;  // 256 entries, each is u8 value
+@group(0) @binding(0) var srcTex                   : texture_2d<f32>;
+@group(0) @binding(1) var smp                      : sampler;
+@group(0) @binding(2) var<uniform> params          : CloudsParams;
+@group(0) @binding(3) var<storage, read> perm      : array<u32>;  // 256 entries, each is u8 value
 
 const GX = array<f32, 8>(  1.0, -1.0,  0.0,  0.0,  0.7071, -0.7071,  0.7071, -0.7071 );
 const GY = array<f32, 8>(  0.0,  0.0,  1.0, -1.0,  0.7071,  0.7071, -0.7071, -0.7071 );
@@ -53,10 +55,10 @@ fn perlin(fx: f32, fy: f32) -> f32 {
   return ab + v * (cd - ab);
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_clouds(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
+@fragment
+fn fs_clouds(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let ix = u32(in.pos.x);
+  let iy = u32(in.pos.y);
 
   let featureSize = max(f32(params.scale) / 100.0 * f32(min(params.imgWidth, params.imgHeight)), 1.0);
   let baseFreq    = 256.0 / featureSize;
@@ -66,7 +68,7 @@ fn cs_clouds(@builtin(global_invocation_id) id: vec3u) {
   var freq   = baseFreq;
   var amp    = 1.0;
   for (var oct = 0; oct < 6; oct++) {
-    total  += perlin(f32(id.x) * freq, f32(id.y) * freq) * amp;
+    total  += perlin(f32(ix) * freq, f32(iy) * freq) * amp;
     maxAmp += amp;
     amp    *= 0.5;
     freq   *= 2.0;
@@ -89,20 +91,20 @@ fn cs_clouds(@builtin(global_invocation_id) id: vec3u) {
     cloudB = bgB + (fgB - bgB) * t;
   }
 
-  let orig     = textureLoad(srcTex, vec2i(id.xy), 0);
+  let orig     = textureLoad(srcTex, vec2i(i32(ix), i32(iy)), 0);
   let opacityF = f32(params.opacity) / 100.0;
 
   let outR = clamp(orig.r + (cloudR - orig.r) * opacityF, 0.0, 1.0);
   let outG = clamp(orig.g + (cloudG - orig.g) * opacityF, 0.0, 1.0);
   let outB = clamp(orig.b + (cloudB - orig.b) * opacityF, 0.0, 1.0);
 
-  textureStore(dstTex, vec2i(id.xy), vec4f(outR, outG, outB, orig.a));
+  return vec4f(outR, outG, outB, orig.a);
 }
 `
 
 export async function runClouds(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
@@ -146,10 +148,12 @@ export async function runClouds(
     { width: w, height: h },
   )
 
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   // Pack params: 8 × u32 = 32 bytes
@@ -159,21 +163,21 @@ export async function runClouds(
   const paramsBuf  = createUniformBuffer(device, 32)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
-  const encoder = device.createCommandEncoder()
+  const encoder  = device.createCommandEncoder()
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: { buffer: permBuf } },
     ],
   })
 
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

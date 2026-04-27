@@ -78,6 +78,8 @@ export type { ContentAwareFillOptionsDialogProps } from './modals/ContentAwareFi
 export { PixelBrushGallery } from './widgets/PixelBrushGallery/PixelBrushGallery'
 export type { PixelBrushGalleryProps } from './widgets/PixelBrushGallery/PixelBrushGallery'
 export { PixelBrushesModal } from './modals/PixelBrushesModal/PixelBrushesModal'
+export { ConvertColorModeDialog } from './modals/ConvertColorModeDialog/ConvertColorModeDialog'
+export type { ConvertColorModeDialogProps } from './modals/ConvertColorModeDialog/ConvertColorModeDialog'
 export type { PixelBrushesModalProps } from './modals/PixelBrushesModal/PixelBrushesModal'
 export { ColorDitheringSetupModal } from './modals/ColorDitheringSetupModal/ColorDitheringSetupModal'
 export type { ColorDitheringSetupModalProps } from './modals/ColorDitheringSetupModal/ColorDitheringSetupModal'

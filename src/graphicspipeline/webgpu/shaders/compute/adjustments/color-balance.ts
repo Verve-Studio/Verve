@@ -1,6 +1,7 @@
-import { MASK_FLAGS_STRUCT } from './helpers'
+import { ADJ_VERTEX_SHADER, MASK_FLAGS_STRUCT } from './helpers'
 
 export const CB_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 ${MASK_FLAGS_STRUCT}
 
 struct CBParams {
@@ -18,18 +19,15 @@ struct CBParams {
 }
 
 @group(0) @binding(0) var srcTex   : texture_2d<f32>;
-@group(0) @binding(1) var dstTex   : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp      : sampler;
 @group(0) @binding(2) var<uniform> params    : CBParams;
 @group(0) @binding(3) var selMask  : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
 
-@compute @workgroup_size(8, 8)
-fn cs_color_balance(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord = vec2i(id.xy);
-  let src = textureLoad(srcTex, coord, 0);
-  if (src.a < 0.0001) { textureStore(dstTex, coord, src); return; }
+@fragment
+fn fs_color_balance(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src = textureSample(srcTex, smp, in.uv);
+  if (src.a < 0.0001) { return src; }
 
   let rgb = src.rgb;
   let lum = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
@@ -52,7 +50,7 @@ fn cs_color_balance(@builtin(global_invocation_id) id: vec3u) {
 
   let result = vec4f(adjusted, src.a);
   var mask = 1.0f;
-  if (maskFlags.hasMask != 0u) { mask = textureLoad(selMask, coord, 0).r; }
-  textureStore(dstTex, coord, mix(src, result, mask));
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return mix(src, result, mask);
 }
 ` as const

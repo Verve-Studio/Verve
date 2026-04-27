@@ -12,7 +12,7 @@ export interface RasterizeDocumentRequest {
 }
 
 export interface RasterizeDocumentResult {
-  data: Uint8Array
+  data: Uint8Array | Float32Array
   width: number
   height: number
   backendUsed: RasterBackend

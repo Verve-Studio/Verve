@@ -1,4 +1,4 @@
-import type { AdjustmentParamsMap } from '@/types'
+import type { AdjustmentParamsMap, PixelFormat } from '@/types'
 import type { CurvesLuts } from '@/core/operations/adjustments/curves'
 
 // ─── Param type aliases ────────────────────────────────────────────────────────
@@ -15,7 +15,8 @@ export interface GpuLayer {
   id: string
   name: string
   texture: GPUTexture
-  data: Uint8Array
+  data: Uint8Array | Float32Array
+  format: PixelFormat
   layerWidth: number
   layerHeight: number
   offsetX: number

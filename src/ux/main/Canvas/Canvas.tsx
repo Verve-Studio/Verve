@@ -303,11 +303,35 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           }
         }
         if (pngData) {
-          // ── Opening a file: pngData may be layer-local or canvas-size.
-          // We store a JSON-encoded geometry blob alongside or fall back to canvas-size.
+          // ── Opening a file: pngData may be layer-local, canvas-size, or a raw typed-array blob.
           const geoKey = `${ls.id}:geo`
           const geoJson = initialLayerData?.get(geoKey)
-          if (geoJson) {
+
+          if (pngData.startsWith('data:raw/f32;base64,')) {
+            // rgba32f layer: base64-encoded raw Float32Array bytes
+            const b64 = pngData.slice('data:raw/f32;base64,'.length)
+            const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+            const f32 = new Float32Array(bytes.buffer)
+            if (geoJson) {
+              const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
+              layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY, 'rgba32f')
+            } else {
+              layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
+            }
+            ;(layer.data as Float32Array).set(f32)
+          } else if (pngData.startsWith('data:raw/indexed8;base64,')) {
+            // indexed8 layer: base64-encoded raw palette-index bytes
+            const b64 = pngData.slice('data:raw/indexed8;base64,'.length)
+            const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+            if (geoJson) {
+              const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
+              layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY, 'indexed8')
+            } else {
+              layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'indexed8')
+            }
+            ;(layer.data as Uint8Array).set(bytes)
+          } else if (geoJson) {
+            // Layer-local PNG with geometry
             const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
             layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY)
             try {
@@ -360,7 +384,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         layer.visible   = ls.visible
         layer.blendMode = 'blendMode' in ls ? ls.blendMode : 'normal'
         if (isStale()) return
-        renderer.flushLayer(layer)
+        renderer.flushLayer(layer, layer.format === 'indexed8' ? swatchesRef.current as import('@/types').RGBAColor[] : undefined)
         glLayersRef.current.set(ls.id, layer)
       }
       if (isStale()) return
@@ -675,6 +699,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       adjustmentMaskMap.current,
       adjustmentPreviewStore.snapshot(),
       state.swatches,
+      state.pixelFormat,
     )
     const pending = newPixelLayerRef.current
     if (pending && !plan.some(e => e.kind === 'layer' && e.layer === pending)) {

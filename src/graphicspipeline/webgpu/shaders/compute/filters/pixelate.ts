@@ -1,62 +1,50 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_PIXELATE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct PixelateParams {
   blockSize : u32,
-  width     : u32,
-  height    : u32,
-  _pad      : u32,
+  _pad0     : u32,
+  _pad1     : u32,
+  _pad2     : u32,
 }
 
 @group(0) @binding(0) var srcTex          : texture_2d<f32>;
-@group(0) @binding(1) var dstTex          : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : PixelateParams;
 
-// Each invocation handles one block (column blockX = id.x, row blockY = id.y).
-// Dispatch count: (ceil(ceil(W/S) / 8), ceil(ceil(H/S) / 8), 1).
-@compute @workgroup_size(8, 8)
-fn cs_pixelate(@builtin(global_invocation_id) id: vec3u) {
-  let S  = params.blockSize;
-  let w  = params.width;
-  let h  = params.height;
-
-  // Block origin in image space
-  let bx = id.x * S;
-  let by = id.y * S;
-  if (bx >= w || by >= h) { return; }
-
-  // Inclusive extent, clamped for partial edge blocks
-  let ex = min(bx + S, w);
-  let ey = min(by + S, h);
-
+@fragment
+fn fs_pixelate(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = textureDimensions(srcTex);
+  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
+  let S  = i32(params.blockSize);
+  let bx = (coord.x / S) * S;
+  let by = (coord.y / S) * S;
+  let ex = min(bx + S, i32(dims.x));
+  let ey = min(by + S, i32(dims.y));
   var sum   = vec4f(0.0);
-  var count = 0u;
-
+  var count = 0;
   for (var py = by; py < ey; py++) {
     for (var px = bx; px < ex; px++) {
-      sum   += textureLoad(srcTex, vec2u(px, py), 0);
-      count += 1u;
+      sum   += textureLoad(srcTex, vec2i(px, py), 0);
+      count += 1;
     }
   }
-
-  let avg = sum / f32(count);
-
-  for (var py = by; py < ey; py++) {
-    for (var px = bx; px < ex; px++) {
-      textureStore(dstTex, vec2u(px, py), avg);
-    }
-  }
+  return sum / f32(count);
 }
 ` as const
 
 export async function runPixelate(
   device:    GPUDevice,
-  pipeline:  GPUComputePipeline,
+  pipeline:  GPURenderPipeline,
   pixels:    Uint8Array,
   w:         number,
   h:         number,
   blockSize: number,
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size:   { width: w, height: h },
     format: 'rgba8unorm',
@@ -72,10 +60,10 @@ export async function runPixelate(
   const outTex = device.createTexture({
     size:   { width: w, height: h },
     format: 'rgba8unorm',
-    usage:  GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage:  GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
-  const paramsData = new Uint32Array([blockSize, w, h, 0])
+  const paramsData = new Uint32Array([blockSize, 0, 0, 0])
   const paramsBuf  = createUniformBuffer(device, 16)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
@@ -83,19 +71,18 @@ export async function runPixelate(
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
 
-  const blockCountX = Math.ceil(w / blockSize)
-  const blockCountY = Math.ceil(h / blockSize)
-
   const encoder = device.createCommandEncoder()
-  const pass    = encoder.beginComputePass()
+  const pass    = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(blockCountX / 8), Math.ceil(blockCountY / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

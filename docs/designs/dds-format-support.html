@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PixelShop — DDS Format Support Design</title>
+  <style>
+    :root {
+      --color-bg:               #3c3c3c;
+      --color-surface:          #2d2d2d;
+      --color-surface-2:        #323232;
+      --color-surface-hover:    #4a4a4a;
+      --color-surface-selected: #404040;
+      --color-border:           #191919;
+      --color-border-light:     #555555;
+      --color-text:             #d4d4d4;
+      --color-text-dim:         #aaaaaa;
+      --color-text-muted:       #7a7a7a;
+      --color-accent:           #0699fb;
+      --color-accent-hover:     #1aa3ff;
+      --color-accent-glow:      rgba(6, 153, 251, 0.18);
+      --color-accent-border:    rgba(6, 153, 251, 0.45);
+      --color-danger:           #c04040;
+      --color-warning-bg:       rgba(212, 138, 0, 0.12);
+      --color-warning-border:   rgba(212, 138, 0, 0.35);
+      --color-warning-text:     #c89828;
+      --color-info-bg:          rgba(6, 153, 251, 0.08);
+      --color-info-border:      rgba(6, 153, 251, 0.28);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #161616;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      font-size: 12px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Prototype chrome ──────────────────────────────────────────────────── */
+
+    .proto-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #252525;
+      flex-shrink: 0;
+    }
+
+    .proto-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .proto-title em {
+      color: var(--color-accent);
+      font-style: normal;
+    }
+
+    .hdiv {
+      width: 1px;
+      height: 14px;
+      background: #262626;
+      flex-shrink: 0;
+    }
+
+    .state-label {
+      font-size: 10px;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .state-toggle {
+      display: flex;
+      gap: 2px;
+      background: #1a1a1a;
+      border: 1px solid #252525;
+      border-radius: 3px;
+      padding: 2px;
+    }
+
+    .state-btn {
+      height: 20px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 2px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      color: #4a4a4a;
+      background: transparent;
+      transition: background 80ms, color 80ms;
+      white-space: nowrap;
+    }
+
+    .state-btn:hover { color: #888; }
+    .state-btn.active { background: var(--color-surface); color: var(--color-text); }
+
+    .proto-hint {
+      margin-left: auto;
+      font-size: 10px;
+      color: #333;
+      white-space: nowrap;
+    }
+
+    /* ── Stage (workspace backdrop) ────────────────────────────────────────── */
+
+    .stage {
+      flex: 1;
+      min-height: 640px;
+      background: var(--color-bg);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Faint checkerboard gives a "canvas workspace" feel behind the modal */
+    .stage::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-conic-gradient(#3a3a3a 0% 25%, #3e3e3e 0% 50%);
+      background-size: 24px 24px;
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    /* Simulated app chrome strip at top of stage */
+    .app-chrome {
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 36px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 6px;
+    }
+
+    .chrome-menu-item {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      padding: 0 6px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      border-radius: 2px;
+    }
+
+    .chrome-menu-item.active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    /* ── Modal overlay ─────────────────────────────────────────────────────── */
+
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.42);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Modal dialog ──────────────────────────────────────────────────────── */
+
+    .modal-dialog {
+      width: 460px;
+      background: var(--color-surface);
+      border: 1px solid #1a1a1a;
+      border-radius: 4px;
+      box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.35),
+        0 10px 40px rgba(0, 0, 0, 0.65);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── Title bar ─────────────────────────────────────────────────────────── */
+
+    .modal-titlebar {
+      display: flex;
+      align-items: center;
+      height: 30px;
+      padding: 0 10px 0 14px;
+      background: #272727;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .modal-title {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text-dim);
+    }
+
+    .modal-close {
+      width: 18px;
+      height: 18px;
+      border: none;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 10px;
+      cursor: pointer;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    /* ── Body ──────────────────────────────────────────────────────────────── */
+
+    .modal-body {
+      padding: 16px 20px 10px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .section-title {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    /* ── Field rows ────────────────────────────────────────────────────────── */
+
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 28px;
+      margin-bottom: 10px;
+    }
+
+    .field-label {
+      width: 82px;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--color-text-dim);
+      text-align: right;
+    }
+
+    /* ── Text input ────────────────────────────────────────────────────────── */
+
+    .text-input {
+      flex: 1;
+      min-width: 0;
+      height: 24px;
+      padding: 0 7px;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      color: var(--color-text);
+      font-size: 11px;
+      font-family: var(--font-sans);
+    }
+
+    .text-input:focus {
+      outline: 1px solid var(--color-accent);
+      outline-offset: 0;
+    }
+
+    /* ── Browse button ─────────────────────────────────────────────────────── */
+
+    .browse-btn {
+      height: 24px;
+      padding: 0 10px;
+      flex-shrink: 0;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      color: var(--color-text-dim);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 80ms, color 80ms;
+    }
+
+    .browse-btn:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+      border-color: #666;
+    }
+
+    /* ── Format tab strip ──────────────────────────────────────────────────── */
+
+    /*
+      The strip replaces the current <select> dropdown. Each tab is a compact
+      button. The active tab gets an accent underline + slightly lighter bg.
+      Non-DDS tabs are shown greyed out since this is the DDS design prototype;
+      clicking them would switch the options section content in production.
+    */
+
+    .format-tabs {
+      display: flex;
+      border: 1px solid var(--color-border-light);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .format-tab {
+      height: 24px;
+      padding: 0 12px;
+      border: none;
+      border-right: 1px solid var(--color-border);
+      background: var(--color-surface-2);
+      color: var(--color-text-muted);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 80ms, color 80ms;
+      position: relative;
+    }
+
+    .format-tab:last-child { border-right: none; }
+
+    .format-tab:hover:not(.active) {
+      background: var(--color-surface-hover);
+      color: var(--color-text-dim);
+    }
+
+    .format-tab.active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+      box-shadow: inset 0 -2px 0 var(--color-accent);
+    }
+
+    /* ── Divider ───────────────────────────────────────────────────────────── */
+
+    .options-divider {
+      height: 1px;
+      background: var(--color-border);
+      margin: 4px 0 14px;
+    }
+
+    /* ── Select / dropdown ─────────────────────────────────────────────────── */
+
+    .select {
+      flex: 1;
+      height: 26px;
+      padding: 0 24px 0 7px;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      color: var(--color-text);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7a7a'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      cursor: pointer;
+    }
+
+    .select:focus {
+      outline: 1px solid var(--color-accent);
+      outline-offset: 0;
+    }
+
+    .select option { background: var(--color-surface); }
+
+    /* ── Segmented toggle (2-option controls) ──────────────────────────────── */
+
+    .seg-toggle {
+      display: flex;
+      border: 1px solid var(--color-border-light);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .seg-btn {
+      height: 24px;
+      padding: 0 11px;
+      border: none;
+      border-right: 1px solid var(--color-border);
+      background: var(--color-surface-2);
+      color: var(--color-text-muted);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 80ms, color 80ms;
+    }
+
+    .seg-btn:last-child { border-right: none; }
+
+    .seg-btn:hover:not(.active):not(:disabled) {
+      background: var(--color-surface-hover);
+      color: var(--color-text-dim);
+    }
+
+    .seg-btn.active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    /*
+      Disabled: the button is visually washed out and unclickable.
+      Used when "Generate full mip chain" is unavailable (non-PoT canvas).
+    */
+    .seg-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    /*
+      Locked toggle (header forced to DX10 by BC6H / BC7 selection).
+      The whole control becomes non-interactive; the active button shows
+      in a muted style to signal it is system-set, not user-chosen.
+    */
+    .seg-toggle.locked {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    /* ── Inline notes ──────────────────────────────────────────────────────── */
+
+    /*
+      Notes sit directly below their associated control row.
+      Left margin aligns the note's left edge with the control (label width +
+      gap = 82 + 10 = 92px).
+    */
+    .inline-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin: -4px 0 10px 92px;
+      padding: 5px 8px;
+      border-radius: 2px;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    .inline-note.warning {
+      background: var(--color-warning-bg);
+      border: 1px solid var(--color-warning-border);
+      color: var(--color-warning-text);
+    }
+
+    .inline-note.info {
+      background: var(--color-info-bg);
+      border: 1px solid var(--color-info-border);
+      color: var(--color-text-dim);
+    }
+
+    .note-icon {
+      flex-shrink: 0;
+      font-size: 10px;
+    }
+
+    /* ── Footer ────────────────────────────────────────────────────────────── */
+
+    .modal-footer {
+      border-top: 1px solid var(--color-border);
+      padding: 10px 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .footer-error {
+      font-size: 11px;
+      color: var(--color-danger);
+      line-height: 1.4;
+    }
+
+    .footer-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Buttons ───────────────────────────────────────────────────────────── */
+
+    .btn-secondary {
+      height: 26px;
+      padding: 0 14px;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      color: var(--color-text-dim);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background 80ms, color 80ms, border-color 80ms;
+    }
+
+    .btn-secondary:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    /*
+      Cancel becomes visually prominent (red border) during export so the user
+      can clearly find the abort action while the progress spinner is running.
+    */
+    .btn-secondary.cancel-active {
+      border-color: var(--color-danger);
+      color: var(--color-danger);
+    }
+
+    .btn-secondary.cancel-active:hover {
+      background: rgba(192, 64, 64, 0.1);
+    }
+
+    .btn-primary {
+      height: 26px;
+      padding: 0 18px;
+      background: var(--color-accent);
+      border: 1px solid rgba(6, 153, 251, 0.5);
+      border-radius: 2px;
+      color: #fff;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: background 80ms;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--color-accent-hover);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    /* ── Progress spinner ──────────────────────────────────────────────────── */
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      width: 11px;
+      height: 11px;
+      border: 2px solid rgba(255, 255, 255, 0.28);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── Compression hint line (below compression dropdown) ───────────────── */
+
+    /*
+      A small dim sub-label shown beneath the compression dropdown giving
+      a one-line technical summary (bits-per-pixel, alpha capability) so
+      the artist can quickly judge the trade-off without opening docs.
+    */
+    .comp-hint {
+      margin: -6px 0 10px 92px;
+      font-size: 10px;
+      color: var(--color-text-muted);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Prototype chrome ───────────────────────────────────────────────────── -->
+  <header class="proto-header">
+    <span class="proto-title">PixelShop / <em>DDS Format Support</em> — Export As dialog</span>
+    <div class="hdiv"></div>
+    <span class="state-label">State:</span>
+    <div class="state-toggle">
+      <button class="state-btn active"  onclick="setState('default')">Default (BC3)</button>
+      <button class="state-btn"         onclick="setState('bc7')">BC7 → Header Locked</button>
+      <button class="state-btn"         onclick="setState('npot')">Non-PoT Canvas</button>
+      <button class="state-btn"         onclick="setState('exporting')">Exporting…</button>
+      <button class="state-btn"         onclick="setState('error')">Export Error</button>
+    </div>
+    <span class="proto-hint">460 px dialog</span>
+  </header>
+
+  <!-- ── Stage ─────────────────────────────────────────────────────────────── -->
+  <div class="stage">
+
+    <!-- Faint app topbar / menubar for context -->
+    <div class="app-chrome">
+      <span class="chrome-menu-item">File</span>
+      <span class="chrome-menu-item">Edit</span>
+      <span class="chrome-menu-item">Select</span>
+      <span class="chrome-menu-item">Layer</span>
+      <span class="chrome-menu-item">Adjustments</span>
+      <span class="chrome-menu-item">Effects</span>
+      <span class="chrome-menu-item">Filters</span>
+      <span class="chrome-menu-item active">View</span>
+      <span class="chrome-menu-item">Help</span>
+    </div>
+
+    <!-- Modal overlay (dims the workspace) -->
+    <div class="modal-overlay">
+
+      <!-- ── Modal dialog ────────────────────────────────────────────────── -->
+      <div class="modal-dialog">
+
+        <!-- Title bar -->
+        <div class="modal-titlebar">
+          <span class="modal-title">Export As</span>
+          <button class="modal-close" title="Close">✕</button>
+        </div>
+
+        <!-- Body -->
+        <div class="modal-body">
+
+          <!-- ── Export Settings ──────────────────────────────────────── -->
+          <p class="section-title">Export Settings</p>
+
+          <!-- File path -->
+          <div class="field-row">
+            <label class="field-label" for="ex-path">File</label>
+            <input id="ex-path" type="text" class="text-input"
+                   value="D:\Art\Game\Assets\Textures\armor_diffuse.dds">
+            <button class="browse-btn">Browse…</button>
+          </div>
+
+          <!--
+            Format tab strip
+            ─────────────────
+            Replaces the current <select> in ExportDialog.tsx.
+            Six tabs: PNG · JPEG · WebP · TGA · TIFF · DDS.
+            The active tab (DDS here) carries an accent-blue underline.
+            Selecting any tab would update the file extension and swap
+            the options section below the divider.
+          -->
+          <div class="field-row">
+            <label class="field-label">Format</label>
+            <div class="format-tabs" id="format-tabs">
+              <button class="format-tab"        onclick="selectFormat(this)">PNG</button>
+              <button class="format-tab"        onclick="selectFormat(this)">JPEG</button>
+              <button class="format-tab"        onclick="selectFormat(this)">WebP</button>
+              <button class="format-tab"        onclick="selectFormat(this)">TGA</button>
+              <button class="format-tab"        onclick="selectFormat(this)">TIFF</button>
+              <button class="format-tab active" onclick="selectFormat(this)">DDS</button>
+            </div>
+          </div>
+
+          <!-- Divider between common settings and per-format options -->
+          <div class="options-divider"></div>
+
+          <!-- ── DDS Options ──────────────────────────────────────────── -->
+          <p class="section-title">DDS Options</p>
+
+          <!--
+            Compression
+            ────────────
+            Full dropdown: 9 options spanning uncompressed through BCx.
+            Default: BC3 — Full Alpha (most common general-purpose format).
+            Each option maps to a distinct WASM compression path.
+          -->
+          <div class="field-row">
+            <label class="field-label" for="dds-comp">Compression</label>
+            <select id="dds-comp" class="select" onchange="onCompChange()">
+              <option value="rgba8">Uncompressed (RGBA8)</option>
+              <option value="bc1">BC1 — No Alpha</option>
+              <option value="bc1a">BC1 — 1-bit Alpha</option>
+              <option value="bc2">BC2</option>
+              <option value="bc3" selected>BC3 — Full Alpha</option>
+              <option value="bc4">BC4 — Single Channel</option>
+              <option value="bc5">BC5 — Dual Channel</option>
+              <option value="bc6h">BC6H — HDR Float</option>
+              <option value="bc7">BC7 — High Quality</option>
+            </select>
+          </div>
+
+          <!-- Per-compression hint: bpp / alpha capability summary -->
+          <div class="comp-hint" id="comp-hint">
+            BC3 / DXT5 · 8 bpp · interpolated alpha — best general-purpose choice
+          </div>
+
+          <!--
+            Mip Maps
+            ─────────
+            Two-option segmented toggle. "Generate full mip chain" is disabled
+            and locked to "Base level only" when the canvas dimensions are not
+            both powers of two (non-PoT state demo). A warning note appears
+            directly below the control in that case.
+          -->
+          <div class="field-row">
+            <label class="field-label">Mip Maps</label>
+            <div class="seg-toggle" id="mip-toggle">
+              <button class="seg-btn active" id="mip-base"
+                      onclick="selectSeg('mip-toggle', this)">Base level only</button>
+              <button class="seg-btn"        id="mip-full"
+                      onclick="selectSeg('mip-toggle', this)">Generate full mip chain</button>
+            </div>
+          </div>
+
+          <div class="inline-note warning" id="mip-warning" style="display:none">
+            <span class="note-icon">⚠</span>
+            <span>Mip chains require power-of-two dimensions.
+                  This canvas is 800×600 — only base level can be exported.</span>
+          </div>
+
+          <!--
+            Header Format
+            ──────────────
+            Two-option segmented toggle. Defaults to Modern (DX10).
+            When BC6H or BC7 is selected in the Compression dropdown the
+            entire toggle is locked to DX10 (it becomes non-interactive and
+            visually muted) and an info note appears below explaining why.
+          -->
+          <div class="field-row">
+            <label class="field-label">Header</label>
+            <div class="seg-toggle" id="header-toggle">
+              <button class="seg-btn active" id="hdr-dx10"
+                      onclick="selectSeg('header-toggle', this)">Modern (DX10)</button>
+              <button class="seg-btn"        id="hdr-dx9"
+                      onclick="selectSeg('header-toggle', this)">Backward Compatible (DX9)</button>
+            </div>
+          </div>
+
+          <div class="inline-note info" id="header-note" style="display:none">
+            <span class="note-icon">ℹ</span>
+            <span>BC6H and BC7 require the DX10 header extension.</span>
+          </div>
+
+        </div><!-- .modal-body -->
+
+        <!-- ── Footer ──────────────────────────────────────────────────── -->
+        <div class="modal-footer">
+
+          <!-- Inline error (shown on export failure) -->
+          <div class="footer-error" id="footer-error" style="display:none">
+            Export failed: compression error. Please try a different format or check
+            available memory.
+          </div>
+
+          <div class="footer-actions">
+            <button class="btn-secondary" id="cancel-btn">Cancel</button>
+            <button class="btn-primary"   id="export-btn">
+              <span id="export-label">Export</span>
+              <span class="spinner"    id="export-spinner" style="display:none"></span>
+            </button>
+          </div>
+
+        </div><!-- .modal-footer -->
+
+      </div><!-- .modal-dialog -->
+    </div><!-- .modal-overlay -->
+  </div><!-- .stage -->
+
+  <!-- ── Compression hint map ─────────────────────────────────────────────── -->
+  <script>
+    const COMP_HINTS = {
+      rgba8: 'Uncompressed · 32 bpp · full 8-bit alpha — largest file size, no quality loss',
+      bc1:   'BC1 / DXT1 · 4 bpp · no alpha — colour textures, minimal memory',
+      bc1a:  'BC1 / DXT1 · 4 bpp · 1-bit punch-through alpha — cutout foliage / fences',
+      bc2:   'BC2 / DXT3 · 8 bpp · explicit 4-bit alpha — sharp alpha gradients',
+      bc3:   'BC3 / DXT5 · 8 bpp · interpolated alpha — best general-purpose choice',
+      bc4:   'BC4 · 4 bpp · single luminance/red channel — heightmaps, roughness masks',
+      bc5:   'BC5 · 8 bpp · dual-channel RG — normal maps, motion vectors',
+      bc6h:  'BC6H · 8 bpp · HDR float (UF16) — environment maps, light maps · DX10 only',
+      bc7:   'BC7 · 8 bpp · high quality RGBA — diffuse / albedo textures · DX10 only',
+    };
+
+    // ── State machine ────────────────────────────────────────────────────────
+
+    const STATE_NAMES = ['default', 'bc7', 'npot', 'exporting', 'error'];
+
+    function setState(state) {
+      // Highlight the correct chrome state button
+      document.querySelectorAll('.state-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', STATE_NAMES[i] === state);
+      });
+
+      const compSelect     = document.getElementById('dds-comp');
+      const compHint       = document.getElementById('comp-hint');
+      const mipFull        = document.getElementById('mip-full');
+      const mipBase        = document.getElementById('mip-base');
+      const mipWarning     = document.getElementById('mip-warning');
+      const headerToggle   = document.getElementById('header-toggle');
+      const hdrDx10        = document.getElementById('hdr-dx10');
+      const hdrDx9         = document.getElementById('hdr-dx9');
+      const headerNote     = document.getElementById('header-note');
+      const footerError    = document.getElementById('footer-error');
+      const exportBtn      = document.getElementById('export-btn');
+      const exportLabel    = document.getElementById('export-label');
+      const exportSpinner  = document.getElementById('export-spinner');
+      const cancelBtn      = document.getElementById('cancel-btn');
+
+      // ── Hard-reset to clean defaults ──────────────────────────────────────
+      compSelect.value = 'bc3';
+      compHint.textContent = COMP_HINTS['bc3'];
+
+      mipFull.disabled = false;
+      mipBase.classList.add('active');
+      mipFull.classList.remove('active');
+      mipWarning.style.display = 'none';
+
+      headerToggle.classList.remove('locked');
+      hdrDx10.classList.add('active');
+      hdrDx9.classList.remove('active');
+      headerNote.style.display = 'none';
+
+      footerError.style.display = 'none';
+      exportBtn.disabled = false;
+      exportLabel.textContent = 'Export';
+      exportSpinner.style.display = 'none';
+      cancelBtn.classList.remove('cancel-active');
+
+      // ── Apply per-state overrides ─────────────────────────────────────────
+
+      if (state === 'default') {
+        // Nothing extra — clean defaults demonstrate the normal DDS panel.
+      }
+
+      else if (state === 'bc7') {
+        // BC7 chosen → header auto-locked to DX10, control disabled + info note.
+        compSelect.value = 'bc7';
+        compHint.textContent = COMP_HINTS['bc7'];
+        headerToggle.classList.add('locked');
+        hdrDx9.classList.remove('active');
+        headerNote.style.display = 'flex';
+      }
+
+      else if (state === 'npot') {
+        // Canvas is 800×600 (non-PoT) → mip chain unavailable, warning shown.
+        mipFull.disabled = true;
+        mipWarning.style.display = 'flex';
+      }
+
+      else if (state === 'exporting') {
+        // BCx compression running in WASM — spinner on button, cancel is prominent.
+        exportBtn.disabled = true;
+        exportLabel.textContent = 'Exporting…';
+        exportSpinner.style.display = '';
+        cancelBtn.classList.add('cancel-active');
+      }
+
+      else if (state === 'error') {
+        // Compression or write failed — inline error, dialog stays open.
+        footerError.style.display = 'block';
+      }
+    }
+
+    // ── Live compression hint update ─────────────────────────────────────────
+
+    function onCompChange() {
+      const val   = document.getElementById('dds-comp').value;
+      const hint  = document.getElementById('comp-hint');
+      const headerToggle = document.getElementById('header-toggle');
+      const headerNote   = document.getElementById('header-note');
+      const hdrDx10      = document.getElementById('hdr-dx10');
+      const hdrDx9       = document.getElementById('hdr-dx9');
+
+      hint.textContent = COMP_HINTS[val] || '';
+
+      // Auto-lock header to DX10 for BC6H and BC7
+      const needsDx10 = val === 'bc6h' || val === 'bc7';
+      headerToggle.classList.toggle('locked', needsDx10);
+      headerNote.style.display = needsDx10 ? 'flex' : 'none';
+
+      if (needsDx10) {
+        hdrDx10.classList.add('active');
+        hdrDx9.classList.remove('active');
+      }
+    }
+
+    // ── Segmented toggle helper ───────────────────────────────────────────────
+
+    function selectSeg(toggleId, clickedBtn) {
+      const toggle = document.getElementById(toggleId);
+      if (toggle.classList.contains('locked')) return;
+      toggle.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+      clickedBtn.classList.add('active');
+    }
+
+    // ── Format tab strip helper ───────────────────────────────────────────────
+
+    function selectFormat(tab) {
+      document.querySelectorAll('#format-tabs .format-tab')
+        .forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    }
+  </script>
+
+</body>
+</html>

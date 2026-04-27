@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_LENS_FLARE_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct LensFlareParams {
   centerX       : u32,
   centerY       : u32,
@@ -10,10 +12,13 @@ struct LensFlareParams {
   streakStrength: u32,
   streakWidth   : u32,
   streakRotation: u32,
+  imgWidth      : u32,
+  imgHeight     : u32,
+  _pad0         : u32,
+  _pad1         : u32,
 }
 
-@group(0) @binding(0) var dstTex : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var<uniform> params : LensFlareParams;
+@group(0) @binding(0) var<uniform> params : LensFlareParams;
 
 fn gauss1(d : f32, sigma : f32) -> f32 {
   return exp(-(d * d) / (sigma * sigma));
@@ -140,20 +145,18 @@ fn flare_anamorphic(rdx: f32, rdy: f32, odx: f32, ody: f32, dist: f32, cx: f32, 
   return col;
 }
 
-@compute @workgroup_size(8, 8)
-fn cs_lens_flare(@builtin(global_invocation_id) id : vec3u) {
-  let dims = textureDimensions(dstTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let px = f32(id.x); let py = f32(id.y);
+@fragment
+fn fs_lens_flare(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let px = in.pos.x; let py = in.pos.y;
   let cx = f32(params.centerX); let cy = f32(params.centerY);
   let dx = px - cx; let dy = py - cy;
   let dist = sqrt(dx*dx + dy*dy);
-  let w = f32(dims.x); let h = f32(dims.y);
+  let w = f32(params.imgWidth); let h = f32(params.imgHeight);
   let diag = sqrt(w*w + h*h);
-  let brightnessF = f32(params.brightness)    / 100.0;
-  let ringO       = f32(params.ringOpacity)   / 100.0;
-  let streakS     = f32(params.streakStrength)/ 100.0;
-  let streakWF    = f32(params.streakWidth)   / 100.0;
+  let brightnessF = f32(params.brightness)     / 100.0;
+  let ringO       = f32(params.ringOpacity)    / 100.0;
+  let streakS     = f32(params.streakStrength) / 100.0;
+  let streakWF    = f32(params.streakWidth)    / 100.0;
   let rotRad      = f32(params.streakRotation) * (3.14159265358979 / 180.0);
   let cosR        = cos(rotRad);
   let sinR        = sin(rotRad);
@@ -165,13 +168,13 @@ fn cs_lens_flare(@builtin(global_invocation_id) id : vec3u) {
   else if (params.lensType == 2u) { color = flare_prime105(rdx,rdy,dist,diag,ringO,streakS,streakWF); }
   else if (params.lensType == 3u) { color = flare_movie_prime(rdx,rdy,dx,dy,dist,cx,cy,diag,w,h,ringO,streakS,streakWF); }
   else                             { color = flare_anamorphic(rdx,rdy,dx,dy,dist,cx,cy,diag,w,h,ringO,streakS,streakWF); }
-  textureStore(dstTex, vec2i(id.xy), clamp(color * brightnessF, vec4f(0.0), vec4f(1.0)));
+  return clamp(color * brightnessF, vec4f(0.0), vec4f(1.0));
 }
 ` as const
 
 export async function runRenderLensFlare(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   w: number,
   h: number,
   centerX: number,
@@ -186,26 +189,27 @@ export async function runRenderLensFlare(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
-  const paramsData = new Uint32Array([Math.round(centerX), Math.round(centerY), brightness, lensType, ringOpacity, streakStrength, streakWidth, streakRotation])
-  const paramsBuf  = createUniformBuffer(device, 32)
+  const paramsData = new Uint32Array([Math.round(centerX), Math.round(centerY), brightness, lensType, ringOpacity, streakStrength, streakWidth, streakRotation, w, h, 0, 0])
+  const paramsBuf  = createUniformBuffer(device, 48)
   writeUniformBuffer(device, paramsBuf, paramsData)
 
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
-      { binding: 0, resource: outTex.createView() },
-      { binding: 1, resource: { buffer: paramsBuf } },
+      { binding: 0, resource: { buffer: paramsBuf } },
     ],
   })
 
   const encoder = device.createCommandEncoder()
-  const pass    = encoder.beginComputePass()
+  const pass    = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

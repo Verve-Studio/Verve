@@ -1,4 +1,4 @@
-import type { AdjustmentLayerState, LayerState, RGBAColor, OutlineParams } from '@/types'
+import type { AdjustmentLayerState, LayerState, RGBAColor, OutlineParams, PixelFormat } from '@/types'
 import { isGroupLayer } from '@/types'
 import { buildCurvesLuts } from '@/core/operations/adjustments/curves'
 import type { GpuLayer, AdjustmentRenderOp, RenderPlanEntry } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
@@ -372,6 +372,7 @@ export function buildSubPlan(
   adjustmentMaskMap: Map<string, GpuLayer>,
   bypassedAdjustmentIds: ReadonlySet<string>,
   swatches: RGBAColor[],
+  pixelFormat: PixelFormat = 'rgba8',
 ): RenderPlanEntry[] {
   const layersById = new Map(layers.map(l => [l.id, l]))
   const plan: RenderPlanEntry[] = []
@@ -385,6 +386,7 @@ export function buildSubPlan(
 
     // Adjustment layers
     if ('type' in ls && ls.type === 'adjustment') {
+      if (pixelFormat === 'indexed8') continue
       const adjLs = ls as AdjustmentLayerState
       const parent = layersById.get(adjLs.parentId)
       // Per-layer attachment (parentId → non-group layer): skip, bundled with pixel parent
@@ -405,7 +407,7 @@ export function buildSubPlan(
         blendMode: ls.blendMode,
         visible: ls.visible,
         children: buildSubPlan(
-          ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches,
+          ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
         ),
       })
       continue
@@ -416,6 +418,7 @@ export function buildSubPlan(
     if (!baseLayer) continue
 
     const adjustments: AdjustmentRenderOp[] = []
+    if (pixelFormat !== 'indexed8') {
     for (const adj of layers) {
       if (
         'type' in adj &&
@@ -426,6 +429,7 @@ export function buildSubPlan(
         const op = buildAdjustmentEntry(adj as AdjustmentLayerState, adjustmentMaskMap.get(adj.id), swatches)
         if (op) adjustments.push(op)
       }
+    }
     }
 
     if (adjustments.length > 0) {
@@ -451,9 +455,10 @@ export function buildRenderPlan(
   adjustmentMaskMap: Map<string, GpuLayer>,
   bypassedAdjustmentIds: ReadonlySet<string>,
   swatches: RGBAColor[],
+  pixelFormat: PixelFormat = 'rgba8',
 ): RenderPlanEntry[] {
   return buildSubPlan(
     buildRootLayerIds(layers),
-    layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches,
+    layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
   )
 }

@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_BILATERAL_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct BilateralParams {
   radius       : u32,
   _pad0        : u32,
@@ -8,16 +10,15 @@ struct BilateralParams {
   sigmaColor   : f32,
 }
 
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var dstTex : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : BilateralParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_bilateral(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-
-  let center = textureLoad(srcTex, vec2i(id.xy), 0);
+@fragment
+fn fs_bilateral(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims   = textureDimensions(srcTex);
+  let coord  = vec2i(i32(in.pos.x), i32(in.pos.y));
+  let center = textureLoad(srcTex, coord, 0);
   let r      = i32(params.radius);
 
   let inv2SigmaS2 = 1.0 / (2.0 * params.sigmaSpatial * params.sigmaSpatial);
@@ -28,8 +29,8 @@ fn cs_bilateral(@builtin(global_invocation_id) id: vec3u) {
 
   for (var ky = -r; ky <= r; ky++) {
     for (var kx = -r; kx <= r; kx++) {
-      let sx = clamp(i32(id.x) + kx, 0, i32(dims.x) - 1);
-      let sy = clamp(i32(id.y) + ky, 0, i32(dims.y) - 1);
+      let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
+      let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
       let neighbor = textureLoad(srcTex, vec2i(sx, sy), 0);
 
       let spatialDist2 = f32(kx * kx + ky * ky);
@@ -44,13 +45,13 @@ fn cs_bilateral(@builtin(global_invocation_id) id: vec3u) {
   }
 
   let result = colorSum * (1.0 / weightSum);
-  textureStore(dstTex, vec2i(id.xy), vec4f(result, center.a));
+  return vec4f(result, center.a);
 }
 ` as const
 
 export async function runBilateral(
   device: GPUDevice,
-  pipeline: GPUComputePipeline,
+  pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
@@ -58,6 +59,8 @@ export async function runBilateral(
   sigmaSpatial: number,
   sigmaColor: number,
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -73,7 +76,7 @@ export async function runBilateral(
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const buf = new ArrayBuffer(16)
@@ -85,20 +88,21 @@ export async function runBilateral(
   const paramsBuf = createUniformBuffer(device, 16)
   writeUniformBuffer(device, paramsBuf, buf)
 
-  const encoder = device.createCommandEncoder()
+  const encoder   = device.createCommandEncoder()
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const pass = encoder.beginComputePass()
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   pass.setPipeline(pipeline)
   pass.setBindGroup(0, bindGroup)
-  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  pass.draw(6)
   pass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256

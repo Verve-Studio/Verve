@@ -1,6 +1,8 @@
+import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
 export const FILTER_GAUSSIAN_H_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct GaussianBlurParams {
   radius : u32,
   _pad0  : u32,
@@ -8,15 +10,14 @@ struct GaussianBlurParams {
   _pad2  : u32,
 }
 
-@group(0) @binding(0) var srcTex     : texture_2d<f32>;
-@group(0) @binding(1) var dstTex     : texture_storage_2d<rgba16float, write>;
-@group(0) @binding(2) var<uniform> params    : GaussianBlurParams;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
+@group(0) @binding(2) var<uniform> params : GaussianBlurParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_gaussian_h(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord    = vec2i(id.xy);
+@fragment
+fn fs_gaussian_h(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims     = textureDimensions(srcTex);
+  let coord    = vec2i(i32(in.pos.x), i32(in.pos.y));
   let sigma    = max(f32(params.radius), 1.0) / 3.0;
   let inv2sig2 = 1.0 / (2.0 * sigma * sigma);
   let maxR     = i32(params.radius);
@@ -31,11 +32,12 @@ fn cs_gaussian_h(@builtin(global_invocation_id) id: vec3u) {
     weightSum += w;
   }
 
-  textureStore(dstTex, coord, colorSum * (1.0 / weightSum));
+  return colorSum * (1.0 / weightSum);
 }
 ` as const
 
 export const FILTER_GAUSSIAN_V_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 struct GaussianBlurParams {
   radius : u32,
   _pad0  : u32,
@@ -43,15 +45,14 @@ struct GaussianBlurParams {
   _pad2  : u32,
 }
 
-@group(0) @binding(0) var srcTex     : texture_2d<f32>;
-@group(0) @binding(1) var dstTex     : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(2) var<uniform> params    : GaussianBlurParams;
+@group(0) @binding(0) var srcTex          : texture_2d<f32>;
+@group(0) @binding(1) var smp             : sampler;
+@group(0) @binding(2) var<uniform> params : GaussianBlurParams;
 
-@compute @workgroup_size(8, 8)
-fn cs_gaussian_v(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord    = vec2i(id.xy);
+@fragment
+fn fs_gaussian_v(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims     = textureDimensions(srcTex);
+  let coord    = vec2i(i32(in.pos.x), i32(in.pos.y));
   let sigma    = max(f32(params.radius), 1.0) / 3.0;
   let inv2sig2 = 1.0 / (2.0 * sigma * sigma);
   let maxR     = i32(params.radius);
@@ -66,22 +67,22 @@ fn cs_gaussian_v(@builtin(global_invocation_id) id: vec3u) {
     weightSum += w;
   }
 
-  let blurred = colorSum * (1.0 / weightSum);
-
-  textureStore(dstTex, coord, blurred);
+  return colorSum * (1.0 / weightSum);
 }
 ` as const
 
 export async function runGaussianBlur(
   device: GPUDevice,
-  hPipeline: GPUComputePipeline,
-  vPipeline: GPUComputePipeline,
-  intermediate0: GPUTexture,
+  hPipeline: GPURenderPipeline,
+  vPipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
   radius: number,
+  format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
+  const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
+
   const srcTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
@@ -94,10 +95,16 @@ export async function runGaussianBlur(
     { width: w, height: h },
   )
 
+  const intermediateTex = device.createTexture({
+    size: { width: w, height: h },
+    format,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+  })
+
   const outTex = device.createTexture({
     size: { width: w, height: h },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
 
   const paramsData = new Uint32Array([radius, 0, 0, 0])
@@ -106,34 +113,36 @@ export async function runGaussianBlur(
 
   const encoder = device.createCommandEncoder()
 
-  const hBindGroup = device.createBindGroup({
+  const hBg = device.createBindGroup({
     layout: hPipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: intermediate0.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const hPass = encoder.beginComputePass()
+  const hPass = encoder.beginRenderPass({
+    colorAttachments: [{ view: intermediateTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   hPass.setPipeline(hPipeline)
-  hPass.setBindGroup(0, hBindGroup)
-  hPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  hPass.setBindGroup(0, hBg)
+  hPass.draw(6)
   hPass.end()
 
-  const vBindGroup = device.createBindGroup({
+  const vBg = device.createBindGroup({
     layout: vPipeline.getBindGroupLayout(0),
     entries: [
-      { binding: 0, resource: intermediate0.createView() },
-      { binding: 1, resource: outTex.createView() },
+      { binding: 0, resource: intermediateTex.createView() },
+      { binding: 1, resource: smp },
       { binding: 2, resource: { buffer: paramsBuf } },
     ],
   })
-
-  const vPass = encoder.beginComputePass()
+  const vPass = encoder.beginRenderPass({
+    colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+  })
   vPass.setPipeline(vPipeline)
-  vPass.setBindGroup(0, vBindGroup)
-  vPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+  vPass.setBindGroup(0, vBg)
+  vPass.draw(6)
   vPass.end()
 
   const alignedBpr = Math.ceil(w * 4 / 256) * 256
@@ -151,6 +160,7 @@ export async function runGaussianBlur(
   readbuf.unmap()
 
   srcTex.destroy()
+  intermediateTex.destroy()
   outTex.destroy()
   paramsBuf.destroy()
   readbuf.destroy()

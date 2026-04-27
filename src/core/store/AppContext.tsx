@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer } from 'react'
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush } from '@/types'
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
 import { isGroupLayer } from '@/types'
 import { getDescendantIds, getParentGroup } from '@/utils/layerTree'
 import { DEFAULT_SWATCHES } from './tabTypes'
@@ -38,10 +38,10 @@ export type AppAction =
   | { type: 'SET_GRID_COLOR'; payload: string }
   | { type: 'SET_GRID_TYPE'; payload: GridType }
   | { type: 'SET_HISTORY'; payload: { canUndo: boolean; canRedo: boolean } }
-  | { type: 'NEW_CANVAS'; payload: { width: number; height: number; backgroundFill: BackgroundFill } }
-  | { type: 'OPEN_FILE'; payload: { width: number; height: number; layers: LayerState[]; activeLayerId: string | null } }
-  | { type: 'RESTORE_TAB'; payload: { width: number; height: number; backgroundFill: BackgroundFill; layers: LayerState[]; activeLayerId: string | null; zoom: number; tiledMode: boolean; showTileGrid: boolean } }
-  | { type: 'SWITCH_TAB';   payload: { width: number; height: number; backgroundFill: BackgroundFill; layers: LayerState[]; activeLayerId: string | null; zoom: number; tiledMode: boolean; showTileGrid: boolean } }
+  | { type: 'NEW_CANVAS'; payload: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat } }
+  | { type: 'OPEN_FILE'; payload: { width: number; height: number; layers: LayerState[]; activeLayerId: string | null; pixelFormat?: PixelFormat } }
+  | { type: 'RESTORE_TAB'; payload: { width: number; height: number; backgroundFill: BackgroundFill; layers: LayerState[]; activeLayerId: string | null; zoom: number; tiledMode: boolean; showTileGrid: boolean; pixelFormat?: PixelFormat } }
+  | { type: 'SWITCH_TAB';   payload: { width: number; height: number; backgroundFill: BackgroundFill; layers: LayerState[]; activeLayerId: string | null; zoom: number; tiledMode: boolean; showTileGrid: boolean; pixelFormat?: PixelFormat } }
   | { type: 'RESTORE_LAYERS'; payload: { layers: LayerState[]; activeLayerId: string | null } }
   | { type: 'RESIZE_CANVAS'; payload: { width: number; height: number } }
   | { type: 'SET_SWATCHES'; payload: RGBAColor[] }
@@ -63,6 +63,7 @@ export type AppAction =
   | { type: 'MOVE_LAYER_INTO_GROUP'; payload: { layerId: string; targetGroupId: string; insertIndex?: number } }
   | { type: 'MOVE_LAYER_OUT_OF_GROUP'; payload: { layerId: string; targetParentGroupId: string | null; insertIndex: number } }
   | { type: 'REORDER_ADJUSTMENT_LAYERS'; payload: { parentId: string; orderedChildIds: string[] } }
+  | { type: 'SET_PIXEL_FORMAT'; payload: PixelFormat }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ const initialState: AppState = {
   canvas: { width: 512, height: 512, zoom: 1, panX: 0, panY: 0, showGrid: false, gridSize: 16, gridColor: '#808080', gridType: 'normal' as GridType, backgroundFill: 'white', key: 0, tiledMode: false, showTileGrid: false },
   history: { canUndo: false, canRedo: false },
   openAdjustmentLayerId: null,
+  pixelFormat: 'rgba8',
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -393,12 +395,16 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_HISTORY':
       return { ...state, history: action.payload }
 
+    case 'SET_PIXEL_FORMAT':
+      return { ...state, pixelFormat: action.payload }
+
     case 'NEW_CANVAS':
       return {
         ...state,
         layers: [{ id: 'layer-0', name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }],
         activeLayerId: 'layer-0',
         selectedLayerIds: [],
+        pixelFormat: action.payload.pixelFormat ?? 'rgba8',
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -418,6 +424,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
+        pixelFormat: action.payload.pixelFormat ?? 'rgba8',
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -455,6 +462,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
+        pixelFormat: action.payload.pixelFormat ?? 'rgba8',
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -478,6 +486,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
+        pixelFormat: action.payload.pixelFormat ?? 'rgba8',
         canvas: {
           ...state.canvas,
           width: action.payload.width,

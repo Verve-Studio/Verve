@@ -1,6 +1,7 @@
-import { MASK_FLAGS_STRUCT, HSL_HELPERS } from './helpers'
+import { ADJ_VERTEX_SHADER, MASK_FLAGS_STRUCT, HSL_HELPERS } from './helpers'
 
 export const CG_COMPUTE = /* wgsl */ `
+${ADJ_VERTEX_SHADER}
 ${MASK_FLAGS_STRUCT}
 ${HSL_HELPERS}
 
@@ -24,18 +25,15 @@ struct CGParams {
 }
 
 @group(0) @binding(0) var srcTex   : texture_2d<f32>;
-@group(0) @binding(1) var dstTex   : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var smp      : sampler;
 @group(0) @binding(2) var<uniform> params    : CGParams;
 @group(0) @binding(3) var selMask  : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
 
-@compute @workgroup_size(8, 8)
-fn cs_color_grading(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(srcTex);
-  if (id.x >= dims.x || id.y >= dims.y) { return; }
-  let coord = vec2i(id.xy);
-  let src = textureLoad(srcTex, coord, 0);
-  if (src.a < 0.0001) { textureStore(dstTex, coord, src); return; }
+@fragment
+fn fs_color_grading(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src = textureSample(srcTex, smp, in.uv);
+  if (src.a < 0.0001) { return src; }
 
   var rgb = src.rgb;
   let origLum = dot(src.rgb, vec3f(0.2126, 0.7152, 0.0722));
@@ -112,7 +110,7 @@ fn cs_color_grading(@builtin(global_invocation_id) id: vec3u) {
   rgb = clamp(mix(rgb, lumPreserved, params.lumMix / 100.0), vec3f(0.0), vec3f(1.0));
 
   var mask = 1.0f;
-  if (maskFlags.hasMask != 0u) { mask = textureLoad(selMask, coord, 0).r; }
-  textureStore(dstTex, coord, vec4f(mix(src.rgb, rgb, mask), src.a));
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return vec4f(mix(src.rgb, rgb, mask), src.a);
 }
 ` as const

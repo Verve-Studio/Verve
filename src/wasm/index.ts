@@ -452,3 +452,38 @@ export async function grabCutMincut(
     m._free(labelPtr)
   }
 }
+
+/** Maps each RGBA8 pixel to the nearest palette index (squared Euclidean distance in RGBA space).
+ *  Transparent pixels (alpha == 0) are assigned transparentIdx.
+ *  Returns a Uint8Array of length pixelCount containing one palette index per pixel. */
+export async function matchPaletteIndices(
+  rgba: Uint8Array,
+  palette: Array<{ r: number; g: number; b: number; a: number }>,
+  transparentIdx = 255,
+): Promise<Uint8Array> {
+  const palFlat = new Uint8Array(palette.length * 4)
+  palette.forEach((c, i) => {
+    palFlat[i * 4]     = c.r
+    palFlat[i * 4 + 1] = c.g
+    palFlat[i * 4 + 2] = c.b
+    palFlat[i * 4 + 3] = c.a
+  })
+
+  const m = await getPixelOps()
+  const pixelCount = rgba.length / 4
+
+  const rgbaPtr = m._malloc(rgba.byteLength)
+  const palPtr  = m._malloc(Math.max(palFlat.byteLength, 1))
+  const outPtr  = m._malloc(pixelCount)
+  try {
+    m.HEAPU8.set(rgba, rgbaPtr)
+    if (palFlat.byteLength > 0) m.HEAPU8.set(palFlat, palPtr)
+    m._matchPaletteIndices(rgbaPtr, pixelCount, palPtr, palette.length, outPtr, transparentIdx)
+    // Re-read HEAPU8 in case WASM memory grew during the call
+    return m.HEAPU8.slice(outPtr, outPtr + pixelCount)
+  } finally {
+    m._free(rgbaPtr)
+    m._free(palPtr)
+    m._free(outPtr)
+  }
+}

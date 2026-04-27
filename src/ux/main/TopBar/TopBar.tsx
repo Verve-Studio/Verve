@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react'
 import { MenuBar } from '../MenuBar/MenuBar'
 import type { MenuDef } from '../MenuBar/MenuBar'
-import type { AdjustmentType, FilterKey } from '@/types'
+import type { AdjustmentType, FilterKey, PixelFormat } from '@/types'
 import styles from './TopBar.module.scss'
 
 
@@ -75,11 +75,15 @@ interface TopBarProps {
   onOpenRecent?: (path: string) => void
   onClearRecentFiles?: () => void
   onExit?: () => void
+  /** Current document pixel format — drives the Image → Color Mode checked states. */
+  pixelFormat?: PixelFormat
+  /** Called when the user picks a color mode from Image → Color Mode. */
+  onSetColorMode?: (format: PixelFormat) => void
   /** When true, hides the custom menu bar (logo + menu) — used on macOS where the native app menu is shown instead. */
   isMac?: boolean
 }
 
-export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onPaste, onDelete, onResizeImage, onResizeCanvas, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, isMac }: TopBarProps): React.JSX.Element {
+export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onPaste, onDelete, onResizeImage, onResizeCanvas, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode, isMac }: TopBarProps): React.JSX.Element {
   const menus = useMemo((): MenuDef[] => [
     {
       label: 'File',
@@ -164,6 +168,19 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
       ]
     },
     {
+      label: 'Image',
+      items: [
+        {
+          label: 'Color Mode',
+          submenu: [
+            { label: 'RGB/8',        checked: pixelFormat === 'rgba8',    action: () => onSetColorMode?.('rgba8') },
+            { label: 'RGB/32 Float', checked: pixelFormat === 'rgba32f',  action: () => onSetColorMode?.('rgba32f') },
+            { label: 'Indexed/8',    checked: pixelFormat === 'indexed8', action: () => onSetColorMode?.('indexed8') },
+          ],
+        },
+      ],
+    },
+    {
       label: 'Adjustments',
       items: (() => {
         const result: MenuDef['items'] = []
@@ -175,7 +192,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
           lastGroup = item.group
           result.push({
             label:    item.label,
-            disabled: !isAdjustmentMenuEnabled,
+            disabled: !isAdjustmentMenuEnabled || pixelFormat === 'indexed8',
             action:   () => onCreateAdjustmentLayer?.(item.type),
           })
         }
@@ -194,7 +211,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
           lastGroup = item.group
           result.push({
             label:    item.label,
-            disabled: !isAdjustmentMenuEnabled,
+            disabled: !isAdjustmentMenuEnabled || pixelFormat === 'indexed8',
             action:   () => onCreateAdjustmentLayer?.(item.type),
           })
         }
@@ -213,7 +230,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
           lastGroup = item.group
           result.push({
             label:    item.label,
-            disabled: !isFiltersMenuEnabled,
+            disabled: !isFiltersMenuEnabled || pixelFormat === 'indexed8',
             action:   () => item.instant
               ? onInstantFilter?.(item.key)
               : onOpenFilterDialog?.(item.key),
@@ -245,7 +262,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
         { label: 'Keyboard Shortcuts', shortcut: '?', action: onKeyboardShortcuts },
       ]
     }
-  ], [isMac, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onPaste, onDelete, onResizeImage, onResizeCanvas, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit])
+  ], [isMac, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onPaste, onDelete, onResizeImage, onResizeCanvas, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode])
 
   // On macOS the native application menu replaces the entire custom top bar.
   if (isMac) return <></>

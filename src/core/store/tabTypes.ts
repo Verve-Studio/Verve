@@ -1,5 +1,5 @@
 import type { HistoryEntry } from '@/core/store/historyStore'
-import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush } from '@/types'
+import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
 
 // ─── Default swatch palette ───────────────────────────────────────────────────
 
@@ -37,6 +37,7 @@ export interface TabSnapshot {
   swatchGroups: SwatchGroup[]
   /** Pixel brushes stored with this document. */
   pixelBrushes: PixelBrush[]
+  pixelFormat: PixelFormat
 }
 
 // ─── Tab record ───────────────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ export interface TabRecord {
   tiledMode: boolean
   /** Session-only: tile grid overlay visibility for this tab. Not persisted. */
   showTileGrid: boolean
+  pixelFormat: PixelFormat
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,4 +80,5 @@ export const INITIAL_SNAPSHOT: TabSnapshot = {
   swatches: DEFAULT_SWATCHES,
   swatchGroups: [],
   pixelBrushes: [],
+  pixelFormat: 'rgba8',
 }

@@ -55,6 +55,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     canvasKey: 1,
     tiledMode: false,
     showTileGrid: false,
+    pixelFormat: 'rgba8',
   }])
   const [activeTabId, setActiveTabId]         = useState(initialTabId)
   const [pendingLayerData, setPendingLayerData] = useState<Map<string, string> | null>(null)
@@ -84,6 +85,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     swatches:       state.swatches,
     swatchGroups:   state.swatchGroups,
     pixelBrushes:   state.pixelBrushes,
+    pixelFormat:    state.pixelFormat,
   }), [state])
 
   /** Encode every active layer's pixel data into Map<layerId, dataURL> (+ geometry entries).
