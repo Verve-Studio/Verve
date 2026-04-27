@@ -114,6 +114,8 @@ export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
     }
   }
 
+  if(menus === undefined) return <nav ref={navRef} className={styles.menuBar} aria-label="Application menu" />
+
   return (
     <nav ref={navRef} className={styles.menuBar} aria-label="Application menu">
       {menus.map((menu) => (

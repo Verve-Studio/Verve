@@ -652,6 +652,8 @@ function AppContent(): React.JSX.Element {
         onInstantFilter={(key) => requireTransformDecision(() => filters.handleInstantFilter(key))}
         isFiltersMenuEnabled={adjustments.isAdjustmentMenuEnabled}
         filterMenuItems={FILTER_MENU_ITEMS}
+        onContentAwareFill={() => handleOpenCafDialog('fill')}
+        onContentAwareDelete={() => handleOpenCafDialog('delete')}
         onFreeTransform={handleEnterTransform}
         isFreeTransformEnabled={isFreeTransformEnabled}
         onInvertSelection={() => selectionStore.invert()}
