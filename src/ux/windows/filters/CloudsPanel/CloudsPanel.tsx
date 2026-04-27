@@ -17,7 +17,7 @@ export function CloudsPanel({ layer, parentLayerName }: Props): React.JSX.Elemen
       <div className={styles.row}>
         <span className={styles.label}>Scale</span>
         <div className={styles.trackWrap}>
-          <input type="range" className={styles.track} min={1} max={1000} step={1}
+          <input type="range" className={styles.track} min={1} max={50000} step={1}
             value={scale} style={{ '--pct': String((scale - 1) / 999) } as React.CSSProperties}
             onChange={(e) => up({ scale: Number(e.target.value) })} />
         </div>
