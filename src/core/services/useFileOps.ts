@@ -28,7 +28,7 @@ interface UseFileOpsOptions {
 
 export interface UseFileOpsReturn {
   untitledCounter: number
-  handleNewConfirm: (settings: { width: number; height: number; backgroundFill: BackgroundFill }) => void
+  handleNewConfirm: (settings: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat }) => void
   handleOpen: () => Promise<void>
   handleOpenPath: (path: string) => Promise<void>
   handleSave: (saveAs?: boolean) => Promise<void>
@@ -112,13 +112,14 @@ export function useFileOps({
 }: UseFileOpsOptions): UseFileOpsReturn {
   const [untitledCounter, setUntitledCounter] = useState(1)
 
-  const handleNewConfirm = useCallback(({ width, height, backgroundFill }: { width: number; height: number; backgroundFill: BackgroundFill }): void => {
+  const handleNewConfirm = useCallback(({ width, height, backgroundFill, pixelFormat }: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat }): void => {
     const snapshot        = captureActiveSnapshot()
     const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
     const savedLayerData  = serializeActiveTabPixels()
     const n               = untitledCounter
     setUntitledCounter(n + 1)
     const newId: string = makeTabId()
+    const fmt: PixelFormat = pixelFormat ?? 'rgba8'
     const newSnapshot: TabSnapshot = {
       canvasWidth: width, canvasHeight: height, backgroundFill,
       layers: [{ id: 'layer-0', name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }],
@@ -126,17 +127,17 @@ export function useFileOps({
       swatches: DEFAULT_SWATCHES,
       swatchGroups: [],
       pixelBrushes: [],
-      pixelFormat: 'rgba8',
+      pixelFormat: fmt,
     }
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat },
+      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: fmt },
     ]
     setTabs(updated)
     setActiveTabId(newId)
     historyStore.clear({ recaptureSnapshot: false })
     setPendingLayerData(null)
-    dispatch({ type: 'NEW_CANVAS', payload: { width, height, backgroundFill } })
+    dispatch({ type: 'NEW_CANVAS', payload: { width, height, backgroundFill, pixelFormat: fmt } })
   }, [tabs, activeTabId, untitledCounter, captureActiveSnapshot, serializeActiveTabPixels, dispatch, setTabs, setActiveTabId, setPendingLayerData])
 
   const openFromPath = useCallback(async (path: string): Promise<void> => {

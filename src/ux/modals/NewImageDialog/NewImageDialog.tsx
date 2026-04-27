@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import type { BackgroundFill } from '@/types'
+import type { BackgroundFill, PixelFormat } from '@/types'
 import { DialogButton } from '../../widgets/DialogButton/DialogButton'
 import { ModalDialog } from '../ModalDialog/ModalDialog'
 import styles from './NewImageDialog.module.scss'
@@ -10,6 +10,7 @@ export interface NewImageSettings {
   width: number
   height: number
   backgroundFill: BackgroundFill
+  pixelFormat: PixelFormat
 }
 
 export interface NewImageDialogProps {
@@ -63,12 +64,13 @@ export function NewImageDialog({ open, onConfirm, onCancel }: NewImageDialogProp
   const [resolution, setResolution]     = useState(72)
   const [backgroundFill, setBg]         = useState<BackgroundFill>('white')
   const [selectedPreset, setPreset]     = useState('512 × 512')
+  const [pixelFormat, setPixelFormat]   = useState<PixelFormat>('rgba8')
 
   // Reset to default 512×512 each time dialog opens
   useEffect(() => {
     if (open) {
       setWidth(512); setHeight(512); setResolution(72)
-      setBg('white'); setPreset('512 × 512')
+      setBg('white'); setPreset('512 × 512'); setPixelFormat('rgba8')
     }
   }, [open])
 
@@ -99,8 +101,8 @@ export function NewImageDialog({ open, onConfirm, onCancel }: NewImageDialogProp
   const handleConfirm = useCallback((): void => {
     const w = Math.max(1, Math.min(8192, Math.round(width  || 1)))
     const h = Math.max(1, Math.min(8192, Math.round(height || 1)))
-    onConfirm({ width: w, height: h, backgroundFill })
-  }, [width, height, backgroundFill, onConfirm])
+    onConfirm({ width: w, height: h, backgroundFill, pixelFormat })
+  }, [width, height, backgroundFill, pixelFormat, onConfirm])
 
   const isPortrait = width <= height
 
@@ -234,8 +236,17 @@ export function NewImageDialog({ open, onConfirm, onCancel }: NewImageDialogProp
 
             {/* Color Mode */}
             <div className={styles.fieldRow}>
-              <label className={styles.fieldLabel}>Color Mode</label>
-              <div className={styles.staticField}>RGB Color&nbsp;&nbsp;/&nbsp;&nbsp;8 bit</div>
+              <label className={styles.fieldLabel} htmlFor="ni-colormode">Color Mode</label>
+              <select
+                id="ni-colormode"
+                className={styles.select}
+                value={pixelFormat}
+                onChange={(e) => setPixelFormat(e.target.value as PixelFormat)}
+              >
+                <option value="rgba8">RGB Color / 8 bit</option>
+                <option value="rgba32f">RGB Color / 32 bit float</option>
+                <option value="indexed8">Indexed / 8 bit</option>
+              </select>
             </div>
 
             {/* Background Contents */}

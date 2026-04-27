@@ -171,6 +171,31 @@
   white-space: nowrap;
 }
 
+.select {
+  flex: 1;
+  padding: 4px 24px 4px 7px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  color: vars.$color-text;
+  font-size: vars.$font-size-sm;
+  font-family: vars.$font-sans;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7a7a'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+
+  &:focus {
+    outline: 1px solid vars.$color-accent-solid;
+    outline-offset: 0;
+  }
+
+  option {
+    background: vars.$color-surface;
+  }
+}
+
 .staticField {
   font-size: vars.$font-size-sm;
   color: vars.$color-text-dim;
