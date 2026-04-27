@@ -5,7 +5,8 @@ import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { ResizeCanvasSettings } from '@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog'
 import type { ResizeImageSettings } from '@/ux/modals/ResizeImageDialog/ResizeImageDialog'
-import { resizeBilinear, resizeNearest } from '@/wasm'
+import { expandIndicesToRgba } from '@/utils/indexedColorUtils'
+import { matchPaletteIndices, resizeBilinear, resizeNearest } from '@/wasm'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useEffect } from 'react'
 
@@ -53,17 +54,29 @@ export function useCanvasTransforms({
     const resizeFn = filter === 'nearest' ? resizeNearest : resizeBilinear
     const handle   = canvasHandleRef.current
     if (!handle) return
+    const { pixelFormat, swatches } = stateRef.current
+    const isIndexed = pixelFormat === 'indexed8'
     try {
       const encoded = new Map<string, string>()
       for (const layer of stateRef.current.layers) {
-        const pixels = handle.getLayerPixels(layer.id)
-        if (!pixels) continue
-        const resized = await resizeFn(pixels, oldW, oldH, newW, newH)
-        const tmp     = document.createElement('canvas')
-        tmp.width = newW; tmp.height = newH
-        const ctx2d = tmp.getContext('2d')!
-        ctx2d.putImageData(new ImageData(new Uint8ClampedArray(resized.buffer as ArrayBuffer), newW, newH), 0, 0)
-        encoded.set(layer.id, tmp.toDataURL('image/png'))
+        if (isIndexed) {
+          const indexData = handle.getLayerIndexData(layer.id)
+          if (!indexData) continue
+          const rgba = expandIndicesToRgba(indexData, swatches)
+          const resizedRgba = await resizeNearest(rgba, oldW, oldH, newW, newH)
+          const resizedIndices = await matchPaletteIndices(resizedRgba, swatches, 255)
+          const binary = btoa(String.fromCharCode(...resizedIndices))
+          encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+        } else {
+          const pixels = handle.getLayerPixels(layer.id)
+          if (!pixels) continue
+          const resized = await resizeFn(pixels, oldW, oldH, newW, newH)
+          const tmp     = document.createElement('canvas')
+          tmp.width = newW; tmp.height = newH
+          const ctx2d = tmp.getContext('2d')!
+          ctx2d.putImageData(new ImageData(new Uint8ClampedArray(resized.buffer as ArrayBuffer), newW, newH), 0, 0)
+          encoded.set(layer.id, tmp.toDataURL('image/png'))
+        }
       }
       captureHistory('Before Resize Image')
       const resizeTabId = activeTabId
@@ -91,19 +104,41 @@ export function useCanvasTransforms({
     const offsetX = anchorCol === 0 ? 0 : anchorCol === 1 ? Math.round((newW - oldW) / 2) : newW - oldW
     const offsetY = anchorRow === 0 ? 0 : anchorRow === 1 ? Math.round((newH - oldH) / 2) : newH - oldH
 
+    const { pixelFormat } = stateRef.current
+    const isIndexed = pixelFormat === 'indexed8'
+
     const encoded = new Map<string, string>()
     for (const layer of stateRef.current.layers) {
-      const oldPixels = handle.getLayerPixels(layer.id)
-      if (!oldPixels) continue
-      const tmp    = document.createElement('canvas')
-      tmp.width = newW; tmp.height = newH
-      const ctx2d  = tmp.getContext('2d')!
-      const oldCvs = document.createElement('canvas')
-      oldCvs.width = oldW; oldCvs.height = oldH
-      const oldCtx = oldCvs.getContext('2d')!
-      oldCtx.putImageData(new ImageData(new Uint8ClampedArray(oldPixels.buffer as ArrayBuffer), oldW, oldH), 0, 0)
-      ctx2d.drawImage(oldCvs, offsetX, offsetY)
-      encoded.set(layer.id, tmp.toDataURL('image/png'))
+      if (isIndexed) {
+        const indexData = handle.getLayerIndexData(layer.id)
+        if (!indexData) continue
+        const newIndices = new Uint8Array(newW * newH).fill(255)
+        const copyX = Math.max(0, offsetX)
+        const copyY = Math.max(0, offsetY)
+        const copyW = Math.min(oldW, newW - offsetX) - copyX
+        const copyH = Math.min(oldH, newH - offsetY) - copyY
+        if (copyW > 0 && copyH > 0) {
+          for (let row = 0; row < copyH; row++) {
+            const srcOffset = (copyY + row - offsetY) * oldW + (copyX - offsetX)
+            const dstOffset = (copyY + row) * newW + copyX
+            newIndices.set(indexData.subarray(srcOffset, srcOffset + copyW), dstOffset)
+          }
+        }
+        const binary = btoa(String.fromCharCode(...newIndices))
+        encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+      } else {
+        const oldPixels = handle.getLayerPixels(layer.id)
+        if (!oldPixels) continue
+        const tmp    = document.createElement('canvas')
+        tmp.width = newW; tmp.height = newH
+        const ctx2d  = tmp.getContext('2d')!
+        const oldCvs = document.createElement('canvas')
+        oldCvs.width = oldW; oldCvs.height = oldH
+        const oldCtx = oldCvs.getContext('2d')!
+        oldCtx.putImageData(new ImageData(new Uint8ClampedArray(oldPixels.buffer as ArrayBuffer), oldW, oldH), 0, 0)
+        ctx2d.drawImage(oldCvs, offsetX, offsetY)
+        encoded.set(layer.id, tmp.toDataURL('image/png'))
+      }
     }
 
     captureHistory('Before Resize Canvas')
@@ -131,19 +166,39 @@ export function useCanvasTransforms({
     const handle = canvasHandleRef.current
     if (!handle) return
 
+    const { pixelFormat } = stateRef.current
+    const isIndexed = pixelFormat === 'indexed8'
+
     const encoded = new Map<string, string>()
     for (const layer of stateRef.current.layers) {
-      const pixels = handle.getLayerPixels(layer.id)
-      if (!pixels) continue
-      const src    = document.createElement('canvas')
-      src.width = oldW; src.height = oldH
-      const srcCtx = src.getContext('2d')!
-      srcCtx.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), oldW, oldH), 0, 0)
-      const dst    = document.createElement('canvas')
-      dst.width = cropW; dst.height = cropH
-      const dstCtx = dst.getContext('2d')!
-      dstCtx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
-      encoded.set(layer.id, dst.toDataURL('image/png'))
+      if (isIndexed) {
+        const src = handle.getLayerIndexData(layer.id)
+        if (!src) continue
+        const dst = new Uint8Array(cropW * cropH).fill(255)
+        for (let row = 0; row < cropH; row++) {
+          const srcRow = cropY + row
+          if (srcRow < 0 || srcRow >= oldH) continue
+          for (let col = 0; col < cropW; col++) {
+            const srcCol = cropX + col
+            if (srcCol < 0 || srcCol >= oldW) continue
+            dst[row * cropW + col] = src[srcRow * oldW + srcCol]
+          }
+        }
+        const binary = btoa(String.fromCharCode(...dst))
+        encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+      } else {
+        const pixels = handle.getLayerPixels(layer.id)
+        if (!pixels) continue
+        const cvsSrc    = document.createElement('canvas')
+        cvsSrc.width = oldW; cvsSrc.height = oldH
+        const srcCtx = cvsSrc.getContext('2d')!
+        srcCtx.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), oldW, oldH), 0, 0)
+        const dst    = document.createElement('canvas')
+        dst.width = cropW; dst.height = cropH
+        const dstCtx = dst.getContext('2d')!
+        dstCtx.drawImage(cvsSrc, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+        encoded.set(layer.id, dst.toDataURL('image/png'))
+      }
     }
 
     cropStore.clear()

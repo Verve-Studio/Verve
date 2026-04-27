@@ -13,6 +13,7 @@
 #include <emscripten/emscripten.h>
 #include <cstdint>
 #include <climits>
+#include <vector>
 
 #include "fill.h"
 #include "filters.h"
@@ -213,3 +214,33 @@ void matchPaletteIndices(
 }
 
 } // extern "C"
+
+// ─── Indexed-8 Flood Fill ────────────────────────────────────────────────────
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void floodFillIndexed(
+  uint8_t* indices,    // layer-local 1 byte/pixel buffer, modified in-place
+  int w, int h,
+  int startX, int startY,
+  uint8_t fillIndex    // index to write (0-254); 255 = void
+) {
+  if (startX < 0 || startX >= w || startY < 0 || startY >= h) return;
+  const uint8_t targetIndex = indices[startY * w + startX];
+  if (targetIndex == fillIndex) return;
+
+  // BFS 4-connected flood fill
+  std::vector<int> stack;
+  stack.reserve(w * h / 4);
+  stack.push_back(startY * w + startX);
+  while (!stack.empty()) {
+    int pos = stack.back();
+    stack.pop_back();
+    if (indices[pos] != targetIndex) continue;
+    indices[pos] = fillIndex;
+    int x = pos % w, y = pos / w;
+    if (x > 0)     stack.push_back(pos - 1);
+    if (x < w - 1) stack.push_back(pos + 1);
+    if (y > 0)     stack.push_back(pos - w);
+    if (y < h - 1) stack.push_back(pos + w);
+  }
+}

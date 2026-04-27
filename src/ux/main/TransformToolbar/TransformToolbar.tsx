@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { transformStore } from '@/core/store/transformStore'
+import { useAppContext } from '@/core/store/AppContext'
 import type { TransformHandleMode, TransformInterpolation } from '@/types'
 import styles from './TransformToolbar.module.scss'
 
@@ -27,6 +28,8 @@ function LockIcon({ locked }: { locked: boolean }): React.JSX.Element {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function TransformToolbar(): React.JSX.Element {
+  const { state } = useAppContext()
+  const isIndexed = state.pixelFormat === 'indexed8'
   const [params, setParams] = useState(() => transformStore.params)
   const [aspectLocked, setAspectLocked] = useState(false)
   const [handleMode, setHandleMode] = useState<TransformHandleMode>('scale')
@@ -199,11 +202,12 @@ export function TransformToolbar(): React.JSX.Element {
       <div className={styles.sep} />
 
       {/* Interpolation */}
-      <span className={styles.groupLabel}>Interp</span>
+      <span className={styles.groupLabel} style={isIndexed ? { opacity: 0.4 } : undefined}>Interp</span>
       <select
         className={styles.selectInput}
-        value={interpolation}
+        value={isIndexed ? 'nearest' : interpolation}
         onChange={e => setInterp(e.target.value as TransformInterpolation)}
+        disabled={isIndexed}
       >
         <option value="bilinear">Bilinear</option>
         <option value="nearest">Nearest Neighbour</option>

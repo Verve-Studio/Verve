@@ -4,7 +4,7 @@ import { transformStore } from '@/core/store/transformStore'
 import { computeInverseAffine, computeInverseHomography } from '@/tools/transform'
 import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
-import { applyAffineTransform, applyPerspectiveTransform } from '@/wasm'
+import { applyAffineTransform, applyPerspectiveTransform, matchPaletteIndices } from '@/wasm'
 import type { Dispatch, MutableRefObject } from 'react'
 import { useCallback, useEffect, useMemo } from 'react'
 
@@ -111,7 +111,10 @@ export function useTransform({
     const { width: cw, height: ch } = canvas
     if (!floatBuffer) return
 
-    const interpInt = interpToInt(interpolation)
+    const layer = handle.getGpuLayer(layerId)
+    const isIndexed = layer?.format === 'indexed8'
+    const effectiveInterp = isIndexed ? 'nearest' : interpolation
+    const interpInt = interpToInt(effectiveInterp)
     let result: Uint8Array
 
     try {
@@ -133,7 +136,13 @@ export function useTransform({
       return
     }
 
-    handle.writeLayerPixels(layerId, result)
+    if (isIndexed) {
+      const swatches = stateRef.current.swatches
+      const indexResult = await matchPaletteIndices(result, swatches, 255)
+      handle.writeLayerIndexData(layerId, indexResult)
+    } else {
+      handle.writeLayerPixels(layerId, result)
+    }
     captureHistory('Free Transform')
     dispatch({ type: 'SET_TOOL', payload: transformStore.previousTool })
     transformStore.clear()

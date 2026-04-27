@@ -64,6 +64,8 @@ export type AppAction =
   | { type: 'MOVE_LAYER_OUT_OF_GROUP'; payload: { layerId: string; targetParentGroupId: string | null; insertIndex: number } }
   | { type: 'REORDER_ADJUSTMENT_LAYERS'; payload: { parentId: string; orderedChildIds: string[] } }
   | { type: 'SET_PIXEL_FORMAT'; payload: PixelFormat }
+  | { type: 'SET_ACTIVE_SWATCH'; payload: number }
+  | { type: 'CLEAR_REMOVED_SWATCH_INDEX' }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
@@ -82,6 +84,8 @@ const initialState: AppState = {
   history: { canUndo: false, canRedo: false },
   openAdjustmentLayerId: null,
   pixelFormat: 'rgba8',
+  activePaletteIndex: -1,
+  lastRemovedSwatchIndex: null,
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -115,7 +119,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           .filter(i => i !== idx)
           .map(i => (i > idx ? i - 1 : i)),
       }))
-      return { ...state, swatches: nextSwatches, swatchGroups: nextGroups }
+      return { ...state, swatches: nextSwatches, swatchGroups: nextGroups, lastRemovedSwatchIndex: idx }
     }
 
     case 'SET_SWATCH_GROUPS':
@@ -397,6 +401,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_PIXEL_FORMAT':
       return { ...state, pixelFormat: action.payload }
+
+    case 'SET_ACTIVE_SWATCH':
+      return { ...state, activePaletteIndex: action.payload }
+
+    case 'CLEAR_REMOVED_SWATCH_INDEX':
+      return { ...state, lastRemovedSwatchIndex: null }
 
     case 'NEW_CANVAS':
       return {

@@ -487,3 +487,29 @@ export async function matchPaletteIndices(
     m._free(outPtr)
   }
 }
+
+/**
+ * BFS 4-connected flood fill on a 1-byte-per-pixel indexed layer buffer.
+ * Replaces all pixels connected to (startX, startY) that share the same
+ * starting index with fillIndex.  Operates in-place; the modified indices
+ * are written back to the provided buffer.
+ */
+export async function floodFillIndexed(
+  indices: Uint8Array,
+  w: number,
+  h: number,
+  startX: number,
+  startY: number,
+  fillIndex: number,
+): Promise<void> {
+  const m = await getPixelOps()
+  const ptr = m._malloc(indices.byteLength)
+  try {
+    m.HEAPU8.set(indices, ptr)
+    m._floodFillIndexed(ptr, w, h, startX, startY, fillIndex)
+    // Re-read HEAPU8 in case WASM memory grew during the call
+    indices.set(m.HEAPU8.subarray(ptr, ptr + indices.byteLength))
+  } finally {
+    m._free(ptr)
+  }
+}

@@ -5,6 +5,7 @@ import { usePaletteFileOps } from '@/core/services/usePaletteFileOps'
 import { sortSwatchesByHue } from '@/utils/swatchSort'
 import { ModalDialog } from '@/ux/modals/ModalDialog/ModalDialog'
 import { DialogButton } from '@/ux/widgets/DialogButton/DialogButton'
+import { showOperationError } from '@/utils/userFeedback'
 import styles from './SwatchPanel.module.scss'
 
 interface SwatchPanelProps {
@@ -23,6 +24,9 @@ export function SwatchPanel({ activeTabId, onGeneratePalette }: SwatchPanelProps
 
   // ── Active group highlight (transient, not persisted) ─────────────
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
+
+  // ── Indexed8 swatch removal confirmation ─────────────────────────
+  const [pendingSwatchRemoval, setPendingSwatchRemoval] = useState<number | null>(null)
 
   // ── Context menu ──────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canonicalIndex: number } | null>(null)
@@ -352,6 +356,19 @@ export function SwatchPanel({ activeTabId, onGeneratePalette }: SwatchPanelProps
             type="button"
             className={styles.contextMenuItem}
             onClick={() => {
+              if (state.pixelFormat === 'indexed8' && state.swatches.length <= 1) {
+                showOperationError(
+                  'Cannot remove all swatches while in Indexed/8 mode.',
+                  'At least one palette entry is required.',
+                )
+                setContextMenu(null)
+                return
+              }
+              if (state.pixelFormat === 'indexed8') {
+                setPendingSwatchRemoval(contextMenu.canonicalIndex)
+                setContextMenu(null)
+                return
+              }
               dispatch({ type: 'REMOVE_SWATCH', payload: contextMenu.canonicalIndex })
               setContextMenu(null)
             }}
@@ -415,6 +432,28 @@ export function SwatchPanel({ activeTabId, onGeneratePalette }: SwatchPanelProps
           <div className={styles.promptButtons}>
             <DialogButton primary onClick={handleGroupPromptConfirm}>OK</DialogButton>
             <DialogButton onClick={() => { setGroupPromptOpen(false); setGroupPromptError(null) }}>Cancel</DialogButton>
+          </div>
+        </div>
+      </ModalDialog>
+      {/* ── Indexed8 swatch removal confirmation ──────────────────── */}
+      <ModalDialog
+        title="Remove Palette Entry"
+        open={pendingSwatchRemoval !== null}
+        onClose={() => setPendingSwatchRemoval(null)}
+        width={360}
+      >
+        <div className={styles.promptBody}>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#ccc', lineHeight: 1.5 }}>
+            Removing this swatch will shift palette indices in all pixel layers. This operation can be undone.
+          </p>
+          <div className={styles.promptButtons}>
+            <DialogButton primary onClick={() => {
+              if (pendingSwatchRemoval !== null) {
+                dispatch({ type: 'REMOVE_SWATCH', payload: pendingSwatchRemoval })
+              }
+              setPendingSwatchRemoval(null)
+            }}>Remove</DialogButton>
+            <DialogButton onClick={() => setPendingSwatchRemoval(null)}>Cancel</DialogButton>
           </div>
         </div>
       </ModalDialog>

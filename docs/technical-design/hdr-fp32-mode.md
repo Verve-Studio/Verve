@@ -6,8 +6,8 @@ This document covers the implementation work that is **specific to the HDR FP32 
 
 This design adds the six remaining deliverables:
 
-1. **Display tone-mapping** — Reinhard + EV exposure pass inserted in the final blit/display shader, bypassed for non-`rgba32f` documents and for all flatten/export/merge operations.
-2. **EV exposure control** — module-level singleton read by the display shader each frame; compact inline slider rendered in the canvas toolbar area, visible only for `rgba32f` tabs.
+1. **Display tone-mapping system** — A generic, pluggable tone-mapping pipeline inserted in the final blit/display shader. The active operator and EV exposure are held in a module-level `displayStore` singleton. The shader dispatches on an `operator` uniform so new operators (e.g. ACEScg, Filmic, AgX) can be added without changing calling code. Bypassed for non-`rgba32f` documents and for all flatten/export/merge operations. V1 ships with **Reinhard** as the only operator; the architecture is designed to accommodate additional operators without structural change.
+2. **Tone-mapping controls** — `ToneMappingControls` component rendered in the canvas toolbar. Hosts an operator selector dropdown (initially one entry: Reinhard) and an EV exposure slider. Both read/write `displayStore`. Visible only for `rgba32f` tabs.
 3. **HDR-aware color picker** — Intensity multiplier field added to `EmbedColorPicker`, hidden for `rgba8`/`indexed8`; an `hdrIntensity` field added to `AppState` (Option B from the prompt, minimising churn on existing code).
 4. **EXR file I/O** — tinyexr compiled to WASM; `loadExr`/`saveExr` WASM wrappers; updated `imageLoader` / `exportExr`.
 5. **Radiance HDR file I/O** — pure-TypeScript RGBE encode/decode; `loadHdr`/`saveHdr`; updated `imageLoader` / `exportHdr`.
@@ -21,15 +21,16 @@ Eyedropper HDR indicator, status bar `RGB/32F` label with blue accent, pixel-inf
 
 | File | Change summary |
 |---|---|
-| `src/graphicspipeline/webgpu/shaders/rendering/blit.ts` | Add `HDR_BLIT_SHADER` variant with Reinhard + EV tone-mapping; existing `BLIT_SHADER` unchanged |
-| `src/graphicspipeline/webgpu/rendering/WebGPURenderer.ts` | Create second blit pipeline targeting display canvas using `HDR_BLIT_SHADER`; update EV uniform buffer each frame; select HDR or standard blit pipeline based on `pixelFormat` |
-| `src/core/store/displayStore.ts` | **New.** Module-level singleton holding `exposureEV` (default `0`); notify-subscribe pattern identical to `cursorStore` |
+| `src/graphicspipeline/webgpu/shaders/rendering/blit.ts` | Add `HDR_BLIT_SHADER` variant with pluggable operator dispatch (Reinhard V1; ACES stub ready for V2); existing `BLIT_SHADER` unchanged |
+| `src/graphicspipeline/webgpu/rendering/WebGPURenderer.ts` | Create second blit pipeline using `HDR_BLIT_SHADER`; update 16-byte uniform buffer (`exposureLinear`, `isFp32`, `operator`, `_pad`) each frame; always uses HDR pipeline (branches internally on `isFp32`) |
+| `src/core/store/displayStore.ts` | **New.** Module-level singleton holding `exposureEV` (default `0`) and `toneMappingOperator` (default `'reinhard'`); notify-subscribe pattern identical to `cursorStore` |
+| `src/types/index.ts` | Add `ToneMappingOperator` union type |
 | `src/types/index.ts` | Add `hdrIntensity: number` to `AppState` |
 | `src/core/store/AppContext.tsx` | Add `SET_HDR_INTENSITY` action; reset `hdrIntensity` to `1.0` in canvas-resetting actions (`NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB`) |
 | `src/ux/widgets/EmbedColorPicker/EmbedColorPicker.tsx` | Add `isHdrMode` prop; render Intensity numeric field + float channel readout when `isHdrMode` is true; emit intensity-scaled float values via new `onChangeFloat` callback |
-| `src/ux/main/Canvas/EVSlider.tsx` | **New.** Compact EV slider component (label + slider + numeric input); reads/writes `displayStore.exposureEV`; re-renders via `displayStore` subscription |
-| `src/ux/main/Canvas/EVSlider.module.scss` | **New.** Styles for EV slider inline control |
-| `src/ux/main/Canvas/Canvas.tsx` | Mount `EVSlider` inside the canvas wrapper; pass `pixelFormat` to `buildRenderPlan`; pass EV uniform to renderer display pass each frame |
+| `src/ux/main/Canvas/ToneMappingControls.tsx` | **New.** Operator selector dropdown + EV slider; reads/writes `displayStore.toneMappingOperator` and `displayStore.exposureEV`; re-renders via `displayStore` subscription; hidden for non-`rgba32f` documents |
+| `src/ux/main/Canvas/ToneMappingControls.module.scss` | **New.** Styles for tone-mapping inline controls |
+| `src/ux/main/Canvas/Canvas.tsx` | Mount `ToneMappingControls` inside the canvas wrapper; pass `pixelFormat` to `buildRenderPlan`; pass display-pass uniforms to renderer each frame |
 | `src/ux/main/Canvas/canvasPlan.ts` | Receive and thread `pixelFormat` parameter (already required by Pixel Format Abstraction TD; confirmed wired here for HDR display path) |
 | `src/ux/main/StatusBar/StatusBar.tsx` | Replace hardcoded `"RGB/8"` with dynamic label from `state.pixelFormat`; add blue accent class for `rgba32f`; show float pixel-info in `rgba32f` mode |
 | `src/core/io/imageLoader.ts` | Add `.exr` and `.hdr` to `IMAGE_EXTENSIONS` and `EXT_TO_MIME`; detect EXR/HDR in `loadImagePixels`; add `loadHdrImagePixels` returning `{ data: Float32Array; width: number; height: number; isHdr: boolean }` |
@@ -51,7 +52,21 @@ Eyedropper HDR indicator, status bar `RGB/32F` label with blue accent, pixel-inf
 
 ## State Changes
 
-### `src/types/index.ts`
+### `src/types/index.ts` — `ToneMappingOperator`
+
+Add the operator union type. New operators are added here when implemented:
+
+```ts
+// Extensible union — add new operator literals here as they are implemented.
+export type ToneMappingOperator =
+  | 'reinhard'   // V1: per-channel Reinhard
+  // | 'aces'    // V2 (planned): ACES approximate
+  // | 'filmic'  // V3 (planned): Filmic/Hejl-Burgess-Dawson
+```
+
+The commented-out variants are placeholders to illustrate the extension pattern. They are activated by un-commenting and adding the corresponding WGSL branch + UI label.
+
+### `src/types/index.ts` — `AppState`
 
 Add `hdrIntensity` to `AppState` (Option B — separate field, not changing `primaryColor` type):
 
@@ -89,11 +104,16 @@ hdrIntensity: 1.0,
 
 ### `src/core/store/displayStore.ts` — new module-level singleton
 
-Holds the per-tab EV exposure value. Because EV is per-session and per-tab but is consumed every frame by the display blit without going through React, it lives in a singleton (like `cursorStore`), not `AppState`.
+Holds the per-session display-pass state. Both `exposureEV` and `toneMappingOperator` are consumed every frame by the display blit without going through React, so they live in a singleton (like `cursorStore`), not `AppState`.
+
+`toneMappingOperator` is a **global** display preference (not per-tab). It persists across tab switches deliberately — users typically want to audition all their work under the same display transform.
 
 ```ts
+import type { ToneMappingOperator } from '@/types'
+
 class DisplayStore {
-  exposureEV: number = 0          // current EV for the active tab's display pass
+  exposureEV: number = 0
+  toneMappingOperator: ToneMappingOperator = 'reinhard'
 
   private listeners = new Set<() => void>()
   subscribe(fn: () => void): void   { this.listeners.add(fn) }
@@ -105,51 +125,66 @@ class DisplayStore {
     this.notify()
   }
 
+  setOperator(op: ToneMappingOperator): void {
+    this.toneMappingOperator = op
+    this.notify()
+  }
+
+  /** Resets only EV; operator is a global preference and persists across tab switches. */
   reset(): void { this.setEV(0) }
 }
 
 export const displayStore = new DisplayStore()
+
+/** Maps operator names to the u32 values expected by the WGSL shader. */
+export const OPERATOR_SHADER_ID: Record<ToneMappingOperator, number> = {
+  reinhard: 1,
+  // aces: 2,   // uncomment when WGSL branch is added
+}
 ```
 
-**Tab switching:** When `useTabs` switches the active tab, it calls `displayStore.reset()`. This matches the spec (EV is per-session, per-tab, not persisted).
+**Tab switching:** `useTabs` calls `displayStore.reset()` when switching tabs (resets EV to 0). The operator is intentionally not reset.
 
 ---
 
 ## New Components / Hooks / Tools
 
-### `src/ux/main/Canvas/EVSlider.tsx`
+### `src/ux/main/Canvas/ToneMappingControls.tsx`
 
 **Category:** Main UX Framework (rendered inside the Canvas area)  
-**Responsibility:** Display and mutate `displayStore.exposureEV`. Renders only when `pixelFormat === 'rgba32f'`.
+**Responsibility:** Display and mutate `displayStore.toneMappingOperator` and `displayStore.exposureEV`. Renders only when `pixelFormat === 'rgba32f'`.
 
 **Props:**
 
 ```ts
-interface EVSliderProps {
+interface ToneMappingControlsProps {
   pixelFormat: PixelFormat
 }
 ```
 
 **Behavior:**
-- Subscribes to `displayStore` in a `useEffect` and re-renders when EV changes.
-- Renders a label `"EV"`, a range `<input>` (min=`-4`, max=`4`, step=`0.1`), and a numeric `<input>` (showing value to one decimal, e.g. `+1.0`).
-- On slider or numeric input change, calls `displayStore.setEV(newValue)`.
-- Numeric input: Tab/Enter commits; Escape reverts to the last committed value.
+- Subscribes to `displayStore` in a `useEffect` and re-renders when either EV or operator changes.
+- Renders:
+  1. An **Operator** `<select>` dropdown listing all entries in `OPERATOR_SHADER_ID` by display name (e.g. `"Reinhard"`). On change, calls `displayStore.setOperator(value)`.
+  2. An **EV** label + range `<input>` (min=`-4`, max=`4`, step=`0.1`) + numeric `<input>` (value to one decimal, e.g. `+1.0`). On change, calls `displayStore.setEV(value)`.
+- Numeric EV input: Tab/Enter commits; Escape reverts to the last committed value.
 - Returns `null` when `pixelFormat !== 'rgba32f'` (hidden, not greyed out).
-- Does **not** use React state for the EV value itself — only stores it in `displayStore`. Renders via a local `useState` that is set from `displayStore` subscription.
+- Does **not** use React state for EV or operator — only reads from `displayStore`. Renders via a local `useState` that is set from the `displayStore` subscription.
+- **Adding a new operator:** Add its `ToneMappingOperator` literal to `src/types/index.ts`, add it to `OPERATOR_SHADER_ID` in `displayStore.ts`, add a WGSL branch in `HDR_BLIT_SHADER`, and add its display label to the operator map in this component. No other files need to change.
 
-**Placement:** Rendered inline inside `Canvas.tsx`'s toolbar area, adjacent to other view-level controls (zoom). Passed `state.pixelFormat` from `Canvas.tsx`.
+**Placement:** Rendered inline inside `Canvas.tsx`'s toolbar area, adjacent to zoom controls. Passed `state.pixelFormat` from `Canvas.tsx`.
 
 ### `src/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog.tsx`
 
 **Category:** Modal (wraps `ModalDialog`)  
-**Responsibility:** Warn the user that exporting an `rgba32f` document to an LDR format (PNG, JPEG, WebP, TGA, standard TIFF 8-bit) will apply Reinhard tone-mapping at 0 EV. Show the target format name. Has **Export Anyway** and **Cancel** buttons.
+**Responsibility:** Warn the user that exporting an `rgba32f` document to an LDR format (PNG, JPEG, WebP, TGA, standard TIFF 8-bit) will apply the active tone-mapping operator at current EV settings. Show the target format name and the active operator name.
 
 **Props:**
 
 ```ts
 interface HdrLdrExportWarningDialogProps {
-  targetFormat: string    // e.g. 'PNG', 'JPEG'
+  targetFormat: string         // e.g. 'PNG', 'JPEG'
+  toneMappingOperator: string  // e.g. 'Reinhard' — display name of the active operator
   onConfirm: () => void
   onCancel: () => void
 }
@@ -163,7 +198,7 @@ interface HdrLdrExportWarningDialogProps {
 
 **Step 1 — `src/graphicspipeline/webgpu/shaders/rendering/blit.ts`**
 
-Add `HDR_BLIT_SHADER` below the existing `BLIT_SHADER`. The new shader extends the uniform struct with two new `f32` fields and adds a conditional Reinhard tone-map in the fragment stage:
+Add `HDR_BLIT_SHADER` below the existing `BLIT_SHADER`. The uniform struct is extended with `operator: u32` to select the tone-mapping algorithm. New operators are added as additional `else if` branches in the fragment shader — no pipeline rebuild is required.
 
 ```ts
 export const HDR_BLIT_SHADER = /* wgsl */ `
@@ -172,10 +207,11 @@ struct BlitRes {
   _pad        : vec2f,
 }
 
-struct HdrUniforms {
+struct ToneMappingUniforms {
   exposureLinear : f32,   // pow(2.0, exposureEV)
   isFp32         : f32,   // 1.0 if rgba32f document, 0.0 otherwise
-  _pad           : vec2f,
+  operator       : u32,   // 1 = Reinhard, 2 = ACES (future), 0 = clamp only
+  _pad           : f32,
 }
 
 struct VertexOutput {
@@ -186,7 +222,7 @@ struct VertexOutput {
 @group(0) @binding(0) var blitSampler : sampler;
 @group(0) @binding(1) var srcTex      : texture_2d<f32>;
 @group(0) @binding(2) var<uniform> u  : BlitRes;
-@group(0) @binding(3) var<uniform> hdr : HdrUniforms;
+@group(0) @binding(3) var<uniform> tm : ToneMappingUniforms;
 
 @vertex
 fn vs_blit(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput {
@@ -200,15 +236,35 @@ fn vs_blit(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput
   return out;
 }
 
+// ── Tone-mapping operators ────────────────────────────────────────────────────
+// Add new operators here. Each must map a [0, ∞) linear RGB vec3f to [0, 1].
+
+fn tm_reinhard(c: vec3f) -> vec3f {
+  return c / (c + vec3f(1.0));
+}
+
+// Placeholder — uncomment and implement when operator == 2u is wired up:
+// fn tm_aces_approx(c: vec3f) -> vec3f {
+//   let a = 2.51; let b = 0.03; let co = 2.43; let d = 0.59; let e = 0.14;
+//   return clamp((c*(a*c+b))/(c*(co*c+d)+e), vec3f(0.0), vec3f(1.0));
+// }
+
 @fragment
 fn fs_blit(in: VertexOutput) -> @location(0) vec4f {
   let sample = textureSample(srcTex, blitSampler, in.uv);
-  if (hdr.isFp32 < 0.5) {
+  if (tm.isFp32 < 0.5) {
     return sample;
   }
-  // Reinhard with EV pre-scale (per-channel)
-  let scaled = sample.rgb * hdr.exposureLinear;
-  let mapped = scaled / (scaled + vec3f(1.0));
+  let scaled = sample.rgb * tm.exposureLinear;
+  var mapped: vec3f;
+  if (tm.operator == 1u) {
+    mapped = tm_reinhard(scaled);
+  // } else if (tm.operator == 2u) {
+  //   mapped = tm_aces_approx(scaled);
+  } else {
+    // operator == 0u or unknown: clamp only (linear display)
+    mapped = clamp(scaled, vec3f(0.0), vec3f(1.0));
+  }
   return vec4f(mapped, sample.a);
 }
 ` as const
@@ -220,15 +276,17 @@ The existing `BLIT_SHADER` and `FBO_BLIT_SHADER` are left untouched. The HDR sha
 
 a. At construction (in `create()`), create a second blit pipeline using `HDR_BLIT_SHADER` targeting the swap-chain format (`navigator.gpu.getPreferredCanvasFormat()`). Store it as `private hdrBlitPipeline: GPURenderPipeline`.
 
-b. Create a `private hdrUniformBuffer: GPUBuffer` (16 bytes: `exposureLinear: f32`, `isFp32: f32`, 8 bytes padding). Initialize with `[1.0, 0.0, 0, 0]`.
+b. Create a `private hdrUniformBuffer: GPUBuffer` (16 bytes: `exposureLinear: f32`, `isFp32: f32`, `operator: u32`, `_pad: f32`). Initialize with `[1.0, 0.0, 1, 0]` (EV 0, non-fp32, Reinhard).
 
 c. In the render loop (the method that submits the display blit pass), before recording the blit command:
-   - Read `displayStore.exposureEV` (import the singleton).
+   - Read `displayStore.exposureEV` and `displayStore.toneMappingOperator`.
    - Compute `exposureLinear = Math.pow(2, displayStore.exposureEV)`.
    - Compute `isFp32 = pixelFormat === 'rgba32f' ? 1.0 : 0.0`.
-   - Write `[exposureLinear, isFp32, 0, 0]` to `hdrUniformBuffer` via `device.queue.writeBuffer`.
+   - Look up `operatorId = OPERATOR_SHADER_ID[displayStore.toneMappingOperator] ?? 1` (import `OPERATOR_SHADER_ID` from `displayStore.ts`).
+   - Build a `Float32Array` for the buffer: `[exposureLinear, isFp32, 0, 0]` with the `u32` at offset 8 written via `DataView.setUint32`. Alternatively, write as four 4-byte values where the third is `operatorId` reinterpreted; use `new DataView(buf).setUint32(8, operatorId, true)` to avoid float reinterpretation.
+   - Write the 16-byte buffer to `hdrUniformBuffer` via `device.queue.writeBuffer`.
 
-d. Select the pipeline: always use `hdrBlitPipeline` for the display blit (it branches internally on `isFp32`). The standard `BLIT_SHADER` pipeline can be retained for the FBO blit (non-display readback paths). Bind `hdrUniformBuffer` at `@group(0) @binding(3)`.
+d. Always use `hdrBlitPipeline` for the display blit (it branches internally on `isFp32`). The standard `BLIT_SHADER` pipeline can be retained for FBO blit (non-display readback paths). Bind `hdrUniformBuffer` at `@group(0) @binding(3)`.
 
 e. The intermediate compositing passes (ping-pong, adjustment, filter) are unaffected; tone-mapping is only in the final display blit.
 
@@ -240,15 +298,15 @@ Create the `DisplayStore` singleton as described in State Changes above.
 
 After the active tab changes (wherever `SWITCH_TAB` is dispatched), call `displayStore.reset()` to clear the EV to 0 for the incoming tab.
 
-### Phase 2 — EV Slider UI
+### Phase 2 — Tone-Mapping Controls UI
 
-**Step 5 — `src/ux/main/Canvas/EVSlider.tsx` and `EVSlider.module.scss`**
+**Step 5 — `src/ux/main/Canvas/ToneMappingControls.tsx` and `ToneMappingControls.module.scss`**
 
-Create the `EVSlider` component as described in New Components above. Style it to sit inline with zoom controls: compact font size, slider ~120px wide. Use the same SCSS variable scale as existing toolbar controls.
+Create the `ToneMappingControls` component as described in New Components above. Style it to sit inline with zoom controls: operator dropdown ~110px wide, EV slider ~120px wide, compact font size. Use the same SCSS variable scale as existing toolbar controls.
 
 **Step 6 — `src/ux/main/Canvas/Canvas.tsx`**
 
-Import and render `<EVSlider pixelFormat={state.pixelFormat} />` in the canvas toolbar area. The component self-manages its visibility.
+Import and render `<ToneMappingControls pixelFormat={state.pixelFormat} />` in the canvas toolbar area. The component self-manages its visibility.
 
 ### Phase 3 — HDR-Aware Color Picker
 
@@ -926,30 +984,45 @@ const doExport = useCallback(async (settings: ExportSettings): Promise<void> => 
     return
   }
 
-  // LDR formats: apply Reinhard at 0 EV before encoding
+  // LDR formats: apply tone-mapping using the active operator before encoding
   const ldrPixels = isHdrDoc
-    ? toneMapToUint8(flat.data as Float32Array)
+    ? toneMapToUint8(flat.data as Float32Array, displayStore.toneMappingOperator)
     : flat.data as Uint8Array
 
   // ...existing format branches (png, jpeg, etc.) using ldrPixels...
 }, ...)
 ```
 
-`toneMapToUint8` is a small pure-TS helper in `useExportOps.ts` (or `src/utils/pixelFormatConvert.ts`):
+`toneMapToUint8` is a pure-TS helper in `useExportOps.ts` (or `src/utils/pixelFormatConvert.ts`). It dispatches to the same operator that is active in `displayStore`, so the exported preview matches what the user saw on screen. The EV from `displayStore.exposureEV` is also applied:
 
 ```ts
-function toneMapToUint8(f32: Float32Array): Uint8Array {
+import type { ToneMappingOperator } from '@/types'
+
+function toneMapToUint8(f32: Float32Array, operator: ToneMappingOperator, exposureEV = 0): Uint8Array {
   const out = new Uint8Array(f32.length)
+  const exposureLinear = Math.pow(2, exposureEV)
   for (let i = 0; i < f32.length; i += 4) {
-    // Reinhard at EV 0: value / (value + 1)
-    out[i]   = Math.round(Math.min(1, f32[i]   / (f32[i]   + 1)) * 255)
-    out[i+1] = Math.round(Math.min(1, f32[i+1] / (f32[i+1] + 1)) * 255)
-    out[i+2] = Math.round(Math.min(1, f32[i+2] / (f32[i+2] + 1)) * 255)
+    const r = f32[i]   * exposureLinear
+    const g = f32[i+1] * exposureLinear
+    const b = f32[i+2] * exposureLinear
+    let mr: number, mg: number, mb: number
+    if (operator === 'reinhard') {
+      mr = r / (r + 1); mg = g / (g + 1); mb = b / (b + 1)
+    // } else if (operator === 'aces') {
+    //   [mr, mg, mb] = acesApprox(r, g, b)
+    } else {
+      mr = Math.min(1, r); mg = Math.min(1, g); mb = Math.min(1, b)
+    }
+    out[i]   = Math.round(mr * 255)
+    out[i+1] = Math.round(mg * 255)
+    out[i+2] = Math.round(mb * 255)
     out[i+3] = Math.round(Math.min(1, f32[i+3]) * 255)  // alpha: clamp only
   }
   return out
 }
 ```
+
+At the call site, pass `displayStore.toneMappingOperator` and `displayStore.exposureEV` so the LDR export precisely mirrors the display preview.
 
 **Step 25 — `src/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog.tsx`**
 
@@ -959,7 +1032,7 @@ Create the warning modal as described in New Components. Wire it into `useExport
 
 **Step 26 — `src/ux/index.ts`**
 
-Add exports for `EVSlider` and `HdrLdrExportWarningDialog`.
+Add exports for `ToneMappingControls` and `HdrLdrExportWarningDialog`.
 
 ---
 
@@ -969,9 +1042,9 @@ Add exports for `EVSlider` and `HdrLdrExportWarningDialog`.
 
 - **Module-level singleton for EV, not React state.** `displayStore.exposureEV` is read each frame in the GPU render loop without going through React. Storing it in `AppState` would cause unnecessary re-renders on every slider drag tick. This follows the same pattern as `brushOptions`, `cursorStore`, and `cropStore`.
 
-- **Tone-mapping only in the display blit.** The HDR shader is inserted only at the final screen-blit stage. All compositing passes (ping-pong textures, adjustment encoder, filter compute) operate in full float range. The rasterization pipeline (`rasterizeDocument`) never applies tone-mapping regardless of `reason`.
+- **Tone-mapping only in the display blit; operator-dispatched in one shader.** The `HDR_BLIT_SHADER` contains all operator implementations as WGSL functions; the active one is selected by a `u32` uniform. Adding a new operator requires: (1) a new `ToneMappingOperator` literal in `src/types/index.ts`, (2) a new entry in `OPERATOR_SHADER_ID` in `displayStore.ts`, (3) a new WGSL function + `else if` branch in `HDR_BLIT_SHADER`, (4) a new label entry in `ToneMappingControls`, and (5) a new branch in `toneMapToUint8`. No structural changes to the pipeline, renderer, or state management are required. All compositing passes (ping-pong textures, adjustment encoder, filter compute) operate in full float range. The rasterization pipeline (`rasterizeDocument`) never applies tone-mapping regardless of `reason`.
 
-- **`hdrIntensity` in `AppState`, not in the color picker's local state.** Option B minimises churn: `primaryColor` stays `{ r, g, b, a }` in `[0, 255]`. Tools multiply by `hdrIntensity` only when `pixelFormat === 'rgba32f'`. This avoids touching every tool and every place that reads the swatch.
+- **`toneMappingOperator` is a global display preference, not per-tab or persisted in the document.** It lives in `displayStore` alongside `exposureEV`. Unlike `exposureEV`, it is not reset on tab switch — users typically want consistent display transform across all tabs. If per-document operator persistence is ever needed, the operator string should move to `TabRecord` and be written/read alongside `pixelFormat` in `useTabs`.
 
 - **EXR multi-layer import.** Multi-layer EXR is deferred to a later iteration. V1 imports only the first RGBA layer group. The spec explicitly scopes this: "each EXR layer/channel group is imported as a separate PixelShop layer where possible" — the WASM `loadExr` wrapper returns only the merged RGBA result for V1; the channel-group splitting logic is left as a future extension point inside `decodeExr`.
 
@@ -987,7 +1060,7 @@ Add exports for `EVSlider` and `HdrLdrExportWarningDialog`.
 
 ## Open Questions
 
-1. **tinyexr build size.** tinyexr with miniz (ZIP compression) adds approximately 300–500 KB to the WASM binary. If build size is a concern, the PIZ compression codec can be excluded by `#define TINYEXR_USE_PIZ 0` before inclusion. Confirm acceptable binary size budget before finalising the build flags.
+1. **tinyexr build size.** tinyexr with miniz (ZIP compression) adds approximately 300–500 KB to the WASM binary. If build size is a concern, the PIZ compression codec can be excluded by `#define TINYEXR_USE_PIZ 0` before inclusion. Confirm acceptable binary size budget before finalising the build flags.
 
 2. **Multi-layer EXR.** The spec describes per-layer-group import. The V1 WASM wrapper collapses everything to a single merged RGBA layer. A future pass needs a `loadExrLayers` WASM function that returns multiple named float buffers. This should be noted as a tracked follow-on, not silently omitted.
 
@@ -996,3 +1069,5 @@ Add exports for `EVSlider` and `HdrLdrExportWarningDialog`.
 4. **Half-float EXR export and precision warning.** When the user enables "Save as half-float (FP16)", values outside the half-float range (approximately ±65504) will be clamped or become Inf. The export dialog should note this. Confirm whether a dedicated warning is required or whether the checkbox label is sufficient.
 
 5. **`window.api.exportImage` signature for binary.** Verify that the main-process IPC handler for `exportImage` accepts arbitrary base64 (not just image MIME types). EXR and HDR files have non-standard MIME types. If the main process validates MIME type, it must be updated to accept `image/x-exr` and `image/vnd.radiance`, or the API must be widened to a generic binary-write call.
+
+6. **Future tone-mapping operators — ACEScg, Filmic, AgX.** The WGSL dispatch table and `ToneMappingOperator` union are the only files that must change when adding a new operator. Before adding ACEScg in particular, clarify whether scene-linear ACEScg (requiring an input transform from sRGB/Rec.709) or the ACES sRGB approximate (no input transform) is intended. The approximate formula is already stubbed in the shader. Full ACEScg would require an additional IDT (Input Device Transform) matrix multiplication upstream of the tonemap function.

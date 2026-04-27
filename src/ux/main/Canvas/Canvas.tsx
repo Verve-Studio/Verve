@@ -23,6 +23,7 @@ import { drawTransformOverlay } from '@/tools/transform'
 import { TextLayerEditor } from './TextLayerEditor'
 import { rasterizeTextToLayer } from './textRasterizer'
 import { rasterizeShapeToLayer } from './shapeRasterizer'
+import { resolveNearestPaletteIndex } from '@/utils/indexedColorUtils'
 import { decodePng } from './pngHelpers'
 import { useCanvasHandle } from './canvasHandle'
 import type { CanvasHandle } from './canvasHandle'
@@ -366,13 +367,27 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           }
         } else if (i === 0 && !initialLayerData) {
           // New document — background layer covers the full canvas
-          layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0)
+          const fmt = state.pixelFormat
+          layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, fmt)
           const bg = state.canvas.backgroundFill
-          if (bg === 'white') {
-            layer.data.fill(255)
-          } else if (bg === 'black') {
-            for (let j = 0; j < layer.data.length; j += 4) {
-              layer.data[j] = 0; layer.data[j + 1] = 0; layer.data[j + 2] = 0; layer.data[j + 3] = 255
+          if (fmt === 'indexed8') {
+            if (bg === 'white' || bg === 'black') {
+              const tr = bg === 'white' ? 255 : 0
+              const tg = bg === 'white' ? 255 : 0
+              const tb = bg === 'white' ? 255 : 0
+              const fillIdx = resolveNearestPaletteIndex(tr, tg, tb, 255, swatchesRef.current as import('@/types').RGBAColor[])
+              ;(layer.data as Uint8Array).fill(fillIdx)
+            } else {
+              // transparent — void fill
+              ;(layer.data as Uint8Array).fill(255)
+            }
+          } else {
+            if (bg === 'white') {
+              layer.data.fill(255)
+            } else if (bg === 'black') {
+              for (let j = 0; j < layer.data.length; j += 4) {
+                layer.data[j] = 0; layer.data[j + 1] = 0; layer.data[j + 2] = 0; layer.data[j + 3] = 255
+              }
             }
           }
         } else if ('type' in ls && ls.type === 'shape') {
@@ -389,7 +404,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           const initH = Math.min(128, ch)
           const ox = Math.round((cw - initW) / 2)
           const oy = Math.round((ch - initH) / 2)
-          layer = renderer.createLayer(ls.id, ls.name, initW, initH, ox, oy)
+          const fmt = state.pixelFormat
+          layer = renderer.createLayer(ls.id, ls.name, initW, initH, ox, oy, fmt)
+          if (fmt === 'indexed8') (layer.data as Uint8Array).fill(255)
         }
 
         layer.opacity   = 'opacity'   in ls ? ls.opacity   : 1
@@ -457,7 +474,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           const initH = Math.min(128, ch)
           const ox = Math.round((cw - initW) / 2)
           const oy = Math.round((ch - initH) / 2)
-          const gl = renderer.createLayer(ls.id, ls.name, initW, initH, ox, oy)
+          const fmt = state.pixelFormat
+          const gl = renderer.createLayer(ls.id, ls.name, initW, initH, ox, oy, fmt)
+          if (fmt === 'indexed8') (gl.data as Uint8Array).fill(255)
           map.set(ls.id, gl)
         }
       }
@@ -548,6 +567,44 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     return unsubscribe
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive])
+
+  // When a swatch is removed in indexed8 mode, remap layer pixel indices:
+  // pixels that pointed to the removed index → 255 (void), pixels above it → decremented.
+  useEffect(() => {
+    if (!isActive || state.pixelFormat !== 'indexed8') return
+    const removedIndex = state.lastRemovedSwatchIndex
+    if (removedIndex == null) return
+    const renderer = rendererRef.current
+    if (!renderer) return
+    for (const gl of glLayersRef.current.values()) {
+      if (gl.format !== 'indexed8') continue
+      const data = gl.data as Uint8Array
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] === removedIndex) {
+          data[i] = 255
+        } else if (data[i] > removedIndex && data[i] < 255) {
+          data[i]--
+        }
+      }
+    }
+    dispatch({ type: 'CLEAR_REMOVED_SWATCH_INDEX' })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.lastRemovedSwatchIndex, isActive])
+
+  // When swatches change in indexed8 mode, re-flush all indexed layers so the GPU
+  // textures reflect the new palette mapping, then re-render.
+  useEffect(() => {
+    if (!isActive || state.pixelFormat !== 'indexed8') return
+    const renderer = rendererRef.current
+    if (!renderer) return
+    for (const [, layer] of glLayersRef.current) {
+      if (layer.format === 'indexed8') {
+        renderer.flushLayer(layer, state.swatches)
+      }
+    }
+    doRender()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.swatches, isActive])
 
   useEffect(() => {
     if (!isActive || state.activeTool !== 'transform') return
@@ -858,6 +915,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       })(),
       zoom: state.canvas.zoom,
       tiledMode: state.canvas.tiledMode,
+      pixelFormat: state.pixelFormat,
+      swatches: swatchesRef.current,
+      setSwatch: (index) => {
+        dispatch({ type: 'SET_ACTIVE_SWATCH', payload: index })
+      },
     }
   }
 
@@ -869,6 +931,28 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     onPointerMove: (pos) => {
       const ctx = buildCtx()
       if (ctx) toolHandlerRef.current.onPointerMove(pos, ctx)
+      // Pixel-info tracking for indexed8 mode (feeds StatusBar "idx N · #RRGGBB")
+      if (state.pixelFormat === 'indexed8') {
+        const renderer = rendererRef.current
+        const activeId = state.activeLayerId
+        const layer = activeId ? glLayersRef.current.get(activeId) : undefined
+        if (renderer && layer && layer.format === 'indexed8') {
+          const lx = Math.floor(pos.x) - layer.offsetX
+          const ly = Math.floor(pos.y) - layer.offsetY
+          if (lx >= 0 && lx < layer.layerWidth && ly >= 0 && ly < layer.layerHeight) {
+            const idx = (layer.data as Uint8Array)[ly * layer.layerWidth + lx]
+            const palette = swatchesRef.current
+            const color = idx < palette.length ? palette[idx] : null
+            cursorStore.setPixelInfo({ index: idx, color: color ? { r: color.r, g: color.g, b: color.b, a: color.a } : null })
+          } else {
+            cursorStore.setPixelInfo(null)
+          }
+        } else {
+          cursorStore.setPixelInfo(null)
+        }
+      } else if (cursorStore.pixelInfo !== null) {
+        cursorStore.setPixelInfo(null)
+      }
     },
     onPointerMoveBatch: (positions) => {
       // Pen coalesced-event batch: accumulate all CPU drawing first, then do a

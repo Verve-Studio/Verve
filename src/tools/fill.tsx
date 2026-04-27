@@ -2,12 +2,40 @@ import React, { useState } from 'react'
 import { floodFill } from '@/wasm'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+import { resolveNearestPaletteIndex } from '@/utils/indexedColorUtils'
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
 const fillOptions = {
   tolerance: 32,
   contiguous: true,
+}
+
+// ─── Indexed8 contiguous flood fill (pure TS, synchronous) ──────────────────
+
+function floodFillIndexedTS(
+  data: Uint8Array,
+  w: number,
+  h: number,
+  startX: number,
+  startY: number,
+  fillIndex: number,
+): void {
+  if (startX < 0 || startX >= w || startY < 0 || startY >= h) return
+  const targetIndex = data[startY * w + startX]
+  if (targetIndex === fillIndex) return
+  const stack: number[] = [startY * w + startX]
+  while (stack.length > 0) {
+    const pos = stack.pop()!
+    if (data[pos] !== targetIndex) continue
+    data[pos] = fillIndex
+    const x = pos % w
+    const y = (pos - x) / w
+    if (x > 0)     stack.push(pos - 1)
+    if (x < w - 1) stack.push(pos + 1)
+    if (y > 0)     stack.push(pos - w)
+    if (y < h - 1) stack.push(pos + w)
+  }
 }
 
 // ─── Non-contiguous fill (replace all matching pixels in the layer) ───────────
@@ -78,6 +106,49 @@ function createFillHandler(): ToolHandler {
       // Convert canvas-space click to layer-local coords (re-compute after growth)
       const lx = Math.floor(x) - layer.offsetX
       const ly = Math.floor(y) - layer.offsetY
+
+      // ── indexed8 path ───────────────────────────────────────────────────────
+      if (layer.format === 'indexed8') {
+        const strokeIndex = resolveNearestPaletteIndex(r, g, b, a, ctx.swatches)
+        const lw = layer.layerWidth
+
+        const applyIndexedSelectionMask = (snapshotI: Uint8Array): void => {
+          if (!selectionMask) return
+          for (let ly2 = 0; ly2 < layer.layerHeight; ly2++) {
+            for (let lx2 = 0; lx2 < lw; lx2++) {
+              const cx2 = lx2 + layer.offsetX
+              const cy2 = ly2 + layer.offsetY
+              const mi = cy2 * cw + cx2
+              if (mi < 0 || mi >= selectionMask.length || selectionMask[mi] !== 0) continue
+              ;(layer.data as Uint8Array)[ly2 * lw + lx2] = snapshotI[ly2 * lw + lx2]
+            }
+          }
+        }
+
+        if (fillOptions.contiguous) {
+          if (lx < 0 || ly < 0 || lx >= layer.layerWidth || ly >= layer.layerHeight) return
+          const snapshotI = selectionMask ? (layer.data as Uint8Array).slice() : null
+          floodFillIndexedTS(layer.data as Uint8Array, layer.layerWidth, layer.layerHeight, lx, ly, strokeIndex)
+          if (snapshotI) applyIndexedSelectionMask(snapshotI)
+          renderer.flushLayer(layer, ctx.swatches)
+          render(layers)
+          commitStroke('Fill')
+        } else {
+          if (lx < 0 || ly < 0 || lx >= layer.layerWidth || ly >= layer.layerHeight) return
+          const snapshotI = selectionMask ? (layer.data as Uint8Array).slice() : null
+          const targetIndex = (layer.data as Uint8Array)[ly * layer.layerWidth + lx]
+          for (let i = 0; i < layer.data.length; i++) {
+            if ((layer.data as Uint8Array)[i] === targetIndex) {
+              ;(layer.data as Uint8Array)[i] = strokeIndex
+            }
+          }
+          if (snapshotI) applyIndexedSelectionMask(snapshotI)
+          renderer.flushLayer(layer, ctx.swatches)
+          render(layers)
+          commitStroke('Fill')
+        }
+        return
+      }
 
       if (fillOptions.contiguous) {
         // Async WASM flood fill (contiguous)

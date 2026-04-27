@@ -3,6 +3,8 @@ import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import { selectionStore } from '../core/store/selectionStore'
 import type { SelectionMode } from '../core/store/selectionStore'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+import { expandIndicesToRgba } from '@/utils/indexedColorUtils'
+import { useAppContext } from '@/core/store/AppContext'
 
 // ─── Shared options ───────────────────────────────────────────────────────────
 
@@ -25,6 +27,27 @@ function createMagicWandHandler(): ToolHandler {
       const lh = layer.layerHeight
       const ox = layer.offsetX
       const oy = layer.offsetY
+
+      if (ctx.layer.format === 'indexed8') {
+        const expandedLayer = expandIndicesToRgba(layer.data as Uint8Array, ctx.swatches)
+        for (let ly2 = 0; ly2 < lh; ly2++) {
+          const cy2 = oy + ly2
+          if (cy2 < 0 || cy2 >= ch) continue
+          for (let lx2 = 0; lx2 < lw; lx2++) {
+            const cx2 = ox + lx2
+            if (cx2 < 0 || cx2 >= cw) continue
+            const si = (ly2 * lw + lx2) * 4
+            const di = (cy2 * cw + cx2) * 4
+            canvasData[di]     = expandedLayer[si]
+            canvasData[di + 1] = expandedLayer[si + 1]
+            canvasData[di + 2] = expandedLayer[si + 2]
+            canvasData[di + 3] = expandedLayer[si + 3]
+          }
+        }
+        selectionStore.floodFillSelect(x, y, canvasData, 0, wandOptions.contiguous, mode, wandOptions.feather, wandOptions.dilation, wandOptions.antiAlias)
+        return
+      }
+
       const src = layer.data
       for (let ly = 0; ly < lh; ly++) {
         const cy = oy + ly
@@ -60,6 +83,8 @@ function createMagicWandHandler(): ToolHandler {
 // ─── Options UI ───────────────────────────────────────────────────────────────
 
 function MagicWandOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Element {
+  const { state } = useAppContext()
+  const isIndexed = state.pixelFormat === 'indexed8'
   const [tolerance, setTolerance]   = useState(wandOptions.tolerance)
   const [contiguous, setContiguous] = useState(wandOptions.contiguous)
   const [feather, setFeather]       = useState(wandOptions.feather)
@@ -68,12 +93,13 @@ function MagicWandOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.
 
   return (
     <>
-      <label className={styles.optLabel}>Tolerance:</label>
+      <label className={styles.optLabel} style={isIndexed ? { opacity: 0.4 } : undefined}>Tolerance:</label>
       <SliderInput
-        value={tolerance}
+        value={isIndexed ? 0 : tolerance}
         min={0}
         max={255}
         inputWidth={42}
+        disabled={isIndexed}
         onChange={v => { wandOptions.tolerance = v; setTolerance(v) }}
       />
       <span className={styles.optSep} />

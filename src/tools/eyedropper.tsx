@@ -68,7 +68,29 @@ function sampleArea(
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 function createEyedropperHandler(): ToolHandler {
+  function sampleIndexedPixel(ctx: ToolContext, canvasX: number, canvasY: number): { index: number; color: RGBAColor | null } | null {
+    for (let i = ctx.layers.length - 1; i >= 0; i--) {
+      const layer = ctx.layers[i]
+      if (!layer.visible || layer.format !== 'indexed8') continue
+      const lx = canvasX - layer.offsetX
+      const ly = canvasY - layer.offsetY
+      if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight) continue
+      const index = (layer.data as Uint8Array)[ly * layer.layerWidth + lx]
+      const color = index < ctx.swatches.length ? { r: ctx.swatches[index].r, g: ctx.swatches[index].g, b: ctx.swatches[index].b, a: ctx.swatches[index].a } : null
+      return { index, color }
+    }
+    return null
+  }
+
   function pick(pos: ToolPointerPos, ctx: ToolContext): void {
+    if (ctx.pixelFormat === 'indexed8') {
+      const result = sampleIndexedPixel(ctx, Math.floor(pos.x), Math.floor(pos.y))
+      if (result && result.color) {
+        ctx.setSwatch(result.index)
+        ctx.setColor(result.color)
+      }
+      return
+    }
     const color = sampleArea(ctx.layers, ctx.renderer, Math.floor(pos.x), Math.floor(pos.y), eyedropperOptions.sampleSize)
     ctx.setColor(color)
   }

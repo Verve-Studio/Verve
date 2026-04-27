@@ -1,6 +1,7 @@
 import { useAppContext } from '@/core/store/AppContext'
 import type { RGBAColor, ShapeType, Tool } from '@/types'
 import { ColorPickerDialog } from '@/ux/modals/ColorPickerDialog/ColorPickerDialog'
+import { IndexedPaletteColorPicker } from '@/ux/widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker'
 import React, { useEffect, useRef, useState } from 'react'
 import styles from './Toolbar.module.scss'
 
@@ -280,6 +281,9 @@ const TOOL_GRID: ToolGrid = [
 /** Tools that can only operate on a pixel layer. */
 const PIXEL_ONLY_TOOLS = new Set<Tool>(['brush', 'pencil', 'eraser', 'clone-stamp', 'fill', 'gradient', 'dodge', 'burn'])
 
+/** Tools that have no indexed8 implementation. */
+const INDEXED8_UNSUPPORTED_TOOLS = new Set<Tool>(['brush', 'gradient', 'dodge', 'burn', 'clone-stamp', 'text', 'shape', 'frame'])
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface ToolbarProps {
@@ -291,6 +295,9 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   const { state, dispatch } = useAppContext()
   const [dialogOpen, setDialogOpen]         = useState(false)
   const [dialogTarget, setDialogTarget]     = useState<'fg' | 'bg'>('fg')
+  const [dialogIsSwatchAdd, setDialogIsSwatchAdd] = useState(false)
+  const [indexedPickerTarget, setIndexedPickerTarget] = useState<'fg' | 'bg' | null>(null)
+  const [indexedPickerAnchor, setIndexedPickerAnchor] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [shapePickerOpen, setShapePickerOpen] = useState(false)
   const [flyoutY, setFlyoutY]               = useState(0)
   const shapePickerOpenRef                  = useRef(false)
@@ -299,6 +306,7 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
   const pixelToolsDisabled = activeLayer == null || 'type' in activeLayer
+  const indexedModeActive  = state.pixelFormat === 'indexed8'
 
   // Single always-mounted listener — no mount/unmount race on each toggle
   useEffect(() => {
@@ -335,16 +343,27 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   const fgStyle = `rgb(${fgColor.r},${fgColor.g},${fgColor.b})`
   const bgStyle = `rgb(${bgColor.r},${bgColor.g},${bgColor.b})`
 
-  const openPicker = (target: 'fg' | 'bg'): void => {
+  const openPicker = (target: 'fg' | 'bg', e: React.MouseEvent): void => {
+    if (state.pixelFormat === 'indexed8') {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      setIndexedPickerAnchor({ x: rect.right + 8, y: rect.top })
+      setIndexedPickerTarget(target)
+      return
+    }
     setDialogTarget(target)
     setDialogOpen(true)
   }
 
   const handleConfirm = (color: RGBAColor): void => {
-    dispatch({
-      type: dialogTarget === 'fg' ? 'SET_PRIMARY_COLOR' : 'SET_SECONDARY_COLOR',
-      payload: color,
-    })
+    if (dialogIsSwatchAdd) {
+      dispatch({ type: 'ADD_SWATCH', payload: color })
+    } else {
+      dispatch({
+        type: dialogTarget === 'fg' ? 'SET_PRIMARY_COLOR' : 'SET_SECONDARY_COLOR',
+        payload: color,
+      })
+    }
+    setDialogIsSwatchAdd(false)
     setDialogOpen(false)
   }
 
@@ -379,7 +398,8 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
                       <div key="shape-cell" className={styles.shapeCell} ref={shapeButtonRef}>
                         <button
                           className={`${styles.toolBtn} ${activeTool === 'shape' ? styles.active : ''}`}
-                          onClick={() => onToolChange?.('shape')}
+                          onClick={() => { if (!indexedModeActive) onToolChange?.('shape') }}
+                          disabled={indexedModeActive}
                           aria-label="Shape (U)"
                           aria-pressed={activeTool === 'shape'}
                           title="Shape  U"
@@ -389,6 +409,7 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
                         <button
                           className={styles.shapeCaret}
                           onClick={openShapePicker}
+                          disabled={indexedModeActive}
                           tabIndex={-1}
                           aria-label="Pick shape"
                           title="Choose shape"
@@ -402,8 +423,15 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
                       <button
                         key={tool.id}
                         className={`${styles.toolBtn} ${activeTool === tool.id ? styles.active : ''}`}
-                        onClick={() => !PIXEL_ONLY_TOOLS.has(tool.id as Tool) || !pixelToolsDisabled ? onToolChange?.(tool.id) : undefined}
-                        disabled={PIXEL_ONLY_TOOLS.has(tool.id as Tool) && pixelToolsDisabled}
+                        onClick={() => {
+                          if (PIXEL_ONLY_TOOLS.has(tool.id as Tool) && pixelToolsDisabled) return
+                          if (INDEXED8_UNSUPPORTED_TOOLS.has(tool.id as Tool) && indexedModeActive) return
+                          onToolChange?.(tool.id)
+                        }}
+                        disabled={
+                          (PIXEL_ONLY_TOOLS.has(tool.id as Tool) && pixelToolsDisabled) ||
+                          (INDEXED8_UNSUPPORTED_TOOLS.has(tool.id as Tool) && indexedModeActive)
+                        }
                         aria-label={`${tool.label}  (${tool.shortcut})`}
                         aria-pressed={activeTool === tool.id}
                         title={`${tool.label}  ${tool.shortcut}`}
@@ -428,14 +456,14 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
           style={{ background: bgStyle }}
           title="Background color (click to edit)"
           aria-label="Background color"
-          onClick={() => openPicker('bg')}
+          onClick={(e) => openPicker('bg', e)}
         />
         <button
           className={styles.swatchFg}
           style={{ background: fgStyle }}
           title="Foreground color (click to edit)"
           aria-label="Foreground color"
-          onClick={() => openPicker('fg')}
+          onClick={(e) => openPicker('fg', e)}
         />
         <button className={styles.swatchReset} title="Reset to Default (D)" aria-label="Reset colors to default" onClick={handleReset} />
         <button className={styles.swatchSwap} title="Swap Colors (X)" aria-label="Swap foreground/background" onClick={handleSwap}>
@@ -468,12 +496,31 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
 
     <ColorPickerDialog
       open={dialogOpen}
-      title={`Color Picker (${dialogTarget === 'fg' ? 'Foreground' : 'Background'} Color)`}
+      title={dialogIsSwatchAdd ? 'Add Color to Palette' : `Color Picker (${dialogTarget === 'fg' ? 'Foreground' : 'Background'} Color)`}
       initialColor={dialogTarget === 'fg' ? fgColor : bgColor}
       onConfirm={handleConfirm}
-      onCancel={() => setDialogOpen(false)}
+      onCancel={() => { setDialogIsSwatchAdd(false); setDialogOpen(false) }}
       onAddSwatch={(c) => dispatch({ type: 'ADD_SWATCH', payload: c })}
     />
+    {indexedPickerTarget !== null && (
+      <IndexedPaletteColorPicker
+        palette={state.swatches}
+        activeIndex={state.activePaletteIndex}
+        anchorPos={indexedPickerAnchor}
+        onSelect={(index, color) => {
+          dispatch({ type: 'SET_ACTIVE_SWATCH', payload: index })
+          dispatch({
+            type: indexedPickerTarget === 'fg' ? 'SET_PRIMARY_COLOR' : 'SET_SECONDARY_COLOR',
+            payload: color,
+          })
+        }}
+        onClose={() => setIndexedPickerTarget(null)}
+        onAddColor={() => {
+          setDialogIsSwatchAdd(true)
+          setDialogOpen(true)
+        }}
+      />
+    )}
     </>
   )
 }

@@ -7,6 +7,7 @@ import { buildRenderPlan as buildCanvasRenderPlan, buildSubPlan } from './canvas
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import { encodePng } from './pngHelpers'
 import { rasterizeDocument, type RasterBackend, type RasterReason } from '@/graphicspipeline/rasterization'
+import { matchPaletteIndices } from '@/wasm'
 
 // ─── Public handle type (imported by App.tsx and other callers) ────────────
 
@@ -72,6 +73,14 @@ export interface CanvasHandle {
   exportLayerF32: (layerId: string) => Float32Array | null
   /** Export raw Uint8Array for an indexed8 layer. Returns null for non-indexed layers. */
   exportLayerIndexed: (layerId: string) => Uint8Array | null
+  /** Return the raw index buffer for an indexed8 layer as a canvas-sized Uint8Array (1 byte/pixel, 255 = off-layer). Returns null for non-indexed layers. */
+  getLayerIndexData: (layerId: string) => Uint8Array | null
+  /** Create a full-canvas indexed8 GPU layer from a canvas-sized index buffer. Used by useLayers after merge/flatten. */
+  prepareNewLayerIndexed: (layerId: string, name: string, indexData: Uint8Array) => void
+  /** Write a canvas-sized index buffer into an indexed8 layer without quantization. Flushes and re-renders. */
+  writeLayerIndexData: (layerId: string, indexData: Uint8Array) => void
+  /** Return the GpuLayer object for a given layer ID, or null if not found. */
+  getGpuLayer: (layerId: string) => GpuLayer | null
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -237,6 +246,24 @@ export function useCanvasHandle({
       if (!renderer || !layer) return null
       const w = renderer.pixelWidth
       const h = renderer.pixelHeight
+      if (layer.format === 'indexed8') {
+        const result = new Uint8Array(w * h * 4)
+        for (let ly2 = 0; ly2 < layer.layerHeight; ly2++) {
+          const cy2 = layer.offsetY + ly2
+          if (cy2 < 0 || cy2 >= h) continue
+          for (let lx2 = 0; lx2 < layer.layerWidth; lx2++) {
+            const cx2 = layer.offsetX + lx2
+            if (cx2 < 0 || cx2 >= w) continue
+            const idx = (layer.data as Uint8Array)[ly2 * layer.layerWidth + lx2]
+            const di = (cy2 * w + cx2) * 4
+            if (idx < swatchesRef.current.length) {
+              const p = swatchesRef.current[idx]
+              result[di] = p.r; result[di+1] = p.g; result[di+2] = p.b; result[di+3] = p.a
+            }
+          }
+        }
+        return result
+      }
       const result = new Uint8Array(w * h * 4)
       for (let ly = 0; ly < layer.layerHeight; ly++) {
         const cy = layer.offsetY + ly
@@ -405,6 +432,20 @@ export function useCanvasHandle({
       const w = renderer.pixelWidth
       const h = renderer.pixelHeight
 
+      if (layer.format === 'indexed8') {
+        matchPaletteIndices(pixels, swatchesRef.current as import('@/types').RGBAColor[], 255).then(indices => {
+          for (let ly2 = 0; ly2 < layer.layerHeight; ly2++) {
+            for (let lx2 = 0; lx2 < layer.layerWidth; lx2++) {
+              const ci = (layer.offsetY + ly2) * w + (layer.offsetX + lx2)
+              ;(layer.data as Uint8Array)[ly2 * layer.layerWidth + lx2] = indices[ci]
+            }
+          }
+          renderer.flushLayer(layer, swatchesRef.current as import('@/types').RGBAColor[])
+          renderFromPlan()
+        })
+        return
+      }
+
       // Scan the input for the bounding box of non-transparent pixels (canvas-space).
       // Operations like Free Transform / Perspective produce a canvas-sized buffer
       // where the result may extend beyond the layer's current rect (e.g. a perspective
@@ -493,5 +534,50 @@ export function useCanvasHandle({
       if (!layer || layer.format !== 'indexed8') return null
       return (layer.data as Uint8Array).slice()
     },
+
+    getLayerIndexData: (layerId) => {
+      const layer = glLayersRef.current.get(layerId)
+      const renderer = rendererRef.current
+      if (!layer || !renderer || layer.format !== 'indexed8') return null
+      const w = renderer.pixelWidth
+      const h = renderer.pixelHeight
+      const result = new Uint8Array(w * h).fill(255)
+      for (let ly2 = 0; ly2 < layer.layerHeight; ly2++) {
+        for (let lx2 = 0; lx2 < layer.layerWidth; lx2++) {
+          const cx2 = layer.offsetX + lx2, cy2 = layer.offsetY + ly2
+          if (cx2 < 0 || cx2 >= w || cy2 < 0 || cy2 >= h) continue
+          result[cy2 * w + cx2] = (layer.data as Uint8Array)[ly2 * layer.layerWidth + lx2]
+        }
+      }
+      return result
+    },
+
+    prepareNewLayerIndexed: (layerId, name, indexData) => {
+      const renderer = rendererRef.current
+      if (!renderer) return
+      const w = renderer.pixelWidth, h = renderer.pixelHeight
+      const layer = renderer.createLayer(layerId, name, w, h, 0, 0, 'indexed8')
+      ;(layer.data as Uint8Array).set(indexData)
+      renderer.flushLayer(layer, swatchesRef.current as import('@/types').RGBAColor[])
+      glLayersRef.current.set(layerId, layer)
+      renderFromPlan()
+    },
+
+    writeLayerIndexData: (layerId, indexData) => {
+      const layer = glLayersRef.current.get(layerId)
+      const renderer = rendererRef.current
+      if (!layer || !renderer || layer.format !== 'indexed8') return
+      const w = renderer.pixelWidth
+      for (let ly2 = 0; ly2 < layer.layerHeight; ly2++) {
+        for (let lx2 = 0; lx2 < layer.layerWidth; lx2++) {
+          const ci = (layer.offsetY + ly2) * w + (layer.offsetX + lx2)
+          ;(layer.data as Uint8Array)[ly2 * layer.layerWidth + lx2] = indexData[ci]
+        }
+      }
+      renderer.flushLayer(layer, swatchesRef.current as import('@/types').RGBAColor[])
+      renderFromPlan()
+    },
+
+    getGpuLayer: (layerId) => glLayersRef.current.get(layerId) ?? null,
   }), [width, height]) // eslint-disable-line react-hooks/exhaustive-deps
 }

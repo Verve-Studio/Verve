@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import { useAppContext } from '@/core/store/AppContext'
 import { cursorStore } from '@/core/store/cursorStore'
+import type { IndexedPixelInfo } from '@/core/store/cursorStore'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import { ColorSwatch } from '@/ux/widgets/ColorSwatch/ColorSwatch'
 import type { PixelFormat } from '@/types'
 import styles from './StatusBar.module.scss'
+
+function toHex(r: number, g: number, b: number): string {
+  return [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+}
 
 const FORMAT_LABELS: Record<PixelFormat, string> = {
   rgba8: 'RGB/8',
@@ -18,12 +23,12 @@ export function StatusBar(): React.JSX.Element {
   const { width, height, showGrid, gridSize, gridColor, gridType } = state.canvas
   const formatLabel = FORMAT_LABELS[state.pixelFormat ?? 'rgba8']
 
-  const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean }>({
-    x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible,
+  const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean; pixelInfo: IndexedPixelInfo | null }>({
+    x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible, pixelInfo: cursorStore.pixelInfo,
   })
 
   useEffect(() => {
-    const onUpdate = (): void => setCursor({ x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible })
+    const onUpdate = (): void => setCursor({ x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible, pixelInfo: cursorStore.pixelInfo })
     cursorStore.subscribe(onUpdate)
     return () => cursorStore.unsubscribe(onUpdate)
   }, [])
@@ -43,7 +48,17 @@ export function StatusBar(): React.JSX.Element {
           <>
             <span className={styles.sep} />
             <span className={styles.infoItem}>{cursor.x}, {cursor.y}</span>
-            
+            {state.pixelFormat === 'indexed8' && cursor.pixelInfo !== null && (
+              <>
+                <span className={styles.sep} />
+                <span className={styles.infoItem}>
+                  idx {cursor.pixelInfo.index}
+                  {cursor.pixelInfo.index < 255 && cursor.pixelInfo.color !== null && (
+                    <> · #{toHex(cursor.pixelInfo.color.r, cursor.pixelInfo.color.g, cursor.pixelInfo.color.b)}</>
+                  )}
+                </span>
+              </>
+            )}
           </>
         )}
       </div>

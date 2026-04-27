@@ -864,4 +864,8 @@ export interface AppState {
   }
   openAdjustmentLayerId: string | null
   pixelFormat: PixelFormat
+  /** Index of the currently selected palette entry in indexed8 mode; -1 when none. */
+  activePaletteIndex: number
+  /** The index of the most recently removed swatch (for layer pixel remap); null otherwise. */
+  lastRemovedSwatchIndex: number | null
 }

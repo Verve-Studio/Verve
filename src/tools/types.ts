@@ -1,6 +1,6 @@
 import type React from 'react'
 import type { WebGPURenderer, GpuLayer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
-import type { RGBAColor, TextLayerState, ShapeLayerState } from '@/types'
+import type { RGBAColor, TextLayerState, ShapeLayerState, PixelFormat } from '@/types'
 
 // ─── Runtime context passed to tool handlers on each pointer event ────────────
 
@@ -66,6 +66,12 @@ export interface ToolContext {
   zoom: number
   /** Whether tiled mode is active — used by wrap-capable tools to enable coordinate wrapping. */
   tiledMode: boolean
+  /** Document pixel format — tools branch on this to select rgba8 vs indexed8 behavior. */
+  pixelFormat: PixelFormat
+  /** Current swatch palette — required by indexed8 drawing tools for nearest-index resolution. */
+  swatches: readonly RGBAColor[]
+  /** Set the active palette swatch index (used by the eyedropper in indexed8 mode). */
+  setSwatch: (index: number) => void
 }
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────

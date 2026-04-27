@@ -13,6 +13,7 @@ import type { PixelBrush } from '@/types'
 import type { WebGPURenderer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 import type { GpuLayer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+import { resolveNearestPaletteIndex, writeIndexToLayer, stampIndexedShape } from '@/utils/indexedColorUtils'
 
 // ─── Shared options ───────────────────────────────────────────────────────────
 
@@ -379,6 +380,10 @@ function createPencilHandler(): ToolHandler {
   let lastCtrl:     Point | null = null
   let stabX = 0, stabY = 0
 
+  // ── indexed8 stroke state ──
+  let strokeIndex: number | null = null
+  let indexedTouched: Map<number, true> | null = null
+
   // ── State for 1px Bresenham path ──
   // lastPx:    last Bresenham pixel emitted (end of previous segment)
   // ppPrev:    pixel before ppPending (L-shape left context)
@@ -512,6 +517,37 @@ function createPencilHandler(): ToolHandler {
 
       const brush = pencilOptions.pixelBrush
 
+      // ── indexed8 path ──────────────────────────────────────────────────────
+      if (ctx.layer.format === 'indexed8') {
+        const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
+        const { r, g, b, a } = primaryColor
+        strokeIndex = resolveNearestPaletteIndex(r, g, b, a, ctx.swatches)
+        // Snap primary color to the resolved palette entry so the UI updates
+        if (strokeIndex < ctx.swatches.length) {
+          const sc = ctx.swatches[strokeIndex]
+          if (sc.r !== r || sc.g !== g || sc.b !== b || sc.a !== a) {
+            ctx.setColor(sc)
+          }
+        }
+        indexedTouched = new Map()
+        const px = Math.round(x), py = Math.round(y)
+        const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
+        const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+        const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
+        if (pencilOptions.size <= 1) {
+          growLayerToFit(px, py, 2)
+          writeIndexToLayer(layer, px, py, strokeIndex, sel, tiledW, tiledH)
+        } else {
+          growLayerToFit(px, py, Math.ceil(pencilOptions.size / 2) + 2)
+          stampIndexedShape(layer, px, py, strokeIndex, pencilOptions.size, pencilOptions.shape, indexedTouched, sel, tiledW, tiledH)
+        }
+        lastPx = { x: px, y: py }
+        ppPrev = { x: px, y: py }; ppPending = null
+        renderer.flushLayer(layer, ctx.swatches)
+        render(layers)
+        return
+      }
+
       if (pencilOptions.size === 1 || brush) {
         // 1px path — direct Bresenham, no smoothing (also used for pixel brushes)
         lastRendered = null; lastCtrl = null
@@ -564,6 +600,33 @@ function createPencilHandler(): ToolHandler {
       _renderer = ctx.renderer
       _layer    = ctx.layer
 
+      // ── indexed8 path ──────────────────────────────────────────────────────
+      if (ctx.layer.format === 'indexed8') {
+        if (strokeIndex === null || !indexedTouched || !lastPx) return
+        const x1 = Math.round(x), y1 = Math.round(y)
+        if (lastPx.x === x1 && lastPx.y === y1) return
+        const { renderer, layer, layers, selectionMask, render, growLayerToFit } = ctx
+        const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
+        const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
+        const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
+        const pad = Math.max(2, Math.ceil(pencilOptions.size / 2) + 2)
+        if (pencilOptions.size <= 1) {
+          bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
+            growLayerToFit(px, py, 2)
+            writeIndexToLayer(layer, px, py, strokeIndex!, sel, tiledW, tiledH)
+          })
+        } else {
+          bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
+            growLayerToFit(px, py, pad)
+            stampIndexedShape(layer, px, py, strokeIndex!, pencilOptions.size, pencilOptions.shape, indexedTouched!, sel, tiledW, tiledH)
+          })
+        }
+        lastPx = { x: x1, y: y1 }
+        renderer.flushLayer(layer, ctx.swatches)
+        render(layers)
+        return
+      }
+
       const brush = pencilOptions.pixelBrush
 
       if (pencilOptions.size === 1 || brush) {
@@ -612,6 +675,16 @@ function createPencilHandler(): ToolHandler {
     },
 
     onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
+      if (ctx.layer.format === 'indexed8') {
+        const { renderer, layer, layers, render, commitStroke } = ctx
+        renderer.flushLayer(layer, ctx.swatches)
+        render(layers)
+        commitStroke('Pencil')
+        strokeIndex = null
+        indexedTouched = null
+        lastPx = null; ppPrev = null; ppPending = null
+        return
+      }
       if (pencilOptions.size === 1 || pencilOptions.pixelBrush) {
         if (!pencilOptions.pixelBrush) flushPPPending(ctx)
         const { renderer, layer, layers, render } = ctx

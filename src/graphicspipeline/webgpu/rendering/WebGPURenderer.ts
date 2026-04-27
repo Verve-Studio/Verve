@@ -502,24 +502,50 @@ export class WebGPURenderer {
     const copyX = layer.offsetX - newX
     const copyY = layer.offsetY - newY
     const textureFormat: GPUTextureFormat = layer.format === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
-    const newData: Uint8Array | Float32Array = layer.format === 'rgba32f'
-      ? new Float32Array(newW * newH * 4)
-      : new Uint8Array(newW * newH * 4)
-    const stride = layer.layerWidth * 4 // elements per row (same for both Float32Array and Uint8Array in rgba channels)
-    for (let row = 0; row < layer.layerHeight; row++) {
-      const srcOff = row * stride
-      const dstOff = ((copyY + row) * newW + copyX) * 4
-      ;(newData as Uint8Array).set(
-        (layer.data as Uint8Array).subarray(srcOff, srcOff + stride),
-        dstOff,
-      )
+
+    let newData: Uint8Array | Float32Array
+    if (layer.format === 'rgba32f') {
+      newData = new Float32Array(newW * newH * 4)
+      const stride = layer.layerWidth * 4
+      for (let row = 0; row < layer.layerHeight; row++) {
+        const srcOff = row * stride
+        const dstOff = ((copyY + row) * newW + copyX) * 4
+        ;(newData as Float32Array).set(
+          (layer.data as Float32Array).subarray(srcOff, srcOff + stride),
+          dstOff,
+        )
+      }
+    } else if (layer.format === 'indexed8') {
+      // indexed8: 1 byte per pixel; 255 = transparent sentinel
+      newData = new Uint8Array(newW * newH)
+      ;(newData as Uint8Array).fill(255)
+      const stride = layer.layerWidth
+      for (let row = 0; row < layer.layerHeight; row++) {
+        const srcOff = row * stride
+        const dstOff = (copyY + row) * newW + copyX
+        ;(newData as Uint8Array).set(
+          (layer.data as Uint8Array).subarray(srcOff, srcOff + stride),
+          dstOff,
+        )
+      }
+    } else {
+      newData = new Uint8Array(newW * newH * 4)
+      const stride = layer.layerWidth * 4
+      for (let row = 0; row < layer.layerHeight; row++) {
+        const srcOff = row * stride
+        const dstOff = ((copyY + row) * newW + copyX) * 4
+        ;(newData as Uint8Array).set(
+          (layer.data as Uint8Array).subarray(srcOff, srcOff + stride),
+          dstOff,
+        )
+      }
     }
 
-    // Copy old texture data into new texture using WebGPU
+    // Create new texture; for indexed8 the caller's flushLayer will upload correct RGBA content
     const newTex = createGpuTexture(this.device, newW, newH, null, textureFormat)
     if (layer.format === 'rgba32f') {
       uploadF32TextureData(this.device, newTex, newW, newH, newData as Float32Array)
-    } else {
+    } else if (layer.format !== 'indexed8') {
       uploadTextureData(this.device, newTex, newW, newH, newData as Uint8Array)
     }
 

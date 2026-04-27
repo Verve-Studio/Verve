@@ -144,6 +144,20 @@ export interface PixelOpsModule {
     outPtr: number,
     transparentIdx: number
   ): void
+
+  /**
+   * BFS 4-connected flood fill on a 1-byte-per-pixel indexed buffer.
+   * Replaces all pixels connected to (startX, startY) that share the same
+   * index value with fillIndex.  Operates in-place on the layer buffer.
+   */
+  _floodFillIndexed(
+    indicesPtr: number,
+    w: number,
+    h: number,
+    startX: number,
+    startY: number,
+    fillIndex: number
+  ): void
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

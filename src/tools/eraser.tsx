@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
 import { eraseThickLine } from './algorithm/eraseStroke'
+import { bresenham } from './algorithm/primitives'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+import { stampIndexedShape } from '@/utils/indexedColorUtils'
 
 // ─── Module-level options ────────────────────────────────────────────────────
 
@@ -30,6 +32,19 @@ function createEraserHandler(): ToolHandler {
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
     const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
     const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
+
+    if (layer.format === 'indexed8') {
+      const indexedTouched = new Map<number, true>()
+      const x0r = Math.round(x0), y0r = Math.round(y0)
+      const x1r = Math.round(x1), y1r = Math.round(y1)
+      bresenham(x0r, y0r, x1r, y1r, (px, py) => {
+        stampIndexedShape(layer, px, py, 255, eraserOptions.size, 'round', indexedTouched, sel, tiledW, tiledH)
+      })
+      renderer.flushLayer(layer, ctx.swatches)
+      render(layers)
+      return
+    }
+
     eraseThickLine(
       renderer, layer,
       x0, y0, x1, y1,

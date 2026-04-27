@@ -2,6 +2,7 @@ import type { AppAction } from '@/core/store/AppContext'
 import type { AppState, LayerState, PixelLayerState } from '@/types'
 import { showOperationError } from '@/utils/userFeedback'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
+import { matchPaletteIndices } from '@/wasm'
 import type { Dispatch, MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
@@ -76,7 +77,13 @@ export function useLayers({
       const topIdx = layers.findLastIndex(l => rootIds.has(l.id))
       const mergedName = selectedRoots[selectedRoots.length - 1].name
       const newId = `layer-${Date.now()}`
-      handle.prepareNewLayer(newId, mergedName, merged)
+      const { pixelFormat, swatches } = stateRef.current
+      if (pixelFormat === 'indexed8') {
+        const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
+        handle.prepareNewLayerIndexed(newId, mergedName, indexData)
+      } else {
+        handle.prepareNewLayer(newId, mergedName, merged)
+      }
 
       const newLayers: LayerState[] = []
       for (let i = 0; i < layers.length; i++) {
@@ -115,7 +122,13 @@ export function useLayers({
 
       const newId = `layer-${Date.now()}`
       const mergedName = pixelRoots[0].name
-      handle.prepareNewLayer(newId, mergedName, merged)
+      const { pixelFormat, swatches } = stateRef.current
+      if (pixelFormat === 'indexed8') {
+        const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
+        handle.prepareNewLayerIndexed(newId, mergedName, indexData)
+      } else {
+        handle.prepareNewLayer(newId, mergedName, merged)
+      }
 
       const newLayers: LayerState[] = []
       let insertedMerged = false
@@ -154,7 +167,13 @@ export function useLayers({
 
       const topIdx = layers.findLastIndex(l => rootIds.has(l.id))
       const newId = `layer-${Date.now()}`
-      handle.prepareNewLayer(newId, 'Merged', merged)
+      const { pixelFormat, swatches } = stateRef.current
+      if (pixelFormat === 'indexed8') {
+        const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
+        handle.prepareNewLayerIndexed(newId, 'Merged', indexData)
+      } else {
+        handle.prepareNewLayer(newId, 'Merged', merged)
+      }
 
       const newLayers: LayerState[] = []
       for (let i = 0; i < layers.length; i++) {
@@ -209,7 +228,13 @@ export function useLayers({
       captureHistory('Flatten Image')
       const merged = flat.data
       const newId  = `layer-${Date.now()}`
-      handle.prepareNewLayer(newId, 'Background', merged)
+      const { pixelFormat, swatches } = stateRef.current
+      if (pixelFormat === 'indexed8') {
+        const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
+        handle.prepareNewLayerIndexed(newId, 'Background', indexData)
+      } else {
+        handle.prepareNewLayer(newId, 'Background', merged)
+      }
       dispatch({ type: 'REORDER_LAYERS', payload: [{ id: newId, name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }] })
       dispatch({ type: 'SET_ACTIVE_LAYER', payload: newId })
     } catch (error) {
