@@ -16,58 +16,6 @@ export interface MenuDef {
   items: MenuItemDef[]
 }
 
-const DEFAULT_MENUS: MenuDef[] = [
-  {
-    label: 'File',
-    items: [
-      { label: 'New', shortcut: 'Ctrl+N' },
-      { label: 'Open…', shortcut: 'Ctrl+O' },
-      { separator: true, label: '' },
-      { label: 'Save', shortcut: 'Ctrl+S' },
-      { label: 'Save As…', shortcut: 'Ctrl+Shift+S' },
-      { label: 'Export As…', shortcut: 'Ctrl+E' },
-      { separator: true, label: '' },
-      { label: 'Quit', shortcut: 'Ctrl+Q' }
-    ]
-  },
-  {
-    label: 'Edit',
-    items: [
-      { label: 'Undo', shortcut: 'Ctrl+Z' },
-      { label: 'Redo', shortcut: 'Ctrl+Y' },
-      { separator: true, label: '' },
-      { label: 'Cut', shortcut: 'Ctrl+X' },
-      { label: 'Copy', shortcut: 'Ctrl+C' },
-      { label: 'Paste', shortcut: 'Ctrl+V' }
-    ]
-  },
-  {
-    label: 'View',
-    items: [
-      { label: 'Zoom In', shortcut: 'Ctrl+=' },
-      { label: 'Zoom Out', shortcut: 'Ctrl+-' },
-      { label: 'Fit to Window', shortcut: 'Ctrl+0' },
-      { separator: true, label: '' },
-      { label: 'Show Grid', shortcut: 'Ctrl+G' },
-      { label: 'Show Rulers' }
-    ]
-  },
-  {
-    label: 'Layer',
-    items: [
-      { label: 'New Layer', shortcut: 'Ctrl+Shift+N' },
-      { label: 'Duplicate Layer' },
-      { label: 'Delete Layer' },
-      { separator: true, label: '' },
-      { label: 'Merge Down' },
-      { label: 'Flatten Image' }
-    ]
-  },
-  {
-    label: 'Help',
-    items: [{ label: 'About PixelShop' }, { label: 'Keyboard Shortcuts', shortcut: '?' }]
-  }
-]
 
 interface MenuBarProps {
   menus?: MenuDef[]
@@ -133,7 +81,7 @@ function SubmenuItem({ item, onClose }: SubmenuItemProps): React.JSX.Element {
 
 // ─── MenuBar ──────────────────────────────────────────────────────────────────
 
-export function MenuBar({ menus = DEFAULT_MENUS }: MenuBarProps): React.JSX.Element {
+export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const navRef = useRef<HTMLElement>(null)
 

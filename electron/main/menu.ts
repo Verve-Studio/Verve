@@ -204,6 +204,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       submenu: [
         item('Zoom In',       'zoomIn',      { accelerator: 'CmdOrCtrl+=', noIntercept: true }),
         item('Zoom Out',      'zoomOut',     { accelerator: 'CmdOrCtrl+-', noIntercept: true }),
+        item('Zoom to 100%',  'zoom100',     { accelerator: 'CmdOrCtrl+1', noIntercept: true }),
         item('Fit to Window', 'fitToWindow', { accelerator: 'CmdOrCtrl+0', noIntercept: true }),
         sep(),
         {

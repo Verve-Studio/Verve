@@ -283,6 +283,7 @@ function AppContent(): React.JSX.Element {
   const handleZoomOut      = useCallback(() => {
     dispatch({ type: 'SET_ZOOM', payload: parseFloat(Math.max(0.05, stateRef.current.canvas.zoom * 0.8).toFixed(4)) })
   }, [dispatch])
+  const handleZoom100      = useCallback(() => { dispatch({ type: 'SET_ZOOM', payload: 1 }) }, [dispatch])
   const handleFitToWindow  = useCallback(() => { canvasHandleRef.current?.fitToWindow() }, [canvasHandleRef])
   const handleToggleGrid   = useCallback(() => { dispatch({ type: 'TOGGLE_GRID' }) }, [dispatch])
   const handleFindLayers   = useCallback(() => { setFindLayersCounter(c => c + 1) }, [])
@@ -514,6 +515,7 @@ function AppContent(): React.JSX.Element {
       case 'flattenImage':    handleFlattenImage(); break
       case 'zoomIn':          handleZoomIn(); break
       case 'zoomOut':         handleZoomOut(); break
+      case 'zoom100':         handleZoom100(); break
       case 'fitToWindow':     handleFitToWindow(); break
       case 'toggleGrid':      handleToggleGrid(); break
       case 'setNormalMode':   handleSetNormalMode();  break
@@ -531,7 +533,7 @@ function AppContent(): React.JSX.Element {
     handleDelete, handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
-    handleFitToWindow, handleToggleGrid, handleEnterTransform,
+    handleZoom100, handleFitToWindow, handleToggleGrid, handleEnterTransform,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers,
@@ -612,6 +614,7 @@ function AppContent(): React.JSX.Element {
         onResizeCanvas={() => setShowResizeCanvasDialog(true)}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
+        onZoom100={handleZoom100}
         onFitToWindow={handleFitToWindow}
         onToggleGrid={handleToggleGrid}
         showGrid={state.canvas.showGrid}
