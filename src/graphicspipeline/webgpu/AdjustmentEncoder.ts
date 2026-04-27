@@ -994,7 +994,6 @@ export class AdjustmentEncoder {
       writeUniformBuffer(device, dsParamsBuf, new Uint32Array([scaleFactor, 0, 0, 0]))
       this.encodeRenderPass(encoder, this.bloomDownsamplePipeline, this.bloomDownsamplePipeline.getBindGroupLayout(0), blurATex, [
         { binding: 0, resource: extractTex.createView() },
-        { binding: 1, resource: this.adjSampler },
         { binding: 2, resource: { buffer: dsParamsBuf } },
       ])
       this.pendingDestroyBuffers.push(dsParamsBuf)
@@ -1015,14 +1014,12 @@ export class AdjustmentEncoder {
     for (let i = 0; i < 3; i++) {
       this.encodeRenderPass(encoder, this.boxBlurHPipeline, boxHBGL, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
-        { binding: 1, resource: this.adjSampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
       ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
 
       this.encodeRenderPass(encoder, this.boxBlurVPipeline, boxVBGL, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
-        { binding: 1, resource: this.adjSampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
       ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
@@ -1101,14 +1098,12 @@ export class AdjustmentEncoder {
     for (let i = 0; i < iterations; i++) {
       this.encodeRenderPass(encoder, this.boxBlurHPipeline, boxHBGL, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
-        { binding: 1, resource: this.adjSampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
       ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]
 
       this.encodeRenderPass(encoder, this.boxBlurVPipeline, boxVBGL, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
-        { binding: 1, resource: this.adjSampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
       ])
       ;[workingSrc, workingDst] = [workingDst, workingSrc]

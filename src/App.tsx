@@ -50,6 +50,7 @@ import type { AdjustmentRegistrationEntry } from '@/core/operations/adjustments/
 import { FILTER_REGISTRY } from '@/core/operations/filters/registry'
 import type { FilterKey } from '@/types'
 import { selectionStore } from '@/core/store/selectionStore'
+import { f32TransferStore } from '@/core/store/layerDataTransfer'
 import styles from './App.module.scss'
 
 // ─── Statics ──────────────────────────────────────────────────────────────────
@@ -336,12 +337,9 @@ function AppContent(): React.JSX.Element {
       if (geo) encoded.set(`${ls.id}:geo`, JSON.stringify(geo))
       const CHUNK = 65535
       if (toFormat === 'rgba32f') {
-        const bytes = new Uint8Array((raw as Float32Array).buffer)
-        let b64 = ''
-        for (let i = 0; i < bytes.length; i += CHUNK) {
-          b64 += btoa(String.fromCharCode(...Array.from(bytes.subarray(i, i + CHUNK))))
-        }
-        encoded.set(ls.id, `data:raw/f32;base64,${b64}`)
+        // Store the typed array directly — avoids ~576 MB of base64/atob intermediaries for large images.
+        f32TransferStore.set(ls.id, raw as Float32Array)
+        encoded.set(ls.id, `data:raw/f32-ref;id=${ls.id}`)
       } else if (toFormat === 'indexed8') {
         const u8 = raw as Uint8Array
         let b64 = ''

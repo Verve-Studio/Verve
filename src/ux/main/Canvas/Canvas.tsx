@@ -30,6 +30,7 @@ import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
+import { f32TransferStore } from '@/core/store/layerDataTransfer'
 import styles from './Canvas.module.scss'
 
 // Re-export so external importers (App.tsx etc.) don't need to change their paths.
@@ -307,8 +308,19 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           const geoKey = `${ls.id}:geo`
           const geoJson = initialLayerData?.get(geoKey)
 
-          if (pngData.startsWith('data:raw/f32;base64,')) {
-            // rgba32f layer: base64-encoded raw Float32Array bytes
+          if (pngData.startsWith('data:raw/f32-ref;id=')) {
+            // rgba32f layer via in-process transfer store (no base64 roundtrip)
+            const refId = pngData.slice('data:raw/f32-ref;id='.length)
+            const f32 = f32TransferStore.take(refId)
+            if (geoJson) {
+              const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
+              layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY, 'rgba32f')
+            } else {
+              layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
+            }
+            if (f32) (layer.data as Float32Array).set(f32)
+          } else if (pngData.startsWith('data:raw/f32;base64,')) {
+            // rgba32f layer: base64-encoded raw Float32Array bytes (file open path)
             const b64 = pngData.slice('data:raw/f32;base64,'.length)
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
             const f32 = new Float32Array(bytes.buffer)

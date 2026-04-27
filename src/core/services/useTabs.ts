@@ -2,6 +2,7 @@ import type { AppAction } from '@/core/store/AppContext'
 import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
 import { DEFAULT_SWATCHES, INITIAL_SNAPSHOT, makeTabId } from '@/core/store/tabTypes'
+import { f32TransferStore } from '@/core/store/layerDataTransfer'
 import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { Dispatch, SetStateAction } from 'react'
@@ -100,11 +101,17 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
       const geo = layerGeo.get(id)
       const lw = geo?.layerWidth ?? snap.canvasWidth
       const lh = geo?.layerHeight ?? snap.canvasHeight
-      const tmp = document.createElement('canvas')
-      tmp.width = lw; tmp.height = lh
-      const ctx2d = tmp.getContext('2d')!
-      ctx2d.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), lw, lh), 0, 0)
-      result.set(id, tmp.toDataURL('image/png'))
+      if ((pixels as unknown) instanceof Float32Array) {
+        // rgba32f layer — store directly, avoid base64 roundtrip
+        f32TransferStore.set(id, pixels as unknown as Float32Array)
+        result.set(id, `data:raw/f32-ref;id=${id}`)
+      } else {
+        const tmp = document.createElement('canvas')
+        tmp.width = lw; tmp.height = lh
+        const ctx2d = tmp.getContext('2d')!
+        ctx2d.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), lw, lh), 0, 0)
+        result.set(id, tmp.toDataURL('image/png'))
+      }
       if (geo) result.set(`${id}:geo`, JSON.stringify(geo))
     }
     for (const layer of snap.layers) {

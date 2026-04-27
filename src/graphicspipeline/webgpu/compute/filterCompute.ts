@@ -280,12 +280,10 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], this.intermediate0)
     this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianVPipeline, dstTex), [
       { binding: 0, resource: this.intermediate0.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -294,12 +292,10 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], this.intermediate0)
     this.encodeRenderPass(encoder, this.selectPipeline(this.boxVPipeline, dstTex), [
       { binding: 0, resource: this.intermediate0.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -312,7 +308,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(buf)
     this.encodeRenderPass(encoder, this.selectPipeline(this.radialBlurPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -324,7 +319,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(buf)
     this.encodeRenderPass(encoder, this.selectPipeline(this.motionBlurPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -408,7 +402,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([this.cachedKernelCount, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.lensBlurPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: { buffer: this.cachedKernelBuf! } },
     ], dstTex)
@@ -417,14 +410,12 @@ class FilterComputeEngine {
   encodeSharpen(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void {
     this.encodeRenderPass(encoder, this.selectPipeline(this.sharpenPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
     ], dstTex)
   }
 
   encodeSharpenMore(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void {
     this.encodeRenderPass(encoder, this.selectPipeline(this.sharpenMorePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
     ], dstTex)
   }
 
@@ -433,18 +424,15 @@ class FilterComputeEngine {
     const blurredTex = this.makeRgba8Tex(w, h)
     this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: gaussParamsBuf } },
     ], this.intermediate0)
     this.encodeRenderPass(encoder, this.gaussianVPipeline.s8, [
       { binding: 0, resource: this.intermediate0.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: gaussParamsBuf } },
     ], blurredTex)
     const combineParamsBuf = this.makeParamsBuf(new Uint32Array([amount, threshold, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.unsharpCombinePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: blurredTex.createView() },
       { binding: 3, resource: { buffer: combineParamsBuf } },
     ], dstTex)
@@ -456,12 +444,10 @@ class FilterComputeEngine {
       const blurredTex = this.makeRgba8Tex(w, h)
       this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
         { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ], this.intermediate0)
       this.encodeRenderPass(encoder, this.gaussianVPipeline.s8, [
         { binding: 0, resource: this.intermediate0.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ], blurredTex)
       if (reduceNoise > 0) {
@@ -469,7 +455,6 @@ class FilterComputeEngine {
         const combineParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
         this.encodeRenderPass(encoder, this.smartSharpenGaussCombinePipeline.s8, [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: blurredTex.createView() },
           { binding: 3, resource: { buffer: combineParamsBuf } },
         ], sharpenedTex)
@@ -477,18 +462,15 @@ class FilterComputeEngine {
         const smoothedTex = this.makeRgba8Tex(w, h)
         this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
         ], this.intermediate0)
         this.encodeRenderPass(encoder, this.boxVPipeline.s8, [
           { binding: 0, resource: this.intermediate0.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
         ], smoothedTex)
         const blendParamsBuf = this.makeParamsBuf(new Uint32Array([reduceNoise, 0, 0, 0]))
         this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenBlendPipeline, dstTex), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: smoothedTex.createView() },
           { binding: 3, resource: { buffer: blendParamsBuf } },
         ], dstTex)
@@ -496,7 +478,6 @@ class FilterComputeEngine {
         const combineParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
         this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenGaussCombinePipeline, dstTex), [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: blurredTex.createView() },
           { binding: 3, resource: { buffer: combineParamsBuf } },
         ], dstTex)
@@ -507,25 +488,21 @@ class FilterComputeEngine {
         const lensParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
         this.encodeRenderPass(encoder, this.smartSharpenLensPipeline.s8, [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: lensParamsBuf } },
         ], sharpenedTex)
         const boxParamsBuf = this.makeParamsBuf(new Uint32Array([1, 0, 0, 0]))
         const smoothedTex = this.makeRgba8Tex(w, h)
         this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
         ], this.intermediate0)
         this.encodeRenderPass(encoder, this.boxVPipeline.s8, [
           { binding: 0, resource: this.intermediate0.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: boxParamsBuf } },
         ], smoothedTex)
         const blendParamsBuf = this.makeParamsBuf(new Uint32Array([reduceNoise, 0, 0, 0]))
         this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenBlendPipeline, dstTex), [
           { binding: 0, resource: sharpenedTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: smoothedTex.createView() },
           { binding: 3, resource: { buffer: blendParamsBuf } },
         ], dstTex)
@@ -533,7 +510,6 @@ class FilterComputeEngine {
         const lensParamsBuf = this.makeParamsBuf(new Uint32Array([amount, 0, 0, 0]))
         this.encodeRenderPass(encoder, this.selectPipeline(this.smartSharpenLensPipeline, dstTex), [
           { binding: 0, resource: srcTex.createView() },
-          { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: lensParamsBuf } },
         ], dstTex)
       }
@@ -544,7 +520,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([amount, distribution, monochromatic, seed]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.addNoisePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -562,12 +537,10 @@ class FilterComputeEngine {
       const blurParamsBuf = this.makeParamsBuf(new Uint32Array([blurRadius, 0, 0, 0]))
       this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
         { binding: 0, resource: noiseTexA.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
       ], this.intermediate0)
       this.encodeRenderPass(encoder, this.boxVPipeline.s8, [
         { binding: 0, resource: this.intermediate0.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: blurParamsBuf } },
       ], noiseTexB)
       finalNoiseTex = noiseTexB
@@ -575,7 +548,6 @@ class FilterComputeEngine {
     const combineParamsBuf = this.makeParamsBuf(new Uint32Array([intensity, roughness, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.filmGrainCombinePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: finalNoiseTex.createView() },
       { binding: 3, resource: { buffer: combineParamsBuf } },
     ], dstTex)
@@ -585,7 +557,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.medianPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -598,7 +569,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(buf)
     this.encodeRenderPass(encoder, this.selectPipeline(this.bilateralPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
@@ -609,25 +579,21 @@ class FilterComputeEngine {
       const rndParamsBuf = this.makeParamsBuf(new Uint32Array([strength, preserveDetails, reduceColorNoise, 0]))
       this.encodeRenderPass(encoder, this.reduceNoisePipeline.s8, [
         { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: rndParamsBuf } },
       ], tempTex)
       const gaussParamsBuf = this.makeParamsBuf(new Uint32Array([1, 0, 0, 0]))
       const blurredTex = this.makeRgba8Tex(w, h)
       this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
         { binding: 0, resource: tempTex.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ], this.intermediate0)
       this.encodeRenderPass(encoder, this.gaussianVPipeline.s8, [
         { binding: 0, resource: this.intermediate0.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ], blurredTex)
       const unsharpParamsBuf = this.makeParamsBuf(new Uint32Array([Math.round(sharpenDetails * 1.5), 0, 0, 0]))
       this.encodeRenderPass(encoder, this.selectPipeline(this.unsharpCombinePipeline, dstTex), [
         { binding: 0, resource: tempTex.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: blurredTex.createView() },
         { binding: 3, resource: { buffer: unsharpParamsBuf } },
       ], dstTex)
@@ -635,7 +601,6 @@ class FilterComputeEngine {
       const rndParamsBuf = this.makeParamsBuf(new Uint32Array([strength, preserveDetails, reduceColorNoise, 0]))
       this.encodeRenderPass(encoder, this.selectPipeline(this.reduceNoisePipeline, dstTex), [
         { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: rndParamsBuf } },
       ], dstTex)
     }
@@ -657,7 +622,6 @@ class FilterComputeEngine {
     this.pendingDestroyBuffers.push(permBuf)
     this.encodeRenderPass(encoder, this.selectPipeline(this.cloudsPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: { buffer: permBuf } },
     ], dstTex)
@@ -667,7 +631,6 @@ class FilterComputeEngine {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([blockSize, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.pixelatePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: paramsBuf } },
     ], dstTex)
   }
