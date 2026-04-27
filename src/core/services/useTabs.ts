@@ -147,6 +147,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
         zoom:           toTab.snapshot.zoom,
         tiledMode:      toTab.tiledMode    ?? false,
         showTileGrid:   toTab.showTileGrid ?? false,
+        pixelFormat:    toTab.snapshot.pixelFormat ?? 'rgba8',
       },
     })
     dispatch({ type: 'SET_SWATCHES', payload: toTab.snapshot.swatches ?? DEFAULT_SWATCHES })

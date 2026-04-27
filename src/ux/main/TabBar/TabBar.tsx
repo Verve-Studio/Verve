@@ -1,9 +1,17 @@
 import React from 'react'
+import type { PixelFormat } from '@/types'
 import styles from './TabBar.module.scss'
 
 export interface TabInfo {
   id: string
   title: string
+  pixelFormat: PixelFormat
+}
+
+function formatLabel(fmt: PixelFormat): string {
+  if (fmt === 'rgba32f') return 'RGB/32f'
+  if (fmt === 'indexed8') return 'Idx/8'
+  return 'RGB/8'
 }
 
 interface TabBarProps {
@@ -30,7 +38,7 @@ export function TabBar({ tabs, activeTabId, activeZoom, onSwitch, onClose }: Tab
             onClick={() => onSwitch(tab.id)}
           >
             <span className={styles.tabName}>
-              {tab.title}{isActive ? ` @ ${zoom}% (RGB/8)` : ''}
+              {tab.title}{isActive ? ` @ ${zoom}% (${formatLabel(tab.pixelFormat)})` : ''}
             </span>
             <button
               className={styles.closeBtn}

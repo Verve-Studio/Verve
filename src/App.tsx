@@ -323,6 +323,16 @@ function AppContent(): React.JSX.Element {
     dispatch({ type: 'SET_SELECTED_LAYERS', payload: [] })
   }, [dispatch])
 
+  // ── Sync state.pixelFormat → active TabRecord.pixelFormat ────────
+  // SET_PIXEL_FORMAT updates state but not the tabs array; keep them in sync.
+  useEffect(() => {
+    setTabs(prev => {
+      const active = prev.find(t => t.id === activeTabId)
+      if (!active || active.pixelFormat === state.pixelFormat) return prev
+      return prev.map(t => t.id === activeTabId ? { ...t, pixelFormat: state.pixelFormat } : t)
+    })
+  }, [state.pixelFormat, activeTabId, setTabs])
+
   // ── Color mode ────────────────────────────────────────────────────
   const handleFormatRemount = useCallback((toFormat: PixelFormat): void => {
     const handle = canvasHandleRef.current
@@ -481,7 +491,7 @@ function AppContent(): React.JSX.Element {
   // ── Export ────────────────────────────────────────────────────────
   // ── Render ────────────────────────────────────────────────────────
   const hasActiveDocument = tabs.length > 0
-  const tabInfos: TabInfo[] = tabs.map(t => ({ id: t.id, title: t.title }))
+  const tabInfos: TabInfo[] = tabs.map(t => ({ id: t.id, title: t.title, pixelFormat: t.pixelFormat }))
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
   const isRasterizeLayerEnabled = activeLayer !== null && !('type' in activeLayer && (activeLayer.type === 'mask' || activeLayer.type === 'adjustment'))
