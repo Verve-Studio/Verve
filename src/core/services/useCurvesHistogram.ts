@@ -97,14 +97,25 @@ export function useCurvesHistogram({
     setMessage('Computing histogram...')
 
     const load = async (): Promise<void> => {
-      const sourcePixels = await handle.readAdjustmentInputPixels(adjustmentLayerId)
+      const sourceNative = await handle.readAdjustmentInputPixels(adjustmentLayerId)
       if (cancelled) return
-      if (!sourcePixels || sourcePixels.length !== width * height * 4) {
+      if (!sourceNative || sourceNative.length !== width * height * 4) {
         setResult(null)
         setStatus('unavailable')
         setMessage('Histogram unavailable for this layer source.')
         return
       }
+      // Histogram WASM operates on 8-bit RGBA; convert HDR float pixels (clamped) at the boundary.
+      const sourcePixels: Uint8Array = sourceNative instanceof Float32Array
+        ? (() => {
+            const out = new Uint8Array(sourceNative.length)
+            for (let i = 0; i < sourceNative.length; i++) {
+              const v = sourceNative[i]
+              out[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255)
+            }
+            return out
+          })()
+        : sourceNative
 
       const maskRgba = handle.getAdjustmentMaskPixels(adjustmentLayerId)
       const mask = extractMaskChannel(maskRgba)

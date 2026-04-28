@@ -23,12 +23,12 @@ export function StatusBar(): React.JSX.Element {
   const { width, height, showGrid, gridSize, gridColor, gridType } = state.canvas
   const formatLabel = FORMAT_LABELS[state.pixelFormat ?? 'rgba8']
 
-  const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean; pixelInfo: IndexedPixelInfo | null }>({
-    x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible, pixelInfo: cursorStore.pixelInfo,
+  const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean; pixelInfo: IndexedPixelInfo | null; pixelValues: number[] | null; pixelIsFloat: boolean }>({
+    x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible, pixelInfo: cursorStore.pixelInfo, pixelValues: cursorStore.pixelValues, pixelIsFloat: cursorStore.pixelIsFloat,
   })
 
   useEffect(() => {
-    const onUpdate = (): void => setCursor({ x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible, pixelInfo: cursorStore.pixelInfo })
+    const onUpdate = (): void => setCursor({ x: cursorStore.x, y: cursorStore.y, visible: cursorStore.visible, pixelInfo: cursorStore.pixelInfo, pixelValues: cursorStore.pixelValues, pixelIsFloat: cursorStore.pixelIsFloat })
     cursorStore.subscribe(onUpdate)
     return () => cursorStore.unsubscribe(onUpdate)
   }, [])
@@ -56,6 +56,14 @@ export function StatusBar(): React.JSX.Element {
                   {cursor.pixelInfo.index < 255 && cursor.pixelInfo.color !== null && (
                     <> · #{toHex(cursor.pixelInfo.color.r, cursor.pixelInfo.color.g, cursor.pixelInfo.color.b)}</>
                   )}
+                </span>
+              </>
+            )}
+            {state.pixelFormat === 'rgba32f' && cursor.pixelIsFloat && cursor.pixelValues !== null && (
+              <>
+                <span className={styles.sep} />
+                <span className={`${styles.infoItem} ${styles.floatReadout}`}>
+                  R:{cursor.pixelValues[0].toFixed(4)} G:{cursor.pixelValues[1].toFixed(4)} B:{cursor.pixelValues[2].toFixed(4)} A:{cursor.pixelValues[3].toFixed(4)}
                 </span>
               </>
             )}

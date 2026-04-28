@@ -66,6 +66,7 @@ export type { ResizeImageSettings } from './modals/ResizeImageDialog/ResizeImage
 export { ResizeCanvasDialog } from './modals/ResizeCanvasDialog/ResizeCanvasDialog'
 export type { ResizeCanvasSettings } from './modals/ResizeCanvasDialog/ResizeCanvasDialog'
 export { AboutDialog } from './modals/AboutDialog/AboutDialog'
+export { HdrLdrExportWarningDialog } from './modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
 export { KeyboardShortcutsDialog } from './modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
 export { SizeInputs } from './widgets/SizeInputs/SizeInputs'
 export type { SizeInputsProps } from './widgets/SizeInputs/SizeInputs'

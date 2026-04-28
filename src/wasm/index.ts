@@ -513,3 +513,56 @@ export async function floodFillIndexed(
     m._free(ptr)
   }
 }
+
+// ─── EXR I/O ─────────────────────────────────────────────────────────────────
+
+/** Decode an OpenEXR file. */
+export async function decodeExr(bytes: Uint8Array): Promise<{ pixels: Float32Array; width: number; height: number }> {
+  const m = await getPixelOps()
+  const srcPtr = m._malloc(bytes.byteLength)
+  try {
+    m.HEAPU8.set(bytes, srcPtr)
+    const resultPtr = m._loadExr(srcPtr, bytes.byteLength)
+    if (resultPtr === 0) throw new Error('EXR decode failed')
+    const view    = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset)
+    const width   = view.getInt32(resultPtr,     true)
+    const height  = view.getInt32(resultPtr + 4, true)
+    const pxPtr   = view.getInt32(resultPtr + 8, true)
+    const count   = width * height * 4
+    const pixels  = new Float32Array(count)
+    const heap    = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset)
+    pixels.set(heap.subarray(pxPtr >> 2, (pxPtr >> 2) + count))
+    m._freeExrResult(resultPtr)
+    return { pixels, width, height }
+  } finally {
+    m._free(srcPtr)
+  }
+}
+
+/** Encode RGBA float32 pixels to OpenEXR. compression: 0=none,1=zip,2=zips,3=piz; halfFloat: 0 or 1. */
+export async function encodeExr(
+  pixels: Float32Array,
+  width: number,
+  height: number,
+  compression = 0,
+  halfFloat = 0,
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  const srcPtr = m._malloc(pixels.byteLength)
+  try {
+    new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset + srcPtr, pixels.length).set(pixels)
+    const resultPtr = m._saveExr(srcPtr, width, height, compression, halfFloat)
+    if (resultPtr === 0) throw new Error('EXR encode failed')
+    const view    = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset)
+    const bytesPtr = view.getInt32(resultPtr,     true)
+    const outLen   = view.getInt32(resultPtr + 4, true)
+    const out = new Uint8Array(outLen)
+    out.set(m.HEAPU8.subarray(bytesPtr, bytesPtr + outLen))
+    m._freeExrBytes(resultPtr)
+    return out
+  } finally {
+    m._free(srcPtr)
+  }
+}
+
+

@@ -45,8 +45,8 @@ export interface CanvasHandle {
   restoreAllLayerPixels: (data: Map<string, Uint8Array | Float32Array>, geometry?: Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>, layerStateForRender?: readonly LayerState[]) => void
   /** Restore baked selection masks for adjustment layers and re-render. */
   restoreAllAdjustmentMasks: (masks: Map<string, Uint8Array>) => void
-  /** Return full-canvas RGBA pixels that feed into the target adjustment layer. */
-  readAdjustmentInputPixels: (adjustmentLayerId: string) => Promise<Uint8Array | null>
+  /** Return full-canvas RGBA pixels that feed into the target adjustment layer. Float32Array for f32 docs, Uint8Array otherwise. */
+  readAdjustmentInputPixels: (adjustmentLayerId: string) => Promise<Uint8Array | Float32Array | null>
   /** Return a copy of a baked adjustment selection mask by adjustment layer ID. */
   getAdjustmentMaskPixels: (adjustmentLayerId: string) => Uint8Array | null
   /** Rasterize only the children of a group layer, against a transparent background. Used by Merge Group. */

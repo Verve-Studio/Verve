@@ -12,6 +12,7 @@ import { pencilOptions, getPencilBrushPreviewDataUrl, getPencilShapePreviewDataU
 import { eraserOptions } from '@/tools/eraser'
 import { cloneStampOptions } from '@/tools/cloneStamp'
 import { dodgeOptions, burnOptions } from '@/tools/dodge'
+import { setHdrPaintIntensity } from '@/tools/algorithm/primitives'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { drawCloneStampOverlay } from './cloneStampOverlay'
 import { polygonalSelectionStore } from '@/core/store/polygonalSelectionStore'
@@ -30,7 +31,9 @@ import type { CanvasHandle } from './canvasHandle'
 import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
+import { ToneMappingControls } from './ToneMappingControls'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
+import { displayStore } from '@/core/store/displayStore'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
 import styles from './Canvas.module.scss'
 
@@ -60,7 +63,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   const { canvasElRef, thumbnailCanvasRef } = useCanvasContext()
   const { canvasRef, rendererRef, rendererVersion } = useWebGPU({
     pixelWidth: width,
-    pixelHeight: height
+    pixelHeight: height,
+    pixelFormat: state.pixelFormat,
   })
 
   const glLayersRef = useRef<Map<string, GpuLayer>>(new Map())
@@ -91,6 +95,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   layersStateRef.current = state.layers
   const swatchesRef = useRef(state.swatches)
   swatchesRef.current = state.swatches
+  // Mirror the document-level HDR paint intensity into the primitives module
+  // so blendPixelOver multiplies source RGB by it on rgba32f layers.
+  setHdrPaintIntensity(state.hdrIntensity)
   const onStrokeEndRef = useRef(onStrokeEnd)
   onStrokeEndRef.current = onStrokeEnd
   const onReadyRef = useRef(onReady)
@@ -128,6 +135,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   const mirrorBitmapInFlightRef = useRef(false)
   const mirrorBitmapPendingRef = useRef(false)
   const renderRafIdRef = useRef<number>(0)
+  const doRenderRef = useRef<() => void>(() => {})
   const doRender = (): void => {
     if (renderRafIdRef.current !== 0) return // already scheduled for this frame
     renderRafIdRef.current = requestAnimationFrame(() => {
@@ -546,6 +554,18 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.canvas.tiledMode, state.canvas.showTileGrid, isActive])
 
+  // Keep doRenderRef current every render so subscriptions always call the latest closure
+  doRenderRef.current = doRender
+
+  // Re-render when HDR tone-mapping settings change (EV slider, operator)
+  useEffect(() => {
+    if (!isActive) return
+    const onDisplayChange = (): void => { doRenderRef.current() }
+    displayStore.subscribe(onDisplayChange)
+    return () => displayStore.unsubscribe(onDisplayChange)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive])
+
   useEffect(() => {
     if (!isActive || !state.canvas.tiledMode) return
     const viewport = viewportRef.current
@@ -920,6 +940,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       setSwatch: (index) => {
         dispatch({ type: 'SET_ACTIVE_SWATCH', payload: index })
       },
+      hdrIntensity: state.hdrIntensity,
+      setEyedropperHdrOverflow: (overflow) => {
+        dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: overflow })
+      },
     }
   }
 
@@ -950,8 +974,28 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         } else {
           cursorStore.setPixelInfo(null)
         }
-      } else if (cursorStore.pixelInfo !== null) {
-        cursorStore.setPixelInfo(null)
+        cursorStore.setPixelValues(null, false)
+      } else if (state.pixelFormat === 'rgba32f') {
+        if (cursorStore.pixelInfo !== null) cursorStore.setPixelInfo(null)
+        const renderer = rendererRef.current
+        const activeId = state.activeLayerId
+        const layer = activeId ? glLayersRef.current.get(activeId) : undefined
+        if (renderer && layer && layer.format === 'rgba32f') {
+          const lx = Math.floor(pos.x) - layer.offsetX
+          const ly = Math.floor(pos.y) - layer.offsetY
+          if (lx >= 0 && lx < layer.layerWidth && ly >= 0 && ly < layer.layerHeight) {
+            const base = (ly * layer.layerWidth + lx) * 4
+            const data = layer.data as Float32Array
+            cursorStore.setPixelValues([data[base], data[base+1], data[base+2], data[base+3]], true)
+          } else {
+            cursorStore.setPixelValues(null, false)
+          }
+        } else {
+          cursorStore.setPixelValues(null, false)
+        }
+      } else {
+        if (cursorStore.pixelInfo !== null) cursorStore.setPixelInfo(null)
+        cursorStore.setPixelValues(null, false)
       }
     },
     onPointerMoveBatch: (positions) => {
@@ -1250,6 +1294,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       {/* Marching-ants overlay: viewport-sized, screen-space, never scrolls */}
       <canvas ref={overlayRef} className={styles.antsOverlay} />
     </div>
+    <ToneMappingControls pixelFormat={state.pixelFormat} />
     <TextLayerEditor
       editingLayerId={editingLayerId}
       layers={state.layers}

@@ -13,7 +13,7 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -34,9 +34,9 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['pxshop', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff'] },
+        { name: 'All Supported',       extensions: ['pxshop', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
         { name: 'PixelShop Document',  extensions: ['pxshop'] },
-        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff'] },
+        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
     })
@@ -61,11 +61,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('dialog:exportBrowse', async (_event, ext: string) => {
     const filters =
-      ext === 'png'  ? [{ name: 'PNG Image',  extensions: ['png']         }] :
-      ext === 'webp' ? [{ name: 'WebP Image', extensions: ['webp']        }] :
-      ext === 'tga'  ? [{ name: 'TGA Image',  extensions: ['tga']         }] :
-      ext === 'tiff' ? [{ name: 'TIFF Image', extensions: ['tif', 'tiff'] }] :
-                       [{ name: 'JPEG Image', extensions: ['jpg', 'jpeg'] }]
+      ext === 'png'    ? [{ name: 'PNG Image',         extensions: ['png']         }] :
+      ext === 'webp'   ? [{ name: 'WebP Image',        extensions: ['webp']        }] :
+      ext === 'tga'    ? [{ name: 'TGA Image',         extensions: ['tga']         }] :
+      ext === 'tiff'   ? [{ name: 'TIFF Image',        extensions: ['tif', 'tiff'] }] :
+      ext === 'tiff32' ? [{ name: 'TIFF 32-bit Float', extensions: ['tif', 'tiff'] }] :
+      ext === 'exr'    ? [{ name: 'OpenEXR Image',     extensions: ['exr']         }] :
+      ext === 'hdr'    ? [{ name: 'Radiance HDR',      extensions: ['hdr']         }] :
+                         [{ name: 'JPEG Image',        extensions: ['jpg', 'jpeg'] }]
     const { canceled, filePath } = await dialog.showSaveDialog({ filters })
     return canceled ? null : filePath
   })

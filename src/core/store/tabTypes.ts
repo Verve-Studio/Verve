@@ -1,5 +1,5 @@
 import type { HistoryEntry } from '@/core/store/historyStore'
-import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
+import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush, PixelFormat, ToneMappingOperator } from '@/types'
 
 // ─── Default swatch palette ───────────────────────────────────────────────────
 
@@ -58,6 +58,10 @@ export interface TabRecord {
   /** Session-only: tile grid overlay visibility for this tab. Not persisted. */
   showTileGrid: boolean
   pixelFormat: PixelFormat
+  /** Session-only: HDR display exposure (EV stops) for this tab. Not persisted. */
+  exposureEV: number
+  /** Session-only: tone-mapping operator for this tab. Not persisted. */
+  toneMappingOperator: ToneMappingOperator
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

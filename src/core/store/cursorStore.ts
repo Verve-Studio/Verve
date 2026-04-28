@@ -19,6 +19,10 @@ class CursorStore {
   visible: boolean = false
   /** Set while in indexed8 mode; null otherwise. */
   pixelInfo: IndexedPixelInfo | null = null
+  /** Raw channel values at the cursor pixel, or null when unavailable. */
+  pixelValues: number[] | null = null
+  /** True when pixelValues are in float (0.0–1.0) range (rgba32f mode). */
+  pixelIsFloat: boolean = false
 
   private listeners = new Set<Listener>()
 
@@ -35,6 +39,12 @@ class CursorStore {
 
   setPixelInfo(info: IndexedPixelInfo | null): void {
     this.pixelInfo = info
+    this.notify()
+  }
+
+  setPixelValues(values: number[] | null, isFloat: boolean): void {
+    this.pixelValues = values
+    this.pixelIsFloat = isFloat
     this.notify()
   }
 

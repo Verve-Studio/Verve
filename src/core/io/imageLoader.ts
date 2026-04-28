@@ -1,8 +1,10 @@
 import * as UTIF from 'utif'
+import { decodeRgbe } from './hdrCodec'
+import { decodeExr } from '@/wasm'
 
 // ─── Supported image extensions + MIME types ─────────────────────────────────
 
-export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tga', '.tif', '.tiff'])
+export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tga', '.tif', '.tiff', '.exr', '.hdr'])
 
 export const EXT_TO_MIME: Record<string, string> = {
   '.png':  'image/png',
@@ -14,6 +16,8 @@ export const EXT_TO_MIME: Record<string, string> = {
   '.tga':  'image/tga',
   '.tif':  'image/tiff',
   '.tiff': 'image/tiff',
+  '.exr':  'image/x-exr',
+  '.hdr':  'image/vnd.radiance',
 }
 
 // ─── TGA decoder ─────────────────────────────────────────────────────────────
@@ -94,7 +98,35 @@ function decodeTgaPixels(raw: Uint8Array): { data: Uint8Array; width: number; he
 
 // ─── Decode a data URL into raw RGBA pixels ───────────────────────────────────
 
-export function loadImagePixels(dataUrl: string): Promise<{ data: Uint8Array; width: number; height: number }> {
+export async function loadImagePixels(dataUrl: string): Promise<{ data: Uint8Array | Float32Array; width: number; height: number; isHdr?: boolean }> {
+  // EXR — decoded via WASM (tinyexr).
+  if (dataUrl.startsWith('data:image/x-exr;base64,')) {
+    try {
+      const base64 = dataUrl.slice('data:image/x-exr;base64,'.length)
+      const binary = atob(base64)
+      const bytes  = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      const result = await decodeExr(bytes)
+      return { data: result.pixels, width: result.width, height: result.height, isHdr: true }
+    } catch (err) {
+      return Promise.reject(new Error(`Failed to decode EXR: ${(err as Error).message}`))
+    }
+  }
+
+  // Radiance RGBE (.hdr) — pure TypeScript codec.
+  if (dataUrl.startsWith('data:image/vnd.radiance;base64,')) {
+    try {
+      const base64 = dataUrl.slice('data:image/vnd.radiance;base64,'.length)
+      const binary = atob(base64)
+      const bytes  = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      const result = decodeRgbe(bytes)
+      return { data: result.pixels, width: result.width, height: result.height, isHdr: true }
+    } catch (err) {
+      return Promise.reject(new Error(`Failed to decode HDR: ${(err as Error).message}`))
+    }
+  }
+
   // TGA is not supported by the browser's <img> element — decode manually.
   if (dataUrl.startsWith('data:image/tga;base64,')) {
     try {
@@ -118,6 +150,23 @@ export function loadImagePixels(dataUrl: string): Promise<{ data: Uint8Array; wi
       const ifds    = UTIF.decode(bytes.buffer as ArrayBuffer)
       if (ifds.length === 0) throw new Error('No images found in TIFF file')
       UTIF.decodeImage(bytes.buffer as ArrayBuffer, ifds[0])
+      const ifd = ifds[0] as Record<string, number[]>
+      // Detect 32-bit float TIFF (SampleFormat=3, BitsPerSample=32)
+      if (ifd['t339']?.[0] === 3 && ifd['t258']?.[0] === 32) {
+        const w = ifds[0].width
+        const h = ifds[0].height
+        const rawData = (ifds[0] as unknown as { data: Uint8Array }).data
+        const floatView = new Float32Array(rawData.buffer, rawData.byteOffset, rawData.byteLength / 4)
+        const samplesPerPixel = ifd['t277']?.[0] ?? 3
+        const pixels = new Float32Array(w * h * 4)
+        for (let i = 0; i < w * h; i++) {
+          pixels[i * 4]     = floatView[i * samplesPerPixel]
+          pixels[i * 4 + 1] = samplesPerPixel > 1 ? floatView[i * samplesPerPixel + 1] : floatView[i * samplesPerPixel]
+          pixels[i * 4 + 2] = samplesPerPixel > 2 ? floatView[i * samplesPerPixel + 2] : floatView[i * samplesPerPixel]
+          pixels[i * 4 + 3] = samplesPerPixel > 3 ? floatView[i * samplesPerPixel + 3] : 1.0
+        }
+        return Promise.resolve({ data: pixels, width: w, height: h, isHdr: true })
+      }
       const rgba    = UTIF.toRGBA8(ifds[0])
       return Promise.resolve({ data: rgba, width: ifds[0].width, height: ifds[0].height })
     } catch (err) {

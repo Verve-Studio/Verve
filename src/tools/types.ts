@@ -72,6 +72,10 @@ export interface ToolContext {
   swatches: readonly RGBAColor[]
   /** Set the active palette swatch index (used by the eyedropper in indexed8 mode). */
   setSwatch: (index: number) => void
+  /** HDR intensity multiplier — applied to primary color channels when writing rgba32f pixels. */
+  hdrIntensity: number
+  /** Set the eyedropper HDR overflow flag (rgba32f mode: sampled value exceeded 1.0). */
+  setEyedropperHdrOverflow: (overflow: boolean) => void
 }
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────

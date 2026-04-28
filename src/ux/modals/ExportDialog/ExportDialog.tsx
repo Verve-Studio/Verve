@@ -5,7 +5,7 @@ import styles from './ExportDialog.module.scss'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'tga' | 'tiff'
+export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'tga' | 'tiff' | 'exr' | 'hdr' | 'tiff32'
 
 export interface ExportSettings {
   filePath: string
@@ -13,10 +13,13 @@ export interface ExportSettings {
   jpegQuality: number      // 0–100
   jpegBackground: string   // CSS hex colour
   webpQuality: number      // 0–100
+  exrCompression: 0 | 1 | 2 | 3  // 0=none,1=zip,2=zips,3=piz
+  exrHalfFloat: boolean
 }
 
 export interface ExportDialogProps {
   open: boolean
+  isHdrDocument?: boolean
   onConfirm: (settings: ExportSettings) => void
   onCancel: () => void
 }
@@ -26,8 +29,8 @@ export interface ExportDialogProps {
 /** Replace or append the correct extension based on the chosen format. */
 function applyExtension(filePath: string, format: ExportFormat): string {
   if (!filePath) return filePath
-  const ext = format === 'png' ? '.png' : format === 'webp' ? '.webp' : format === 'tga' ? '.tga' : format === 'tiff' ? '.tiff' : '.jpg'
-  return filePath.replace(/\.(png|jpe?g|webp|tga|tiff?)$/i, '') + ext
+  const ext = format === 'png' ? '.png' : format === 'webp' ? '.webp' : format === 'tga' ? '.tga' : format === 'tiff' ? '.tiff' : format === 'exr' ? '.exr' : format === 'hdr' ? '.hdr' : format === 'tiff32' ? '.tiff' : '.jpg'
+  return filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr)$/i, '') + ext
 }
 
 /** Convert a CSS hex colour (#rrggbb) to the format expected by <input type="color">. */
@@ -37,12 +40,14 @@ function toColorInputValue(hex: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ExportDialog({ open, onConfirm, onCancel }: ExportDialogProps): React.JSX.Element | null {
-  const [filePath, setFilePath]       = useState('')
-  const [format, setFormat]           = useState<ExportFormat>('png')
-  const [jpegQuality, setJpegQuality] = useState(92)
-  const [jpegBg, setJpegBg]           = useState('#ffffff')
-  const [webpQuality, setWebpQuality] = useState(90)
+export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: ExportDialogProps): React.JSX.Element | null {
+  const [filePath, setFilePath]             = useState('')
+  const [format, setFormat]                 = useState<ExportFormat>('png')
+  const [jpegQuality, setJpegQuality]       = useState(92)
+  const [jpegBg, setJpegBg]                 = useState('#ffffff')
+  const [webpQuality, setWebpQuality]       = useState(90)
+  const [exrCompression, setExrCompression] = useState<0 | 1 | 2 | 3>(0)
+  const [exrHalfFloat, setExrHalfFloat]     = useState(false)
 
   // Reset state on every open
   useEffect(() => {
@@ -52,6 +57,8 @@ export function ExportDialog({ open, onConfirm, onCancel }: ExportDialogProps): 
       setJpegQuality(92)
       setJpegBg('#ffffff')
       setWebpQuality(90)
+      setExrCompression(0)
+      setExrHalfFloat(false)
     }
   }, [open])
 
@@ -75,6 +82,8 @@ export function ExportDialog({ open, onConfirm, onCancel }: ExportDialogProps): 
       jpegQuality: Math.max(1, Math.min(100, Math.round(jpegQuality))),
       jpegBackground: jpegBg,
       webpQuality: Math.max(1, Math.min(100, Math.round(webpQuality))),
+      exrCompression,
+      exrHalfFloat,
     })
   }, [filePath, format, jpegQuality, jpegBg, onConfirm])
 
@@ -125,6 +134,14 @@ export function ExportDialog({ open, onConfirm, onCancel }: ExportDialogProps): 
               <option value="webp">WebP</option>
               <option value="tga">TGA</option>
               <option value="tiff">TIFF</option>
+              {isHdrDocument && (
+                <>
+                  <option disabled>──────────</option>
+                  <option value="exr">OpenEXR</option>
+                  <option value="hdr">Radiance HDR (.hdr)</option>
+                  <option value="tiff32">TIFF (32-bit float)</option>
+                </>
+              )}
             </select>
           </div>
 
@@ -261,6 +278,58 @@ export function ExportDialog({ open, onConfirm, onCancel }: ExportDialogProps): 
                       }}
                     />
                   </div>
+                </div>
+              </>
+            )}
+
+            {format === 'exr' && (
+              <>
+                <p className={styles.sectionTitle}>OPENEXR OPTIONS</p>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel} htmlFor="ex-exr-comp">Compression</label>
+                  <select
+                    id="ex-exr-comp"
+                    className={styles.select}
+                    value={exrCompression}
+                    onChange={(e) => setExrCompression(Number(e.target.value) as 0 | 1 | 2 | 3)}
+                  >
+                    <option value={0}>None</option>
+                    <option value={1}>ZIP (lossless, scanline)</option>
+                    <option value={2}>ZIPS (lossless, single scanline)</option>
+                    <option value={3}>PIZ (lossless, wavelet)</option>
+                  </select>
+                </div>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel} htmlFor="ex-exr-half">Bit depth</label>
+                  <label className={styles.checkboxLabel}>
+                    <input
+                      id="ex-exr-half"
+                      type="checkbox"
+                      checked={exrHalfFloat}
+                      onChange={(e) => setExrHalfFloat(e.target.checked)}
+                    />
+                    Half float (16-bit)
+                  </label>
+                </div>
+              </>
+            )}
+
+            {format === 'hdr' && (
+              <>
+                <p className={styles.sectionTitle}>RADIANCE HDR OPTIONS</p>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Encoding</label>
+                  <span className={styles.staticNote}>RGBE — lossless shared exponent</span>
+                </div>
+              </>
+            )}
+
+            {format === 'tiff32' && (
+              <>
+                <p className={styles.sectionTitle}>TIFF 32-BIT FLOAT OPTIONS</p>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Compression</label>
+                  <span className={styles.staticNote}>Uncompressed — full float precision</span>
                 </div>
               </>
             )}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 interface UseWebGPUOptions {
   pixelWidth: number
   pixelHeight: number
+  pixelFormat?: import('@/types').PixelFormat
   onWebGPUError?: (err: Error) => void
 }
 
@@ -16,7 +17,7 @@ interface UseWebGPUReturn {
   render: (layers: GpuLayer[], maskMap?: Map<string, GpuLayer>) => void
 }
 
-export function useWebGPU({ pixelWidth, pixelHeight, onWebGPUError }: UseWebGPUOptions): UseWebGPUReturn {
+export function useWebGPU({ pixelWidth, pixelHeight, pixelFormat, onWebGPUError }: UseWebGPUOptions): UseWebGPUReturn {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const rendererRef = useRef<WebGPURenderer | null>(null)
   const hasInitializedRef = useRef(false)
@@ -31,7 +32,7 @@ export function useWebGPU({ pixelWidth, pixelHeight, onWebGPUError }: UseWebGPUO
     hasInitializedRef.current = true
 
     let mounted = true
-    WebGPURenderer.create(canvas, pixelWidth, pixelHeight)
+    WebGPURenderer.create(canvas, pixelWidth, pixelHeight, pixelFormat)
       .then(renderer => {
         if (!mounted) { renderer.destroy(); return }
         rendererRef.current = renderer

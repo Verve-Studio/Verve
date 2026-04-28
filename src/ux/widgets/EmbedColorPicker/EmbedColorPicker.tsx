@@ -109,6 +109,14 @@ export interface EmbedColorPickerProps {
    * Used when painting on a layer mask.
    */
   grayscaleOnly?: boolean
+  /** When true, shows HDR intensity field and float channel readout. */
+  isHdrMode?: boolean
+  /** Controlled intensity multiplier (0–16). Used in rgba32f documents. */
+  hdrIntensity?: number
+  /** Called when the user changes the intensity field. */
+  onHdrIntensityChange?: (v: number) => void
+  /** When true, shows HDR badge unconditionally (eyedropper sampled overflow). */
+  eyedropperHdrOverflow?: boolean
 }
 
 /**
@@ -116,7 +124,7 @@ export interface EmbedColorPickerProps {
  * switchable input modes (RGB / HSV / HEX). Contains no portal or positioning
  * logic — wrap it in whatever container / popup you need.
  */
-export function EmbedColorPicker({ value, onChange, grayscaleOnly = false }: EmbedColorPickerProps): React.JSX.Element {
+export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdrMode = false, hdrIntensity = 1.0, onHdrIntensityChange, eyedropperHdrOverflow = false }: EmbedColorPickerProps): React.JSX.Element {
   const gradRef = useRef<HTMLCanvasElement>(null)
   const hueRef  = useRef<HTMLCanvasElement>(null)
 
@@ -345,6 +353,38 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false }: Emb
             spellCheck={false}
           />
         </div>
+      )}
+
+      {isHdrMode && (
+        <>
+          <div className={styles.hdrIntensityRow}>
+            <span className={styles.hdrLabel}>Intensity</span>
+            <SliderInput
+              min={0}
+              max={16}
+              step={0.01}
+              value={hdrIntensity}
+              inputWidth={48}
+              onChange={(v) => onHdrIntensityChange?.(Math.max(0, Math.min(16, v)))}
+            />
+          </div>
+          <div className={styles.hdrFloatReadout}>
+            {(() => {
+              const fr = (rgb[0] / 255) * hdrIntensity
+              const fg = (rgb[1] / 255) * hdrIntensity
+              const fb = (rgb[2] / 255) * hdrIntensity
+              const isOverflow = eyedropperHdrOverflow || fr > 1.0 || fg > 1.0 || fb > 1.0
+              return (
+                <>
+                  <span className={styles.hdrChannels}>
+                    R:{fr.toFixed(2)} G:{fg.toFixed(2)} B:{fb.toFixed(2)}
+                  </span>
+                  {isOverflow && <span className={styles.hdrBadge}>HDR</span>}
+                </>
+              )
+            })()}
+          </div>
+        </>
       )}
     </div>
   )

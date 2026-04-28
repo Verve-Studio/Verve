@@ -193,7 +193,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
           lastGroup = item.group
           result.push({
             label:    item.label,
-            disabled: !isAdjustmentMenuEnabled || pixelFormat === 'indexed8',
+            disabled: !isAdjustmentMenuEnabled || pixelFormat === 'indexed8' || (item.type === 'reduce-colors' && pixelFormat !== 'rgba8'),
             action:   () => onCreateAdjustmentLayer?.(item.type),
           })
         }

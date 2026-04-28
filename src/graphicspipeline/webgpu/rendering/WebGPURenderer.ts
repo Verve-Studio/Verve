@@ -13,10 +13,12 @@ import {
   COMPOSITE_SHADER,
   CHECKER_SHADER,
   BLIT_SHADER,
+  HDR_BLIT_SHADER,
 } from '../shaders/shaders'
 import { AdjustmentEncoder } from '../AdjustmentEncoder'
 import { initFilterCompute } from '../compute/filterCompute'
 import { initGrabCutCompute } from '../compute/grabcutCompute'
+import { displayStore, OPERATOR_SHADER_ID } from '@/core/store/displayStore'
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
@@ -85,6 +87,9 @@ export class WebGPURenderer {
   private readonly checkerPipeline: GPURenderPipeline    // renders to screen (canvasFormat)
   private readonly blitPipeline: GPURenderPipeline       // renders to screen (canvasFormat)
   private readonly blitBGL: GPUBindGroupLayout
+  private readonly hdrBlitPipeline: GPURenderPipeline     // HDR display blit (tone-mapping)
+  private readonly hdrBlitBGL: GPUBindGroupLayout
+  private readonly hdrUniformBuffer: GPUBuffer            // 16 bytes: exposureLinear, isFp32, operator u32, _pad
 
   // Adjustment compute encoder (owns all 25 compute pipelines + texture caches)
   private readonly adjEncoder: AdjustmentEncoder
@@ -262,9 +267,27 @@ export class WebGPURenderer {
         { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       ],
     })
+    this.hdrBlitBGL = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    })
     this.compositePipeline = this.createCompositePipeline(this.internalFormat, this.compositeBGL)
     this.checkerPipeline   = this.createCheckerPipeline(canvasFormat)
     this.blitPipeline      = this.createBlitPipeline(canvasFormat, this.blitBGL)
+    this.hdrBlitPipeline   = this.createHdrBlitPipeline(canvasFormat, this.hdrBlitBGL)
+    this.hdrUniformBuffer  = createUniformBuffer(device, 16)
+    // Initialize: exposureLinear=1.0, isFp32=0.0, operator=1 (Reinhard), _pad=0
+    const initData = new ArrayBuffer(16)
+    const initView = new DataView(initData)
+    initView.setFloat32(0, 1.0, true)
+    initView.setFloat32(4, 0.0, true)
+    initView.setUint32(8, 1, true)
+    initView.setFloat32(12, 0.0, true)
+    writeUniformBuffer(device, this.hdrUniformBuffer, initData)
     this.checkerBindGroup  = device.createBindGroup({
       layout: this.checkerPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.checkerUniformBuf } }],
@@ -352,6 +375,33 @@ export class WebGPURenderer {
           // is treated as premultiplied because rgba8unorm stores un-associated alpha,
           // but for Porter-Duff OVER on top of the checkerboard we need:
           //   out = src + dst * (1 - src.a)
+          blend: {
+            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list' },
+    })
+  }
+
+  private createHdrBlitPipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
+    const module = this.device.createShaderModule({ code: HDR_BLIT_SHADER })
+    return this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+      vertex: {
+        module,
+        entryPoint: 'vs_blit',
+        buffers: [
+          { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
+          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
+        ],
+      },
+      fragment: {
+        module,
+        entryPoint: 'fs_blit',
+        targets: [{
+          format,
           blend: {
             color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
@@ -667,7 +717,7 @@ export class WebGPURenderer {
     return result
   }
 
-  async readAdjustmentInputPlan(plan: RenderPlanEntry[], adjustmentLayerId: string): Promise<Uint8Array | null> {
+  async readAdjustmentInputPlan(plan: RenderPlanEntry[], adjustmentLayerId: string): Promise<Uint8Array | Float32Array | null> {
     const groupEntry = plan.find(
       (entry): entry is Extract<RenderPlanEntry, { kind: 'adjustment-group' }> =>
         entry.kind === 'adjustment-group' &&
@@ -699,7 +749,8 @@ export class WebGPURenderer {
       ;[srcTex, dstTex] = [dstTex, srcTex]
     }
 
-    const alignedBpr = Math.ceil(w * 4 / 256) * 256
+    const bytesPerPixel = this.internalFormat === 'rgba32float' ? 16 : 4
+    const alignedBpr = Math.ceil(w * bytesPerPixel / 256) * 256
     const readbuf = createReadbackBuffer(device, alignedBpr * h)
     encoder.copyTextureToBuffer(
       { texture: srcTex },
@@ -710,7 +761,10 @@ export class WebGPURenderer {
     this.flushPendingDestroys()
 
     await readbuf.mapAsync(GPUMapMode.READ)
-    const result = this.unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
+    const raw = readbuf.getMappedRange()
+    const result: Uint8Array | Float32Array = this.internalFormat === 'rgba32float'
+      ? this.unpackF32Rows(new Float32Array(raw), w, h, alignedBpr / 4)
+      : this.unpackRows(new Uint8Array(raw), w, h, alignedBpr)
     readbuf.unmap()
     readbuf.destroy()
     return result
@@ -971,13 +1025,26 @@ export class WebGPURenderer {
   }
 
   private encodeBlitToView(encoder: GPUCommandEncoder, srcTex: GPUTexture, view: GPUTextureView): void {
+    // Update HDR tone-mapping uniforms before the blit
+    const exposureLinear = Math.pow(2, displayStore.exposureEV)
+    const isFp32 = this.pixelFormat === 'rgba32f' ? 1.0 : 0.0
+    const operatorId = OPERATOR_SHADER_ID[displayStore.toneMappingOperator] ?? 1
+    const tmData = new ArrayBuffer(16)
+    const tmView = new DataView(tmData)
+    tmView.setFloat32(0, exposureLinear, true)
+    tmView.setFloat32(4, isFp32, true)
+    tmView.setUint32(8, operatorId, true)
+    tmView.setFloat32(12, 0.0, true)
+    this.device.queue.writeBuffer(this.hdrUniformBuffer, 0, tmData)
+
     // Uses pre-allocated frameUniformBuf + canvasQuadVertBuf
     const bindGroup = this.device.createBindGroup({
-      layout: this.blitBGL,
+      layout: this.hdrBlitBGL,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: this.frameUniformBuf } },
+        { binding: 3, resource: { buffer: this.hdrUniformBuffer } },
       ],
     })
 
@@ -988,7 +1055,7 @@ export class WebGPURenderer {
         storeOp: 'store',
       }],
     })
-    pass.setPipeline(this.blitPipeline)
+    pass.setPipeline(this.hdrBlitPipeline)
     pass.setBindGroup(0, bindGroup)
     pass.setVertexBuffer(0, this.canvasQuadVertBuf)
     pass.setVertexBuffer(1, this.texCoordBuffer)

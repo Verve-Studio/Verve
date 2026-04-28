@@ -15,6 +15,7 @@ add_executable(pixelops
   src/transform.cpp
   src/inpaint.cpp
   src/grabcut.cpp
+  src/exr.cpp
 )
 
 target_include_directories(pixelops PRIVATE src)
@@ -27,12 +28,16 @@ if(EMSCRIPTEN)
     SUFFIX ".js"
   )
 
+  # Make the Emscripten zlib port headers available at compile time
+  target_compile_options(pixelops PRIVATE "-sUSE_ZLIB=1")
+
   target_link_options(pixelops PRIVATE
+    "-sUSE_ZLIB=1"
     "-sWASM=1"
     "-sMODULARIZE=1"
     "-sEXPORT_ES6=1"
     "-sEXPORT_NAME=createPixelOps"
-    "-sEXPORTED_FUNCTIONS=_malloc,_free,_pixelops_flood_fill,_pixelops_convolve,_pixelops_resize_bilinear,_pixelops_resize_nearest,_pixelops_dither_bayer,_pixelops_quantize,_pixelops_curves_histogram,_pixelops_affine_transform,_pixelops_perspective_transform,_pixelops_inpaint,_pixelops_grabcut,_pixelops_grabcut_compute_beta,_pixelops_grabcut_kmeans_init,_pixelops_grabcut_update_gmms,_pixelops_grabcut_mincut,_matchPaletteIndices,_floodFillIndexed"
+    "-sEXPORTED_FUNCTIONS=_malloc,_free,_pixelops_flood_fill,_pixelops_convolve,_pixelops_resize_bilinear,_pixelops_resize_nearest,_pixelops_dither_bayer,_pixelops_quantize,_pixelops_curves_histogram,_pixelops_affine_transform,_pixelops_perspective_transform,_pixelops_inpaint,_pixelops_grabcut,_pixelops_grabcut_compute_beta,_pixelops_grabcut_kmeans_init,_pixelops_grabcut_update_gmms,_pixelops_grabcut_mincut,_matchPaletteIndices,_floodFillIndexed,_loadExr,_freeExrResult,_saveExr,_freeExrBytes"
     "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF32"
     "-sALLOW_MEMORY_GROWTH=1"
     "-O2"

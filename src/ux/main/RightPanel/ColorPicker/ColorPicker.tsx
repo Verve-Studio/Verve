@@ -53,7 +53,18 @@ export function ColorPicker(): React.JSX.Element {
         <span className={styles.swatchLabel}>{active === 'fg' ? 'Foreground' : 'Background'}</span>
       </div>
 
-      <EmbedColorPicker value={activeHex} onChange={handleChange} grayscaleOnly={grayscaleOnly} />
+      <EmbedColorPicker
+        value={activeHex}
+        onChange={handleChange}
+        grayscaleOnly={grayscaleOnly}
+        isHdrMode={state.pixelFormat === 'rgba32f'}
+        hdrIntensity={state.hdrIntensity}
+        onHdrIntensityChange={(v) => {
+          dispatch({ type: 'SET_HDR_INTENSITY', payload: v })
+          dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: false })
+        }}
+        eyedropperHdrOverflow={state.eyedropperHdrOverflow}
+      />
     </div>
   )
 }

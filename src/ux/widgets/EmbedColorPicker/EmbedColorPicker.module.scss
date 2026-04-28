@@ -156,3 +156,49 @@
     @include m.focus-ring;
   }
 }
+
+// ─── HDR mode ─────────────────────────────────────────────────────────────────
+
+.hdrIntensityRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.hdrLabel {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  min-width: 50px;
+}
+
+.hdrIntensityInput {
+  @include m.ps-input;
+  width: 60px;
+  text-align: right;
+}
+
+.hdrFloatReadout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  font-family: vars.$font-mono;
+}
+
+.hdrChannels {
+  flex: 1;
+  letter-spacing: 0.02em;
+}
+
+.hdrBadge {
+  background: var(--color-accent-blue, #4a9eff);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+}

@@ -92,6 +92,14 @@ function createEyedropperHandler(): ToolHandler {
       return
     }
     const color = sampleArea(ctx.layers, ctx.renderer, Math.floor(pos.x), Math.floor(pos.y), eyedropperOptions.sampleSize)
+    if (ctx.pixelFormat === 'rgba32f') {
+      // Check raw float values for HDR overflow before clamping to 8-bit
+      const sampledRaw = sampleCompositedPixel(ctx.layers, ctx.renderer, Math.floor(pos.x), Math.floor(pos.y))
+      const overflow = sampledRaw[0] > 255 || sampledRaw[1] > 255 || sampledRaw[2] > 255
+      ctx.setEyedropperHdrOverflow(overflow)
+    } else {
+      ctx.setEyedropperHdrOverflow(false)
+    }
     ctx.setColor(color)
   }
 

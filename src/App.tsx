@@ -16,6 +16,7 @@ import { ExportDialog } from '@/ux/modals/ExportDialog/ExportDialog'
 import { ResizeImageDialog } from '@/ux/modals/ResizeImageDialog/ResizeImageDialog'
 import { ResizeCanvasDialog } from '@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog'
 import { AboutDialog } from '@/ux/modals/AboutDialog/AboutDialog'
+import { HdrLdrExportWarningDialog } from '@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
 import { KeyboardShortcutsDialog } from '@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
 import { LensFlareDialog } from '@/ux/windows/filters/LensFlareDialog/LensFlareDialog'
 import { GeneratePaletteDialog } from '@/ux/modals/GeneratePaletteDialog/GeneratePaletteDialog'
@@ -152,7 +153,7 @@ function AppContent(): React.JSX.Element {
   })
 
   // ── Export operations ────────────────────────────────────────────
-  const { handleExportConfirm } = useExportOps({ canvasHandleRef, stateRef })
+  const { handleExportConfirm, pendingLdrExport, clearPendingLdrExport, confirmLdrExport } = useExportOps({ canvasHandleRef, stateRef })
 
   // ── Clipboard ─────────────────────────────────────────────────────
   const { handleCopy, handleCut, handlePaste, handleDelete } = useClipboard({
@@ -635,12 +636,12 @@ function AppContent(): React.JSX.Element {
       contentAwareFill:   hasSelection && !isContentAwareFilling,
       contentAwareDelete: hasSelection && !isContentAwareFilling,
     }
-    for (const ai of ADJUSTMENT_MENU_ITEMS) enabled[`adj:${ai.type}`]   = adjustments.isAdjustmentMenuEnabled
+    for (const ai of ADJUSTMENT_MENU_ITEMS) enabled[`adj:${ai.type}`]   = adjustments.isAdjustmentMenuEnabled && !(ai.type === 'reduce-colors' && state.pixelFormat !== 'rgba8')
     for (const ei of EFFECTS_MENU_ITEMS)    enabled[`adj:${ei.type}`]   = adjustments.isAdjustmentMenuEnabled
     for (const fi of FILTER_MENU_ITEMS)     enabled[`filter:${fi.key}`] = adjustments.isAdjustmentMenuEnabled
     window.api.setMenuItemEnabled(enabled)
   }, [isMac, isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
-      hasSelection, isContentAwareFilling, adjustments.isAdjustmentMenuEnabled])
+      hasSelection, isContentAwareFilling, adjustments.isAdjustmentMenuEnabled, state.pixelFormat])
 
   // Sync Show Grid and tiled mode checkbox states.
   useEffect(() => {
@@ -800,6 +801,7 @@ function AppContent(): React.JSX.Element {
       />
       <ExportDialog
         open={showExportDialog}
+        isHdrDocument={state.pixelFormat === 'rgba32f'}
         onCancel={() => setShowExportDialog(false)}
         onConfirm={async (settings) => {
           setShowExportDialog(false)
@@ -823,6 +825,12 @@ function AppContent(): React.JSX.Element {
       <AboutDialog
         open={showAboutDialog}
         onClose={() => setShowAboutDialog(false)}
+      />
+      <HdrLdrExportWarningDialog
+        open={pendingLdrExport !== null}
+        format={pendingLdrExport?.format ?? ''}
+        onConfirm={() => { void confirmLdrExport() }}
+        onCancel={clearPendingLdrExport}
       />
       <KeyboardShortcutsDialog
         open={showShortcutsDialog}

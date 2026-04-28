@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer } from 'react'
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat, ToneMappingOperator } from '@/types'
 import { isGroupLayer } from '@/types'
 import { getDescendantIds, getParentGroup } from '@/utils/layerTree'
 import { DEFAULT_SWATCHES } from './tabTypes'
@@ -66,6 +66,8 @@ export type AppAction =
   | { type: 'SET_PIXEL_FORMAT'; payload: PixelFormat }
   | { type: 'SET_ACTIVE_SWATCH'; payload: number }
   | { type: 'CLEAR_REMOVED_SWATCH_INDEX' }
+  | { type: 'SET_HDR_INTENSITY'; payload: number }
+  | { type: 'SET_EYEDROPPER_HDR_OVERFLOW'; payload: boolean }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
@@ -86,6 +88,8 @@ const initialState: AppState = {
   pixelFormat: 'rgba8',
   activePaletteIndex: -1,
   lastRemovedSwatchIndex: null,
+  hdrIntensity: 1.0,
+  eyedropperHdrOverflow: false,
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -408,6 +412,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'CLEAR_REMOVED_SWATCH_INDEX':
       return { ...state, lastRemovedSwatchIndex: null }
 
+    case 'SET_HDR_INTENSITY':
+      return { ...state, hdrIntensity: Math.max(0, Math.min(16, action.payload)) }
+
+    case 'SET_EYEDROPPER_HDR_OVERFLOW':
+      return { ...state, eyedropperHdrOverflow: action.payload }
+
     case 'NEW_CANVAS':
       return {
         ...state,
@@ -415,6 +425,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: 'layer-0',
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
+        hdrIntensity: 1.0,
+        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -435,6 +447,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
+        hdrIntensity: 1.0,
+        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -473,6 +487,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
+        hdrIntensity: 1.0,
+        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -497,6 +513,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
+        hdrIntensity: 1.0,
+        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,

@@ -1,0 +1,26 @@
+@use '../../../styles/mixins' as m;
+@use '../../../styles/variables' as vars;
+
+.body {
+  padding: 16px 20px;
+}
+
+.warning {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  line-height: 1.5;
+  margin: 0;
+
+  strong {
+    color: vars.$color-text;
+    font-weight: 600;
+  }
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid vars.$color-border;
+}

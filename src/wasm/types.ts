@@ -158,6 +158,31 @@ export interface PixelOpsModule {
     startY: number,
     fillIndex: number
   ): void
+
+  // ── EXR I/O (tinyexr) ─────────────────────────────────────────────────────
+  /**
+   * Decode an OpenEXR file.
+   * Returns a pointer to an ExrResult struct { width, height, pixels }.
+   * Caller must free with _freeExrResult.
+   */
+  _loadExr(srcPtr: number, srcLen: number): number
+  _freeExrResult(resultPtr: number): void
+
+  /**
+   * Encode an RGBA float32 image to EXR.
+   * Returns a pointer to an ExrBytes struct { data, size }.
+   * Caller must free with _freeExrBytes.
+   * compression: 0=none, 1=zip, 2=zips, 3=piz
+   * halfFloat: 0=float32, 1=half16
+   */
+  _saveExr(
+    pixelsPtr: number,
+    width: number,
+    height: number,
+    compression: number,
+    halfFloat: number
+  ): number
+  _freeExrBytes(resultPtr: number): void
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

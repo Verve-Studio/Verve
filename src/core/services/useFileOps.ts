@@ -131,7 +131,7 @@ export function useFileOps({
     }
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: fmt },
+      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: fmt, exposureEV: 0, toneMappingOperator: 'reinhard' },
     ]
     setTabs(updated)
     setActiveTabId(newId)
@@ -144,9 +144,55 @@ export function useFileOps({
     // ── Image file import ──────────────────────────────────────────────────
     const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
     if (IMAGE_EXTENSIONS.has(ext)) {
-      const base64            = await window.api.readFileBase64(path)
-      const mime              = EXT_TO_MIME[ext] ?? 'image/png'
-      const { data, width, height } = await loadImagePixels(`data:${mime};base64,${base64}`)
+      const base64 = await window.api.readFileBase64(path)
+      const mime   = EXT_TO_MIME[ext] ?? 'image/png'
+      const loaded = await loadImagePixels(`data:${mime};base64,${base64}`)
+      const { width, height } = loaded
+
+      if (loaded.isHdr) {
+        // HDR file — create a rgba32f tab, store float pixels via f32TransferStore
+        const layerId = 'layer-0'
+        const f32Data = loaded.data as Float32Array
+        const layerDataKey = `f32:${layerId}`
+        // Encode float pixels as data URL for savedLayerData map
+        const u8 = new Uint8Array(f32Data.buffer)
+        let binary = ''
+        const CHUNK = 8192
+        for (let i = 0; i < u8.length; i += CHUNK) {
+          binary += String.fromCharCode(...u8.subarray(i, i + CHUNK))
+        }
+        const rawB64 = btoa(binary)
+        const layerData = new Map([[layerId, `data:raw/f32;base64,${rawB64}`]])
+        const layers: LayerState[] = [{ id: layerId, name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }]
+        const title = fileTitle(path)
+        const newSnapshot: TabSnapshot = {
+          canvasWidth: width, canvasHeight: height, backgroundFill: 'transparent',
+          layers, activeLayerId: layerId, zoom: 1,
+          swatches: DEFAULT_SWATCHES,
+          swatchGroups: [],
+          pixelBrushes: [],
+          pixelFormat: 'rgba32f',
+        }
+        const snapshot       = captureActiveSnapshot()
+        const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+        const savedLayerData = serializeActiveTabPixels()
+        const newId          = makeTabId()
+        const updated: TabRecord[] = [
+          ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
+          { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba32f' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' },
+        ]
+        setTabs(updated)
+        setActiveTabId(newId)
+        historyStore.clear({ recaptureSnapshot: false })
+        setPendingLayerData(null)
+        dispatch({ type: 'SWITCH_TAB', payload: { width, height, backgroundFill: 'transparent', layers, activeLayerId: layerId, zoom: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba32f' } })
+        const updatedRecent = await window.api.addRecentFile(path)
+        onRecentFilesUpdated?.(updatedRecent)
+        void layerDataKey // used in savedLayerData map above
+        return
+      }
+
+      const data = loaded.data as Uint8Array
       const layerId           = 'layer-0'
       const tmp               = document.createElement('canvas')
       tmp.width = width; tmp.height = height
@@ -169,7 +215,7 @@ export function useFileOps({
       const newId          = makeTabId()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat },
+        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' },
       ]
       setTabs(updated)
       setActiveTabId(newId)

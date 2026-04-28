@@ -107,6 +107,12 @@
   color: vars.$color-text-muted;
 }
 
+.floatReadout {
+  font-family: vars.$font-mono;
+  letter-spacing: 0.02em;
+  color: var(--color-accent-blue, #4a9eff);
+}
+
 .sep {
   width: 1px;
   height: 14px;

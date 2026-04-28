@@ -3,6 +3,7 @@ import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
 import { DEFAULT_SWATCHES, INITIAL_SNAPSHOT, makeTabId } from '@/core/store/tabTypes'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { displayStore } from '@/core/store/displayStore'
 import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { Dispatch, SetStateAction } from 'react'
@@ -57,6 +58,8 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     tiledMode: false,
     showTileGrid: false,
     pixelFormat: 'rgba8',
+    exposureEV: 0,
+    toneMappingOperator: 'reinhard',
   }])
   const [activeTabId, setActiveTabId]         = useState(initialTabId)
   const [pendingLayerData, setPendingLayerData] = useState<Map<string, string> | null>(null)
@@ -145,6 +148,8 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
       setTabsRef.current(prev => prev.map(t => t.id === toId ? { ...t, savedHistory: null } : t))
     }
     setActiveTabId(toId)
+    displayStore.setEV(toTab.exposureEV ?? 0)
+    displayStore.setOperator(toTab.toneMappingOperator ?? 'reinhard')
     dispatch({
       type: 'SWITCH_TAB',
       payload: {
@@ -169,7 +174,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     const snapshot        = captureActiveSnapshot()
     const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
     const savedLayerData  = serializeActiveTabPixels()
-    const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid } : t)
+    const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator } : t)
     setTabs(updated)
     switchToTab(toId, updated)
   }, [activeTabId, tabs, captureActiveSnapshot, serializeActiveTabPixels, switchToTab])

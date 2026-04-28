@@ -844,6 +844,8 @@ export interface PixelBrush {
 
 export type PixelFormat = 'rgba8' | 'rgba32f' | 'indexed8'
 
+export type ToneMappingOperator = 'reinhard' | 'clamp'
+
 export interface AppState {
   activeTool: Tool
   activeShape: ShapeType
@@ -868,4 +870,8 @@ export interface AppState {
   activePaletteIndex: number
   /** The index of the most recently removed swatch (for layer pixel remap); null otherwise. */
   lastRemovedSwatchIndex: number | null
+  /** HDR intensity multiplier for the active color in rgba32f documents. Range [0, 16]. */
+  hdrIntensity: number
+  /** True when the eyedropper sampled a pixel with float values exceeding 1.0 in rgba32f mode. */
+  eyedropperHdrOverflow: boolean
 }

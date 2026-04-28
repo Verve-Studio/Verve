@@ -2,7 +2,7 @@
 
 export { COMPOSITE_SHADER } from './rendering/composite'
 export { CHECKER_SHADER } from './rendering/checker'
-export { BLIT_SHADER, FBO_BLIT_SHADER } from './rendering/blit'
+export { BLIT_SHADER, FBO_BLIT_SHADER, HDR_BLIT_SHADER } from './rendering/blit'
 
 export { BC_COMPUTE } from './compute/adjustments/brightness-contrast'
 export { HS_COMPUTE } from './compute/adjustments/hue-saturation'

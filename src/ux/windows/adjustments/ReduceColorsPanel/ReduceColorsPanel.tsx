@@ -29,8 +29,19 @@ export function ReduceColorsPanel({ layer, parentLayerName, canvasHandleRef }: R
     const gen = ++genRef.current
 
     const run = async (): Promise<void> => {
-      const pixels = await canvasHandleRef?.current?.readAdjustmentInputPixels(layer.id)
-      if (!pixels || gen !== genRef.current) return
+      const native = await canvasHandleRef?.current?.readAdjustmentInputPixels(layer.id)
+      if (!native || gen !== genRef.current) return
+      // quantize WASM expects 8-bit RGBA; convert HDR float pixels (clamped) at the boundary.
+      const pixels: Uint8Array = native instanceof Float32Array
+        ? (() => {
+            const out = new Uint8Array(native.length)
+            for (let i = 0; i < native.length; i++) {
+              const v = native[i]
+              out[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255)
+            }
+            return out
+          })()
+        : native
 
       setIsQuantizing(true)
       try {

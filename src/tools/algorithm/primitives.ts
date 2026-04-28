@@ -3,6 +3,15 @@ import type { WebGPURenderer, GpuLayer } from '@/graphicspipeline/webgpu/renderi
 // Selection mask shorthand used by draw/erase helpers.
 export type SelMask = { mask: Uint8Array; width: number }
 
+// HDR paint intensity (rgba32f only). Multiplies the source RGB before
+// Porter-Duff "over" compositing, allowing the picker color to paint
+// super-bright values >1.0 in float canvases. Set by Canvas.tsx whenever
+// AppState.hdrIntensity changes; ignored on rgba8 / indexed8 layers.
+let currentHdrIntensity = 1.0
+export function setHdrPaintIntensity(v: number): void {
+  currentHdrIntensity = Math.max(0, v)
+}
+
 /**
  * Bresenham's line algorithm — plots every integer pixel between (x0,y0) and
  * (x1,y1) inclusive, calling `plot` for each.
@@ -111,7 +120,11 @@ export function blendPixelOver(
   if (layer.format === 'rgba32f') {
     // samplePixel/drawPixel operate in [0.0, 1.0] for rgba32f;
     // incoming r/g/b/a are always 0-255 from tools.
-    const sr = r / 255, sg = g / 255, sb = b / 255
+    // Multiply source RGB by HDR paint intensity (default 1.0) so the picker
+    // can produce super-bright values >1.0 in float canvases.
+    const sr = (r / 255) * currentHdrIntensity
+    const sg = (g / 255) * currentHdrIntensity
+    const sb = (b / 255) * currentHdrIntensity
     const dstA = ea  // already 0.0-1.0
     const outA = blendA + dstA * (1 - blendA)
     if (outA <= 0) {
