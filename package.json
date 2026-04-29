@@ -1,8 +1,8 @@
 {
   "name": "pixelshop",
   "productName": "PixelShop",
-  "version": "0.1.0",
-  "description": "A pixel art and image editing desktop application",
+  "version": "2026.0.1",
+  "description": "An image and pixel-art editing desktop application",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -20,13 +20,13 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
-    "electron": "^36.0.0",
     "onnxruntime-node": "^1.20.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "utif": "^3.1.0"
   },
   "devDependencies": {
+    "electron": "^36.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/utif": "^3.0.6",
