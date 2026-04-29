@@ -5,8 +5,8 @@ import type { MenuItemConstructorOptions, MenuItem } from 'electron'
 
 export interface MenuBuildPayload {
   adjustments: Array<{ id: string; label: string; group?: string }>
-  effects:     Array<{ id: string; label: string; group?: string }>
-  filters:     Array<{ id: string; label: string; instant?: boolean; group?: string }>
+  effects: Array<{ id: string; label: string; group?: string }>
+  filters: Array<{ id: string; label: string; instant?: boolean; group?: string }>
   recentFiles: string[]
 }
 
@@ -95,30 +95,30 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'File',
       submenu: [
-        item('New\u2026',        'new',    { accelerator: 'CmdOrCtrl+N' }),
-        item('Open\u2026',       'open',   { accelerator: 'CmdOrCtrl+O' }),
+        item('New\u2026', 'new', { accelerator: 'CmdOrCtrl+N' }),
+        item('Open\u2026', 'open', { accelerator: 'CmdOrCtrl+O' }),
         {
           label: 'Open Recent',
           submenu: payload.recentFiles.length > 0
             ? [
-                ...payload.recentFiles.map((filePath, i) => ({
-                  id:    `recentFile:${i}`,
-                  label: filePath.split(/[\\/]/).pop() ?? filePath,
-                  click: () => send(`recentFile:${i}`),
-                })),
-                sep(),
-                item('Clear Recent', 'clearRecentFiles'),
-              ]
+              ...payload.recentFiles.map((filePath, i) => ({
+                id: `recentFile:${i}`,
+                label: filePath.split(/[\\/]/).pop() ?? filePath,
+                click: () => send(`recentFile:${i}`),
+              })),
+              sep(),
+              item('Clear Recent', 'clearRecentFiles'),
+            ]
             : [{ label: 'No Recent Files', enabled: false }],
         },
         sep(),
-        item('Close',            'close'),
-        item('Close All',        'closeAll'),
+        item('Close', 'close'),
+        item('Close All', 'closeAll'),
         sep(),
-        item('Save',             'save',    { accelerator: 'CmdOrCtrl+S' }),
-        item('Save As\u2026',    'saveAs',  { accelerator: 'CmdOrCtrl+Shift+S' }),
-        item('Save a Copy\u2026','saveACopy'),
-        item('Export As\u2026',  'export',  { accelerator: 'CmdOrCtrl+E' }),
+        item('Save', 'save', { accelerator: 'CmdOrCtrl+S' }),
+        item('Save As\u2026', 'saveAs', { accelerator: 'CmdOrCtrl+Shift+S' }),
+        item('Save a Copy\u2026', 'saveACopy'),
+        item('Export As\u2026', 'export', { accelerator: 'CmdOrCtrl+E' }),
       ],
     },
 
@@ -126,15 +126,15 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'Edit',
       submenu: [
-        item('Undo',                 'undo',          { accelerator: 'CmdOrCtrl+Z',       noIntercept: true }),
-        item('Redo',                 'redo',          { accelerator: 'CmdOrCtrl+Y',       noIntercept: true }),
+        item('Undo', 'undo', { accelerator: 'CmdOrCtrl+Z', noIntercept: true }),
+        item('Redo', 'redo', { accelerator: 'CmdOrCtrl+Y', noIntercept: true }),
         sep(),
-        item('Cut',                  'cut',           { accelerator: 'CmdOrCtrl+X',       noIntercept: true }),
-        item('Copy',                 'copy',          { accelerator: 'CmdOrCtrl+C',       noIntercept: true }),
-        item('Paste',                'paste',         { accelerator: 'CmdOrCtrl+V',       noIntercept: true }),
-        item('Delete',               'delete',        { accelerator: 'Backspace',         noIntercept: true }),
+        item('Cut', 'cut', { accelerator: 'CmdOrCtrl+X', noIntercept: true }),
+        item('Copy', 'copy', { accelerator: 'CmdOrCtrl+C', noIntercept: true }),
+        item('Paste', 'paste', { accelerator: 'CmdOrCtrl+V', noIntercept: true }),
+        item('Delete', 'delete', { accelerator: 'Backspace', noIntercept: true }),
         sep(),
-        item('Content-Aware Fill',   'contentAwareFill'),
+        item('Content-Aware Fill', 'contentAwareFill'),
         item('Content-Aware Delete', 'contentAwareDelete', { accelerator: 'Shift+Delete' }),
         sep(),
 
@@ -146,15 +146,15 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'Select',
       submenu: [
-        item('All',              'selectAll',        { accelerator: 'CmdOrCtrl+A',       noIntercept: true }),
-        item('Deselect',         'deselect',         { accelerator: 'CmdOrCtrl+D',       noIntercept: true }),
+        item('All', 'selectAll', { accelerator: 'CmdOrCtrl+A', noIntercept: true }),
+        item('Deselect', 'deselect', { accelerator: 'CmdOrCtrl+D', noIntercept: true }),
         sep(),
-        item('All Layers',       'selectAllLayers',  { accelerator: 'Alt+CmdOrCtrl+A',   noIntercept: true }),
-        item('Deselect Layers',  'deselectLayers'),
+        item('All Layers', 'selectAllLayers', { accelerator: 'Alt+CmdOrCtrl+A', noIntercept: true }),
+        item('Deselect Layers', 'deselectLayers'),
         sep(),
-        item('Find Layers',      'findLayers',       { accelerator: 'Alt+Shift+CmdOrCtrl+F', noIntercept: true }),
+        item('Find Layers', 'findLayers', { accelerator: 'Alt+Shift+CmdOrCtrl+F', noIntercept: true }),
         sep(),
-        item('Invert Selection', 'invertSelection',  { accelerator: 'CmdOrCtrl+Shift+I', noIntercept: true }),
+        item('Invert Selection', 'invertSelection', { accelerator: 'CmdOrCtrl+Shift+I', noIntercept: true }),
       ],
     },
 
@@ -162,19 +162,19 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'Layer',
       submenu: [
-        item('New Layer',       'newLayer',      { accelerator: 'CmdOrCtrl+Shift+N' }),
+        item('New Layer', 'newLayer', { accelerator: 'CmdOrCtrl+Shift+N' }),
         item('Duplicate Layer', 'duplicateLayer'),
-        item('Delete Layer',    'deleteLayer'),
+        item('Delete Layer', 'deleteLayer'),
         sep(),
         item('Rasterize Layer', 'rasterizeLayer'),
         sep(),
-        item('Group Layers',    'groupLayers',   { accelerator: 'CmdOrCtrl+G',       noIntercept: true }),
-        item('Ungroup Layers',  'ungroupLayers', { accelerator: 'CmdOrCtrl+Shift+G', noIntercept: true }),
+        item('Group Layers', 'groupLayers', { accelerator: 'CmdOrCtrl+G', noIntercept: true }),
+        item('Ungroup Layers', 'ungroupLayers', { accelerator: 'CmdOrCtrl+Shift+G', noIntercept: true }),
         sep(),
-        item('Merge Selected',  'mergeSelected'),
-        item('Merge Down',      'mergeDown'),
-        item('Merge Visible',   'mergeVisible'),
-        item('Flatten Image',   'flattenImage'),
+        item('Merge Selected', 'mergeSelected'),
+        item('Merge Down', 'mergeDown'),
+        item('Merge Visible', 'mergeVisible'),
+        item('Flatten Image', 'flattenImage'),
       ],
     },
 
@@ -185,13 +185,13 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         {
           label: 'Color Mode',
           submenu: [
-            item('RGB/8',        'colorMode:rgba8'),
+            item('RGB/8', 'colorMode:rgba8'),
             item('RGB/32 Float', 'colorMode:rgba32f'),
-            item('Indexed/8',    'colorMode:indexed8'),
+            item('Indexed/8', 'colorMode:indexed8'),
           ],
         },
         sep(),
-        item('Resize Image\u2026',        'resizeImage'),
+        item('Resize Image\u2026', 'resizeImage'),
         item('Resize Image Canvas\u2026', 'resizeCanvas'),
       ],
     },
@@ -218,19 +218,24 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'View',
       submenu: [
-        item('Zoom In',       'zoomIn',      { accelerator: 'CmdOrCtrl+=', noIntercept: true }),
-        item('Zoom Out',      'zoomOut',     { accelerator: 'CmdOrCtrl+-', noIntercept: true }),
-        item('Zoom to 100%',  'zoom100',     { accelerator: 'CmdOrCtrl+1', noIntercept: true }),
+        item('Zoom In', 'zoomIn', { accelerator: 'CmdOrCtrl+=', noIntercept: true }),
+        item('Zoom Out', 'zoomOut', { accelerator: 'CmdOrCtrl+-', noIntercept: true }),
+        item('Zoom to 100%', 'zoom100', { accelerator: 'CmdOrCtrl+1', noIntercept: true }),
         item('Fit to Window', 'fitToWindow', { accelerator: 'CmdOrCtrl+0', noIntercept: true }),
         sep(),
         {
-          id:      'toggleGrid',
-          label:   'Show Grid',
-          type:    'checkbox',
+          id: 'toggleGrid',
+          label: 'Show Grid',
+          type: 'checkbox',
           checked: false,
           accelerator: 'CmdOrCtrl+\'',
-          click:   () => send('toggleGrid'),
+          click: () => send('toggleGrid'),
         },
+        sep(),
+        { id: 'normalMode', label: 'Normal Mode', type: 'checkbox', checked: true, click: () => send('setNormalMode') },
+        { id: 'tiledMode', label: 'Tiled Mode', type: 'checkbox', checked: false, click: () => send('setTiledMode') },
+        sep(),
+        { id: 'showTileGrid', label: 'Show Tile Grid', type: 'checkbox', checked: false, enabled: false, click: () => send('toggleTileGrid') },
       ],
     },
 
@@ -238,10 +243,10 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'Help',
       submenu: [
-        item('About PixelShop',    'about'),
+        item('About PixelShop', 'about'),
         item('Keyboard Shortcuts', 'keyboardShortcuts'),
         sep(),
-        item('Open DevTools',      'openDevTools'),
+        item('Open DevTools', 'openDevTools'),
       ],
     },
   ]

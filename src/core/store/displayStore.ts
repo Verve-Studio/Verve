@@ -16,7 +16,7 @@ type Listener = () => void
 
 class DisplayStore {
   exposureEV: number = 0
-  toneMappingOperator: ToneMappingOperator = 'reinhard'
+  toneMappingOperator: ToneMappingOperator = 'clamp'
 
   private listeners = new Set<Listener>()
 

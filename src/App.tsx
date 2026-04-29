@@ -586,9 +586,9 @@ function AppContent(): React.JSX.Element {
       case 'toggleTileGrid':  handleToggleTileGrid(); break
       case 'about':           setShowAboutDialog(true); break
       case 'keyboardShortcuts': setShowShortcutsDialog(true); break
-      case 'colorMode-rgba8':    colorMode.handleConvertColorMode('rgba8');    break
-      case 'colorMode-rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
-      case 'colorMode-indexed8': colorMode.handleConvertColorMode('indexed8'); break
+      case 'colorMode:rgba8':    colorMode.handleConvertColorMode('rgba8');    break
+      case 'colorMode:rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
+      case 'colorMode:indexed8': colorMode.handleConvertColorMode('indexed8'); break
       case 'openDevTools':    window.api.openDevTools(); break
     }
   }, [
