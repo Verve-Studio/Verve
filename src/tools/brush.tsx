@@ -15,6 +15,7 @@ export const brushOptions = {
   smoothing:        50,  // 0 = raw coords, 100 = maximum stabilizer
   motionBlur:       5,   // 0 = round dabs, 100 = dabs elongated 1× brush-width along stroke
   velocityTracking: true,
+  pressureSize:     false, // pen pressure scales brush size (off by default; no effect on mouse)
 }
 
 /**
@@ -31,6 +32,10 @@ const MAX_TRACKING_SPEED  = 5    // px/ms — speed at which dynamics hit their 
 const MIN_SIZE_FACTOR     = 0.55 // fast stroke → 55% of set size
 const MIN_OPACITY_FACTOR  = 0.65 // fast stroke → 65% of set opacity
 const SPEED_SMOOTHING     = 0.25 // EMA weight; higher = snappier but jitterier
+// ── Pressure dynamics ─────────────────────────────────────────────────────────
+const MIN_PRESSURE_FACTOR = 0.05  // lightest pen touch → 5% of set size (prevents disappearing)
+const PRESSURE_SMOOTHING  = 0.15  // EMA weight for pressure — low value = heavy smoothing
+                                   // Wacom tablets are noisy at hardware-poll rate; filter hard.
 
 // ─── Midpoint B-spline brush handler ─────────────────────────────────────────
 // Positions are smoothed with an EMA stabilizer feeding into a midpoint
@@ -48,6 +53,11 @@ function createBrushHandler(): ToolHandler {
   let smoothSpeed = 0
   let stabX = 0, stabY = 0
   let prevTime = 0
+  let smoothPressure = 1  // EMA-filtered pressure; initialised to 1 so the first dot is full-size
+  // Track size/opacity at the last rendered point so the next arc can interpolate
+  // from them, producing seamless taper rather than step jumps at segment joints.
+  let prevSize    = brushOptions.size
+  let prevOpacity = brushOptions.opacity
 
   /**
    * Paint a quadratic Bézier arc from (p0x,p0y) to (p1x,p1y) using (cpx,cpy)
@@ -59,12 +69,13 @@ function createBrushHandler(): ToolHandler {
     p0x: number, p0y: number,
     cpx: number, cpy: number,
     p1x: number, p1y: number,
-    size: number, opacity: number,
+    size0: number, opacity0: number,
+    size1: number, opacity1: number,
     ctx: ToolContext,
   ): void {
     const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
     const { r, g, b, a } = primaryColor
-    const padR = Math.ceil(size / 2) + 2
+    const padR = Math.ceil(Math.max(size0, size1) / 2) + 2
     growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
     growLayerToFit(Math.round(p1x), Math.round(p1y), padR)
@@ -74,7 +85,7 @@ function createBrushHandler(): ToolHandler {
     walkQuadBezier(
       renderer, layer,
       p0x, p0y, cpx, cpy, p1x, p1y,
-      size, r, g, b, a, opacity,
+      size0, size1, r, g, b, a, opacity0, opacity1,
       brushOptions.hardness, brushOptions.shape, brushOptions.antiAlias,
       brushOptions.motionBlur / 100,
       touched ?? undefined, sel,
@@ -88,6 +99,7 @@ function createBrushHandler(): ToolHandler {
     // would miss those wrapped writes, leaving the GPU texture stale on the
     // opposing seam. Leave dirtyRect=null to trigger a full-layer upload.
     if (!ctx.tiledMode) {
+      // padR already reflects the larger of size0/size1, so this rect is conservative.
       const lx = Math.max(0, Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR)
       const ly = Math.max(0, Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR)
       const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1)
@@ -108,30 +120,42 @@ function createBrushHandler(): ToolHandler {
     render(layers)
   }
 
-  function resolveStrokeParams(speed: number): { size: number; opacity: number } {
-    if (!brushOptions.velocityTracking || speed <= 0) {
-      return { size: brushOptions.size, opacity: brushOptions.opacity }
+  function resolveStrokeParams(speed: number, pressure: number): { size: number; opacity: number } {
+    let size    = brushOptions.size
+    let opacity = brushOptions.opacity
+
+    if (brushOptions.velocityTracking && speed > 0) {
+      const t = Math.min(1, speed / MAX_TRACKING_SPEED)
+      size    = size    * Math.max(MIN_SIZE_FACTOR,    1 - t * (1 - MIN_SIZE_FACTOR))
+      opacity = opacity * Math.max(MIN_OPACITY_FACTOR, 1 - t * (1 - MIN_OPACITY_FACTOR))
     }
-    const t = Math.min(1, speed / MAX_TRACKING_SPEED)
-    return {
-      size:    brushOptions.size    * Math.max(MIN_SIZE_FACTOR,    1 - t * (1 - MIN_SIZE_FACTOR)),
-      opacity: brushOptions.opacity * Math.max(MIN_OPACITY_FACTOR, 1 - t * (1 - MIN_OPACITY_FACTOR)),
+
+    if (brushOptions.pressureSize) {
+      // pressure 0..1 from PointerEvent — pen gives true range, mouse always 0.5.
+      // Apply on top of velocity so both dynamics compose naturally.
+      size = size * Math.max(MIN_PRESSURE_FACTOR, pressure)
     }
+
+    return { size, opacity }
   }
 
   return {
-    onPointerDown({ x, y, timeStamp }: ToolPointerPos, ctx: ToolContext) {
-      touched      = new Map()
-      smoothSpeed  = 0
+    onPointerDown({ x, y, pressure, timeStamp }: ToolPointerPos, ctx: ToolContext) {
+      touched        = new Map()
+      smoothSpeed    = 0
+      smoothPressure = pressure  // seed EMA at actual pen-down pressure — no initial lag
       stabX = x; stabY = y
       prevTime     = timeStamp
       lastRendered = { x, y }
       lastCtrl     = { x, y }
+      const { size, opacity } = resolveStrokeParams(0, smoothPressure)
+      prevSize     = size
+      prevOpacity  = opacity
       // Initial dot: degenerate Bézier at a single point
-      paint(x, y, x, y, x, y, brushOptions.size, brushOptions.opacity, ctx)
+      paint(x, y, x, y, x, y, size, opacity, size, opacity, ctx)
     },
 
-    onPointerMove({ x, y, timeStamp }: ToolPointerPos, ctx: ToolContext) {
+    onPointerMove({ x, y, pressure, timeStamp }: ToolPointerPos, ctx: ToolContext) {
       if (!lastRendered || !lastCtrl) return
       const now = timeStamp
 
@@ -143,14 +167,15 @@ function createBrushHandler(): ToolHandler {
       // Velocity (px/ms)
       const dt = now - prevTime
       const d  = Math.hypot(stabX - lastCtrl.x, stabY - lastCtrl.y)
-      smoothSpeed = smoothSpeed * (1 - SPEED_SMOOTHING) + (dt > 0 ? d / dt : 0) * SPEED_SMOOTHING
+      smoothSpeed    = smoothSpeed    * (1 - SPEED_SMOOTHING)    + (dt > 0 ? d / dt : 0) * SPEED_SMOOTHING
+      smoothPressure = smoothPressure * (1 - PRESSURE_SMOOTHING) + pressure                * PRESSURE_SMOOTHING
       prevTime = now
 
-      const { size, opacity } = resolveStrokeParams(smoothSpeed)
+      const { size, opacity } = resolveStrokeParams(smoothSpeed, smoothPressure)
 
       // Spacing: minimum arc travel before we commit a new Bézier segment.
-      // size * 0.2 keeps dab density consistent with the pencil tool.
-      const spacing = Math.max(1, size * 0.2)
+      // Use the smaller of prev/current size so a narrowing tip never leaves gaps.
+      const spacing = Math.max(1, Math.min(prevSize, size) * 0.2)
 
       // Midpoint B-spline: the rendered tip advances to mid(lastCtrl, stab).
       // lastCtrl becomes the quadratic Bézier control point — the curve is
@@ -164,9 +189,11 @@ function createBrushHandler(): ToolHandler {
           lastRendered.x, lastRendered.y,
           lastCtrl.x, lastCtrl.y,  // B-spline attractor → Bézier control point
           tipX, tipY,
-          size, opacity, ctx,
+          prevSize, prevOpacity, size, opacity, ctx,
         )
         lastRendered = { x: tipX, y: tipY }
+        prevSize    = size
+        prevOpacity = opacity
       }
 
       lastCtrl = { x: stabX, y: stabY }
@@ -174,15 +201,15 @@ function createBrushHandler(): ToolHandler {
 
     onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
       if (lastRendered && lastCtrl) {
-        const { size, opacity } = resolveStrokeParams(smoothSpeed)
+        const { size, opacity } = resolveStrokeParams(smoothSpeed, smoothPressure)
         if (Math.hypot(lastCtrl.x - lastRendered.x, lastCtrl.y - lastRendered.y) >= 1) {
-          // Close deferred tail — draw from lastRendered → lastCtrl with lastCtrl
-          // duplicated as the end point (zero-length tail eases cleanly)
+          // Close deferred tail — interpolate from prevSize/Opacity to final values
+          // so the stroke tip tapers smoothly to its last velocity-adjusted state.
           paint(
             lastRendered.x, lastRendered.y,
             lastCtrl.x, lastCtrl.y,
             lastCtrl.x, lastCtrl.y,
-            size, opacity, ctx,
+            prevSize, prevOpacity, size, opacity, ctx,
           )
         }
       }
@@ -190,6 +217,8 @@ function createBrushHandler(): ToolHandler {
       lastCtrl     = null
       touched      = null
       smoothSpeed  = 0
+      prevSize     = brushOptions.size
+      prevOpacity  = brushOptions.opacity
     },
   }
 }
@@ -212,6 +241,7 @@ function BrushOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Elem
   const [smoothing,        setSmoothing]        = useState(brushOptions.smoothing)
   const [motionBlur,       setMotionBlur]       = useState(brushOptions.motionBlur)
   const [velocityTracking, setVelocityTracking] = useState(brushOptions.velocityTracking)
+  const [pressureSize,     setPressureSize]     = useState(brushOptions.pressureSize)
 
   const handleSize      = (v: number): void => { brushOptions.size       = v; setSize(v) }
   const handleOpacity   = (v: number): void => { brushOptions.opacity    = v; setOpacity(v) }
@@ -231,6 +261,10 @@ function BrushOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Elem
   const handleVelocity = (e: React.ChangeEvent<HTMLInputElement>): void => {
     brushOptions.velocityTracking = e.target.checked
     setVelocityTracking(e.target.checked)
+  }
+  const handlePressure = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    brushOptions.pressureSize = e.target.checked
+    setPressureSize(e.target.checked)
   }
 
   return (
@@ -271,6 +305,14 @@ function BrushOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Elem
       >
         <input type="checkbox" checked={velocityTracking} onChange={handleVelocity} />
         Velocity
+      </label>
+      <span className={styles.optSep} />
+      <label
+        className={styles.optCheckLabel}
+        title="Pen/tablet pressure controls brush size (0 = hairline, 1 = full size). No effect with a mouse."
+      >
+        <input type="checkbox" checked={pressureSize} onChange={handlePressure} />
+        Pressure
       </label>
     </>
   )

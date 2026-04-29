@@ -201,8 +201,13 @@ export function drawAirbrushSegment(
  * Walk a quadratic Bézier from (p0x,p0y) to (p1x,p1y) guided by control
  * point (cpx,cpy), stamping brush dabs at stamp-spacing intervals.
  *
+ * size0/size1 and opacity0/opacity1 are linearly interpolated per-dab along
+ * the arc (t = 0..1). Pass the same value for both when no taper is needed.
+ * This gives seamless, blob-free transitions when velocity tracking varies
+ * size or opacity across arc segments.
+ *
  * motionBlur 0‒1: when > 0 each dab becomes a capsule oriented along the
- * local arc tangent, with half-length = size × motionBlur × 0.5.
+ * local arc tangent, with half-length = sz × motionBlur × 0.5.
  */
 export function walkQuadBezier(
   renderer: WebGPURenderer,
@@ -210,9 +215,9 @@ export function walkQuadBezier(
   p0x: number, p0y: number,
   cpx: number, cpy: number,
   p1x: number, p1y: number,
-  size: number,
+  size0: number, size1: number,
   r: number, g: number, b: number, a: number,
-  opacity: number,
+  opacity0: number, opacity1: number,
   hardness: number,
   shape: BrushShape,
   antiAlias: boolean,
@@ -223,15 +228,20 @@ export function walkQuadBezier(
   tiledH?: number,
 ): void {
   const arcEst = Math.hypot(cpx - p0x, cpy - p0y) + Math.hypot(p1x - cpx, p1y - cpy)
-  const spacing = Math.max(1, size * 0.2)
+  // Use the smaller end-size for spacing so the narrowing tip never leaves gaps.
+  const spacing = Math.max(1, Math.min(size0, size1) * 0.2)
   const steps   = Math.max(1, Math.ceil(arcEst / spacing))
-  const half    = size * motionBlur * 0.5
 
   for (let i = 0; i <= steps; i++) {
     const t  = i / steps
     const t1 = 1 - t
     const x  = t1 * t1 * p0x + 2 * t1 * t * cpx + t * t * p1x
     const y  = t1 * t1 * p0y + 2 * t1 * t * cpy + t * t * p1y
+
+    // Continuously interpolated size and opacity — eliminates step jumps at arc joints.
+    const sz   = size0    + (size1    - size0)    * t
+    const op   = opacity0 + (opacity1 - opacity0) * t
+    const half = sz * motionBlur * 0.5
 
     if (half > 0) {
       const dtx = 2 * t1 * (cpx - p0x) + 2 * t * (p1x - cpx)
@@ -243,16 +253,16 @@ export function walkQuadBezier(
           renderer, layer,
           x - nx * half, y - ny * half,
           x + nx * half, y + ny * half,
-          size, r, g, b, a, opacity,
+          sz, r, g, b, a, op,
           hardness, shape, antiAlias,
           touched, sel,
           tiledW, tiledH,
         )
       } else {
-        stampAirbrush(renderer, layer, Math.round(x), Math.round(y), size, r, g, b, a, opacity, hardness, shape, antiAlias, touched, sel, tiledW, tiledH)
+        stampAirbrush(renderer, layer, Math.round(x), Math.round(y), sz, r, g, b, a, op, hardness, shape, antiAlias, touched, sel, tiledW, tiledH)
       }
     } else {
-      stampAirbrush(renderer, layer, Math.round(x), Math.round(y), size, r, g, b, a, opacity, hardness, shape, antiAlias, touched, sel, tiledW, tiledH)
+      stampAirbrush(renderer, layer, Math.round(x), Math.round(y), sz, r, g, b, a, op, hardness, shape, antiAlias, touched, sel, tiledW, tiledH)
     }
   }
 }

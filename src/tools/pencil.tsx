@@ -475,7 +475,7 @@ function createPencilHandler(): ToolHandler {
     walkQuadBezier(
       renderer, layer,
       p0x, p0y, cpx, cpy, p1x, p1y,
-      pencilOptions.size, r, g, b, a, pencilOptions.opacity,
+      pencilOptions.size, pencilOptions.size, r, g, b, a, pencilOptions.opacity, pencilOptions.opacity,
       100, // hardness always 100 for pencil
       pencilOptions.shape,
       pencilOptions.antiAlias,
