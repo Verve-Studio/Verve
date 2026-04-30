@@ -9,14 +9,15 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  height: 460px;
 }
 
 // ─── Presets panel (left) ─────────────────────────────────────────────────────
 
 .presetsPanel {
-  width: 278px;
+  width: 290px;
   flex-shrink: 0;
-  padding: 14px 14px 10px;
+  padding: 14px 14px 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -85,6 +86,65 @@
   line-height: 1;
 }
 
+// ─── Preset group labels ─────────────────────────────────────────────────────────
+
+.presetGroupLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  letter-spacing: 0.06em;
+  margin: 12px 0 8px;
+  white-space: nowrap;
+
+  &:first-of-type { margin-top: 4px; }
+
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: vars.$color-border;
+  }
+}
+
+.presetGroupNote {
+  font-size: 9px;
+  color: vars.$color-text-muted;
+  opacity: 0.65;
+  letter-spacing: 0.04em;
+}
+
+// ─── Clipboard button ───────────────────────────────────────────────────────────
+
+.clipboardBtn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 7px 10px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  color: vars.$color-text-muted;
+  font-size: vars.$font-size-sm;
+  font-family: vars.$font-sans;
+  cursor: pointer;
+  width: 100%;
+  transition: background-color vars.$transition-fast, color vars.$transition-fast, border-color vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+  }
+}
+
+.clipboardBtnActive {
+  background: vars.$color-surface-selected;
+  border-color: vars.$color-accent-solid;
+  color: vars.$color-text;
+}
+
 // ─── Divider ──────────────────────────────────────────────────────────────────
 
 .divider {
@@ -109,7 +169,13 @@
   font-size: vars.$font-size-md;
   color: vars.$color-text;
   font-weight: 600;
-  margin: 0 0 14px;
+  margin: 0 0 2px;
+}
+
+.sizePreviewPhys {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  margin: 0 0 12px;
 }
 
 // ─── Form fields ──────────────────────────────────────────────────────────────
@@ -194,6 +260,11 @@
   option {
     background: vars.$color-surface;
   }
+}
+
+.selectUnits {
+  flex: 0 0 auto;
+  width: 130px;
 }
 
 .staticField {
