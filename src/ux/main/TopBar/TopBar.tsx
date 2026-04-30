@@ -264,6 +264,8 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
           checked: dockLayout.rows.some(r => r.panels.includes(id)),
           action: () => dockStore.togglePanel(id),
         })),
+        { separator: true, label: '' },
+        { label: 'Reset Panel Layout', action: () => dockStore.resetLayout() },
       ]
     },
     {

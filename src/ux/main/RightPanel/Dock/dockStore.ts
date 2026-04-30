@@ -1,4 +1,4 @@
-import type { DockLayout, PanelId, DockRowConfig } from './types'
+import type { DockLayout, PanelId, DockRowConfig, FloatingWindow } from './types'
 import { DEFAULT_LAYOUT, ALL_PANEL_IDS } from './types'
 
 // ─── Save debounce ────────────────────────────────────────────────────────────
@@ -97,8 +97,18 @@ class DockStore {
     const closedPanels: PanelId[] = (raw.closedPanels ?? [])
       .filter((p): p is PanelId => known.has(p))
 
-    // Ensure every panel is either in a row or in closedPanels
-    const placed = new Set<string>(rows.flatMap(r => r.panels))
+    const floatingWindows: FloatingWindow[] = ((raw as Partial<DockLayout>).floatingWindows ?? [])
+      .filter((w): w is FloatingWindow =>
+        typeof w === 'object' && w !== null &&
+        typeof w.id === 'string' &&
+        known.has((w as FloatingWindow).panelId)
+      )
+
+    // Ensure every panel is either in a row, floating, or in closedPanels
+    const placed = new Set<string>([
+      ...rows.flatMap(r => r.panels),
+      ...floatingWindows.map(w => w.panelId),
+    ])
     for (const id of ALL_PANEL_IDS) {
       if (!placed.has(id) && !closedPanels.includes(id)) {
         if (rows.length > 0) {
@@ -109,7 +119,9 @@ class DockStore {
       }
     }
 
-    return rows.length > 0 ? { rows, closedPanels } : DEFAULT_LAYOUT
+    return rows.length > 0 || floatingWindows.length > 0
+      ? { rows, closedPanels, floatingWindows }
+      : DEFAULT_LAYOUT
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────────
@@ -185,8 +197,10 @@ class DockStore {
     let next = sourceRow
       ? removeFromRow(this._layout, panelId, sourceRow.id)
       : this._layout
+    // Also remove from floating windows
     next = {
       ...next,
+      floatingWindows: next.floatingWindows.filter(w => w.panelId !== panelId),
       closedPanels: [...next.closedPanels.filter(p => p !== panelId), panelId],
     }
     this._set(next)
@@ -215,8 +229,75 @@ class DockStore {
     })
   }
 
+  tearOffPanel(panelId: PanelId, sourceRowId: string, x: number, y: number): void {
+    let next = removeFromRow(this._layout, panelId, sourceRowId)
+    const win: FloatingWindow = {
+      id: `fw-${Date.now()}`,
+      panelId,
+      x: Math.max(0, x),
+      y: Math.max(0, y),
+      width: 280,
+      height: 400,
+    }
+    next = {
+      ...next,
+      floatingWindows: [...next.floatingWindows, win],
+    }
+    this._set(next)
+  }
+
+  dockFloatingWindow(windowId: string): void {
+    const win = this._layout.floatingWindows.find(w => w.id === windowId)
+    if (!win) return
+    let next: DockLayout = {
+      ...this._layout,
+      floatingWindows: this._layout.floatingWindows.filter(w => w.id !== windowId),
+    }
+    const rows = next.rows
+    if (rows.length === 0) {
+      next = {
+        ...next,
+        rows: [{ id: `row-${Date.now()}`, panels: [win.panelId], activePanel: win.panelId, height: null }],
+      }
+    } else {
+      const lastRow = rows[rows.length - 1]
+      next = {
+        ...next,
+        rows: rows.map(r =>
+          r.id === lastRow.id
+            ? { ...r, panels: [...r.panels.filter(p => p !== win.panelId), win.panelId], activePanel: win.panelId }
+            : r
+        ),
+      }
+    }
+    this._set(next)
+  }
+
+  moveFloatingWindow(windowId: string, x: number, y: number): void {
+    this._set({
+      ...this._layout,
+      floatingWindows: this._layout.floatingWindows.map(w =>
+        w.id === windowId ? { ...w, x, y } : w
+      ),
+    })
+  }
+
+  resizeFloatingWindow(windowId: string, width: number, height: number): void {
+    this._set({
+      ...this._layout,
+      floatingWindows: this._layout.floatingWindows.map(w =>
+        w.id === windowId ? { ...w, width, height } : w
+      ),
+    })
+  }
+
+  resetLayout(): void {
+    this._set({ ...DEFAULT_LAYOUT })
+  }
+
   togglePanel(panelId: PanelId): void {
     const isOpen = this._layout.rows.some(r => r.panels.includes(panelId))
+      || this._layout.floatingWindows.some(w => w.panelId === panelId)
     if (isOpen) {
       this.closePanel(panelId)
     } else {
@@ -234,7 +315,8 @@ class DockStore {
 
   get openPanelIds(): PanelId[] {
     const inRows = new Set<PanelId>(this._layout.rows.flatMap(r => r.panels))
-    return ALL_PANEL_IDS.filter(id => inRows.has(id))
+    const floating = new Set<PanelId>(this._layout.floatingWindows.map(w => w.panelId))
+    return ALL_PANEL_IDS.filter(id => inRows.has(id) || floating.has(id))
   }
 }
 

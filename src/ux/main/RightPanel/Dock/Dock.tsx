@@ -3,6 +3,7 @@ import type { PanelId } from './types'
 import { dockStore } from './dockStore'
 import { useDockLayout } from './useDockLayout'
 import { DockRow } from './DockRow'
+import { ToolWindow } from './ToolWindow'
 import styles from './Dock.module.scss'
 
 interface DockProps {
@@ -17,6 +18,7 @@ export function Dock({ renderPanel }: DockProps): React.JSX.Element {
   // Module-level drag state (refs so handlers always see latest values)
   const dragPanelRef = useRef<PanelId | null>(null)
   const dragSourceRowRef = useRef<string | null>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
 
   // ── Drag start ─────────────────────────────────────────────────────────────
 
@@ -73,12 +75,25 @@ export function Dock({ renderPanel }: DockProps): React.JSX.Element {
   }
 
   // Use a capture-phase dragend on the container to always reset state
-  function handleContainerDragEnd() {
+  function handleContainerDragEnd(e: React.DragEvent) {
+    const panelId = dragPanelRef.current
+    const sourceRowId = dragSourceRowRef.current
+    if (panelId && sourceRowId && dockRef.current) {
+      const rect = dockRef.current.getBoundingClientRect()
+      const outside = e.clientX < rect.left - 20 || e.clientX > rect.right + 20 ||
+                      e.clientY < rect.top - 20  || e.clientY > rect.bottom + 20
+      if (outside) {
+        dockStore.tearOffPanel(panelId, sourceRowId, e.clientX - 140, e.clientY - 13)
+        endDrag()
+        return
+      }
+    }
     endDrag()
   }
 
   return (
     <div
+      ref={dockRef}
       className={styles.dock}
       onDragEnd={handleContainerDragEnd}
     >
@@ -106,6 +121,11 @@ export function Dock({ renderPanel }: DockProps): React.JSX.Element {
           onDrop={handleBottomZoneDrop}
         />
       )}
+
+      {/* Floating ToolWindows — rendered via portals to document.body */}
+      {layout.floatingWindows.map(win => (
+        <ToolWindow key={win.id} win={win} renderPanel={renderPanel} />
+      ))}
     </div>
   )
 }

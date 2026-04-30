@@ -208,6 +208,8 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       default: {
         if (actionId.startsWith('togglePanel:')) {
           dockStore.togglePanel(actionId.slice('togglePanel:'.length) as PanelId)
+        } else if (actionId === 'resetPanelLayout') {
+          dockStore.resetLayout()
         }
       }
     }

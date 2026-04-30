@@ -243,6 +243,8 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         { id: 'togglePanel:Layers',    label: 'Layers',    type: 'checkbox', checked: true, click: () => send('togglePanel:Layers') },
         { id: 'togglePanel:History',   label: 'History',   type: 'checkbox', checked: true, click: () => send('togglePanel:History') },
         { id: 'togglePanel:Info',      label: 'Info',      type: 'checkbox', checked: true, click: () => send('togglePanel:Info') },
+        sep(),
+        { label: 'Reset Panel Layout', click: () => send('resetPanelLayout') },
       ],
     },
 

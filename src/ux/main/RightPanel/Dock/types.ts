@@ -21,9 +21,19 @@ export interface DockRowConfig {
   height: number | null
 }
 
+export interface FloatingWindow {
+  id: string
+  panelId: PanelId
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface DockLayout {
   rows: DockRowConfig[]
   closedPanels: PanelId[]
+  floatingWindows: FloatingWindow[]
 }
 
 export const DEFAULT_LAYOUT: DockLayout = {
@@ -32,4 +42,5 @@ export const DEFAULT_LAYOUT: DockLayout = {
     { id: 'row-layers', panels: ['Layers', 'History', 'Info'],       activePanel: 'Layers', height: null },
   ],
   closedPanels: [],
+  floatingWindows: [],
 }
