@@ -5,139 +5,55 @@ import { IndexedPaletteColorPicker } from '@/ux/widgets/IndexedPaletteColorPicke
 import React, { useEffect, useRef, useState } from 'react'
 import styles from './Toolbar.module.scss'
 
-// ─── SVG Icons ────────────────────────────────────────────────────────────────
+// ─── Asset icons ──────────────────────────────────────────────────────────────
+
+import burnIcon from '@/ux/assets/burn.svg?raw'
+import brushIcon from '@/ux/assets/brush.svg?raw'
+import cloneStampIcon from '@/ux/assets/clone-stamp.svg?raw'
+import colorPickerIcon from '@/ux/assets/color-picker.svg?raw'
+import cropIcon from '@/ux/assets/crop.svg?raw'
+import dodgeIcon from '@/ux/assets/dodge.svg?raw'
+import eraserIcon from '@/ux/assets/eraser.svg?raw'
+import frameIcon from '@/ux/assets/frame.svg?raw'
+import gradientIcon from '@/ux/assets/gradient.svg?raw'
+import lassoIcon from '@/ux/assets/lasso.svg?raw'
+import magicWandIcon from '@/ux/assets/magic-wand.svg?raw'
+import marqueeRectIcon from '@/ux/assets/marquee-rect.svg?raw'
+import moveIcon from '@/ux/assets/move.svg?raw'
+import objectSelectIcon from '@/ux/assets/object-select.svg?raw'
+import paintBucketIcon from '@/ux/assets/paint-bucket.svg?raw'
+import pencilIcon from '@/ux/assets/pencil.svg?raw'
+import polygonSelectIcon from '@/ux/assets/polygon-select.svg?raw'
+import shapeIcon from '@/ux/assets/shape.svg?raw'
+import textIcon from '@/ux/assets/text.svg?raw'
+
+function SvgIcon({ src }: { src: string }): React.JSX.Element {
+  const svg = src
+    .replace(/width="\d+(\.\d+)?"/, 'width="100%"')
+    .replace(/height="\d+(\.\d+)?"/, 'height="100%"')
+  return <span style={{ display: 'block', width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: svg }} />
+}
 
 const Icon = {
-  move: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 1L5.5 4H7v3H4V5.5L1 8l3 2.5V9h3v3H5.5L8 15l2.5-3H9V9h3v1.5L15 8l-3-2.5V7H9V4h1.5z" />
-    </svg>
-  ),
-  select: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-      <rect x="2" y="2" width="12" height="12" strokeDasharray="3 2" />
-    </svg>
-  ),
-  lasso: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-      <path d="M8 2C4.7 2 2 4.5 2 7s2.2 4 6 4c2.8 0 4-1.3 4-2.5 0-1.1-1-2-2.5-2S7 7.5 7 9" strokeDasharray="2.5 1.5" />
-      <line x1="7" y1="9" x2="5" y2="14" />
-    </svg>
-  ),
-  polygonalLasso: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3,13 3,5 7,2 13,4 13,10 8,13" strokeDasharray="2.5 1.5" />
-      <circle cx="3" cy="13" r="1.2" fill="currentColor" />
-    </svg>
-  ),
-  objectSelection: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-      <rect x="1" y="1" width="14" height="14" rx="1" strokeDasharray="3 2" />
-      <circle cx="11.5" cy="4.5" r="1" fill="currentColor" stroke="none" />
-      <path d="M9 7l1.5 1.5L13 5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
-    </svg>
-  ),
-  magicWand: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <rect x="1.5" y="11.5" width="7" height="2" rx="1" transform="rotate(-45 5 12.5)" />
-      <path d="M10.5 1l.8 2.2L13.5 4l-2.2.8L10.5 7l-.8-2.2L7.5 4l2.2-.8z" />
-      <circle cx="13.5" cy="8" r="0.9" />
-      <circle cx="9.5" cy="4.5" r="0.6" />
-    </svg>
-  ),
-  crop: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-      <path d="M4 1v10h9" />
-      <path d="M1 4h10v9" />
-    </svg>
-  ),
-  frame: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-      <rect x="2" y="2" width="12" height="12" rx="1" />
-      <rect x="5" y="5" width="6" height="6" rx="0.5" />
-    </svg>
-  ),
-  eyedropper: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11.5 2l2.5 2.5-7.5 7.5-1-0.5-1.5 3-2-2 3-1.5-0.5-1z" fill="currentColor" fillOpacity="0.2" />
-      <path d="M11.5 2l2.5 2.5-7.5 7.5-3-3z" />
-      <circle cx="3" cy="13" r="1.3" fill="currentColor" />
-    </svg>
-  ),
-  pencil: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <path d="M11.5 1.5l3 3-9 9L3 14.5l.5-2.5z" />
-      <path d="M10 3l3 3" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.5" />
-    </svg>
-  ),
-  brush: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <path d="M13.5 1.5l1 1L7 10l-2 .5.5-2z" />
-      <path d="M5.5 11C5.5 12.5 4 14 2.5 13.5 2 13 2 11.5 3.5 11 4.5 10.5 5.5 10.5 5.5 11z" />
-    </svg>
-  ),
-  eraser: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <path d="M3 13L9.5 6.5l4 4-4.5 4.5H3z" opacity="0.35" />
-      <path d="M3 13L9.5 6.5l4 4-4.5 4.5H3z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-      <line x1="2" y1="14.5" x2="14" y2="14.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
-  ),
-  fill: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      {/* bucket body */}
-      <path d="M3.5 7h9l-1.2 5.5a1 1 0 01-1 .8H5.7a1 1 0 01-1-.8z" />
-      {/* bucket top rim */}
-      <rect x="3" y="5.5" width="10" height="1.5" rx="0.5" />
-      {/* handle */}
-      <path d="M6 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      {/* drip */}
-      <path d="M13 12a1.2 1.2 0 002.4 0c0-.7-.5-1.4-1.2-2.3-.7.9-1.2 1.6-1.2 2.3z" />
-    </svg>
-  ),
-  gradient: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <defs>
-        <linearGradient id="toolbar-grad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="1" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.08" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="6" width="12" height="4" rx="1" fill="url(#toolbar-grad)" />
-    </svg>
-  ),
-  dodge: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-      <ellipse cx="8" cy="11" rx="5" ry="3" />
-      <line x1="8" y1="8" x2="8" y2="2" />
-    </svg>
-  ),
-  burn: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-      <path d="M8 2C5.5 5 3.5 6.5 3.5 9.5a4.5 4.5 0 009 0C12.5 6.5 10.5 5 8 2z" />
-      <path d="M8 5C8 8 10 8.5 9 11" strokeWidth="1.2" />
-    </svg>
-  ),
-  text: (
-    <svg viewBox="0 0 16 16" fill="currentColor">
-      <path d="M3 3h10v2H9.5v8h-3V5H3z" />
-    </svg>
-  ),
-  shape: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
-      <rect x="1" y="1" width="6" height="6" rx="0.5" />
-      <circle cx="12" cy="4" r="3" />
-      <polygon points="2,15 14,15 8,9.5" />
-    </svg>
-  ),
-  cloneStamp: (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-      <rect x="5" y="7" width="6" height="5" rx="0.5" />
-      <line x1="8" y1="2" x2="8" y2="7" />
-      <line x1="5.5" y1="2" x2="10.5" y2="2" />
-      <line x1="8" y1="0.5" x2="8" y2="3.5" />
-    </svg>
-  ),
+  move:             <SvgIcon src={moveIcon} />,
+  select:           <SvgIcon src={marqueeRectIcon} />,
+  lasso:            <SvgIcon src={lassoIcon} />,
+  polygonalLasso:   <SvgIcon src={polygonSelectIcon} />,
+  objectSelection:  <SvgIcon src={objectSelectIcon} />,
+  magicWand:        <SvgIcon src={magicWandIcon} />,
+  crop:             <SvgIcon src={cropIcon} />,
+  frame:            <SvgIcon src={frameIcon} />,
+  eyedropper:       <SvgIcon src={colorPickerIcon} />,
+  pencil:           <SvgIcon src={pencilIcon} />,
+  brush:            <SvgIcon src={brushIcon} />,
+  eraser:           <SvgIcon src={eraserIcon} />,
+  fill:             <SvgIcon src={paintBucketIcon} />,
+  gradient:         <SvgIcon src={gradientIcon} />,
+  dodge:            <SvgIcon src={dodgeIcon} />,
+  burn:             <SvgIcon src={burnIcon} />,
+  text:             <SvgIcon src={textIcon} />,
+  shape:            <SvgIcon src={shapeIcon} />,
+  cloneStamp:       <SvgIcon src={cloneStampIcon} />,
 }
 
 // ─── Shape picker definitions ─────────────────────────────────────────────────

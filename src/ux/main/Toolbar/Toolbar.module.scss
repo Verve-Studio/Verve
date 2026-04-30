@@ -54,7 +54,7 @@
   transition: background-color vars.$transition-fast, color vars.$transition-fast;
   padding: 3px;
 
-  svg {
+  svg, span svg {
     width: 100%;
     height: 100%;
     display: block;
