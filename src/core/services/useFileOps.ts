@@ -110,7 +110,7 @@ export function useFileOps({
   dispatch,
   onRecentFilesUpdated,
 }: UseFileOpsOptions): UseFileOpsReturn {
-  const [untitledCounter, setUntitledCounter] = useState(1)
+  const [untitledCounter, setUntitledCounter] = useState(0)
 
   const handleNewConfirm = useCallback(({ width, height, backgroundFill, pixelFormat }: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat }): void => {
     const snapshot        = captureActiveSnapshot()

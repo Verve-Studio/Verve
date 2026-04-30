@@ -1,7 +1,7 @@
 import type { AppAction } from '@/core/store/AppContext'
 import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
-import { DEFAULT_SWATCHES, INITIAL_SNAPSHOT, makeTabId } from '@/core/store/tabTypes'
+import { DEFAULT_SWATCHES, makeTabId } from '@/core/store/tabTypes'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
 import { displayStore } from '@/core/store/displayStore'
 import type { AppState } from '@/types'
@@ -46,22 +46,8 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [])
 
-  const initialTabId = useRef(makeTabId()).current
-  const [tabs, setTabs] = useState<TabRecord[]>([{
-    id: initialTabId,
-    title: 'Untitled-1',
-    filePath: null,
-    snapshot: INITIAL_SNAPSHOT,
-    savedLayerData: null,
-    savedHistory: null,
-    canvasKey: 1,
-    tiledMode: false,
-    showTileGrid: false,
-    pixelFormat: 'rgba8',
-    exposureEV: 0,
-    toneMappingOperator: 'reinhard',
-  }])
-  const [activeTabId, setActiveTabId]         = useState(initialTabId)
+  const [tabs, setTabs] = useState<TabRecord[]>([])
+  const [activeTabId, setActiveTabId]         = useState('')
   const [pendingLayerData, setPendingLayerData] = useState<Map<string, string> | null>(null)
 
   // Keep refs in sync each render so async closures always see fresh values

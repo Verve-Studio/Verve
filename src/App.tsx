@@ -25,6 +25,7 @@ import { useMacNativeMenu } from '@/core/services/useMacNativeMenu'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { pixelBrushStore } from '@/core/store/pixelBrushStore'
 import { MainWindow } from '@/ux/main/MainWindow/MainWindow'
+import { SplashScreen } from '@/ux/modals/SplashScreen/SplashScreen'
 import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { Tool, LayerState, AdjustmentType, PixelFormat } from '@/types'
 import type { FilterKey } from '@/types'
@@ -402,6 +403,8 @@ function AppContent(): React.JSX.Element {
 
   // ── Computed render values ────────────────────────────────────────
   const hasActiveDocument = tabs.length > 0
+  const [showSplash, setShowSplash] = useState(true)
+  useEffect(() => { if (!hasActiveDocument) setShowSplash(true) }, [hasActiveDocument])
   const tabInfos: TabInfo[] = tabs.map(t => ({ id: t.id, title: t.title, pixelFormat: t.pixelFormat }))
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
@@ -457,6 +460,13 @@ function AppContent(): React.JSX.Element {
   })
 
   return (
+    <>
+    <SplashScreen
+      open={showSplash && !hasActiveDocument}
+      onClose={() => setShowSplash(false)}
+      onNew={() => { setShowSplash(false); setShowNewImageDialog(true) }}
+      onOpen={() => { setShowSplash(false); void handleOpen() }}
+    />
     <MainWindow
       isMac={isMac}
       activeTool={state.activeTool}
@@ -568,6 +578,7 @@ function AppContent(): React.JSX.Element {
       handleOpenFilterDialog={handleOpenFilterDialog}
       requireTransformDecision={requireTransformDecision}
     />
+    </>
   )
 }
 
