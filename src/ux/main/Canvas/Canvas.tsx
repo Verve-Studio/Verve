@@ -31,7 +31,6 @@ import type { CanvasHandle } from './canvasHandle'
 import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
-import { ToneMappingControls } from './ToneMappingControls'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import { displayStore } from '@/core/store/displayStore'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
@@ -1294,7 +1293,6 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       {/* Marching-ants overlay: viewport-sized, screen-space, never scrolls */}
       <canvas ref={overlayRef} className={styles.antsOverlay} />
     </div>
-    <ToneMappingControls pixelFormat={state.pixelFormat} />
     <TextLayerEditor
       editingLayerId={editingLayerId}
       layers={state.layers}

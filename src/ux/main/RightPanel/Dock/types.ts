@@ -1,7 +1,7 @@
-export type PanelId = 'Color' | 'Swatches' | 'Navigator' | 'Layers' | 'History' | 'Info'
+export type PanelId = 'Color' | 'Swatches' | 'Navigator' | 'Layers' | 'History' | 'Info' | 'HDR'
 
 export const ALL_PANEL_IDS: readonly PanelId[] = [
-  'Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info',
+  'Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info', 'HDR',
 ] as const
 
 export const PANEL_LABELS: Record<PanelId, string> = {
@@ -11,6 +11,7 @@ export const PANEL_LABELS: Record<PanelId, string> = {
   Layers: 'Layers',
   History: 'History',
   Info: 'Info',
+  HDR: 'HDR',
 }
 
 export interface DockRowConfig {
@@ -41,6 +42,6 @@ export const DEFAULT_LAYOUT: DockLayout = {
     { id: 'row-color',  panels: ['Color', 'Swatches', 'Navigator'], activePanel: 'Color',  height: 280 },
     { id: 'row-layers', panels: ['Layers', 'History', 'Info'],       activePanel: 'Layers', height: null },
   ],
-  closedPanels: [],
+  closedPanels: ['HDR'],
   floatingWindows: [],
 }

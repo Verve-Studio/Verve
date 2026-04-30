@@ -261,7 +261,8 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
         { separator: true, label: '' },
         ...ALL_PANEL_IDS.map(id => ({
           label: PANEL_LABELS[id],
-          checked: dockLayout.rows.some(r => r.panels.includes(id)),
+          checked: dockLayout.rows.some(r => r.panels.includes(id))
+            || dockLayout.floatingWindows.some(w => w.panelId === id),
           action: () => dockStore.togglePanel(id),
         })),
         { separator: true, label: '' },

@@ -1,0 +1,109 @@
+@use '@/styles/variables' as vars;
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  gap: 2px;
+}
+
+.hint {
+  font-size: 11px;
+  color: vars.$color-text-muted;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+}
+
+.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.label {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: vars.$color-text-dim;
+  white-space: nowrap;
+}
+
+.select {
+  flex: 1;
+  height: 20px;
+  font-size: 11px;
+  background: vars.$color-surface-2;
+  color: vars.$color-text;
+  border: 1px solid vars.$color-border-light;
+  border-radius: 2px;
+  padding: 0 4px;
+  cursor: pointer;
+  min-width: 0;
+
+  &:focus {
+    outline: none;
+    border-color: vars.$color-accent-blue;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.trackWrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.track {
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(
+    to right,
+    vars.$color-accent-blue calc(var(--pct) * 100%),
+    vars.$color-surface-2   calc(var(--pct) * 100%)
+  );
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: vars.$color-text;
+    border: 1px solid vars.$color-border-light;
+    cursor: pointer;
+    transition: background 80ms;
+
+    &:hover {
+      background: #fff;
+    }
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.value {
+  font-size: 11px;
+  color: vars.$color-accent-blue;
+  min-width: 38px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+  user-select: none;
+}

@@ -4,6 +4,8 @@ import { Layers } from '@/ux/main/RightPanel/Layers/Layers'
 import { Navigator } from '@/ux/main/RightPanel/Navigator/Navigator'
 import { SwatchPanel } from '@/ux/main/RightPanel/Swatch/SwatchPanel'
 import { HistoryPanel } from '@/ux/main/RightPanel/History/HistoryPanel'
+import { InfoPanel } from '@/ux/main/RightPanel/Info/InfoPanel'
+import { HDRPanel } from '@/ux/windows/HDRPanel/HDRPanel'
 import { Dock } from './Dock/Dock'
 import { dockStore } from './Dock/dockStore'
 import { useDockLayoutLoader } from './Dock/useDockLayout'
@@ -34,7 +36,7 @@ export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, on
     return dockStore.subscribe(() => {
       const open = dockStore.openPanelIds
       const updates: Record<string, boolean> = {}
-      const all: PanelId[] = ['Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info']
+      const all: PanelId[] = ['Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info', 'HDR']
       for (const id of all) {
         updates[`togglePanel:${id}`] = open.includes(id)
       }
@@ -70,7 +72,9 @@ export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, on
       case 'History':
         return <HistoryPanel />
       case 'Info':
-        return <div className={styles.placeholder}>Info</div>
+        return <InfoPanel />
+      case 'HDR':
+        return <HDRPanel />
       default:
         return null
     }
