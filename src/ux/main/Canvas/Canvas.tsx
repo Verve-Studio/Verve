@@ -31,6 +31,7 @@ import type { CanvasHandle } from './canvasHandle'
 import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
+import { useRulers } from './useRulers'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import { displayStore } from '@/core/store/displayStore'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
@@ -82,6 +83,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   const pixelBrushCursorRef = useRef<HTMLDivElement>(null)
   const canvasWrapperRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const hRulerRef = useRef<HTMLCanvasElement>(null)
+  const vRulerRef = useRef<HTMLCanvasElement>(null)
   const zoomRef = useRef(state.canvas.zoom)
   zoomRef.current = state.canvas.zoom
   const activeToolRef = useRef(state.activeTool)
@@ -261,6 +264,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   // ── Marching ants + crop overlay + polygonal selection overlay ──
   useMarchingAnts(isActive, overlayRef, viewportRef, canvasWrapperRef, zoomRef, activeToolRef)
+  useRulers({ showRulers: state.canvas.showRulers, hRulerRef, vRulerRef, viewportRef, canvasWrapperRef, zoom: state.canvas.zoom })
 
   // Publish canvas element into shared context (active canvas only)
   useEffect(() => {
@@ -1176,6 +1180,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   return (
     <>
+    <div className={`${styles.canvasOuter}${state.canvas.showRulers ? ` ${styles.withRulers}` : ''}`}>
+      {state.canvas.showRulers && <>
+        <div className={styles.rulerCorner} />
+        <canvas ref={hRulerRef} className={styles.hRuler} />
+        <canvas ref={vRulerRef} className={styles.vRuler} />
+      </>}
     <div ref={viewportRef} className={styles.viewport} data-canvas-viewport data-active-viewport={isActive ? '' : undefined}>
       <div className={styles.viewportInner}>
         <div
@@ -1292,6 +1302,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       </div>
       {/* Marching-ants overlay: viewport-sized, screen-space, never scrolls */}
       <canvas ref={overlayRef} className={styles.antsOverlay} />
+    </div>
     </div>
     <TextLayerEditor
       editingLayerId={editingLayerId}

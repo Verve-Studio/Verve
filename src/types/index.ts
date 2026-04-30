@@ -823,6 +823,8 @@ export interface CanvasState {
   key: number
   tiledMode: boolean
   showTileGrid: boolean
+  showRulers: boolean
+  showGuides: boolean
 }
 
 // ─── Pixel Brushes ─────────────────────────────────────────────────────────────

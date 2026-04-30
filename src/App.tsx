@@ -254,7 +254,7 @@ function AppContent(): React.JSX.Element {
   const {
     findLayersCounter,
     handleZoomIn, handleZoomOut, handleZoom100,
-    handleFitToWindow, handleToggleGrid,
+    handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,
@@ -429,6 +429,7 @@ function AppContent(): React.JSX.Element {
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleToggleRulers, handleToggleGuides,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
     openNewImageDialog:      () => setShowNewImageDialog(true),
@@ -449,6 +450,8 @@ function AppContent(): React.JSX.Element {
     showGrid:     state.canvas.showGrid,
     tiledMode:    state.canvas.tiledMode,
     showTileGrid: state.canvas.showTileGrid,
+    showRulers:   state.canvas.showRulers,
+    showGuides:   state.canvas.showGuides,
   })
 
   return (
@@ -463,6 +466,8 @@ function AppContent(): React.JSX.Element {
       canvasHeight={state.canvas.height}
       zoom={state.canvas.zoom}
       showGrid={state.canvas.showGrid}
+      showRulers={state.canvas.showRulers}
+      showGuides={state.canvas.showGuides}
       tiledMode={state.canvas.tiledMode}
       showTileGrid={state.canvas.showTileGrid}
       tabs={tabs}
@@ -538,6 +543,8 @@ function AppContent(): React.JSX.Element {
       handleZoom100={handleZoom100}
       handleFitToWindow={handleFitToWindow}
       handleToggleGrid={handleToggleGrid}
+      handleToggleRulers={handleToggleRulers}
+      handleToggleGuides={handleToggleGuides}
       handleSetNormalMode={handleSetNormalMode}
       handleSetTiledMode={handleSetTiledMode}
       handleToggleTileGrid={handleToggleTileGrid}

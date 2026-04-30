@@ -34,6 +34,14 @@ export function useViewActions({ dispatch, stateRef, canvasHandleRef }: ViewActi
     dispatch({ type: 'TOGGLE_GRID' })
   }, [dispatch])
 
+  const handleToggleRulers = useCallback(() => {
+    dispatch({ type: 'TOGGLE_RULERS' })
+  }, [dispatch])
+
+  const handleToggleGuides = useCallback(() => {
+    dispatch({ type: 'TOGGLE_GUIDES' })
+  }, [dispatch])
+
   const handleSetNormalMode = useCallback(() => {
     dispatch({ type: 'SET_TILED_MODE', payload: false })
   }, [dispatch])
@@ -72,7 +80,7 @@ export function useViewActions({ dispatch, stateRef, canvasHandleRef }: ViewActi
   return {
     findLayersCounter,
     handleZoomIn, handleZoomOut, handleZoom100,
-    handleFitToWindow, handleToggleGrid,
+    handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,

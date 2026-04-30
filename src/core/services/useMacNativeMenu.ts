@@ -63,6 +63,8 @@ interface MacNativeMenuParams {
   handleZoom100: () => void
   handleFitToWindow: () => void
   handleToggleGrid: () => void
+  handleToggleRulers: () => void
+  handleToggleGuides: () => void
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
@@ -94,6 +96,8 @@ interface MacNativeMenuParams {
   isContentAwareFilling: boolean
   pixelFormat: PixelFormat
   showGrid: boolean
+  showRulers: boolean
+  showGuides: boolean
   tiledMode: boolean
   showTileGrid: boolean
 }
@@ -111,6 +115,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
+    handleToggleRulers, handleToggleGuides,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
@@ -119,7 +124,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
     hasSelection, isContentAwareFilling,
-    pixelFormat, showGrid, tiledMode, showTileGrid,
+    pixelFormat, showGrid, showRulers, showGuides, tiledMode, showTileGrid,
   } = params
 
   // A ref that holds the latest action dispatcher (avoids stale closures in the IPC listener).
@@ -196,6 +201,8 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'zoom100':          handleZoom100(); break
       case 'fitToWindow':      handleFitToWindow(); break
       case 'toggleGrid':       handleToggleGrid(); break
+      case 'toggleRulers':     handleToggleRulers(); break
+      case 'toggleGuides':     handleToggleGuides(); break
       case 'setNormalMode':    handleSetNormalMode(); break
       case 'setTiledMode':     handleSetTiledMode(); break
       case 'toggleTileGrid':   handleToggleTileGrid(); break
@@ -221,7 +228,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
-    handleZoom100, handleFitToWindow, handleToggleGrid, handleEnterTransform,
+    handleZoom100, handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides, handleEnterTransform,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     handleOpenCafDialog,
@@ -272,11 +279,13 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     if (!isMac) return
     window.api.setMenuItemChecked({
       toggleGrid:   showGrid,
+      toggleRulers: showRulers,
+      toggleGuides: showGuides,
       normalMode:   !tiledMode,
       tiledMode:    tiledMode,
       showTileGrid: showTileGrid,
     })
-  }, [isMac, showGrid, tiledMode, showTileGrid])
+  }, [isMac, showGrid, showRulers, showGuides, tiledMode, showTileGrid])
 
   // Sync panel open/closed states to native menu checkboxes.
   useEffect(() => {

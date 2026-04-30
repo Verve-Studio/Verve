@@ -58,6 +58,8 @@ export interface MainWindowProps {
   showGrid: boolean
   tiledMode: boolean
   showTileGrid: boolean
+  showRulers: boolean
+  showGuides: boolean
 
   // Tabs
   tabs: TabRecord[]
@@ -161,6 +163,8 @@ export interface MainWindowProps {
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
+  handleToggleRulers: () => void
+  handleToggleGuides: () => void
   handleSelectAll: () => void
   handleDeselect: () => void
   handleSelectAllLayers: () => void
@@ -195,7 +199,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
   const {
     isMac,
     activeTool, pixelFormat, activeLayerId, openAdjustmentLayerId, swatches,
-    canvasWidth, canvasHeight, zoom, showGrid, tiledMode, showTileGrid,
+    canvasWidth, canvasHeight, zoom, showGrid, tiledMode, showTileGrid, showRulers, showGuides,
     tabs, tabInfos, activeTabId, canvasHandleRef,
     pendingLayerData, setPendingLayerData, tabCanvasRef,
     captureHistory, pendingLayerLabelRef, dispatch,
@@ -225,6 +229,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleResizeImage, handleResizeCanvas,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleToggleRulers, handleToggleGuides,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers, findLayersCounter,
     handleToolChange, handleEnterTransform,
@@ -264,6 +269,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onFitToWindow={handleFitToWindow}
         onToggleGrid={handleToggleGrid}
         showGrid={showGrid}
+        onToggleRulers={handleToggleRulers}
+        showRulers={showRulers}
+        onToggleGuides={handleToggleGuides}
+        showGuides={showGuides}
         onSetNormalMode={handleSetNormalMode}
         onSetTiledMode={handleSetTiledMode}
         tiledMode={tiledMode}
