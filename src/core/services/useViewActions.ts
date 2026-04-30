@@ -5,6 +5,8 @@ import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import { selectionStore } from '@/core/store/selectionStore'
 
+export type GuidePreset = 'thirds' | 'safe-zone' | 'center-split' | 'fourths'
+
 interface ViewActionsParams {
   dispatch: Dispatch<AppAction>
   stateRef: MutableRefObject<AppState>
@@ -41,6 +43,40 @@ export function useViewActions({ dispatch, stateRef, canvasHandleRef }: ViewActi
   const handleToggleGuides = useCallback(() => {
     dispatch({ type: 'TOGGLE_GUIDES' })
   }, [dispatch])
+
+  const handleApplyGuidePreset = useCallback((preset: GuidePreset) => {
+    const { width: w, height: h } = stateRef.current.canvas
+    if (w === 0 || h === 0) return
+    // Clear existing guides first, then batch-add preset guides
+    dispatch({ type: 'CLEAR_GUIDES' })
+    const add = (axis: 'h' | 'v', position: number): void => {
+      dispatch({ type: 'ADD_GUIDE', payload: { id: `g${axis}${position}_${Date.now()}_${Math.random()}`, axis, position } })
+    }
+    if (preset === 'thirds') {
+      add('v', Math.round(w / 3))
+      add('v', Math.round((w * 2) / 3))
+      add('h', Math.round(h / 3))
+      add('h', Math.round((h * 2) / 3))
+    } else if (preset === 'fourths') {
+      add('v', Math.round(w / 4))
+      add('v', Math.round(w / 2))
+      add('v', Math.round((w * 3) / 4))
+      add('h', Math.round(h / 4))
+      add('h', Math.round(h / 2))
+      add('h', Math.round((h * 3) / 4))
+    } else if (preset === 'center-split') {
+      add('v', Math.round(w / 2))
+      add('h', Math.round(h / 2))
+    } else if (preset === 'safe-zone') {
+      // 10% inset on each side (standard broadcast safe zone)
+      const mx = Math.round(w * 0.1)
+      const my = Math.round(h * 0.1)
+      add('v', mx)
+      add('v', w - mx)
+      add('h', my)
+      add('h', h - my)
+    }
+  }, [dispatch, stateRef])
 
   const handleSetNormalMode = useCallback(() => {
     dispatch({ type: 'SET_TILED_MODE', payload: false })
@@ -81,6 +117,7 @@ export function useViewActions({ dispatch, stateRef, canvasHandleRef }: ViewActi
     findLayersCounter,
     handleZoomIn, handleZoomOut, handleZoom100,
     handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
+    handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,

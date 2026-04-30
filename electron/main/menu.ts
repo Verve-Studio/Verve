@@ -247,6 +247,15 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
           accelerator: 'CmdOrCtrl+;',
           click: () => send('toggleGuides'),
         },
+        {
+          label: 'Guide Presets',
+          submenu: [
+            { id: 'guidePreset:thirds',       label: 'Thirds',       click: () => send('guidePreset:thirds')       },
+            { id: 'guidePreset:fourths',      label: 'Fourths',      click: () => send('guidePreset:fourths')      },
+            { id: 'guidePreset:center-split', label: 'Center Split', click: () => send('guidePreset:center-split') },
+            { id: 'guidePreset:safe-zone',    label: 'Safe Zone',    click: () => send('guidePreset:safe-zone')    },
+          ],
+        },
         sep(),
         { id: 'normalMode', label: 'Normal Mode', type: 'checkbox', checked: true, click: () => send('setNormalMode') },
         { id: 'tiledMode', label: 'Tiled Mode', type: 'checkbox', checked: false, click: () => send('setTiledMode') },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { AdjustmentType, FilterKey, PixelFormat } from '@/types'
+import type { GuidePreset } from './useViewActions'
 import { selectionStore } from '@/core/store/selectionStore'
 import { ADJUSTMENT_MENU_ITEMS, EFFECTS_MENU_ITEMS, FILTER_MENU_ITEMS } from '@/core/menuConstants'
 import { dockStore } from '@/ux/main/RightPanel/Dock/dockStore'
@@ -65,6 +66,7 @@ interface MacNativeMenuParams {
   handleToggleGrid: () => void
   handleToggleRulers: () => void
   handleToggleGuides: () => void
+  handleApplyGuidePreset: (preset: GuidePreset) => void
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
@@ -115,7 +117,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
-    handleToggleRulers, handleToggleGuides,
+    handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
@@ -202,7 +204,11 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'fitToWindow':      handleFitToWindow(); break
       case 'toggleGrid':       handleToggleGrid(); break
       case 'toggleRulers':     handleToggleRulers(); break
-      case 'toggleGuides':     handleToggleGuides(); break
+      case 'toggleGuides':          handleToggleGuides(); break
+      case 'guidePreset:thirds':     handleApplyGuidePreset('thirds'); break
+      case 'guidePreset:fourths':    handleApplyGuidePreset('fourths'); break
+      case 'guidePreset:center-split': handleApplyGuidePreset('center-split'); break
+      case 'guidePreset:safe-zone':  handleApplyGuidePreset('safe-zone'); break
       case 'setNormalMode':    handleSetNormalMode(); break
       case 'setTiledMode':     handleSetTiledMode(); break
       case 'toggleTileGrid':   handleToggleTileGrid(); break
@@ -228,7 +234,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
-    handleZoom100, handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides, handleEnterTransform,
+    handleZoom100, handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides, handleApplyGuidePreset, handleEnterTransform,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     handleOpenCafDialog,

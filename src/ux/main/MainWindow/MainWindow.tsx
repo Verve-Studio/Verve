@@ -7,6 +7,7 @@ import type { UseFiltersReturn } from '@/core/services/useFilters'
 import type { UseColorModeReturn } from '@/core/services/useColorMode'
 import type { Tool, PixelFormat, RGBAColor } from '@/types'
 import type { FilterKey } from '@/types'
+import type { GuidePreset } from '@/core/services/useViewActions'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { ExportSettings } from '@/ux/modals/ExportDialog/ExportDialog'
@@ -165,6 +166,7 @@ export interface MainWindowProps {
   handleToggleTileGrid: () => void
   handleToggleRulers: () => void
   handleToggleGuides: () => void
+  handleApplyGuidePreset: (preset: GuidePreset) => void
   handleSelectAll: () => void
   handleDeselect: () => void
   handleSelectAllLayers: () => void
@@ -229,7 +231,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleResizeImage, handleResizeCanvas,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
-    handleToggleRulers, handleToggleGuides,
+    handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers, findLayersCounter,
     handleToolChange, handleEnterTransform,
@@ -272,6 +274,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onToggleRulers={handleToggleRulers}
         showRulers={showRulers}
         onToggleGuides={handleToggleGuides}
+        onApplyGuidePreset={handleApplyGuidePreset}
         showGuides={showGuides}
         onSetNormalMode={handleSetNormalMode}
         onSetTiledMode={handleSetTiledMode}

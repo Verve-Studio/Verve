@@ -255,6 +255,7 @@ function AppContent(): React.JSX.Element {
     findLayersCounter,
     handleZoomIn, handleZoomOut, handleZoom100,
     handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
+    handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,
@@ -430,6 +431,7 @@ function AppContent(): React.JSX.Element {
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleToggleRulers, handleToggleGuides,
+    handleApplyGuidePreset,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
     openNewImageDialog:      () => setShowNewImageDialog(true),
@@ -545,6 +547,7 @@ function AppContent(): React.JSX.Element {
       handleToggleGrid={handleToggleGrid}
       handleToggleRulers={handleToggleRulers}
       handleToggleGuides={handleToggleGuides}
+      handleApplyGuidePreset={handleApplyGuidePreset}
       handleSetNormalMode={handleSetNormalMode}
       handleSetTiledMode={handleSetTiledMode}
       handleToggleTileGrid={handleToggleTileGrid}
