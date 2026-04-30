@@ -1,6 +1,6 @@
 import type React from 'react'
 import type { WebGPURenderer, GpuLayer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
-import type { RGBAColor, TextLayerState, ShapeLayerState, PixelFormat } from '@/types'
+import type { RGBAColor, TextLayerState, ShapeLayerState, PixelFormat, Guide } from '@/types'
 
 // ─── Runtime context passed to tool handlers on each pointer event ────────────
 
@@ -76,6 +76,8 @@ export interface ToolContext {
   hdrIntensity: number
   /** Set the eyedropper HDR overflow flag (rgba32f mode: sampled value exceeded 1.0). */
   setEyedropperHdrOverflow: (overflow: boolean) => void
+  /** Current guide list — used by tools that snap to guides. */
+  guides: Guide[]
 }
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────

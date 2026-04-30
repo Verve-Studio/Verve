@@ -1,7 +1,142 @@
 import React, { useEffect, useState } from 'react'
 import { selectionStore } from '@/core/store/selectionStore'
-import type { TextLayerState, ShapeLayerState } from '@/types'
+import type { Guide, TextLayerState, ShapeLayerState } from '@/types'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+
+// ─── Snap-to-guide options ────────────────────────────────────────────────────
+
+export type SnapPoint =
+  | 'center'
+  | 'upper-left'
+  | 'upper-right'
+  | 'lower-left'
+  | 'lower-right'
+  | 'vertical-middle'
+  | 'horizontal-middle'
+
+export const moveOptions = {
+  snapToGuide: false,
+  snapPoint: 'upper-left' as SnapPoint,
+}
+
+const SNAP_THRESHOLD_CSS_PX = 8
+
+interface VisibleBounds {
+  /** Inclusive min X in layer-local space */
+  minX: number
+  /** Inclusive min Y in layer-local space */
+  minY: number
+  /** Exclusive max X in layer-local space */
+  maxX: number
+  /** Exclusive max Y in layer-local space */
+  maxY: number
+}
+
+/**
+ * Computes the tight bounding box of non-transparent pixels in layer-local space.
+ * Falls back to the full layer rect if the layer is entirely transparent.
+ */
+function getVisibleBounds(
+  data: Uint8Array | Float32Array,
+  w: number, h: number,
+  format: string,
+): VisibleBounds {
+  let minX = w, minY = h, maxX = 0, maxY = 0
+  if (format === 'rgba32f') {
+    const d = data as Float32Array
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (d[(y * w + x) * 4 + 3] > 0) {
+          if (x < minX) minX = x
+          if (x + 1 > maxX) maxX = x + 1
+          if (y < minY) minY = y
+          if (y + 1 > maxY) maxY = y + 1
+        }
+      }
+    }
+  } else if (format === 'indexed8') {
+    const d = data as Uint8Array
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (d[y * w + x] !== 255) {
+          if (x < minX) minX = x
+          if (x + 1 > maxX) maxX = x + 1
+          if (y < minY) minY = y
+          if (y + 1 > maxY) maxY = y + 1
+        }
+      }
+    }
+  } else {
+    // rgba8
+    const d = data as Uint8Array
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (d[(y * w + x) * 4 + 3] > 0) {
+          if (x < minX) minX = x
+          if (x + 1 > maxX) maxX = x + 1
+          if (y < minY) minY = y
+          if (y + 1 > maxY) maxY = y + 1
+        }
+      }
+    }
+  }
+  // All transparent — fall back to full rect
+  if (maxX === 0 || maxY === 0) return { minX: 0, minY: 0, maxX: w, maxY: h }
+  return { minX, minY, maxX, maxY }
+}
+
+/**
+ * Returns the canvas-space offset of the snap anchor from offsetX/offsetY
+ * given the visible bounding box (layer-local coords).
+ */
+function getAnchorOffset(bounds: VisibleBounds, snapPoint: SnapPoint): [number, number] {
+  const { minX, minY, maxX, maxY } = bounds
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  switch (snapPoint) {
+    case 'upper-left':        return [minX, minY]
+    case 'upper-right':       return [maxX, minY]
+    case 'lower-left':        return [minX, maxY]
+    case 'lower-right':       return [maxX, maxY]
+    case 'center':            return [cx,   cy  ]
+    case 'vertical-middle':   return [cx,   minY]  // top-center edge
+    case 'horizontal-middle': return [minX, cy  ]  // left-center edge
+  }
+}
+
+/**
+ * Adjusts dx/dy so that the chosen snap-point of the visible pixel bounds
+ * snaps to the nearest guide within the threshold. Only operates on
+ * whole-layer moves (not selection or text/shape moves).
+ */
+function snapDelta(
+  origX: number, origY: number,
+  dx: number, dy: number,
+  bounds: VisibleBounds,
+  guides: Guide[],
+  zoom: number,
+): [number, number] {
+  if (!moveOptions.snapToGuide || guides.length === 0) return [dx, dy]
+  const dpr = window.devicePixelRatio || 1
+  const threshold = SNAP_THRESHOLD_CSS_PX / (zoom / dpr)
+  const [anchorOffX, anchorOffY] = getAnchorOffset(bounds, moveOptions.snapPoint)
+  const anchorX = origX + dx + anchorOffX
+  const anchorY = origY + dy + anchorOffY
+  let snappedDx = dx
+  let snappedDy = dy
+  let minDistX = threshold
+  let minDistY = threshold
+  for (const g of guides) {
+    if (g.axis === 'v') {
+      const d = Math.abs(anchorX - g.position)
+      if (d < minDistX) { minDistX = d; snappedDx = g.position - anchorOffX - origX }
+    } else {
+      const d = Math.abs(anchorY - g.position)
+      if (d < minDistY) { minDistY = d; snappedDy = g.position - anchorOffY - origY }
+    }
+  }
+  return [snappedDx, snappedDy]
+}
 
 // ─── Display store (live position/size for options bar) ───────────────────────
 
@@ -53,6 +188,8 @@ function createMoveHandler(): ToolHandler {
   // For shape layer move: track original parametric coords
   let shapeLayerSnapshot: ShapeLayerState | null = null
   let isDown = false
+  // Cached visible-pixel bounding box for snap-to-guide (computed at pointer-down)
+  let cachedVisibleBounds: VisibleBounds | null = null
 
   function applySelectionMove(dx: number, dy: number, ctx: ToolContext): void {
     const { renderer, layer, layers, render } = ctx
@@ -130,12 +267,14 @@ function createMoveHandler(): ToolHandler {
         originalMask   = selectionStore.mask.slice()
         originalOffsetX = 0
         originalOffsetY = 0
+        cachedVisibleBounds = null
       } else {
         // Whole-layer move: just update the offset
         originalPixels = null
         originalMask   = null
         originalOffsetX = ctx.layer.offsetX
         originalOffsetY = ctx.layer.offsetY
+        cachedVisibleBounds = getVisibleBounds(ctx.layer.data, ctx.layer.layerWidth, ctx.layer.layerHeight, ctx.layer.format)
         if (textLayerSnapshot) {
           textLayerOrigX = textLayerSnapshot.x
           textLayerOrigY = textLayerSnapshot.y
@@ -173,8 +312,13 @@ function createMoveHandler(): ToolHandler {
         // Enable preview mode so expensive standalone effects (bloom, halation, etc.)
         // are skipped during the drag — they rerun at full quality on pointer-up.
         ctx.renderer.setPreviewMode(true)
-        ctx.layer.offsetX = originalOffsetX + dx
-        ctx.layer.offsetY = originalOffsetY + dy
+        const bounds = cachedVisibleBounds ?? { minX: 0, minY: 0, maxX: ctx.layer.layerWidth, maxY: ctx.layer.layerHeight }
+        const [sdx, sdy] = snapDelta(
+          originalOffsetX, originalOffsetY, dx, dy,
+          bounds, ctx.guides, ctx.zoom,
+        )
+        ctx.layer.offsetX = originalOffsetX + sdx
+        ctx.layer.offsetY = originalOffsetY + sdy
         ctx.render(ctx.layers)
       }
       moveDisplay.set(ctx.layer.offsetX, ctx.layer.offsetY, ctx.layer.layerWidth, ctx.layer.layerHeight)
@@ -211,10 +355,15 @@ function createMoveHandler(): ToolHandler {
         ctx.updateShapeLayer(moved)
         shapeLayerSnapshot = null
       } else {
-        if (dx !== lastDx || dy !== lastDy) {
-          ctx.layer.offsetX = originalOffsetX + dx
-          ctx.layer.offsetY = originalOffsetY + dy
-        }
+        const finalDx = (dx !== lastDx || dy !== lastDy) ? dx : lastDx
+        const finalDy = (dx !== lastDx || dy !== lastDy) ? dy : lastDy
+        const bounds = cachedVisibleBounds ?? { minX: 0, minY: 0, maxX: ctx.layer.layerWidth, maxY: ctx.layer.layerHeight }
+        const [sdx, sdy] = snapDelta(
+          originalOffsetX, originalOffsetY, finalDx, finalDy,
+          bounds, ctx.guides, ctx.zoom,
+        )
+        ctx.layer.offsetX = originalOffsetX + sdx
+        ctx.layer.offsetY = originalOffsetY + sdy
         // Always exit preview mode and do a full-quality rerender on pointer-up
         // so standalone effects (bloom, halation, etc.) render at the final position.
         ctx.renderer.setPreviewMode(false)
@@ -228,6 +377,8 @@ function createMoveHandler(): ToolHandler {
 
 function MoveOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Element {
   const [pos, setPos] = useState({ x: moveDisplay.x, y: moveDisplay.y, w: moveDisplay.w, h: moveDisplay.h })
+  const [snapToGuide, setSnapToGuide] = useState(moveOptions.snapToGuide)
+  const [snapPoint, setSnapPoint] = useState<SnapPoint>(moveOptions.snapPoint)
 
   useEffect(() => {
     const sync = (): void => setPos({ x: moveDisplay.x, y: moveDisplay.y, w: moveDisplay.w, h: moveDisplay.h })
@@ -248,6 +399,34 @@ function MoveOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Eleme
       <span className={styles.optText}>{fmt(pos.w)}</span>
       <label className={styles.optLabel}>H:</label>
       <span className={styles.optText}>{fmt(pos.h)}</span>
+      <span className={styles.optSep} />
+      <label className={styles.optCheckLabel}>
+        <input
+          type="checkbox"
+          checked={snapToGuide}
+          onChange={e => { moveOptions.snapToGuide = e.target.checked; setSnapToGuide(e.target.checked) }}
+        />
+        Snap to Guide
+      </label>
+      {snapToGuide && (
+        <select
+          className={styles.optSelect}
+          value={snapPoint}
+          onChange={e => {
+            const v = e.target.value as SnapPoint
+            moveOptions.snapPoint = v
+            setSnapPoint(v)
+          }}
+        >
+          <option value="upper-left">Upper Left</option>
+          <option value="upper-right">Upper Right</option>
+          <option value="lower-left">Lower Left</option>
+          <option value="lower-right">Lower Right</option>
+          <option value="center">Center</option>
+          <option value="vertical-middle">Vertical Middle</option>
+          <option value="horizontal-middle">Horizontal Middle</option>
+        </select>
+      )}
     </>
   )
 }

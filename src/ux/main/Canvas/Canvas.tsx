@@ -32,6 +32,7 @@ import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
 import { useRulers } from './useRulers'
+import { useGuides } from './useGuides'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import { displayStore } from '@/core/store/displayStore'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
@@ -265,6 +266,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   // ── Marching ants + crop overlay + polygonal selection overlay ──
   useMarchingAnts(isActive, overlayRef, viewportRef, canvasWrapperRef, zoomRef, activeToolRef)
   useRulers({ showRulers: state.canvas.showRulers, hRulerRef, vRulerRef, viewportRef, canvasWrapperRef, zoom: state.canvas.zoom })
+  const { dragPreview, startGuideDrag } = useGuides({
+    dispatch,
+    showRulers: state.canvas.showRulers,
+    showGuides: state.canvas.showGuides,
+    zoom: state.canvas.zoom,
+    hRulerRef,
+    vRulerRef,
+    canvasWrapperRef,
+  })
 
   // Publish canvas element into shared context (active canvas only)
   useEffect(() => {
@@ -947,6 +957,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       setEyedropperHdrOverflow: (overflow) => {
         dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: overflow })
       },
+      guides: state.canvas.guides,
     }
   }
 
@@ -1248,6 +1259,32 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           />
           <div ref={brushCursorRef} className={styles.brushCursor} />
           <div ref={pixelBrushCursorRef} className={styles.pixelBrushCursor} />
+          {/* Guide overlay */}
+          {state.canvas.showGuides && (() => {
+            const dpr = window.devicePixelRatio || 1
+            const cssPxPerDocPx = state.canvas.zoom / dpr
+            const allGuides = [
+              ...state.canvas.guides,
+              ...(dragPreview ? [{ id: '__preview__', axis: dragPreview.axis, position: dragPreview.position }] : []),
+            ]
+            if (allGuides.length === 0) return null
+            return (
+              <div className={styles.guideContainer}>
+                {allGuides.map(guide => {
+                  const isPreview = guide.id === '__preview__'
+                  const px = guide.position * cssPxPerDocPx
+                  return (
+                    <div
+                      key={guide.id}
+                      className={`${styles.guideHitArea} ${guide.axis === 'h' ? styles.guideH : styles.guideV}${isPreview ? ` ${styles.guidePreview}` : ''}`}
+                      style={guide.axis === 'h' ? { top: px } : { left: px }}
+                      onPointerDown={!isPreview ? (e) => startGuideDrag(e, guide.id, guide.axis) : undefined}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })()}
           {state.canvas.showGrid && (() => {
             const { gridType, gridColor, gridSize, zoom } = state.canvas
             const dpr = window.devicePixelRatio

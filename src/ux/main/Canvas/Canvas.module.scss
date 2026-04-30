@@ -188,6 +188,66 @@
   z-index: 2;
 }
 
+// ─── Guides ───────────────────────────────────────────────────────────────────
+
+.guideContainer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  overflow: visible;
+}
+
+// Hit area div — extends pointer-events hitbox without affecting visual
+.guideHitArea {
+  position: absolute;
+  pointer-events: auto;
+
+  // Line itself drawn via ::after
+  &::after {
+    content: '';
+    position: absolute;
+    background: #00cfff;
+    pointer-events: none;
+  }
+
+  &.guideH {
+    left: 0;
+    right: 0;
+    height: 7px;
+    transform: translateY(-3px);
+    cursor: ns-resize;
+
+    &::after {
+      top: 3px;
+      left: 0; right: 0;
+      height: 1px;
+    }
+  }
+
+  &.guideV {
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    transform: translateX(-3px);
+    cursor: ew-resize;
+
+    &::after {
+      left: 3px;
+      top: 0; bottom: 0;
+      width: 1px;
+    }
+  }
+
+  &.guidePreview {
+    pointer-events: none;
+
+    &::after {
+      background: rgba(0, 207, 255, 0.55);
+    }
+  }
+}
+
 .textEditorRoot {
   box-sizing: content-box;
   border: 2px dashed #0078ff;

@@ -809,6 +809,13 @@ export type BackgroundFill = 'white' | 'black' | 'transparent'
 
 export type GridType = 'normal' | 'thirds' | 'safe-zone'
 
+export interface Guide {
+  id: string
+  axis: 'h' | 'v'
+  /** Document-pixel coordinate (Y for 'h', X for 'v') */
+  position: number
+}
+
 export interface CanvasState {
   width: number
   height: number
@@ -825,6 +832,7 @@ export interface CanvasState {
   showTileGrid: boolean
   showRulers: boolean
   showGuides: boolean
+  guides: Guide[]
 }
 
 // ─── Pixel Brushes ─────────────────────────────────────────────────────────────
