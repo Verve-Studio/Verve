@@ -236,6 +236,13 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         { id: 'tiledMode', label: 'Tiled Mode', type: 'checkbox', checked: false, click: () => send('setTiledMode') },
         sep(),
         { id: 'showTileGrid', label: 'Show Tile Grid', type: 'checkbox', checked: false, enabled: false, click: () => send('toggleTileGrid') },
+        sep(),
+        { id: 'togglePanel:Color',     label: 'Color',     type: 'checkbox', checked: true, click: () => send('togglePanel:Color') },
+        { id: 'togglePanel:Swatches',  label: 'Swatches',  type: 'checkbox', checked: true, click: () => send('togglePanel:Swatches') },
+        { id: 'togglePanel:Navigator', label: 'Navigator', type: 'checkbox', checked: true, click: () => send('togglePanel:Navigator') },
+        { id: 'togglePanel:Layers',    label: 'Layers',    type: 'checkbox', checked: true, click: () => send('togglePanel:Layers') },
+        { id: 'togglePanel:History',   label: 'History',   type: 'checkbox', checked: true, click: () => send('togglePanel:History') },
+        { id: 'togglePanel:Info',      label: 'Info',      type: 'checkbox', checked: true, click: () => send('togglePanel:Info') },
       ],
     },
 

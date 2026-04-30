@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { AdjustmentType, FilterKey, PixelFormat } from '@/types'
 import { selectionStore } from '@/core/store/selectionStore'
 import { ADJUSTMENT_MENU_ITEMS, EFFECTS_MENU_ITEMS, FILTER_MENU_ITEMS } from '@/core/menuConstants'
+import { dockStore } from '@/ux/main/RightPanel/Dock/dockStore'
+import type { PanelId } from '@/ux/main/RightPanel/Dock/types'
 
 interface MacNativeMenuParams {
   isMac: boolean
@@ -203,6 +205,11 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'colorMode:rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
       case 'colorMode:indexed8': colorMode.handleConvertColorMode('indexed8'); break
       case 'openDevTools':     window.api.openDevTools(); break
+      default: {
+        if (actionId.startsWith('togglePanel:')) {
+          dockStore.togglePanel(actionId.slice('togglePanel:'.length) as PanelId)
+        }
+      }
     }
   }, [
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
@@ -268,4 +275,20 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       showTileGrid: showTileGrid,
     })
   }, [isMac, showGrid, tiledMode, showTileGrid])
+
+  // Sync panel open/closed states to native menu checkboxes.
+  useEffect(() => {
+    if (!isMac) return
+    const sync = () => {
+      const openIds = dockStore.openPanelIds
+      const panels: PanelId[] = ['Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info']
+      const updates: Record<string, boolean> = {}
+      for (const id of panels) {
+        updates[`togglePanel:${id}`] = openIds.includes(id)
+      }
+      window.api.setMenuItemChecked(updates)
+    }
+    sync()
+    return dockStore.subscribe(sync)
+  }, [isMac])
 }

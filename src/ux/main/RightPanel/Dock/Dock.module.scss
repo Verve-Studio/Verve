@@ -1,0 +1,21 @@
+@use '@/styles/variables' as vars;
+
+.dock {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bottomDropZone {
+  height: 6px;
+  flex-shrink: 0;
+  background: transparent;
+  transition: background-color 80ms;
+}
+
+.bottomDropZoneActive {
+  background: vars.$color-accent-blue;
+  opacity: 0.7;
+}

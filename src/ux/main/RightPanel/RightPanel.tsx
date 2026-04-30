@@ -1,13 +1,14 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect } from 'react'
 import { ColorPicker } from '@/ux/main/RightPanel/ColorPicker/ColorPicker'
 import { Layers } from '@/ux/main/RightPanel/Layers/Layers'
 import { Navigator } from '@/ux/main/RightPanel/Navigator/Navigator'
 import { SwatchPanel } from '@/ux/main/RightPanel/Swatch/SwatchPanel'
 import { HistoryPanel } from '@/ux/main/RightPanel/History/HistoryPanel'
+import { Dock } from './Dock/Dock'
+import { dockStore } from './Dock/dockStore'
+import { useDockLayoutLoader } from './Dock/useDockLayout'
+import type { PanelId } from './Dock/types'
 import styles from './RightPanel.module.scss'
-
-type ColorTab = 'Color' | 'Swatches' | 'Navigator'
-type LayerTab = 'Layers' | 'History' | 'Info'
 
 interface RightPanelProps {
   activeTabId: string
@@ -26,119 +27,31 @@ interface RightPanelProps {
 }
 
 export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, onMergeVisible, onMergeDown, onFlattenImage, onRasterizeLayer, onDuplicateLayer, onOpenAdjustmentPanel, onGeneratePalette, onMergeGroup, onGroupSelected, onUngroup }: RightPanelProps): React.JSX.Element {
-  const [colorTab, setColorTab]   = useState<ColorTab>('Color')
-  const [layerTab, setLayerTab]   = useState<LayerTab>('Layers')
-  const [colorTabs, setColorTabs] = useState<ColorTab[]>(['Color', 'Swatches', 'Navigator'])
-  const [layerTabs, setLayerTabs] = useState<LayerTab[]>(['Layers', 'History', 'Info'])
+  useDockLayoutLoader()
 
-  const colorDragSrc = useRef<number | null>(null)
-  const layerDragSrc = useRef<number | null>(null)
-  const [colorDragOver, setColorDragOver] = useState<number | null>(null)
-  const [layerDragOver, setLayerDragOver] = useState<number | null>(null)
+  // Sync panel checked states to native menu whenever layout changes
+  useEffect(() => {
+    return dockStore.subscribe(() => {
+      const open = dockStore.openPanelIds
+      const updates: Record<string, boolean> = {}
+      const all: PanelId[] = ['Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info']
+      for (const id of all) {
+        updates[`togglePanel:${id}`] = open.includes(id)
+      }
+      window.api.setMenuItemChecked(updates)
+    })
+  }, [])
 
-  function makeDragHandlers<T extends string>(
-    tabs: T[],
-    setTabs: React.Dispatch<React.SetStateAction<T[]>>,
-    dragSrc: React.MutableRefObject<number | null>,
-    setDragOver: React.Dispatch<React.SetStateAction<number | null>>,
-  ) {
-    return {
-      onDragStart: (idx: number, e: React.DragEvent) => {
-        dragSrc.current = idx
-        e.dataTransfer.effectAllowed = 'move'
-      },
-      onDragOver: (idx: number, e: React.DragEvent) => {
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        setDragOver(idx)
-      },
-      onDragLeave: () => setDragOver(null),
-      onDrop: (idx: number, e: React.DragEvent) => {
-        e.preventDefault()
-        setDragOver(null)
-        const src = dragSrc.current
-        if (src === null || src === idx) return
-        const next = [...tabs]
-        const [moved] = next.splice(src, 1)
-        next.splice(idx, 0, moved)
-        setTabs(next)
-        dragSrc.current = null
-      },
-      onDragEnd: () => { dragSrc.current = null; setDragOver(null) },
-    }
-  }
-
-  const colorDrag = makeDragHandlers(colorTabs, setColorTabs, colorDragSrc, setColorDragOver)
-  const layerDrag = makeDragHandlers(layerTabs, setLayerTabs, layerDragSrc, setLayerDragOver)
-
-  return (
-    <aside className={styles.panel}>
-      {/* ── Color section ───────────────────────────────────────────────── */}
-      <div className={styles.section} style={{ flex: '0 0 auto' }}>
-        <div className={styles.tabRow}>
-          {colorTabs.map((t, i) => (
-            <button
-              key={t}
-              draggable
-              className={[
-                styles.tab,
-                colorTab === t ? styles.tabActive : '',
-                colorDragOver === i ? styles.tabDragOver : '',
-              ].join(' ')}
-              onClick={() => setColorTab(t)}
-              onDragStart={(e) => colorDrag.onDragStart(i, e)}
-              onDragOver={(e)  => colorDrag.onDragOver(i, e)}
-              onDragLeave={colorDrag.onDragLeave}
-              onDrop={(e)      => colorDrag.onDrop(i, e)}
-              onDragEnd={colorDrag.onDragEnd}
-            >
-              {t}
-            </button>
-          ))}
-          <div className={styles.tabSpacer} />
-        </div>
-
-        {colorTab === 'Color' && <ColorPicker />}
-        {colorTab === 'Swatches' && (
-          <SwatchPanel
-            activeTabId={activeTabId}
-            onGeneratePalette={onGeneratePalette}
-          />
-        )}
-        {colorTab === 'Navigator' && (
-          <Navigator />
-        )}
-      </div>
-
-      {/* ── Divider ─────────────────────────────────────────────────────── */}
-      <div className={styles.divider} />
-
-      {/* ── Layers section ──────────────────────────────────────────────── */}
-      <div className={styles.section} style={{ flex: '1 1 0', minHeight: 0 }}>
-        <div className={styles.tabRow}>
-          {layerTabs.map((t, i) => (
-            <button
-              key={t}
-              draggable
-              className={[
-                styles.tab,
-                layerTab === t ? styles.tabActive : '',
-                layerDragOver === i ? styles.tabDragOver : '',
-              ].join(' ')}
-              onClick={() => setLayerTab(t)}
-              onDragStart={(e) => layerDrag.onDragStart(i, e)}
-              onDragOver={(e)  => layerDrag.onDragOver(i, e)}
-              onDragLeave={layerDrag.onDragLeave}
-              onDrop={(e)      => layerDrag.onDrop(i, e)}
-              onDragEnd={layerDrag.onDragEnd}
-            >
-              {t}
-            </button>
-          ))}
-          <div className={styles.tabSpacer} />
-        </div>
-
-        {layerTab === 'Layers' && (
+  function renderPanel(panelId: PanelId): React.ReactNode {
+    switch (panelId) {
+      case 'Color':
+        return <ColorPicker />
+      case 'Swatches':
+        return <SwatchPanel activeTabId={activeTabId} onGeneratePalette={onGeneratePalette} />
+      case 'Navigator':
+        return <Navigator />
+      case 'Layers':
+        return (
           <Layers
             onMergeSelected={onMergeSelected}
             onMergeVisible={onMergeVisible}
@@ -153,14 +66,19 @@ export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, on
             activeTabId={activeTabId}
             findLayersTrigger={findLayersTrigger}
           />
-        )}
-        {layerTab === 'History' && (
-          <HistoryPanel />
-        )}
-        {layerTab === 'Info' && (
-          <div className={styles.placeholder}>{layerTab}</div>
-        )}
-      </div>
+        )
+      case 'History':
+        return <HistoryPanel />
+      case 'Info':
+        return <div className={styles.placeholder}>Info</div>
+      default:
+        return null
+    }
+  }
+
+  return (
+    <aside className={styles.panel}>
+      <Dock renderPanel={renderPanel} />
     </aside>
   )
 }

@@ -50,6 +50,10 @@ const api = {
   writeBrushFile: (filePath: string, data: string): Promise<void> =>
     ipcRenderer.invoke('file:writeBrushFile', filePath, data),
 
+  // ── Dock layout ──────────────────────────────────────────────────────────────
+  loadDockLayout: (): Promise<unknown> => ipcRenderer.invoke('dockLayout:load'),
+  saveDockLayout: (layout: unknown): Promise<void> => ipcRenderer.invoke('dockLayout:save', layout),
+
   // ── App lifecycle ─────────────────────────────────────────────────────────────
   exitApp: (): Promise<void> => ipcRenderer.invoke('app:exit'),
 
