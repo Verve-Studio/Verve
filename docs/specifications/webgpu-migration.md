@@ -2,7 +2,7 @@
 
 ## Overview
 
-PixelShop's GPU pipeline is currently implemented using WebGL2. This migration replaces that pipeline with WebGPU, the modern successor to WebGL. The change is entirely internal — no user-facing UI, behavior, or visual output changes. The primary motivation is access to **compute shaders**: WebGPU compute pipelines are better suited to per-pixel image processing operations (adjustments, color corrections, curve remapping) than WebGL2 fragment shaders, because they operate directly on storage buffers without the overhead of the rasterizer and framebuffer machinery. Layer compositing, checkerboard rendering, and the final screen blit remain as render pipelines because they produce rasterized geometry output, which render pipelines handle naturally.
+Verve's GPU pipeline is currently implemented using WebGL2. This migration replaces that pipeline with WebGPU, the modern successor to WebGL. The change is entirely internal — no user-facing UI, behavior, or visual output changes. The primary motivation is access to **compute shaders**: WebGPU compute pipelines are better suited to per-pixel image processing operations (adjustments, color corrections, curve remapping) than WebGL2 fragment shaders, because they operate directly on storage buffers without the overhead of the rasterizer and framebuffer machinery. Layer compositing, checkerboard rendering, and the final screen blit remain as render pipelines because they produce rasterized geometry output, which render pipelines handle naturally.
 
 ## User Interaction
 
@@ -70,9 +70,9 @@ The following operations **must** remain as WebGPU render pipelines:
 - `destroyLayer` **must** destroy the associated `GPUTexture` and release CPU buffer memory.
 
 ### Fallback behavior
-- If `navigator.gpu` is `undefined` or the adapter/device request fails at startup, PixelShop **must** surface a visible error message to the user explaining that WebGPU is required and is not available in the current environment.
-- PixelShop **must not** fall back to WebGL2 or any other rendering backend. There is no silent degradation.
-- Since PixelShop is distributed as an Electron application on supported desktop platforms (Windows, macOS, Linux), WebGPU availability is expected in all shipping configurations. The error path handles edge cases only (misconfigured environments, unsupported GPU drivers).
+- If `navigator.gpu` is `undefined` or the adapter/device request fails at startup, Verve **must** surface a visible error message to the user explaining that WebGPU is required and is not available in the current environment.
+- Verve **must not** fall back to WebGL2 or any other rendering backend. There is no silent degradation.
+- Since Verve is distributed as an Electron application on supported desktop platforms (Windows, macOS, Linux), WebGPU availability is expected in all shipping configurations. The error path handles edge cases only (misconfigured environments, unsupported GPU drivers).
 
 ### Output parity
 - Rendered output produced by `WebGPURenderer` **must** be pixel-identical to output produced by `WebGLRenderer` for the same document state, within floating-point rounding tolerance (maximum 1 ULP difference per channel per pixel in 8-bit output).
@@ -95,7 +95,7 @@ The following operations **must** remain as WebGPU render pipelines:
 
 ## Edge Cases & Constraints
 
-- **WebGPU unavailable**: Electron ships Chromium, which includes WebGPU support on all tier-1 platforms (Windows 10+, macOS 12+, modern Linux with Vulkan). However, if the user's GPU driver is too old or the OS version is below the supported threshold, `navigator.gpu` may be `undefined`. PixelShop must surface this clearly and refuse to start rather than silently producing incorrect output.
+- **WebGPU unavailable**: Electron ships Chromium, which includes WebGPU support on all tier-1 platforms (Windows 10+, macOS 12+, modern Linux with Vulkan). However, if the user's GPU driver is too old or the OS version is below the supported threshold, `navigator.gpu` may be `undefined`. Verve must surface this clearly and refuse to start rather than silently producing incorrect output.
 - **Async initialization**: Because `WebGPURenderer.create` is async, the initialization site must `await` it before any rendering begins. Any code that previously constructed `WebGLRenderer` synchronously (e.g. inside a React effect) must be updated to handle the async lifecycle. The renderer ref must remain `null` during the async initialization window; the rendering loop must guard against a `null` renderer.
 - **Floating-point parity**: WebGPU compute shaders operate in `f32`. Floating-point evaluation order and rounding may differ from WebGL2 mediump float on some drivers. Parity tests should use a tolerance of ±1 LSB in 8-bit output rather than requiring exact bit-for-bit equality.
 - **`readFlattenedPlan` latency**: Reading GPU pixels requires a `mapAsync` round-trip on a `GPUBuffer`. This is inherently asynchronous. The method must return a `Promise<Uint8Array>` (the current `WebGLRenderer` method is synchronous). Call sites in the rasterization pipeline must be updated to `await` this result.

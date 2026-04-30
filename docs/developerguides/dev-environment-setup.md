@@ -1,6 +1,6 @@
 # Dev Environment Setup
 
-This guide walks you through getting PixelShop running locally for the first time, from a bare machine to a running dev build.
+This guide walks you through getting Verve running locally for the first time, from a bare machine to a running dev build.
 
 ---
 
@@ -24,7 +24,7 @@ WebGPU requires a relatively recent GPU driver. On macOS this is provided by Met
 
 ```bash
 git clone <repo-url>
-cd PixelShop
+cd Verve
 npm install
 ```
 
@@ -43,7 +43,7 @@ cd emsdk
 source ./emsdk_env.sh      # macOS/Linux
 # On Windows: emsdk_env.bat
 
-cd /path/to/PixelShop
+cd /path/to/Verve
 npm run build:wasm
 ```
 

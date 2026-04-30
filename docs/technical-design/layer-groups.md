@@ -675,7 +675,7 @@ No migration is required. Existing documents serialise as `LayerState[]` without
 - The `layer-group` entry kind never appears in the render plan.
 - `encodePlanToComposite` receives only `layer`, `adjustment-group`, and `AdjustmentRenderOp` entries — the `encodeSubPlan` loop falls through all `layer-group` branches, behaving identically to the old code.
 
-Stored `.pxshop` / JSON snapshots that contain no `GroupLayerState` entries are fully forward-compatible and require no upgrade script.
+Stored `.verve` / JSON snapshots that contain no `GroupLayerState` entries are fully forward-compatible and require no upgrade script.
 
 ---
 

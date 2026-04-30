@@ -5,7 +5,7 @@
 Indexed Color Mode is the user-facing layer built on top of the `indexed8` pixel format defined in the
 [Pixel Format Abstraction](pixel-format-abstraction.md) technical design. That foundation provides everything
 architectural: `GpuLayer.format`, `createLayer()` with the `format` parameter, `flushLayer()` with palette
-expansion, `AppState.pixelFormat`, `SET_PIXEL_FORMAT`, `.pxshop` v5 serialization, the Image → Color Mode
+expansion, `AppState.pixelFormat`, `SET_PIXEL_FORMAT`, `.verve` v5 serialization, the Image → Color Mode
 menu, and adjustment/filter gating. **This design covers only the new work specific to indexed mode
 workflows**: tool handler branches, the palette-only color picker widget, new-layer 255-fill, merge/flatten
 re-quantization, nearest-neighbor enforcement for transforms, status bar pixel info, and swatch management
@@ -1095,7 +1095,7 @@ the bulk-set path by slicing the result to `slice(0, 255)` before dispatch).
   `rasterizeLayers` / `rasterizeComposite` paths. Only the post-step quantization is new.
 
 - **Crop and resize index data is encoded as `data:raw/indexed8;base64,...`** in `pendingLayerData`,
-  consistent with the `.pxshop` v5 layer encoding defined in the foundation design. The Canvas init
+  consistent with the `.verve` v5 layer encoding defined in the foundation design. The Canvas init
   effect already handles this prefix (per the foundation design's load path).
 
 ---

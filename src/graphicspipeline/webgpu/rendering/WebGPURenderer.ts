@@ -12,7 +12,6 @@ import {
 import {
   COMPOSITE_SHADER,
   CHECKER_SHADER,
-  BLIT_SHADER,
   HDR_BLIT_SHADER,
 } from '../shaders/shaders'
 import { AdjustmentEncoder } from '../AdjustmentEncoder'
@@ -85,8 +84,6 @@ export class WebGPURenderer {
   private readonly compositePipeline: GPURenderPipeline  // renders to rgba8unorm internal textures
   private readonly compositeBGL: GPUBindGroupLayout
   private readonly checkerPipeline: GPURenderPipeline    // renders to screen (canvasFormat)
-  private readonly blitPipeline: GPURenderPipeline       // renders to screen (canvasFormat)
-  private readonly blitBGL: GPUBindGroupLayout
   private readonly hdrBlitPipeline: GPURenderPipeline     // HDR display blit (tone-mapping)
   private readonly hdrBlitBGL: GPUBindGroupLayout
   private readonly hdrUniformBuffer: GPUBuffer            // 16 bytes: exposureLinear, isFp32, operator u32, _pad
@@ -172,7 +169,7 @@ export class WebGPURenderer {
   ): Promise<WebGPURenderer> {
     if (!navigator.gpu) {
       throw new WebGPUUnavailableError(
-        'WebGPU is not available in this environment. PixelShop requires WebGPU to run.'
+        'WebGPU is not available in this environment. Verve requires WebGPU to run.'
       )
     }
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
@@ -259,14 +256,6 @@ export class WebGPURenderer {
         { binding: 5, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       ],
     })
-    this.blitBGL = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
-        // Vertex stage reads `u.resolution` for NDC conversion in vs_blit.
-        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-      ],
-    })
     this.hdrBlitBGL = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
@@ -277,7 +266,6 @@ export class WebGPURenderer {
     })
     this.compositePipeline = this.createCompositePipeline(this.internalFormat, this.compositeBGL)
     this.checkerPipeline   = this.createCheckerPipeline(canvasFormat)
-    this.blitPipeline      = this.createBlitPipeline(canvasFormat, this.blitBGL)
     this.hdrBlitPipeline   = this.createHdrBlitPipeline(canvasFormat, this.hdrBlitBGL)
     this.hdrUniformBuffer  = createUniformBuffer(device, 16)
     // Initialize: exposureLinear=1.0, isFp32=0.0, operator=1 (Reinhard), _pad=0
@@ -354,37 +342,6 @@ export class WebGPURenderer {
     })
   }
 
-  private createBlitPipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
-    const module = this.device.createShaderModule({ code: BLIT_SHADER })
-    return this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
-      vertex: {
-        module,
-        entryPoint: 'vs_blit',
-        buffers: [
-          { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
-        ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fs_blit',
-        targets: [{
-          format,
-          // Source-over blending for premultiplied-alpha source (straight-alpha src texture
-          // is treated as premultiplied because rgba8unorm stores un-associated alpha,
-          // but for Porter-Duff OVER on top of the checkerboard we need:
-          //   out = src + dst * (1 - src.a)
-          blend: {
-            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          },
-        }],
-      },
-      primitive: { topology: 'triangle-list' },
-    })
-  }
-
   private createHdrBlitPipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
     const module = this.device.createShaderModule({ code: HDR_BLIT_SHADER })
     return this.device.createRenderPipeline({
@@ -435,7 +392,7 @@ export class WebGPURenderer {
     return { id, name, texture, data, format, layerWidth: lw, layerHeight: lh, offsetX: ox, offsetY: oy, opacity: 1, visible: true, blendMode: 'normal', dirtyRect: null, contentVersion: 0 }
   }
 
-  flushLayer(layer: GpuLayer, palette?: RGBAColor[]): void {
+  flushLayer(layer: GpuLayer, palette?: readonly RGBAColor[]): void {
     if (this.deferFlush) return
     layer.contentVersion++
 
@@ -466,7 +423,7 @@ export class WebGPURenderer {
     }
   }
 
-  private expandIndicesToRgba8(indices: Uint8Array, palette: RGBAColor[]): Uint8Array {
+  private expandIndicesToRgba8(indices: Uint8Array, palette: readonly RGBAColor[]): Uint8Array {
     const out = new Uint8Array(indices.length * 4)
     for (let i = 0; i < indices.length; i++) {
       const idx = indices[i]

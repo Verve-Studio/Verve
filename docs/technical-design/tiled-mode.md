@@ -62,7 +62,7 @@ export interface TabRecord {
 }
 ```
 
-Default value for both fields: `false`. Set explicitly when constructing new `TabRecord` objects (new tabs, file opens). Not serialised to the `.pxshop` file because `TabRecord` is in-memory only — the document format only reads/writes `TabSnapshot`.
+Default value for both fields: `false`. Set explicitly when constructing new `TabRecord` objects (new tabs, file opens). Not serialised to the `.verve` file because `TabRecord` is in-memory only — the document format only reads/writes `TabSnapshot`.
 
 ### 3. New AppActions — `src/core/store/AppContext.tsx`
 

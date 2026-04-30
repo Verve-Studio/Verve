@@ -2,7 +2,7 @@
 
 ## Overview
 
-HDR FP32 Editing Mode enables PixelShop to store and process image data as 32-bit floating-point values per channel (`rgba32f`), where pixel values are no longer constrained to the `[0, 1]` normalized range. This unlocks three primary use cases:
+HDR FP32 Editing Mode enables Verve to store and process image data as 32-bit floating-point values per channel (`rgba32f`), where pixel values are no longer constrained to the `[0, 1]` normalized range. This unlocks three primary use cases:
 
 1. **Compositing HDR renders** — EXR and Radiance HDR files carry scene-linear luminance values that can be dozens of times above the display range. Artists compositing environment maps, light probes, and CG renders need to adjust, grade, and merge this data without truncating the bright parts.
 2. **Working with game-engine textures** — DDS BC6H textures (common in game pipelines) are HDR-compressed formats that expand to float values above `1.0`. Editing these round-trip without banding requires a float working space.
@@ -14,7 +14,7 @@ HDR FP32 mode is not a separate application mode; it is the `rgba32f` document-w
 
 ## User Stories
 
-- **As a VFX compositor**, I want to open a multi-layer EXR file in PixelShop and adjust exposure and color grade on individual layers without clipping highlights, so that I can deliver a correctly lit composite.
+- **As a VFX compositor**, I want to open a multi-layer EXR file in Verve and adjust exposure and color grade on individual layers without clipping highlights, so that I can deliver a correctly lit composite.
 - **As a game artist**, I want to open a Radiance HDR panorama or a DDS BC6H light probe, make paint and grading adjustments, and re-export it as EXR or HDR with no banding, so that it integrates cleanly into the engine's PBR pipeline.
 - **As a photographer**, I want to apply a strong curves adjustment to a 32-bit TIFF scan without blowing out whites or crushing blacks, so that I can recover detail that would be lost in an 8-bit workflow.
 - **As any user**, I want a visual preview of HDR content on my standard monitor, with a simple exposure slider to lift or lower the preview brightness so I can inspect the full dynamic range without modifying the actual pixel data.
@@ -47,7 +47,7 @@ The exposure control is surfaced as a compact inline control in the **canvas too
 The EV control is **only shown** when the active document is in `rgba32f` mode. It is hidden (not greyed out) when the document is `rgba8` or `indexed8`.
 
 The exposure value is:
-- **Per-session, per-document-tab** — not saved to the `.pxshop` file. Closing the tab or opening a new document resets it to `0 EV`.
+- **Per-session, per-document-tab** — not saved to the `.verve` file. Closing the tab or opening a new document resets it to `0 EV`.
 - **View-only** — it affects only the on-screen tone-mapped preview. Flatten, merge, and export operations always write raw float values regardless of the current EV setting.
 
 ### HDR-Aware Color Picker
@@ -82,10 +82,10 @@ When the active document is `rgba32f`:
 
 When the user opens a file via **File → Open** or drag-and-drop:
 
-- If the file is a `.exr`, `.hdr`, or TIFF with 32-bit float channels, PixelShop imports it as a new `rgba32f` document.
+- If the file is a `.exr`, `.hdr`, or TIFF with 32-bit float channels, Verve imports it as a new `rgba32f` document.
 - No confirmation dialog is required; the document opens directly in FP32 mode, with the tone-mapped preview active at 0 EV.
 - The import preserves all float channel values without clamping or quantization.
-- Multi-layer EXR files: each EXR layer/channel group is imported as a separate PixelShop layer where possible. Single-channel or luminance-only EXR files are imported as grayscale (R=G=B, A=1.0).
+- Multi-layer EXR files: each EXR layer/channel group is imported as a separate Verve layer where possible. Single-channel or luminance-only EXR files are imported as grayscale (R=G=B, A=1.0).
 
 ### File Export (EXR, HDR, 32-bit TIFF)
 
@@ -268,7 +268,7 @@ The render plan compositor (`WebGPURenderer.renderPlan` and `readFlattenedPlan`)
 - The tone-mapping exposure value from the display preview **must not** be applied during flatten/export unless the user has explicitly requested a "bake preview tone-mapping" option (which is not part of this spec). Export operations always produce the raw float document.
 - Until HDR file format writers (EXR, 32-bit TIFF) are implemented, exporting a `rgba32f` document via the standard export dialog (PNG, JPEG, WebP, TGA) **must** apply a default tone-map (Reinhard at 0 EV exposure) during the export pass to produce a valid LDR image. The user **must** be warned that the export is tone-mapped and that HDR precision is not preserved.
 
-### 13. `.pxshop` File Format
+### 13. `.verve` File Format
 
 The `rgba32f` layer serialization format is defined by the [Pixel Format Abstraction](pixel-format-abstraction.md) spec (version 5). This section restates the rules that directly affect the `rgba32f` implementation path.
 
@@ -294,7 +294,7 @@ The conversion is applied to all `GpuLayer.data` buffers and to `savedLayerData`
 
 ## File Format I/O
 
-File format I/O is the mechanism by which `rgba32f` documents enter and leave PixelShop in HDR-native encodings. All three formats below produce and consume `Float32Array` data that feeds directly into the GPU pipeline; no intermediate 8-bit quantization occurs at import or export.
+File format I/O is the mechanism by which `rgba32f` documents enter and leave Verve in HDR-native encodings. All three formats below produce and consume `Float32Array` data that feeds directly into the GPU pipeline; no intermediate 8-bit quantization occurs at import or export.
 
 ### OpenEXR (`.exr`)
 
@@ -306,7 +306,7 @@ File format I/O is the mechanism by which `rgba32f` documents enter and leave Pi
 2. The WASM decoder is called: `wasm.decodeExr(bytes)` → `{ width, height, channelData: Float32Array, channels: string[] }`.
 3. The importer maps channel data (typically RGBA or RGB from named channels) into a `Float32Array` of length `width × height × 4`, placing `1.0` for missing alpha.
 4. A new `rgba32f` document is created with a single pixel layer containing the decoded float data.
-5. Multi-layer EXR (multiple named layer groups, e.g. `beauty.R/G/B`, `diffuse.R/G/B`): each group is imported as a separate PixelShop layer within the same document. The layer name is set to the EXR layer group name, truncated to 64 characters.
+5. Multi-layer EXR (multiple named layer groups, e.g. `beauty.R/G/B`, `diffuse.R/G/B`): each group is imported as a separate Verve layer within the same document. The layer name is set to the EXR layer group name, truncated to 64 characters.
 
 **Export:**
 
@@ -319,7 +319,7 @@ File format I/O is the mechanism by which `rgba32f` documents enter and leave Pi
 
 - Import supports EXR scanline format only. Deep EXR (deep compositing) and tiled EXR are out of scope for V1.
 - If an EXR file uses a codec not supported by the chosen library (e.g., B44, DWAA), the import **must** fail with a user-visible error: *“This EXR file uses an unsupported compression type and cannot be opened.”*
-- Alpha handling: EXR files with pre-multiplied alpha are imported as-is. PixelShop does not un-premultiply on import.
+- Alpha handling: EXR files with pre-multiplied alpha are imported as-is. Verve does not un-premultiply on import.
 - Multi-layer EXR name collisions after truncation are resolved by appending a numeric suffix (`_2`, `_3`, etc.).
 
 ### Radiance HDR (`.hdr`)
@@ -370,11 +370,11 @@ if (maxc < 1e-32) {
 
 **Constraints:**
 
-- Radiance HDR conventionally stores data in Rec. 709 primaries / linear light. PixelShop imports and exports it as untagged scene-linear, matching the EXR behavior.
+- Radiance HDR conventionally stores data in Rec. 709 primaries / linear light. Verve imports and exports it as untagged scene-linear, matching the EXR behavior.
 
 ### 32-Bit Float TIFF (`.tif`, `.tiff`)
 
-**Technology:** PixelShop already uses the `utif` JavaScript library for TIFF I/O. The TIFF I/O path **must** be extended or replaced to handle 32-bit float TIFF files (`SAMPLEFORMAT = 3`, `BITSPERSAMPLE = 32`). Two approaches in order of preference:
+**Technology:** Verve already uses the `utif` JavaScript library for TIFF I/O. The TIFF I/O path **must** be extended or replaced to handle 32-bit float TIFF files (`SAMPLEFORMAT = 3`, `BITSPERSAMPLE = 32`). Two approaches in order of preference:
 
 1. **Extend `utif`**: Add float32 decode/encode support if the library structure permits.
 2. **WASM libtiff**: Compile a minimal `libtiff` via Emscripten for robust multi-compression TIFF support.
@@ -403,7 +403,7 @@ if (maxc < 1e-32) {
 ## Acceptance Criteria
 
 - When a document is converted to `rgba32f` mode, `GpuLayer.data` for every raster layer is a `Float32Array` and every layer's GPU texture format is `rgba32float`. Inspecting the texture description via the WebGPU API confirms `format: 'rgba32float'`.
-- Opening a `.pxshop` file saved with `pixelFormat: "rgba32f"` correctly restores all layer `Float32Array` buffers. Each channel value round-trips without modification (no quantization or clamping is applied on load).
+- Opening a `.verve` file saved with `pixelFormat: "rgba32f"` correctly restores all layer `Float32Array` buffers. Each channel value round-trips without modification (no quantization or clamping is applied on load).
 - A solid white layer at full HDR intensity (all channels = `2.0`) displays visibly on screen without producing a black or corrupt image. The Reinhard tone-map at 0 EV produces `2.0 / (2.0 + 1.0) ≈ 0.667` per channel, rendering as a visible light grey/white.
 - Setting the preview exposure to +2 EV causes a pixel with raw value `0.25` to display as approximately `0.5` (Reinhard: `(0.25 × 4) / (0.25 × 4 + 1) = 0.5`). Adjusting the EV slider updates the canvas preview without modifying pixel data. After reset to 0 EV, the canvas returns to the baseline tone-mapped display.
 - The EV slider is visible in the canvas toolbar when the document is `rgba32f`, and is hidden (not greyed out) when the document is `rgba8`.
@@ -414,12 +414,12 @@ if (maxc < 1e-32) {
 - Flatten (`Merge Visible` → new layer) on a `rgba32f` document produces a `Float32Array` buffer. Channel values above `1.0` are preserved in the flattened result.
 - After converting a `rgba32f` document to `rgba8`, a pixel that was `(1.8, 0.3, 0.0, 1.0)` becomes `(255, 77, 0, 255)`. Pressing Ctrl+Z restores the original float data.
 - The status bar shows `RGB/32F` with a blue indicator in `rgba32f` mode. Pixel info hovering over the canvas shows four-decimal-place float values.
-- Exporting an EXR from a `rgba32f` document produces a file that a third-party EXR viewer (e.g., Blender) reads without errors, with pixel values matching the PixelShop canvas to float32 precision.
-- Importing the exported EXR back into PixelShop produces a pixel-identical `rgba32f` document (no clamping, no precision loss beyond float32 representation).
+- Exporting an EXR from a `rgba32f` document produces a file that a third-party EXR viewer (e.g., Blender) reads without errors, with pixel values matching the Verve canvas to float32 precision.
+- Importing the exported EXR back into Verve produces a pixel-identical `rgba32f` document (no clamping, no precision loss beyond float32 representation).
 - Importing a Radiance `.hdr` file produces a `rgba32f` document whose decoded pixel values match a reference decode by another tool (e.g., Blender's HDR importer) within floating-point rounding tolerance.
 - Importing a 32-bit float TIFF produces a `rgba32f` document with channel values matching the source TIFF to float32 precision.
 - Exporting a `rgba32f` document to PNG triggers the HDR tone-mapping warning dialog. Confirming produces a valid PNG with Reinhard-at-0-EV applied.
-- Saving a `rgba32f` document to `.pxshop` and reopening it produces a pixel-identical result: no clamping, no precision loss beyond float32 representation.
+- Saving a `rgba32f` document to `.verve` and reopening it produces a pixel-identical result: no clamping, no precision loss beyond float32 representation.
 
 ---
 

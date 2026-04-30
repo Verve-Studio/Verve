@@ -107,7 +107,7 @@ export function useContentAwareFill({
       const { data: composite, width, height } = await handle.rasterizeComposite('sample')
 
       // Run PatchMatch inpainting — mask is canvas-space 1ch (255=fill, 0=source)
-      const inpainted = await inpaintRegion(composite, width, height, mask, sourceMask ?? undefined)
+      const inpainted = await inpaintRegion(composite as Uint8Array, width, height, mask, sourceMask ?? undefined)
 
       // Build fill layer: inpainted pixels only where mask is set; transparent elsewhere
       const fillLayerData = new Uint8Array(width * height * 4)

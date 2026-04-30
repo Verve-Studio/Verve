@@ -4,7 +4,7 @@ import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
 import { IMAGE_EXTENSIONS, EXT_TO_MIME, loadImagePixels } from '@/core/io/imageLoader'
 import { makeTabId, fileTitle, DEFAULT_SWATCHES } from '@/core/store/tabTypes'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
-import type { LayerState, BackgroundFill, AppState, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
+import type { LayerState, BackgroundFill, AppState, SwatchGroup, PixelBrush, PixelFormat, ToneMappingOperator } from '@/types'
 import type { AppAction } from '@/core/store/AppContext'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import { showOperationError } from '@/utils/userFeedback'
@@ -231,8 +231,8 @@ export function useFileOps({
     const existing = tabs.find(t => t.filePath === path)
     if (existing) { handleSwitchTab(existing.id); return }
 
-    // ── .pxshop file ──────────────────────────────────────────────────────
-    const json = await window.api.openPxshopFile(path)
+    // ── .verve file ──────────────────────────────────────────────────────
+    const json = await window.api.openverveFile(path)
     const doc  = JSON.parse(json) as {
       version: number
       pixelFormat?: string
@@ -305,7 +305,7 @@ export function useFileOps({
     const newId          = makeTabId()
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: docPixelFormat },
+      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: docPixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' as ToneMappingOperator },
     ]
     setTabs(updated)
     setActiveTabId(newId)
@@ -320,7 +320,7 @@ export function useFileOps({
   }, [tabs, activeTabId, captureActiveSnapshot, serializeActiveTabPixels, handleSwitchTab, dispatch, setTabs, setActiveTabId, setPendingLayerData, onRecentFilesUpdated])
 
   const handleOpen = useCallback(async (): Promise<void> => {
-    const path = await window.api.openPxshopDialog()
+    const path = await window.api.openverveDialog()
     if (!path) return
     await openFromPath(path)
   }, [openFromPath])
@@ -333,7 +333,7 @@ export function useFileOps({
     const activeTab = tabs.find(t => t.id === activeTabId)
     let path        = saveAs ? null : (activeTab?.filePath ?? null)
     if (!path) {
-      path = await window.api.savePxshopDialog(activeTab?.filePath ?? undefined)
+      path = await window.api.saveverveDialog(activeTab?.filePath ?? undefined)
       if (!path) return
     }
 
@@ -393,7 +393,7 @@ export function useFileOps({
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
     }
-    await window.api.savePxshopFile(path, JSON.stringify(doc))
+    await window.api.saveverveFile(path, JSON.stringify(doc))
     const savedPath = path
     const title     = fileTitle(savedPath)
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, filePath: savedPath, title } : t))
@@ -403,7 +403,7 @@ export function useFileOps({
 
   const handleSaveACopy = useCallback(async (): Promise<void> => {
     const activeTab = tabs.find(t => t.id === activeTabId)
-    const path = await window.api.savePxshopDialog(activeTab?.filePath ?? undefined)
+    const path = await window.api.saveverveDialog(activeTab?.filePath ?? undefined)
     if (!path) return
 
     const layerPngs2: Record<string, string>  = {}
@@ -459,7 +459,7 @@ export function useFileOps({
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
     }
-    await window.api.savePxshopFile(path, JSON.stringify(doc2))
+    await window.api.saveverveFile(path, JSON.stringify(doc2))
     // The current tab's filePath is NOT updated — this is a copy.
   }, [tabs, activeTabId, state, canvasHandleRef])
 

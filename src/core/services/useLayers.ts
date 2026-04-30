@@ -82,7 +82,7 @@ export function useLayers({
         const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
         handle.prepareNewLayerIndexed(newId, mergedName, indexData)
       } else {
-        handle.prepareNewLayer(newId, mergedName, merged)
+        handle.prepareNewLayer(newId, mergedName, merged as Uint8Array)
       }
 
       const newLayers: LayerState[] = []
@@ -127,7 +127,7 @@ export function useLayers({
         const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
         handle.prepareNewLayerIndexed(newId, mergedName, indexData)
       } else {
-        handle.prepareNewLayer(newId, mergedName, merged)
+        handle.prepareNewLayer(newId, mergedName, merged as Uint8Array)
       }
 
       const newLayers: LayerState[] = []
@@ -172,7 +172,7 @@ export function useLayers({
         const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
         handle.prepareNewLayerIndexed(newId, 'Merged', indexData)
       } else {
-        handle.prepareNewLayer(newId, 'Merged', merged)
+        handle.prepareNewLayer(newId, 'Merged', merged as Uint8Array)
       }
 
       const newLayers: LayerState[] = []
@@ -233,7 +233,7 @@ export function useLayers({
         const indexData = await matchPaletteIndices(merged as Uint8Array, swatches, 255)
         handle.prepareNewLayerIndexed(newId, 'Background', indexData)
       } else {
-        handle.prepareNewLayer(newId, 'Background', merged)
+        handle.prepareNewLayer(newId, 'Background', merged as Uint8Array)
       }
       dispatch({ type: 'REORDER_LAYERS', payload: [{ id: newId, name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }] })
       dispatch({ type: 'SET_ACTIVE_LAYER', payload: newId })
@@ -277,7 +277,7 @@ export function useLayers({
         blendMode: src.blendMode,
       }
 
-      handle.prepareNewLayer(newId, src.name, result.data)
+      handle.prepareNewLayer(newId, src.name, result.data as Uint8Array)
 
       const newLayers = layers
         .map(l => (l.id === layerId ? newPixelLayer : l))

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature extends the Swatches panel with two complementary capabilities: **multi-selection** and **named groups**. Multi-selection enables batch operations (group creation, future batch delete) via plain-click, Ctrl+click, and Shift+click. Named groups tag palette subsets with a user-defined label and highlight their members through a header dropdown, without hiding or reordering swatches. Group data is part of per-tab state, persists in `.pxshop` files (version 3), and is restored on file open. Selection state and the active group highlight are transient UI state that live exclusively in `SwatchPanel`.
+This feature extends the Swatches panel with two complementary capabilities: **multi-selection** and **named groups**. Multi-selection enables batch operations (group creation, future batch delete) via plain-click, Ctrl+click, and Shift+click. Named groups tag palette subsets with a user-defined label and highlight their members through a header dropdown, without hiding or reordering swatches. Group data is part of per-tab state, persists in `.verve` files (version 3), and is restored on file open. Selection state and the active group highlight are transient UI state that live exclusively in `SwatchPanel`.
 
 ---
 

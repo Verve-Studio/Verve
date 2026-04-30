@@ -2,7 +2,7 @@
 
 ## Overview
 
-PixelShop provides four destructive parametric filters that add or generate pixel content on the active pixel layer. **Add Noise** introduces random per-pixel color or luminance variation using a selectable statistical distribution. **Film Grain** simulates the organic, spatially-correlated texture of photographic film — grain clusters rather than pure per-pixel noise. **Lens Blur** blurs the layer using an aperture-shaped kernel that mimics the bokeh disc a real camera lens produces when a subject is out of focus. **Clouds** generates a procedural cloud pattern and composites it onto the layer, optionally restricted to the active selection and blended with existing pixels. All four open a floating panel with live preview controls and an Apply/Cancel workflow, and all four are undoable via the standard undo history.
+Verve provides four destructive parametric filters that add or generate pixel content on the active pixel layer. **Add Noise** introduces random per-pixel color or luminance variation using a selectable statistical distribution. **Film Grain** simulates the organic, spatially-correlated texture of photographic film — grain clusters rather than pure per-pixel noise. **Lens Blur** blurs the layer using an aperture-shaped kernel that mimics the bokeh disc a real camera lens produces when a subject is out of focus. **Clouds** generates a procedural cloud pattern and composites it onto the layer, optionally restricted to the active selection and blended with existing pixels. All four open a floating panel with live preview controls and an Apply/Cancel workflow, and all four are undoable via the standard undo history.
 
 ## User Interaction
 

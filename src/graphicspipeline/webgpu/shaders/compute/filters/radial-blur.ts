@@ -89,7 +89,7 @@ export async function runRadialBlur(
   centerX: number,
   centerY: number,
   quality: number,
-  format: GPUTextureFormat = 'rgba8unorm',
+  _format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 

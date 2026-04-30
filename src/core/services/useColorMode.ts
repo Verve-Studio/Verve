@@ -104,7 +104,7 @@ export function useColorMode({
     // ── Phase 1: Pre-allocate all output buffers (atomicity) ──────────────
     const conversions = new Map<string, Uint8Array | Float32Array>()
     for (const ls of state.layers) {
-      if (!isPixelLayer(ls)) continue
+      if (!isPixelLayer(ls as unknown as { id: string; [key: string]: unknown })) continue
       const raw = handle.getLayerRawData(ls.id)
       if (!raw) continue
       try {

@@ -1,7 +1,7 @@
 # Unified Rasterization Pipeline
 
 ## Overview
-PixelShop currently has multiple compositing paths for different outcomes (screen preview, flattening operations, and export), which creates a risk that saved or flattened output does not exactly match what the user sees on screen. This feature defines one unified rasterization pipeline contract so flatten and export are always derived from the same composited result shown in the canvas. The primary goal for V1 is correctness and full parity with visible compositing behavior, including adjustment layers, layer masks, adjustment masks, blend modes, opacity, and visibility semantics.
+Verve currently has multiple compositing paths for different outcomes (screen preview, flattening operations, and export), which creates a risk that saved or flattened output does not exactly match what the user sees on screen. This feature defines one unified rasterization pipeline contract so flatten and export are always derived from the same composited result shown in the canvas. The primary goal for V1 is correctness and full parity with visible compositing behavior, including adjustment layers, layer masks, adjustment masks, blend modes, opacity, and visibility semantics.
 
 ### Problem Statement
 - Users must be able to trust that Flatten Image and exported files represent the same pixels they see in the canvas composited preview.
@@ -22,9 +22,9 @@ PixelShop currently has multiple compositing paths for different outcomes (scree
 1. The user edits a document with any mix of visible layers, masks, and adjustment layers.
 2. The canvas preview continues to render through GPU compositing as it does today.
 3. The user chooses Flatten Image.
-4. PixelShop replaces the layer stack with a single flattened layer whose pixels match the current composited canvas result.
+4. Verve replaces the layer stack with a single flattened layer whose pixels match the current composited canvas result.
 5. The user chooses Export and selects PNG, JPEG, or WebP.
-6. PixelShop exports bytes derived from the same unified composited result used by flattening.
+6. Verve exports bytes derived from the same unified composited result used by flattening.
 7. If the user flattens and then exports immediately (without additional edits), the exported output matches the pre-flatten exported output exactly, except for format-specific encoding constraints (for example JPEG alpha handling).
 
 ## Functional Requirements

@@ -106,7 +106,7 @@ export async function runSharpen(
   pixels: Uint8Array,
   w: number,
   h: number,
-  format: GPUTextureFormat = 'rgba8unorm',
+  _format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
   const srcTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
@@ -133,7 +133,7 @@ export async function runSharpenMore(
   pixels: Uint8Array,
   w: number,
   h: number,
-  format: GPUTextureFormat = 'rgba8unorm',
+  _format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
   const srcTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })

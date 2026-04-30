@@ -1,6 +1,6 @@
 # Project Structure
 
-PixelShop is a desktop image editor built with **Electron 36**, **React 19**, **TypeScript**, **WebGPU**, and **C++/WASM**. It targets professional raster image editing on par with tools like Photoshop.
+Verve is a desktop image editor built with **Electron 36**, **React 19**, **TypeScript**, **WebGPU**, and **C++/WASM**. It targets professional raster image editing on par with tools like Photoshop.
 
 ---
 
@@ -38,7 +38,7 @@ Electron splits every app into (at minimum) two processes. Understanding this bo
 ## Repository layout
 
 ```
-PixelShop/
+Verve/
 ├── electron/
 │   ├── main/
 │   │   ├── index.ts          ← Electron app lifecycle, BrowserWindow creation
@@ -177,7 +177,7 @@ Every hook in this folder owns exactly **one cohesive concern**. They never hold
 |---|---|
 | `useTabs` | Multi-document management, serialization |
 | `useHistory` | Capture/restore undo/redo entries |
-| `useFileOps` | Open, save .pxshop files |
+| `useFileOps` | Open, save .verve files |
 | `useExportOps` | Export PNG/JPEG/WebP/TIFF/TGA |
 | `useClipboard` | Copy/cut/paste pixel data |
 | `useLayers` | Layer CRUD (add, delete, reorder, rename, visibility) |

@@ -2,8 +2,8 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
-// Set the app name early so the macOS menu bar shows "PixelShop" instead of "Electron".
-app.setName('PixelShop')
+// Set the app name early so the macOS menu bar shows "Verve" instead of "Electron".
+app.setName('Verve')
 import { registerIpcHandlers } from './ipc'
 import { buildAndSetMacMenu, setMacMenuItemEnabled, setMacMenuItemChecked } from './menu'
 import type { MenuBuildPayload } from './menu'
@@ -41,7 +41,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.pixelshop')
+  electronApp.setAppUserModelId('com.Verve')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

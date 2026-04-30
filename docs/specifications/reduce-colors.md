@@ -90,6 +90,6 @@ While the panel is open and Map to Palette mode is active, any change to the swa
 
 - [adjustment-menu.md](adjustment-menu.md) — the menu entry that creates this adjustment
 - [generate-palette.md](generate-palette.md) — palette generation tool; the resulting swatch set drives Map to Palette mode
-- [palette-pxshop-persistence.md](palette-pxshop-persistence.md) — palette save/load; the loaded palette is the live swatch set read by Map to Palette mode
+- [palette-verve-persistence.md](palette-verve-persistence.md) — palette save/load; the loaded palette is the live swatch set read by Map to Palette mode
 - [unified-rasterization-pipeline.md](unified-rasterization-pipeline.md) — the render pipeline that evaluates this adjustment at export, flatten, and merge time
 - [hue-saturation.md](hue-saturation.md) — another non-destructive child adjustment layer following the same pattern

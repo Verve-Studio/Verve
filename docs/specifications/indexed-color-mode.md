@@ -6,7 +6,7 @@ Indexed Color Mode is the user-facing layer built on top of the `indexed8` pixel
 
 The primary use cases are **pixel art**, **retro game asset production**, and **any palette-constrained workflow** where color discipline is enforced at the data level rather than by convention. Because pixels store indices rather than raw colors, editing a swatch immediately relinks every pixel that uses it across all layers — no repainting required. The mode enforces the palette constraint by restricting drawing tools to index writes, disabling adjustment layers and effects, and replacing the free-form color picker with a palette-only grid.
 
-This spec covers the user-facing behavior of Indexed Color Mode: how users draw, erase, sample, and export in this mode; how the palette relationship works over time; and how the mode interacts with layer operations. It does not re-specify the pixel format architecture, compositor behavior, conversion pipeline, or `.pxshop` file format — those are fully defined in the [Pixel Format Abstraction](pixel-format-abstraction.md) spec.
+This spec covers the user-facing behavior of Indexed Color Mode: how users draw, erase, sample, and export in this mode; how the palette relationship works over time; and how the mode interacts with layer operations. It does not re-specify the pixel format architecture, compositor behavior, conversion pipeline, or `.verve` file format — those are fully defined in the [Pixel Format Abstraction](pixel-format-abstraction.md) spec.
 
 ---
 
@@ -218,7 +218,7 @@ When the user exports an `indexed8` document to PNG (via **File → Export As �
 
 - **JPEG** export from `indexed8` is supported via the same expansion path as PNG (indices → RGBA, then JPEG encode). JPEG does not support alpha; the alpha channel is composited against white before encoding, matching the behavior for `rgba8` JPEG export.
 - **WebP**, **TIFF**, and **TGA** export follows the same expansion-then-encode pattern.
-- **`.pxshop` save** preserves the raw index data natively as defined in [Pixel Format Abstraction](pixel-format-abstraction.md).
+- **`.verve` save** preserves the raw index data natively as defined in [Pixel Format Abstraction](pixel-format-abstraction.md).
 
 ---
 
@@ -301,7 +301,7 @@ The status bar **must** display `Indexed/8` as the document mode label when `pix
 - Merging two `indexed8` layers produces an `indexed8` result layer. Every pixel in the result has an index in the range 0–254, or 255 for transparent pixels.
 - Free transform on an indexed layer uses nearest-neighbor resampling. No bilinear or bicubic interpolation of index values occurs.
 - Canvas crop that exposes new pixels (outward crop) initializes those pixels to index 255.
-- An `indexed8` `.pxshop` file round-trips: saving and reopening preserves all layer index bytes exactly, and the displayed image is visually identical before and after.
+- An `indexed8` `.verve` file round-trips: saving and reopening preserves all layer index bytes exactly, and the displayed image is visually identical before and after.
 - The status bar displays `Indexed/8` when the document pixel format is `indexed8`.
 - The Adjustments, Effects, and Filters top menus are fully grayed out in `indexed8` mode. Hovering over any item in these menus shows a tooltip: *"Adjustments are not available in Indexed/8 mode."* Clicking produces no action.
 - The Brush, Gradient, Clone Stamp, Dodge, and Burn toolbar buttons are grayed out and non-interactive in `indexed8` mode. Pressing their keyboard shortcuts produces no tool switch and shows the not-available tooltip.
@@ -340,8 +340,8 @@ The status bar **must** display `Indexed/8` as the document mode label when `pix
 
 ## Related Features
 
-- [pixel-format-abstraction.md](pixel-format-abstraction.md) — the architectural foundation: `indexed8` data representation, compositor expansion, conversion pipeline, `.pxshop` format changes, and feature gating rules. This spec is a strict follow-on to that one.
-- [palette-pxshop-persistence.md](palette-pxshop-persistence.md) — the swatch palette that serves as the indexed-mode palette, and how it is stored in `.pxshop` files.
+- [pixel-format-abstraction.md](pixel-format-abstraction.md) — the architectural foundation: `indexed8` data representation, compositor expansion, conversion pipeline, `.verve` format changes, and feature gating rules. This spec is a strict follow-on to that one.
+- [palette-verve-persistence.md](palette-verve-persistence.md) — the swatch palette that serves as the indexed-mode palette, and how it is stored in `.verve` files.
 - [swatch-groups.md](swatch-groups.md) — swatch group membership is tracked by index position; swatch removal in indexed mode must also update group index references.
 - [reduce-colors.md](reduce-colors.md) — the recommended workflow for converting a full-color image to a limited palette before entering indexed mode. Its "Map to Palette" mode uses the same swatch palette.
 - [color-dithering.md](color-dithering.md) — dithering to the palette in `rgba8` mode; unavailable in `indexed8` mode. Recommended as a pre-conversion step.

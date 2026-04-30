@@ -118,8 +118,8 @@ export function useCurvesHistogram({
         : sourceNative
 
       const maskRgba = handle.getAdjustmentMaskPixels(adjustmentLayerId)
-      const mask = extractMaskChannel(maskRgba)
-      const sourceRevision = buildSourceRevision(adjustmentLayerId, sourcePixels, maskRgba, sourceRevisionHint)
+      const mask = extractMaskChannel(maskRgba as Uint8Array | null)
+      const sourceRevision = buildSourceRevision(adjustmentLayerId, sourcePixels, maskRgba as Uint8Array | null, sourceRevisionHint)
       const cacheKey = `${adjustmentLayerId}:${sourceRevision}`
       const cached = cacheRef.current.get(cacheKey)
       if (cached) {

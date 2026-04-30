@@ -72,7 +72,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
   itemsById.clear()
   recentFilesList = payload.recentFiles
 
-  const appName = app.name || 'PixelShop'
+  const appName = app.name || 'Verve'
 
   const template: MenuItemConstructorOptions[] = [
     // macOS app menu (first entry is always shown as the app name in the macOS menu bar)
@@ -243,7 +243,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
     {
       label: 'Help',
       submenu: [
-        item('About PixelShop', 'about'),
+        item('About Verve', 'about'),
         item('Keyboard Shortcuts', 'keyboardShortcuts'),
         sep(),
         item('Open DevTools', 'openDevTools'),

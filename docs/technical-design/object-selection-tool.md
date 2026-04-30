@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Object Selection Tool adds AI-assisted selection to PixelShop using MobileSAM (Segment Anything Model — lightweight ONNX variant). The user drags a bounding box or places point prompts; MobileSAM's image encoder + mask decoder run locally to produce a pixel-accurate selection mask that is then committed to `selectionStore` exactly like any other selection tool.
+The Object Selection Tool adds AI-assisted selection to Verve using MobileSAM (Segment Anything Model — lightweight ONNX variant). The user drags a bounding box or places point prompts; MobileSAM's image encoder + mask decoder run locally to produce a pixel-accurate selection mask that is then committed to `selectionStore` exactly like any other selection tool.
 
 Because Electron's sandboxed renderer process blocks `SharedArrayBuffer`, ONNX inference runs in the **main process** via `onnxruntime-node`. The renderer communicates with it over five IPC channels. The encoder pass (~500 ms) is cached per canvas state; the decoder (~50 ms) re-runs on each prompt change.
 

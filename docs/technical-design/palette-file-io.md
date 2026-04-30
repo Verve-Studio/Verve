@@ -262,7 +262,7 @@ The `lastUsedPath` is entirely session-local and lives in a `useRef` inside `use
 
 ## Implementation Steps
 
-1. **`electron/main/ipc.ts`** — Add the four IPC handlers (`dialog:openPalette`, `dialog:savePaletteAs`, `file:readPalette`, `file:writePalette`) inside `registerIpcHandlers()`, following the exact style of the existing `dialog:savePxshop` / `file:savePxshop` pair.
+1. **`electron/main/ipc.ts`** — Add the four IPC handlers (`dialog:openPalette`, `dialog:savePaletteAs`, `file:readPalette`, `file:writePalette`) inside `registerIpcHandlers()`, following the exact style of the existing `dialog:saveverve` / `file:saveverve` pair.
 
 2. **`electron/preload/index.ts`** — Add four entries to the `api` object (`openPaletteDialog`, `savePaletteAsDialog`, `readPaletteFile`, `writePaletteFile`), following the existing camelCase naming and `ipcRenderer.invoke` pattern.
 

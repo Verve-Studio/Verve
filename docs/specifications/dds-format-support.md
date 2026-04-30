@@ -2,15 +2,15 @@
 
 ## Overview
 
-DirectDraw Surface (DDS) is the standard texture container format for real-time graphics pipelines. It is natively supported by DirectX, Vulkan, OpenGL, and all major game engines. Professional artists working on games, 3D applications, or content pipelines routinely need to author, inspect, and re-export DDS textures — tasks that currently require a separate tool because PixelShop does not read or write the format.
+DirectDraw Surface (DDS) is the standard texture container format for real-time graphics pipelines. It is natively supported by DirectX, Vulkan, OpenGL, and all major game engines. Professional artists working on games, 3D applications, or content pipelines routinely need to author, inspect, and re-export DDS textures — tasks that currently require a separate tool because Verve does not read or write the format.
 
-This feature adds first-class DDS support to PixelShop: DDS files can be opened via the regular **File → Open** dialog and loaded onto the canvas like any other image, and the existing **Export As** dialog gains a DDS option with controls for compression format, mip map generation, and header compatibility. BCx decompression and compression are both executed through the C++/WASM layer; there is no realtime GPU-side compression requirement.
+This feature adds first-class DDS support to Verve: DDS files can be opened via the regular **File → Open** dialog and loaded onto the canvas like any other image, and the existing **Export As** dialog gains a DDS option with controls for compression format, mip map generation, and header compatibility. BCx decompression and compression are both executed through the C++/WASM layer; there is no realtime GPU-side compression requirement.
 
 ---
 
 ## User Stories
 
-- **As a game artist**, I want to open a DDS texture directly in PixelShop so I can paint on it, apply adjustments, and re-export it as DDS without leaving the tool.
+- **As a game artist**, I want to open a DDS texture directly in Verve so I can paint on it, apply adjustments, and re-export it as DDS without leaving the tool.
 - **As a technical artist**, I want to choose a BCx compression format when exporting so the output is immediately usable by the engine's asset pipeline without a separate conversion step.
 - **As a developer reviewing assets**, I want to open a DDS file and see its base mip level on the canvas so I can inspect its content without needing additional tooling.
 - **As an artist targeting legacy platforms**, I want the option to emit a DX9-compatible DDS header so older loaders can read the file.
@@ -24,7 +24,7 @@ This feature adds first-class DDS support to PixelShop: DDS files can be opened 
 
 - DDS files **must** be openable via **File → Open** (and its associated OS file picker dialog) without any extra steps beyond selecting the file.
 - The file picker **must** include `.dds` in its accepted extensions alongside the existing formats.
-- On load, PixelShop **must** read the DDS header and decode only the **base mip level** (mip 0). Higher mip levels, if present, are ignored silently.
+- On load, Verve **must** read the DDS header and decode only the **base mip level** (mip 0). Higher mip levels, if present, are ignored silently.
 - The decoded base mip level **must** be converted to a standard RGBA8 (`Uint8Array`, top-left origin) buffer and loaded onto the canvas as a new raster layer, exactly as other image formats are handled.
 - The new layer and the canvas dimensions **must** reflect the pixel dimensions of the base mip level.
 - The following **uncompressed** pixel formats **must** be supported on load:
@@ -37,7 +37,7 @@ This feature adds first-class DDS support to PixelShop: DDS files can be opened 
 - BC6H (HDR float) **must** be tone-mapped or clamped to 8-bit RGBA on load so it is usable on the canvas. The exact tone-mapping strategy is an implementation detail, but the output **must not** contain values outside the 0–255 range.
 - If a DDS file is identified as a **cubemap** (i.e. the `DDSCAPS2_CUBEMAP` flag is set), loading **must** be refused with a user-visible, non-technical error message: *"This DDS file contains a cubemap texture, which is not supported. Only 2D textures can be opened."*
 - If a DDS file is identified as a **volume texture** (i.e. the `DDSCAPS2_VOLUME` flag is set, or `resourceDimension == D3D10_RESOURCE_DIMENSION_TEXTURE3D` in a DX10 header), loading **must** be refused with the message: *"This DDS file contains a 3D volume texture, which is not supported. Only 2D textures can be opened."*
-- If the DDS signature bytes (`DDS ` / `0x44445320`) are present but the header is malformed or the pixel data cannot be decoded, PixelShop **must** show an error dialog: *"Failed to open DDS file: the file is corrupt or uses an unsupported variant."* The canvas and layer stack **must** remain unchanged.
+- If the DDS signature bytes (`DDS ` / `0x44445320`) are present but the header is malformed or the pixel data cannot be decoded, Verve **must** show an error dialog: *"Failed to open DDS file: the file is corrupt or uses an unsupported variant."* The canvas and layer stack **must** remain unchanged.
 - Unrecognized or unsupported DXGI formats (e.g. RGBA16F, R32_FLOAT, array textures, etc.) **must** produce the error: *"This DDS file uses a pixel format that is not supported (format: <format name or DXGI code>)."*
 
 ### Export
@@ -69,7 +69,7 @@ The default selection **must** be **BC3 — Full Alpha**.
 A labeled dropdown or toggle titled **"Mip Maps"** with two options:
 
 - **Base level only** (default) — only mip 0 is written to the file.
-- **Generate full mip chain** — a complete power-of-two mip chain is generated down to 1×1 and written to the file. PixelShop generates all mip levels by downsampling from the base level (using a box or Lanczos filter; implementation detail).
+- **Generate full mip chain** — a complete power-of-two mip chain is generated down to 1×1 and written to the file. Verve generates all mip levels by downsampling from the base level (using a box or Lanczos filter; implementation detail).
 
 The mip map option **should** be disabled (greyed out, defaulting to "Base level only") when the canvas dimensions are not both powers of two, with an inline note: *"Mip chains require power-of-two dimensions."* Non-power-of-two images can still be exported as DDS with base level only.
 
@@ -181,7 +181,7 @@ The **Generate full mip chain** option is only enabled if the canvas dimensions 
 
 ### Import Behavior — No Extra Dialogs
 
-Opening a DDS file must not produce any confirmation dialogs, format option prompts, or progress dialogs beyond the standard loading feedback already shown for large files. The format is detected automatically from the file header; the `.dds` extension is used only as a hint for the OS file picker. If PixelShop can decode the content, it opens silently.
+Opening a DDS file must not produce any confirmation dialogs, format option prompts, or progress dialogs beyond the standard loading feedback already shown for large files. The format is detected automatically from the file header; the `.dds` extension is used only as a hint for the OS file picker. If Verve can decode the content, it opens silently.
 
 ### File Picker — Open Dialog
 

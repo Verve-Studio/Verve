@@ -72,7 +72,7 @@ export function useLayerGroups({
       captureHistory('Merge Group')
 
       const newId = `layer-${Date.now()}`
-      handle.prepareNewLayer(newId, group.name, merged.data)
+      handle.prepareNewLayer(newId, group.name, merged.data as Uint8Array)
 
       const newPixelLayer: PixelLayerState = {
         id: newId,

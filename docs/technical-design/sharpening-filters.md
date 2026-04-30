@@ -852,7 +852,7 @@ export type { SmartSharpenDialogProps } from './dialogs/SmartSharpenDialog/Smart
 
 ## Open Questions
 
-1. **Error surfacing for instant filters:** The spec says "a toast notification must surface the error". PixelShop does not currently have a toast/notification system. The design above re-throws the error from `handleSharpen` / `handleSharpenMore`. Before implementing, confirm whether a toast component exists or should be added as a prerequisite, or whether a simpler `console.error` + no-op is acceptable for the initial release.
+1. **Error surfacing for instant filters:** The spec says "a toast notification must surface the error". Verve does not currently have a toast/notification system. The design above re-throws the error from `handleSharpen` / `handleSharpenMore`. Before implementing, confirm whether a toast component exists or should be added as a prerequisite, or whether a simpler `console.error` + no-op is acceptable for the initial release.
 
 2. **Laplacian precision:** The Lens Blur path in `filters_smart_sharpen` uses `filters_convolve` which internally clamps output to [0, 255]. For a Laplacian kernel whose output spans negative values, this biases the result. An alternative is to compute the Laplacian inline using a signed integer buffer before clamping. The current design documents the approximation and is acceptable for a first implementation, but a follow-up pass with a signed intermediate buffer would improve quality at strong Amount values.
 

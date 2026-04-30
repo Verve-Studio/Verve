@@ -54,8 +54,6 @@ function createFilterRenderPipeline(
 
 class FilterComputeEngine {
   private readonly device: GPUDevice
-  private readonly format: GPUTextureFormat
-  private readonly sampler: GPUSampler
   private readonly gaussianHPipeline: FilterPipelinePair
   private readonly gaussianVPipeline: FilterPipelinePair
   private readonly boxHPipeline: FilterPipelinePair
@@ -91,13 +89,6 @@ class FilterComputeEngine {
 
   private constructor(device: GPUDevice, width: number, height: number, format: GPUTextureFormat) {
     this.device = device
-    this.format = format
-    this.sampler = device.createSampler({
-      magFilter: 'nearest',
-      minFilter: 'nearest',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge',
-    })
     this.intermediate0 = device.createTexture({
       size: { width, height },
       format,
@@ -276,7 +267,7 @@ class FilterComputeEngine {
     pass.end()
   }
 
-  encodeGaussianBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void {
+  encodeGaussianBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, radius: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.gaussianHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
@@ -288,7 +279,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeBoxBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void {
+  encodeBoxBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, radius: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.boxHPipeline, this.intermediate0), [
       { binding: 0, resource: srcTex.createView() },
@@ -300,7 +291,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeRadialBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, mode: number, amount: number, centerX: number, centerY: number, quality: number): void {
+  encodeRadialBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, mode: number, amount: number, centerX: number, centerY: number, quality: number): void {
     const buf = new ArrayBuffer(32)
     const dv = new DataView(buf)
     dv.setUint32(0, mode, true); dv.setUint32(4, amount, true); dv.setUint32(8, quality, true); dv.setUint32(12, 0, true)
@@ -312,7 +303,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number): void {
+  encodeMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, angle: number, distance: number): void {
     const buf = new ArrayBuffer(16)
     const dv = new DataView(buf)
     dv.setFloat32(0, angle, true); dv.setUint32(4, distance, true); dv.setUint32(8, 0, true); dv.setUint32(12, 0, true)
@@ -388,7 +379,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeLensBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number, bladeCount: number, bladeCurvature: number, rotation: number): void {
+  encodeLensBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, radius: number, bladeCount: number, bladeCurvature: number, rotation: number): void {
     const key = `${radius}|${bladeCount}|${bladeCurvature}|${rotation}`
     if (this.cachedKernelKey !== key) {
       this.cachedKernelBuf?.destroy()
@@ -407,13 +398,13 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeSharpen(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void {
+  encodeSharpen(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number): void {
     this.encodeRenderPass(encoder, this.selectPipeline(this.sharpenPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
     ], dstTex)
   }
 
-  encodeSharpenMore(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number): void {
+  encodeSharpenMore(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number): void {
     this.encodeRenderPass(encoder, this.selectPipeline(this.sharpenMorePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
     ], dstTex)
@@ -516,7 +507,7 @@ class FilterComputeEngine {
     }
   }
 
-  encodeAddNoise(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, amount: number, distribution: number, monochromatic: number, seed: number): void {
+  encodeAddNoise(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, amount: number, distribution: number, monochromatic: number, seed: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([amount, distribution, monochromatic, seed]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.addNoisePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
@@ -553,7 +544,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeMedian(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number): void {
+  encodeMedian(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, radius: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([radius, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.medianPipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },
@@ -561,7 +552,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodeBilateral(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, radius: number, sigmaSpatial: number, sigmaColor: number): void {
+  encodeBilateral(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, radius: number, sigmaSpatial: number, sigmaColor: number): void {
     const buf = new ArrayBuffer(16)
     const dv = new DataView(buf)
     dv.setUint32(0, radius, true); dv.setUint32(4, 0, true)
@@ -627,7 +618,7 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
-  encodePixelate(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, blockSize: number): void {
+  encodePixelate(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, _w: number, _h: number, blockSize: number): void {
     const paramsBuf = this.makeParamsBuf(new Uint32Array([blockSize, 0, 0, 0]))
     this.encodeRenderPass(encoder, this.selectPipeline(this.pixelatePipeline, dstTex), [
       { binding: 0, resource: srcTex.createView() },

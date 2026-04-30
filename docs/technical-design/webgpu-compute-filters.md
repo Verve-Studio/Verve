@@ -2,7 +2,7 @@
 
 ## Overview
 
-Eleven destructive image filters (plus Bayer Dithering — thirteen operations total) currently execute on the CPU via the C++/WASM module. Because PixelShop already mandates WebGPU as a hard runtime requirement and `WebGPURenderer` already drives a mature `GPUComputePipeline` infrastructure for adjustment passes, these filters are a straightforward migration target. The migration introduces two new files (`src/webgpu/filterShaders.ts`, `src/webgpu/filterCompute.ts`), replaces the `@/wasm` import in thirteen call sites with `@/webgpu/filterCompute`, removes thirteen exported WASM symbols, and deletes `wasm/src/filters.cpp` / `wasm/src/filters.h` entirely. No new UI, no new `AppState` fields, no render plan changes, and no `CanvasHandle` API changes are required.
+Eleven destructive image filters (plus Bayer Dithering — thirteen operations total) currently execute on the CPU via the C++/WASM module. Because Verve already mandates WebGPU as a hard runtime requirement and `WebGPURenderer` already drives a mature `GPUComputePipeline` infrastructure for adjustment passes, these filters are a straightforward migration target. The migration introduces two new files (`src/webgpu/filterShaders.ts`, `src/webgpu/filterCompute.ts`), replaces the `@/wasm` import in thirteen call sites with `@/webgpu/filterCompute`, removes thirteen exported WASM symbols, and deletes `wasm/src/filters.cpp` / `wasm/src/filters.h` entirely. No new UI, no new `AppState` fields, no render plan changes, and no `CanvasHandle` API changes are required.
 
 ---
 

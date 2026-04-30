@@ -34,7 +34,7 @@ This design builds on `adjustment-menu.md` and the existing adjustment documents
 | `src/hooks/useHistory.ts` | Capture and restore baked adjustment masks alongside layer pixels so undo/redo preserves selection-scoped Curves layers |
 | `src/store/historyStore.ts` | Extend `HistoryEntry` with `adjustmentMasks` |
 | `src/hooks/useTabs.ts` | Serialize/restore adjustment-mask PNG data for inactive tabs |
-| `src/hooks/useFileOps.ts` | Persist Curves layer params via `state.layers` and persist baked adjustment masks via an optional `adjustmentMaskPng` field in `.pxshop` layer payloads |
+| `src/hooks/useFileOps.ts` | Persist Curves layer params via `state.layers` and persist baked adjustment masks via an optional `adjustmentMaskPng` field in `.verve` layer payloads |
 | `electron/main/ipc.ts` | Add typed IPC for loading/saving custom Curves presets under app user data |
 | `electron/preload/index.ts` | Expose Curves preset IPC methods to the renderer |
 | `electron/preload/index.d.ts` | Add Curves preset IPC typings |
@@ -165,7 +165,7 @@ export type AdjustmentLayerState =
 
 ### Persistent document state
 
-The following Curves state lives in `state.layers` and is therefore automatically present in `TabSnapshot`, `historyStore` layer snapshots, and `.pxshop` documents once the relevant serializers are updated:
+The following Curves state lives in `state.layers` and is therefore automatically present in `TabSnapshot`, `historyStore` layer snapshots, and `.verve` documents once the relevant serializers are updated:
 
 - Channel control points for RGB, Red, Green, and Blue
 - Persisted panel preferences: selected channel and visual-aid toggles
@@ -178,7 +178,7 @@ The baked adjustment selection mask remains in `Canvas.adjustmentMaskMap`, not i
 
 - tab switches
 - undo/redo
-- `.pxshop` save/load
+- `.verve` save/load
 
 This design does **not** move adjustment masks into React state. Instead it adds explicit capture/restore APIs in `canvasHandle.ts` and serializes the mask as optional binary/PNG data keyed by adjustment layer ID.
 
@@ -199,7 +199,7 @@ These live in `CurvesPanel` local state/refs because they are UI-session state, 
 
 ## Serialization and Persistence
 
-### `.pxshop` documents
+### `.verve` documents
 
 `useFileOps.ts` already persists `state.layers` as JSON layer records plus optional `pngData` / `layerGeo`. Curves layer params will therefore persist automatically once the type is added. The missing piece is the baked selection mask.
 
@@ -278,7 +278,7 @@ If the user subsequently edits any point, `dirty` becomes `true`. The panel disp
 
 ### Custom presets
 
-Custom presets are application-level user data, not document data. They should not be stored in `AppContext` or duplicated inside every `.pxshop` file.
+Custom presets are application-level user data, not document data. They should not be stored in `AppContext` or duplicated inside every `.verve` file.
 
 Add typed preload IPC:
 
@@ -794,7 +794,7 @@ The easiest form is a small in-browser test harness that creates a `WebGLRendere
 
 Validate that Curves survives:
 
-- `.pxshop` save and reopen
+- `.verve` save and reopen
 - tab switch away and back
 - undo/redo with `hasMask = true`
 - copy/paste settings between two Curves layers
@@ -814,7 +814,7 @@ Validate that Curves survives:
 
 1. Add Curves types and registry defaults in `src/types/index.ts` and `src/adjustments/registry.ts`.
 2. Introduce generic adjustment-group render planning in `src/components/window/Canvas/canvasPlan.ts` and `src/webgl/WebGLRenderer.ts`, migrating the existing adjustments onto the grouped path.
-3. Extend `canvasHandle.ts`, `useTabs.ts`, `useFileOps.ts`, `useHistory.ts`, and `historyStore.ts` so baked adjustment masks persist across history, tab switches, and `.pxshop` save/load.
+3. Extend `canvasHandle.ts`, `useTabs.ts`, `useFileOps.ts`, `useHistory.ts`, and `historyStore.ts` so baked adjustment masks persist across history, tab switches, and `.verve` save/load.
 4. Add `adjustmentPreviewStore.ts` and wire `Canvas.tsx` to re-render when preview bypass changes.
 5. Implement Curves LUT helpers and `CURVES_FRAG`, then add the `curves` render op and `applyCurvesPass()` in `WebGLRenderer.ts`.
 6. Add `readAdjustmentInputPixels()` to `canvasHandle.ts` and the underlying renderer helper that reads the pre-target group output.

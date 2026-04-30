@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer } from 'react'
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat, ToneMappingOperator } from '@/types'
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
 import { isGroupLayer } from '@/types'
 import { getDescendantIds, getParentGroup } from '@/utils/layerTree'
 import { DEFAULT_SWATCHES } from './tabTypes'

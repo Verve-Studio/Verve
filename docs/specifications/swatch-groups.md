@@ -59,7 +59,7 @@ The renamed group retains all of its member swatches. The new name must be uniqu
 - The context menu "Group Selected Entries…" action must open a text prompt. On confirmation with a non-empty name, the group is created or extended and the panel returns focus to the swatch grid.
 - If the user cancels the group-name prompt (presses Escape or clicks Cancel), no group is created or modified.
 - Selecting a group in the dropdown does **not** alter the active foreground or background color.
-- All group data must persist in the `.pxshop` file (see Data Model below) and must be restored faithfully on file open.
+- All group data must persist in the `.verve` file (see Data Model below) and must be restored faithfully on file open.
 - `SwatchGroup` must be exported from `src/types/` so other features can reference the type.
 
 ---
@@ -77,8 +77,8 @@ The renamed group retains all of its member swatches. The new name must be uniqu
 - After creating a group named "Skin Tones", the dropdown lists "Skin Tones" as an option. Selecting it highlights all member swatches in the group-highlight style.
 - Clicking the remove-group (×) button while "Skin Tones" is selected disbands the group; "Skin Tones" disappears from the dropdown. All previously grouped swatches remain in the palette.
 - Renaming a group updates the name in the dropdown immediately. Member swatches are unchanged.
-- Saving a `.pxshop` file and reopening it restores all groups with the correct names and member indices.
-- Opening a version 2 `.pxshop` file (no `swatchGroups` field) leaves groups at their default empty state without error.
+- Saving a `.verve` file and reopening it restores all groups with the correct names and member indices.
+- Opening a version 2 `.verve` file (no `swatchGroups` field) leaves groups at their default empty state without error.
 
 ---
 
@@ -95,9 +95,9 @@ SwatchGroup {
 ```
 
 - `swatchGroups` is added to `AppState` and to the per-tab `TabSnapshot` used for multi-document state.
-- The `.pxshop` file format is bumped to **version 3** to accommodate `swatchGroups`. Version 3 files include both the `swatches` array (introduced in version 2) and a `swatchGroups` array.
-- When opening a **version 2** `.pxshop` file, `swatchGroups` defaults to an empty array. No error is raised.
-- When opening a **version 1** `.pxshop` file, both `swatches` and `swatchGroups` fall back to their application defaults.
+- The `.verve` file format is bumped to **version 3** to accommodate `swatchGroups`. Version 3 files include both the `swatches` array (introduced in version 2) and a `swatchGroups` array.
+- When opening a **version 2** `.verve` file, `swatchGroups` defaults to an empty array. No error is raised.
+- When opening a **version 1** `.verve` file, both `swatches` and `swatchGroups` fall back to their application defaults.
 - If a version 3 file contains a `swatchGroups` entry whose `swatchIndices` reference out-of-range indices, the file open must be aborted and an error surfaced to the user. Partially valid groups must not be applied.
 
 ---
@@ -106,7 +106,7 @@ SwatchGroup {
 
 - If a swatch is deleted from the palette while it is a member of one or more groups, all affected groups must have their index lists updated atomically in the same state dispatch (shift all indices greater than the removed index down by one; remove any entry that matched the deleted index exactly).
 - A group may become empty (zero members) if all of its swatches are individually deleted. Empty groups remain in the dropdown and can be renamed, populated again, or disbanded. They do not cause errors.
-- The selection state (which swatches are currently selected) is transient UI state and is **not** persisted to the `.pxshop` file. On file open, the selection is always cleared.
+- The selection state (which swatches are currently selected) is transient UI state and is **not** persisted to the `.verve` file. On file open, the selection is always cleared.
 - The active dropdown selection (which group is currently highlighted) is likewise transient and resets to "All swatches" on file open or when a new tab is opened.
 - Group names are compared case-sensitively: "Blues" and "blues" are considered different names.
 - The maximum length of a group name is not formally bounded, but the dropdown UI should truncate names that would overflow the control width, showing the full name in a tooltip on hover.
@@ -119,6 +119,6 @@ SwatchGroup {
 
 ## Related Features
 
-- [Palette Persistence in .pxshop Files](palette-pxshop-persistence.md) — defines the `.pxshop` format versioning model that swatch groups extend to version 3.
+- [Palette Persistence in .verve Files](palette-verve-persistence.md) — defines the `.verve` format versioning model that swatch groups extend to version 3.
 - [Swatches Panel: Scrolling and Hue Grouping](swatches-scroll-grouping.md) — defines the scrollable grid and hue-sort display order that swatch group highlighting and shift-range selection are applied on top of.
 - [Palette File I/O](palette-file-io.md) — covers import/export of palettes to external formats (`.ase`, `.gpl`, etc.); group data is not expected to round-trip through those formats.

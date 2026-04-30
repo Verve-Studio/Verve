@@ -1,6 +1,6 @@
 # Debugging Guide
 
-PixelShop has two independent processes, and debugging each one requires different tools and approaches.
+Verve has two independent processes, and debugging each one requires different tools and approaches.
 
 ---
 
@@ -72,9 +72,9 @@ You can read the current app state at any time from the DevTools console:
 ```javascript
 // The AppContext value is not directly accessible from the console,
 // but you can add a debug handle in App.tsx during development:
-window.__pixelshopState = stateRef
+window.__VerveState = stateRef
 // Then in the console:
-window.__pixelshopState.current.layers
+window.__VerveState.current.layers
 ```
 
 ### Singleton stores

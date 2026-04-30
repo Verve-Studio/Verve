@@ -853,7 +853,7 @@ export interface AppState {
   secondaryColor: RGBAColor
   swatches: RGBAColor[]
   swatchGroups: SwatchGroup[]
-  /** Pixel brushes stored with this document (travel with the .pxshop file). */
+  /** Pixel brushes stored with this document (travel with the .verve file). */
   pixelBrushes: PixelBrush[]
   layers: LayerState[]
   activeLayerId: string | null

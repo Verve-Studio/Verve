@@ -1,6 +1,6 @@
 {
-  "name": "pixelshop",
-  "productName": "PixelShop",
+  "name": "Verve",
+  "productName": "Verve",
   "version": "2026.0.1",
   "description": "An image and pixel-art editing desktop application",
   "main": "out/main/index.js",
@@ -39,8 +39,8 @@
     "vite": "^6.3.0"
   },
   "build": {
-    "appId": "com.pixelshop.app",
-    "productName": "PixelShop",
+    "appId": "com.Verve.app",
+    "productName": "Verve",
     "directories": {
       "buildResources": "build-resources",
       "output": "release"

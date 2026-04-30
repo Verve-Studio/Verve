@@ -30,12 +30,12 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
-  ipcMain.handle('dialog:openPxshop', async () => {
+  ipcMain.handle('dialog:openverve', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['pxshop', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
-        { name: 'PixelShop Document',  extensions: ['pxshop'] },
+        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'Verve Document',  extensions: ['verve'] },
         { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
@@ -43,19 +43,19 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePaths[0]
   })
 
-  ipcMain.handle('dialog:savePxshop', async (_event, defaultPath?: string) => {
+  ipcMain.handle('dialog:saveverve', async (_event, defaultPath?: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath,
-      filters: [{ name: 'PixelShop Document', extensions: ['pxshop'] }]
+      filters: [{ name: 'Verve Document', extensions: ['verve'] }]
     })
     return canceled ? null : filePath
   })
 
-  ipcMain.handle('file:openPxshop', async (_event, path: string) => {
+  ipcMain.handle('file:openverve', async (_event, path: string) => {
     return readFile(path, 'utf-8')
   })
 
-  ipcMain.handle('file:savePxshop', async (_event, path: string, data: string) => {
+  ipcMain.handle('file:saveverve', async (_event, path: string, data: string) => {
     await writeFile(path, data, 'utf-8')
   })
 
@@ -190,7 +190,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('dialog:openBrushFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'PixelShop Brushes', extensions: ['pxbrush'] }],
+      filters: [{ name: 'Verve Brushes', extensions: ['pxbrush'] }],
     })
     return canceled ? null : filePaths[0]
   })
@@ -198,7 +198,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('dialog:saveBrushFile', async (_event, defaultPath?: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath,
-      filters: [{ name: 'PixelShop Brushes', extensions: ['pxbrush'] }],
+      filters: [{ name: 'Verve Brushes', extensions: ['pxbrush'] }],
     })
     return canceled ? null : filePath
   })

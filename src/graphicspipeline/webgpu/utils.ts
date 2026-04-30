@@ -33,7 +33,7 @@ export function uploadTextureData(
 ): void {
   device.queue.writeTexture(
     { texture },
-    data,
+    data as ArrayBufferView<ArrayBuffer>,
     { bytesPerRow: width * 4, rowsPerImage: height },
     { width, height },
   )
@@ -54,7 +54,7 @@ export function uploadTexturePatch(
   if (w <= 0 || h <= 0) return
   device.queue.writeTexture(
     { texture, origin: { x, y } },
-    data,
+    data as ArrayBufferView<ArrayBuffer>,
     { offset: (y * fullWidth + x) * 4, bytesPerRow: fullWidth * 4 },
     { width: w, height: h },
   )
@@ -69,7 +69,7 @@ export function uploadF32TextureData(
 ): void {
   device.queue.writeTexture(
     { texture },
-    data,
+    data as unknown as GPUAllowSharedBufferSource,
     { bytesPerRow: width * 16, rowsPerImage: height },
     { width, height },
   )
@@ -88,7 +88,7 @@ export function uploadF32TexturePatch(
   if (w <= 0 || h <= 0) return
   device.queue.writeTexture(
     { texture, origin: { x, y } },
-    data,
+    data as unknown as GPUAllowSharedBufferSource,
     { offset: (y * textureWidth + x) * 16, bytesPerRow: textureWidth * 16 },
     { width: w, height: h },
   )

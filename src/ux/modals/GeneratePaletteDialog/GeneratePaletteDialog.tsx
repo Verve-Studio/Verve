@@ -117,7 +117,7 @@ export function GeneratePaletteDialog({
           const handle = canvasHandleRef.current
           if (!handle) return
           const result = await handle.rasterizeComposite('export')
-          const { palette, count } = await quantize(result.data, extractCount)
+          const { palette, count } = await quantize(result.data as Uint8Array, extractCount)
           const seen = new Set<number>()
           const colors: RGBAColor[] = []
           for (let i = 0; i < count; i++) {

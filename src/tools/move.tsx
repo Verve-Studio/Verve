@@ -41,7 +41,7 @@ function createMoveHandler(): ToolHandler {
   let lastDx = 0
   let lastDy = 0
   // For selection move: full pixel copy per-drag
-  let originalPixels: Uint8Array | null = null
+  let originalPixels: Uint8Array | Float32Array | null = null
   let originalMask: Uint8Array | null = null
   // For whole-layer move: store original offset
   let originalOffsetX = 0

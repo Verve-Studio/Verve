@@ -965,8 +965,6 @@ export class AdjustmentEncoder {
     const { extractTex, blurATex, blurBTex } = this.ensureBloomTextures(quality)
 
     const scaleFactor = quality === 'full' ? 1 : quality === 'half' ? 2 : 4
-    const bw          = Math.ceil(w / scaleFactor)
-    const bh          = Math.ceil(h / scaleFactor)
     const blurRadius  = Math.max(1, Math.round(spread / scaleFactor))
 
     const dummyMask    = selMaskLayer?.texture ?? srcTex

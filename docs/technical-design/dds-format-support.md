@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature adds first-class DirectDraw Surface (DDS) support to PixelShop. DDS files are opened
+This feature adds first-class DirectDraw Surface (DDS) support to Verve. DDS files are opened
 via the existing **File → Open** path, decoded from BCx-compressed or uncompressed formats to RGBA8
 in the C++/WASM layer, and loaded onto the canvas as a new raster layer. The **Export As** dialog
 gains a DDS option with three controls (compression format, mip maps, header variant). Export
@@ -914,15 +914,15 @@ dialog now manages the `AbortController` and passes the signal internally.
 
 ### Step 12 — Update `electron/main/ipc.ts`
 
-1. Add `'dds'` to the `dialog:openFile` and `dialog:openPxshop` extension lists:
+1. Add `'dds'` to the `dialog:openFile` and `dialog:openverve` extension lists:
    ```ts
    // dialog:openFile:
    { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'dds'] }
    
-   // dialog:openPxshop — add 'dds' to both the 'All Supported' and 'Images' filter entries
+   // dialog:openverve — add 'dds' to both the 'All Supported' and 'Images' filter entries
    ```
 
-2. Add `'dds'` to `dialog:openPxshop`'s "All Supported" and "Images" filter entries. Also add a
+2. Add `'dds'` to `dialog:openverve`'s "All Supported" and "Images" filter entries. Also add a
    dedicated DDS entry per the spec:
    ```ts
    { name: 'DirectDraw Surface (*.dds)', extensions: ['dds'] }

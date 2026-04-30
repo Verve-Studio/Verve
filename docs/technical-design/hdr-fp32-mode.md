@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document covers the implementation work that is **specific to the HDR FP32 editing experience** on top of the `rgba32f` pipeline infrastructure defined in the [Pixel Format Abstraction technical design](pixel-format-abstraction.md). That foundation provides: the `PixelFormat` discriminant in `AppState`, `GpuLayer.data` as `Float32Array`, `rgba32float` WebGPU textures, format-aware `flushLayer`/`createLayer`/`readFlattenedPlan`, dual render pipelines in `AdjustmentEncoder` and `filterCompute`, and `.pxshop` version-5 serialization.
+This document covers the implementation work that is **specific to the HDR FP32 editing experience** on top of the `rgba32f` pipeline infrastructure defined in the [Pixel Format Abstraction technical design](pixel-format-abstraction.md). That foundation provides: the `PixelFormat` discriminant in `AppState`, `GpuLayer.data` as `Float32Array`, `rgba32float` WebGPU textures, format-aware `flushLayer`/`createLayer`/`readFlattenedPlan`, dual render pipelines in `AdjustmentEncoder` and `filterCompute`, and `.verve` version-5 serialization.
 
 This design adds the six remaining deliverables:
 
@@ -1046,7 +1046,7 @@ Add exports for `ToneMappingControls` and `HdrLdrExportWarningDialog`.
 
 - **`toneMappingOperator` is a global display preference, not per-tab or persisted in the document.** It lives in `displayStore` alongside `exposureEV`. Unlike `exposureEV`, it is not reset on tab switch — users typically want consistent display transform across all tabs. If per-document operator persistence is ever needed, the operator string should move to `TabRecord` and be written/read alongside `pixelFormat` in `useTabs`.
 
-- **EXR multi-layer import.** Multi-layer EXR is deferred to a later iteration. V1 imports only the first RGBA layer group. The spec explicitly scopes this: "each EXR layer/channel group is imported as a separate PixelShop layer where possible" — the WASM `loadExr` wrapper returns only the merged RGBA result for V1; the channel-group splitting logic is left as a future extension point inside `decodeExr`.
+- **EXR multi-layer import.** Multi-layer EXR is deferred to a later iteration. V1 imports only the first RGBA layer group. The spec explicitly scopes this: "each EXR layer/channel group is imported as a separate Verve layer where possible" — the WASM `loadExr` wrapper returns only the merged RGBA result for V1; the channel-group splitting logic is left as a future extension point inside `decodeExr`.
 
 - **No WASM for RGBE.** The Radiance HDR codec is pure TypeScript. RGBE is simple arithmetic with no inner loop that benefits from WASM vectorisation at these image sizes. This avoids adding another WASM compilation dependency.
 

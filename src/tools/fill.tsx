@@ -153,7 +153,7 @@ function createFillHandler(): ToolHandler {
       if (fillOptions.contiguous) {
         // Async WASM flood fill (contiguous)
         floodFill(
-          layer.data.slice(), // copy — WASM modifies in-place
+          layer.data.slice() as Uint8Array, // copy — WASM modifies in-place
           layer.layerWidth,
           layer.layerHeight,
           lx, ly,
@@ -176,7 +176,7 @@ function createFillHandler(): ToolHandler {
         const targetG = layer.data[startIdx + 1]
         const targetB = layer.data[startIdx + 2]
         const targetA = layer.data[startIdx + 3]
-        fillAllMatching(layer.data, layer.layerWidth, layer.layerHeight, targetR, targetG, targetB, targetA, r, g, b, a, fillOptions.tolerance)
+        fillAllMatching(layer.data as Uint8Array, layer.layerWidth, layer.layerHeight, targetR, targetG, targetB, targetA, r, g, b, a, fillOptions.tolerance)
         applySelectionMask()
         renderer.flushLayer(layer)
         render(layers)

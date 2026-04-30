@@ -37,7 +37,7 @@
 - While the filter input is focused, typing characters **must not** trigger global tool-switching keyboard shortcuts (e.g., pressing **B** must not activate the Brush tool).
 - Pressing **Escape** while the filter input is focused **must** clear the text, collapse the input, and restore the full layer list.
 - Removing all text from the input manually **must** immediately restore the full unfiltered layer list while keeping the input open.
-- The filter **must not** persist across sessions. Opening PixelShop or switching to a different document tab **must** present a fully unfiltered layer list with the filter bar collapsed.
+- The filter **must not** persist across sessions. Opening Verve or switching to a different document tab **must** present a fully unfiltered layer list with the filter bar collapsed.
 - Switching document tabs while a filter is active **must** reset and collapse the filter for the newly active tab.
 
 ---

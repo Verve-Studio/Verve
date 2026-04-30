@@ -1,8 +1,8 @@
-# PixelShop – Project Guidelines
+# Verve – Project Guidelines
 
 ## Overview
 
-Desktop image editor built with Electron, React 19, TypeScript, WebGPU, and C++/WASM. Intended to be a Photoshop-grade general-purpose image editor. Despite the name, PixelShop is **not** a pixel art tool — it is a full-featured photo and image editor. Pixel art is a supported use case, but the application targets the full breadth of raster image editing (adjustments, filters, layer compositing, curves, color grading, etc.) that you'd expect from a professional tool like Photoshop.
+Desktop image editor built with Electron, React 19, TypeScript, WebGPU, and C++/WASM. Intended to be a Photoshop-grade general-purpose image editor. Despite the name, Verve is **not** a pixel art tool — it is a full-featured photo and image editor. Pixel art is a supported use case, but the application targets the full breadth of raster image editing (adjustments, filters, layer compositing, curves, color grading, etc.) that you'd expect from a professional tool like Photoshop.
 
 ## Build & Dev
 
@@ -15,7 +15,7 @@ npm run typecheck    # Type-check both main (Node) and renderer (web) processes
 
 ## Architecture
 
-PixelShop is an Electron app split into two processes that communicate over IPC:
+Verve is an Electron app split into two processes that communicate over IPC:
 
 - **Main process** (`electron/main/`) — Node.js. Handles native file I/O, OS dialogs, IPC handlers, and ML model inference (SAM, RVM). Never imported from the renderer.
 - **Preload** (`electron/preload/`) — Exposes a typed, sandboxed API to the renderer via `window.api`. This is the only bridge between the two processes.
@@ -303,6 +303,6 @@ cd emsdk
 ./emsdk activate latest
 source ./emsdk_env.sh   # re-run in each new terminal
 
-# Back in PixelShop:
+# Back in Verve:
 npm run build:wasm
 ```

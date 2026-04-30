@@ -2,7 +2,7 @@
 
 ## Overview
 
-PixelShop currently treats every document as an implicit 8-bit-per-channel RGBA raster. This feature makes the pixel format a first-class, document-wide property with three possible values: **rgba8** (the current default, unchanged), **rgba32f** (32-bit floating-point per channel, for HDR and wide-gamut editing), and **indexed8** (palette-indexed, one byte per pixel, where each value is an index into the document's swatch palette). The format is stored in the `.pxshop` project file and is visible in the status bar. The user can change a document's pixel format at any time via **Image → Color Mode**, with a lossless or quantized conversion applied to all raster layer pixel data.
+Verve currently treats every document as an implicit 8-bit-per-channel RGBA raster. This feature makes the pixel format a first-class, document-wide property with three possible values: **rgba8** (the current default, unchanged), **rgba32f** (32-bit floating-point per channel, for HDR and wide-gamut editing), and **indexed8** (palette-indexed, one byte per pixel, where each value is an index into the document's swatch palette). The format is stored in the `.verve` project file and is visible in the status bar. The user can change a document's pixel format at any time via **Image → Color Mode**, with a lossless or quantized conversion applied to all raster layer pixel data.
 
 This abstraction is the shared foundation for two follow-on features — Indexed Color Mode and HDR FP32 Mode — which define the user-facing tools and import/export behaviors for their respective formats. This spec covers only the architectural foundation: what a pixel format is, how it changes the GPU and CPU data representations, how the compositor handles each format, how the file format evolves, and which features are gated per format.
 
@@ -26,7 +26,7 @@ This abstraction is the shared foundation for two follow-on features — Indexed
 - The pixel format **must** be a document-wide property, not a per-layer property. All raster layers in a document share the same pixel format.
 - New documents **must** default to `'rgba8'`.
 - Images opened from external files (PNG, JPEG, TIFF, etc.) **must** default to `'rgba8'` unless a follow-on feature (HDR import, indexed import) explicitly sets the format during loading.
-- The pixel format **must** be stored in the `.pxshop` project file and round-trip without loss.
+- The pixel format **must** be stored in the `.verve` project file and round-trip without loss.
 
 ### Per-Format Data Representations
 
@@ -131,9 +131,9 @@ Conversion does **not** apply to:
 
 ---
 
-## `.pxshop` File Format Changes
+## `.verve` File Format Changes
 
-The `.pxshop` format is a JSON document. This feature advances the format to **version 5**.
+The `.verve` format is a JSON document. This feature advances the format to **version 5**.
 
 ### New top-level field: `pixelFormat`
 
@@ -150,7 +150,7 @@ The `.pxshop` format is a JSON document. This feature advances the format to **v
 
 ### Layer data encoding by format
 
-| Format | Encoding in `.pxshop` |
+| Format | Encoding in `.verve` |
 |---|---|
 | `rgba8` | Unchanged: base64-encoded PNG (lossless, 8-bit RGBA). |
 | `rgba32f` | Base64-encoded binary blob of raw `Float32Array` bytes (little-endian IEEE 754), stored under a new `layerDataF32` sibling key instead of `pngData`. |
@@ -168,13 +168,13 @@ The existing `pngData` key continues to be used for `rgba8` layers. A layer reco
 | Version 5 with `pixelFormat: "indexed8"` | `layerDataIndexed` fields decoded as `Uint8Array` of indices. |
 | Version 5 with an unrecognized `pixelFormat` value | Open is aborted; error is shown to the user. The document is not loaded. |
 
-A version 5 `.pxshop` file opened by an older version of PixelShop (which does not know about version 5) will fail gracefully: the older reader will reject the unknown version and display an error.
+A version 5 `.verve` file opened by an older version of Verve (which does not know about version 5) will fail gracefully: the older reader will reject the unknown version and display an error.
 
 ---
 
 ## Error Handling
 
-- If the `pixelFormat` field in a `.pxshop` file is present but not one of the three known values, the open operation **must** be aborted with a user-visible error message: *"This document uses an unsupported pixel format and cannot be opened."*
+- If the `pixelFormat` field in a `.verve` file is present but not one of the three known values, the open operation **must** be aborted with a user-visible error message: *"This document uses an unsupported pixel format and cannot be opened."*
 - If `layerDataF32` or `layerDataIndexed` is missing or malformed for a layer in a format-5 document, the open operation **must** be aborted with a user-visible error. No partial layer loading.
 - If a mode conversion fails mid-way (e.g., out-of-memory during a large `rgba32f` allocation), the document **must** be left in its pre-conversion state. The failed conversion **must not** be recorded in undo history.
 - If the swatch palette is empty when converting to `indexed8`, the conversion **must** be blocked with a user-visible error: *"The swatch palette must contain at least one color before converting to Indexed/8 mode."*
@@ -199,7 +199,7 @@ The following items are explicitly not covered by this specification and are def
 ## Related Features
 
 - [unified-rasterization-pipeline.md](unified-rasterization-pipeline.md) — the compositing pipeline that must handle all three formats for flatten, export, and screen preview.
-- [palette-pxshop-persistence.md](palette-pxshop-persistence.md) — the swatch palette that serves as the palette for `indexed8` index expansion.
+- [palette-verve-persistence.md](palette-verve-persistence.md) — the swatch palette that serves as the palette for `indexed8` index expansion.
 - [generate-palette.md](generate-palette.md) — generates the swatch palette used by `indexed8` mode.
 - [color-dithering.md](color-dithering.md) — dithering adjustment that operates with the swatch palette; unavailable in `indexed8` mode.
 - HDR FP32 Mode *(spec pending)* — follow-on feature that adds HDR import/export and editing workflows on top of the `rgba32f` format defined here.

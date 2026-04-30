@@ -2,7 +2,7 @@
 
 ## Overview
 
-Several of PixelShop's image filters are currently executed by a C++/WASM module on the CPU. Because PixelShop mandates WebGPU as a hard runtime requirement, these filters are strong candidates for GPU execution via WebGPU compute shaders. This migration moves eleven filters — covering blur, sharpening, noise, dithering, and procedural rendering — entirely to compute shaders, deletes the corresponding C++ and WASM paths, and requires pixel-level output parity with the previous WASM implementations. No fallback to WASM is introduced: the WASM paths are removed outright. From the user's perspective, every migrated filter continues to behave exactly as before; the change is invisible.
+Several of Verve's image filters are currently executed by a C++/WASM module on the CPU. Because Verve mandates WebGPU as a hard runtime requirement, these filters are strong candidates for GPU execution via WebGPU compute shaders. This migration moves eleven filters — covering blur, sharpening, noise, dithering, and procedural rendering — entirely to compute shaders, deletes the corresponding C++ and WASM paths, and requires pixel-level output parity with the previous WASM implementations. No fallback to WASM is introduced: the WASM paths are removed outright. From the user's perspective, every migrated filter continues to behave exactly as before; the change is invisible.
 
 ## User Interaction
 
@@ -104,7 +104,7 @@ Applies ordered (Bayer matrix) dithering to the active layer, reducing each pixe
 
 ### No fallback
 
-- WebGPU is a hard runtime requirement for PixelShop. No WASM fallback path **must** be introduced for any of the eleven migrated filters.
+- WebGPU is a hard runtime requirement for Verve. No WASM fallback path **must** be introduced for any of the eleven migrated filters.
 - If a WebGPU compute dispatch fails at runtime, the operation **must** surface an error to the user. It **must not** silently fall back to a CPU/WASM path or silently no-op.
 
 ### Parity

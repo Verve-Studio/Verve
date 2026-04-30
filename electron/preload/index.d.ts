@@ -7,10 +7,10 @@ declare global {
       openDevTools: () => Promise<void>
       openFile: () => Promise<string | null>
       saveFile: () => Promise<string | null>
-      openPxshopDialog: () => Promise<string | null>
-      savePxshopDialog: (defaultPath?: string) => Promise<string | null>
-      openPxshopFile: (path: string) => Promise<string>
-      savePxshopFile: (path: string, data: string) => Promise<void>
+      openverveDialog: () => Promise<string | null>
+      saveverveDialog: (defaultPath?: string) => Promise<string | null>
+      openverveFile: (path: string) => Promise<string>
+      saveverveFile: (path: string, data: string) => Promise<void>
       exportBrowse: (ext: string) => Promise<string | null>
       exportImage: (path: string, base64: string) => Promise<void>
       readFileBase64: (path: string) => Promise<string>

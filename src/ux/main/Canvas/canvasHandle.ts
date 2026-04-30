@@ -48,9 +48,9 @@ export interface CanvasHandle {
   /** Return full-canvas RGBA pixels that feed into the target adjustment layer. Float32Array for f32 docs, Uint8Array otherwise. */
   readAdjustmentInputPixels: (adjustmentLayerId: string) => Promise<Uint8Array | Float32Array | null>
   /** Return a copy of a baked adjustment selection mask by adjustment layer ID. */
-  getAdjustmentMaskPixels: (adjustmentLayerId: string) => Uint8Array | null
+  getAdjustmentMaskPixels: (adjustmentLayerId: string) => Uint8Array | Float32Array | null
   /** Rasterize only the children of a group layer, against a transparent background. Used by Merge Group. */
-  rasterizeGroupChildren: (groupId: string, layers: readonly LayerState[], swatches: readonly RGBAColor[], reason: RasterReason) => Promise<{ data: Uint8Array; width: number; height: number; backendUsed: RasterBackend }>
+  rasterizeGroupChildren: (groupId: string, layers: readonly LayerState[], swatches: readonly RGBAColor[], reason: RasterReason) => Promise<{ data: Uint8Array | Float32Array; width: number; height: number; backendUsed: RasterBackend }>
   /** Zoom to fit the whole canvas inside the current viewport with a small margin. */
   fitToWindow: () => void
   /**
@@ -157,7 +157,7 @@ export function useCanvasHandle({
       const renderer = rendererRef.current
       const layer = glLayersRef.current.get(layerId)
       if (!renderer || !layer) return null
-      const png = encodePng(renderer.readLayerPixels(layer), layer.layerWidth, layer.layerHeight)
+      const png = encodePng(renderer.readLayerPixels(layer) as Uint8Array, layer.layerWidth, layer.layerHeight)
       return { png, layerWidth: layer.layerWidth, layerHeight: layer.layerHeight, offsetX: layer.offsetX, offsetY: layer.offsetY }
     },
 
@@ -165,7 +165,7 @@ export function useCanvasHandle({
       const renderer = rendererRef.current
       const maskLayer = adjustmentMaskMap.current.get(layerId)
       if (!renderer || !maskLayer) return null
-      return encodePng(renderer.readLayerPixels(maskLayer), renderer.pixelWidth, renderer.pixelHeight)
+      return encodePng(renderer.readLayerPixels(maskLayer) as Uint8Array, renderer.pixelWidth, renderer.pixelHeight)
     },
 
     rasterizeComposite: async (reason) => {
@@ -320,7 +320,7 @@ export function useCanvasHandle({
     },
 
     captureAllLayerPixels: () => {
-      const result = new Map<string, Uint8Array>()
+      const result = new Map<string, Uint8Array | Float32Array>()
       for (const ls of layersStateRef.current) {
         const layer = glLayersRef.current.get(ls.id)
         if (layer) result.set(ls.id, layer.data.slice())
@@ -340,7 +340,7 @@ export function useCanvasHandle({
     captureAllAdjustmentMasks: () => {
       const result = new Map<string, Uint8Array>()
       for (const [layerId, maskLayer] of adjustmentMaskMap.current) {
-        result.set(layerId, maskLayer.data.slice())
+        result.set(layerId, maskLayer.data.slice() as Uint8Array)
       }
       return result
     },

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Pixelate is a destructive filter that divides the active pixel layer into a uniform grid of square blocks and replaces every pixel in each block with the arithmetic mean RGBA of that block's source pixels. It follows the same pattern as every other filter in PixelShop: a WebGPU compute shader executes the pixel operation, a modal dialog hosts the controls and debounced preview, and the result is committed to the layer via a single `captureHistory` call. The dialog is wider than simpler filter dialogs (452 px) because the UX design specifies a two-column layout with a 220 × 165 px embedded preview panel on the left.
+Pixelate is a destructive filter that divides the active pixel layer into a uniform grid of square blocks and replaces every pixel in each block with the arithmetic mean RGBA of that block's source pixels. It follows the same pattern as every other filter in Verve: a WebGPU compute shader executes the pixel operation, a modal dialog hosts the controls and debounced preview, and the result is committed to the layer via a single `captureHistory` call. The dialog is wider than simpler filter dialogs (452 px) because the UX design specifies a two-column layout with a 220 × 165 px embedded preview panel on the left.
 
 ---
 

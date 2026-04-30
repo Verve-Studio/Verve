@@ -64,7 +64,7 @@ export function useMarchingAnts(
 
       // Map from image-pixel coordinates to overlay physical-pixel coordinates.
       // getBoundingClientRect returns CSS pixels; multiply by dpr for physical px.
-      // zoom = physical pixels per image pixel (zoom factor in PixelShop).
+      // zoom = physical pixels per image pixel (zoom factor in Verve).
       // The overlay is translated above to compensate for scroll, so the
       // viewport-relative offset (wRect.left - vRect.left) is the correct
       // origin in overlay-local pixel space.

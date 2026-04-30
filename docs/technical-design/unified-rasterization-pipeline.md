@@ -2,7 +2,7 @@
 
 ## Overview
 
-PixelShop currently has two different rasterization behaviors for final image output:
+Verve currently has two different rasterization behaviors for final image output:
 
 - Export uses the WebGL render plan path via Canvas handle exportFlatPixels and WebGLRenderer readFlattenedPlan.
 - Flatten Image uses a separate CPU-side compositeLayers implementation in useLayers.

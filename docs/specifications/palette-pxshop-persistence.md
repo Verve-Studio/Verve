@@ -1,37 +1,37 @@
-# Palette Persistence in .pxshop Files
+# Palette Persistence in .verve Files
 
 ## Overview
 
-When a user saves their work as a `.pxshop` project file, the current swatch palette is included in that file alongside the canvas and layer data. When the file is reopened, the palette is restored exactly as it was when the file was saved. This makes the swatch palette a first-class part of a PixelShop project, so collaborators and future sessions always start with the intended color set rather than the application default.
+When a user saves their work as a `.verve` project file, the current swatch palette is included in that file alongside the canvas and layer data. When the file is reopened, the palette is restored exactly as it was when the file was saved. This makes the swatch palette a first-class part of a Verve project, so collaborators and future sessions always start with the intended color set rather than the application default.
 
 ## User Interaction
 
 This feature requires no new UI. It operates transparently as part of the existing **File → Save** and **File → Open** workflows:
 
 1. The user works on a document and customizes the swatch palette — adding, removing, or generating colors.
-2. The user saves the project via **File → Save** or **File → Save As…**, choosing a `.pxshop` path as usual.
+2. The user saves the project via **File → Save** or **File → Save As…**, choosing a `.verve` path as usual.
 3. The swatch palette at the time of saving is silently embedded in the project file.
-4. The user later reopens the `.pxshop` file via **File → Open** (or by double-clicking the file outside the app).
+4. The user later reopens the `.verve` file via **File → Open** (or by double-clicking the file outside the app).
 5. The canvas, layers, and swatch palette are all restored to their saved state. The swatches panel reflects the palette that was active when the file was last saved.
 
 ## Functional Requirements
 
-- When saving a `.pxshop` file, the application must write the complete current swatch palette into the file as an array of `{r, g, b, a}` objects under the key `swatches`.
-- Saved `.pxshop` files that include a `swatches` field must use **format version 2**. The `version` field in the file must be set to `2`.
-- When opening a **version 2** `.pxshop` file, the application must replace the current swatch palette with the `swatches` array from the file. All four channels (`r`, `g`, `b`, `a`) are integers in the range 0–255.
-- When opening a **version 1** `.pxshop` file (which has no `swatches` field), the application must leave the swatch palette at its current application default. No palette data is assumed or inferred from the file.
+- When saving a `.verve` file, the application must write the complete current swatch palette into the file as an array of `{r, g, b, a}` objects under the key `swatches`.
+- Saved `.verve` files that include a `swatches` field must use **format version 2**. The `version` field in the file must be set to `2`.
+- When opening a **version 2** `.verve` file, the application must replace the current swatch palette with the `swatches` array from the file. All four channels (`r`, `g`, `b`, `a`) are integers in the range 0–255.
+- When opening a **version 1** `.verve` file (which has no `swatches` field), the application must leave the swatch palette at its current application default. No palette data is assumed or inferred from the file.
 - Swatches must round-trip without loss: every color and alpha value saved into the file must be restored byte-for-byte when the file is reopened.
 - If a version 2 file is missing the `swatches` key, or if any swatch entry contains out-of-range or non-integer channel values, the open operation must be aborted and the current swatches must remain unchanged. An error must be surfaced to the user.
 - The swatch data must not affect or interfere with the canvas, layer, or adjustment data already present in the file.
 
 ## Acceptance Criteria
 
-- Saving a project produces a `.pxshop` file where the top-level `version` field equals `2`.
+- Saving a project produces a `.verve` file where the top-level `version` field equals `2`.
 - The file contains a `swatches` array whose entries match the swatches visible in the Swatches panel at the time of saving, including any semi-transparent entries (alpha < 255).
 - Reopening the saved file restores the Swatches panel to the exact palette that was saved — same colors, same count, same alpha values.
-- Opening a **version 1** `.pxshop` file leaves the Swatches panel unchanged (application defaults are preserved).
+- Opening a **version 1** `.verve` file leaves the Swatches panel unchanged (application defaults are preserved).
 - Saving with an empty swatch palette writes `"swatches": []` and reopening that file results in an empty Swatches panel.
-- A `.pxshop` file opened by a JSON viewer shows the correct structure:
+- A `.verve` file opened by a JSON viewer shows the correct structure:
   ```json
   {
     "version": 2,

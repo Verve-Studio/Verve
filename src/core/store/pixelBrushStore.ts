@@ -3,7 +3,7 @@
  *
  * These brushes are persisted to electron userData (pixel-brushes.json)
  * and are available across all documents. Document-scoped brushes live in
- * AppState.pixelBrushes and are saved inside the .pxshop file.
+ * AppState.pixelBrushes and are saved inside the .verve file.
  */
 import type { PixelBrush } from '@/types'
 

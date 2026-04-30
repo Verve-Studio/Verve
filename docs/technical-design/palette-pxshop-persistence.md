@@ -1,8 +1,8 @@
-# Technical Design: Palette Persistence in .pxshop Files
+# Technical Design: Palette Persistence in .verve Files
 
 ## Overview
 
-When a user saves a `.pxshop` project file, the current swatch palette (`state.swatches`) is embedded in the JSON under a new top-level `swatches` key and the file format advances to version 2. On open, if the file declares `version: 2` the swatches array is validated and dispatched via the already-existing `SET_SWATCHES` action, replacing the in-memory palette. Version 1 files are silently ignored — swatches are left at the application default. All changes are confined to a single file: `src/hooks/useFileOps.ts`.
+When a user saves a `.verve` project file, the current swatch palette (`state.swatches`) is embedded in the JSON under a new top-level `swatches` key and the file format advances to version 2. On open, if the file declares `version: 2` the swatches array is validated and dispatched via the already-existing `SET_SWATCHES` action, replacing the in-memory palette. Version 1 files are silently ignored — swatches are left at the application default. All changes are confined to a single file: `src/hooks/useFileOps.ts`.
 
 ---
 
@@ -118,7 +118,7 @@ const doc = {
 
 ### Step 4 — Update the inline type cast in `handleOpen`
 
-The `.pxshop` parse block casts `JSON.parse(json)` to an inline anonymous type. Extend it to include the new optional `swatches` field:
+The `.verve` parse block casts `JSON.parse(json)` to an inline anonymous type. Extend it to include the new optional `swatches` field:
 
 ```ts
 // BEFORE
@@ -173,7 +173,7 @@ if (doc.version >= 2) {
 
 #### Exact insertion point in `handleOpen`
 
-The current flow for `.pxshop` files is:
+The current flow for `.verve` files is:
 
 ```
 JSON.parse → extract layers → build newSnapshot → setTabs → setActiveTabId

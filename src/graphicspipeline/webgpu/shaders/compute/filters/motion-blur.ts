@@ -58,7 +58,7 @@ export async function runMotionBlur(
   h: number,
   angleDeg: number,
   distance: number,
-  format: GPUTextureFormat = 'rgba8unorm',
+  _format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 

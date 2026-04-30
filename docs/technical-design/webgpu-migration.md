@@ -723,6 +723,6 @@ Execute in the following order to maintain a compilable state at each step:
 
 3. **Readback buffer reuse**: `readFlattenedPlan` currently creates and destroys a `GPUBuffer` per call. For export paths this is fine, but for any path that calls `readFlattenedPlan` on every frame (not currently the case), a persistent cached readback buffer should be considered.
 
-4. **`requestAdapterOptions`**: The factory should request a high-performance adapter (`powerPreference: 'high-performance'`) as PixelShop is a GPU-intensive application. This is an Electron app on desktop, so power consumption is less of a concern than on mobile.
+4. **`requestAdapterOptions`**: The factory should request a high-performance adapter (`powerPreference: 'high-performance'`) as Verve is a GPU-intensive application. This is an Electron app on desktop, so power consumption is less of a concern than on mobile.
 
 5. **`rgba8unorm` storage texture write support**: All current WebGPU implementations on tier-1 desktop platforms (Chrome 113+, Electron 25+) support `rgba8unorm` as a storage texture format for write operations. If a target Electron version predates this support, switch ping-pong intermediate textures to `rgba16float` and note that the LUT textures for curves must remain `r8unorm`.

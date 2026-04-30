@@ -259,7 +259,7 @@ export function useObjectSelection({
       // Encode image if cache is stale
       if (encodedCacheVersionRef.current !== objectSelectionStore.cacheVersion) {
         const { data: rgba, width: rw, height: rh } = await handle.rasterizeComposite('sample')
-        const data1024 = await downsampleTo1024(rgba, rw, rh)
+        const data1024 = await downsampleTo1024(rgba as Uint8Array, rw, rh)
         await window.api.sam.encodeImage(data1024, width, height)
         encodedCacheVersionRef.current = objectSelectionStore.cacheVersion
       }
@@ -346,7 +346,7 @@ export function useObjectSelection({
     try {
       if (encodedCacheVersionRef.current !== objectSelectionStore.cacheVersion) {
         const { data: rgba, width: rw, height: rh } = await handle.rasterizeComposite('sample')
-        const data1024 = await downsampleTo1024(rgba, rw, rh)
+        const data1024 = await downsampleTo1024(rgba as Uint8Array, rw, rh)
         await window.api.sam.encodeImage(data1024, width, height)
         encodedCacheVersionRef.current = objectSelectionStore.cacheVersion
       }

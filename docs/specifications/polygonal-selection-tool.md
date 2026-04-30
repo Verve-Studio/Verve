@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Polygonal Selection Tool** (Polygonal Lasso) lets users draw a straight-edged, multi-vertex selection region by clicking to place anchor points one at a time. Unlike the freehand Lasso tool, every segment between points is a perfectly straight line. Once the polygon is closed — either by clicking back near the first point or by double-clicking — the enclosed region is committed as the active pixel selection and the marching-ants overlay appears. This is PixelShop's equivalent of Photoshop's Polygonal Lasso Tool.
+The **Polygonal Selection Tool** (Polygonal Lasso) lets users draw a straight-edged, multi-vertex selection region by clicking to place anchor points one at a time. Unlike the freehand Lasso tool, every segment between points is a perfectly straight line. Once the polygon is closed — either by clicking back near the first point or by double-clicking — the enclosed region is committed as the active pixel selection and the marching-ants overlay appears. This is Verve's equivalent of Photoshop's Polygonal Lasso Tool.
 
 ---
 

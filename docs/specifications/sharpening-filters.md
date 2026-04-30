@@ -2,7 +2,7 @@
 
 ## Overview
 
-PixelShop provides four destructive sharpening filters that increase the apparent crispness of edges and fine details on the active pixel layer. Two are instant-apply filters (**Sharpen** and **Sharpen More**) that take effect immediately with no dialog. Two are parametric filters (**Unsharp Mask** and **Smart Sharpen**) that open a floating dialog with live preview controls, matching the interaction model of Gaussian Blur and other PixelShop filter dialogs. All four are undoable via the standard undo history. The filters are intended to complement PixelShop's blur and destructive-edit workflow, giving users full control over edge clarity — from a quick one-click sharpen to a precise, algorithm-driven sharpening pass.
+Verve provides four destructive sharpening filters that increase the apparent crispness of edges and fine details on the active pixel layer. Two are instant-apply filters (**Sharpen** and **Sharpen More**) that take effect immediately with no dialog. Two are parametric filters (**Unsharp Mask** and **Smart Sharpen**) that open a floating dialog with live preview controls, matching the interaction model of Gaussian Blur and other Verve filter dialogs. All four are undoable via the standard undo history. The filters are intended to complement Verve's blur and destructive-edit workflow, giving users full control over edge clarity — from a quick one-click sharpen to a precise, algorithm-driven sharpening pass.
 
 ## User Interaction
 

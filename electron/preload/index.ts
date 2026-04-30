@@ -6,12 +6,12 @@ const api = {
   openDevTools: (): Promise<void> => ipcRenderer.invoke('debug:openDevTools'),
   openFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
   saveFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:saveFile'),
-  openPxshopDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openPxshop'),
-  savePxshopDialog: (defaultPath?: string): Promise<string | null> =>
-    ipcRenderer.invoke('dialog:savePxshop', defaultPath),
-  openPxshopFile: (path: string): Promise<string> => ipcRenderer.invoke('file:openPxshop', path),
-  savePxshopFile: (path: string, data: string): Promise<void> =>
-    ipcRenderer.invoke('file:savePxshop', path, data),
+  openverveDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openverve'),
+  saveverveDialog: (defaultPath?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:saveverve', defaultPath),
+  openverveFile: (path: string): Promise<string> => ipcRenderer.invoke('file:openverve', path),
+  saveverveFile: (path: string, data: string): Promise<void> =>
+    ipcRenderer.invoke('file:saveverve', path, data),
   exportBrowse: (ext: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:exportBrowse', ext),
   exportImage: (path: string, base64: string): Promise<void> =>

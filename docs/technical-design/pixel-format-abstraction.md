@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature makes the pixel format a first-class, document-wide property with three values: **`rgba8`** (existing default, unchanged), **`rgba32f`** (32-bit float per channel; internal format is always FP32, never FP16), and **`indexed8`** (one byte per pixel storing a palette index). The discriminant lives in `AppState` and travels with tabs through `TabSnapshot`. It drives WebGPU texture formats, the `GpuLayer.data` typed-array type, the render plan (adjustment/filter ops are skipped entirely in `indexed8`), `.pxshop` serialization (version 5), the status bar label, the Image→Color Mode menu, and tool/menu gating.
+This feature makes the pixel format a first-class, document-wide property with three values: **`rgba8`** (existing default, unchanged), **`rgba32f`** (32-bit float per channel; internal format is always FP32, never FP16), and **`indexed8`** (one byte per pixel storing a palette index). The discriminant lives in `AppState` and travels with tabs through `TabSnapshot`. It drives WebGPU texture formats, the `GpuLayer.data` typed-array type, the render plan (adjustment/filter ops are skipped entirely in `indexed8`), `.verve` serialization (version 5), the status bar label, the Image→Color Mode menu, and tool/menu gating.
 
 **rgba32f in this spec means FP32 (32 bits per channel) end-to-end internally.** FP16 is out of scope for internal use; it only appears at export (e.g. DDS BC6H), which is a separate follow-on feature.
 
@@ -530,7 +530,7 @@ If any single layer conversion throws (e.g. out-of-memory on `Float32Array` allo
 
 ---
 
-## `.pxshop` Serialization: Version 5
+## `.verve` Serialization: Version 5
 
 ### Save path (`useFileOps.handleSave` / `handleSaveACopy`)
 
