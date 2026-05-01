@@ -36,7 +36,7 @@ import { useRulers } from './useRulers'
 import { useGuides } from './useGuides'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import { displayStore } from '@/core/store/displayStore'
-import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { f32TransferStore, u8TransferStore } from '@/core/store/layerDataTransfer'
 import styles from './Canvas.module.scss'
 
 // Re-export so external importers (App.tsx etc.) don't need to change their paths.
@@ -365,6 +365,17 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
             }
             if (f32) (layer.data as Float32Array).set(f32)
+          } else if (pngData.startsWith('data:raw/rgba8-ref;id=')) {
+            // rgba8 layer via in-process transfer store (no PNG encode/decode roundtrip)
+            const refId = pngData.slice('data:raw/rgba8-ref;id='.length)
+            const u8 = u8TransferStore.take(refId)
+            if (geoJson) {
+              const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
+              layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY, 'rgba8')
+            } else {
+              layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba8')
+            }
+            if (u8) layer.data.set(u8)
           } else if (pngData.startsWith('data:raw/f32;base64,')) {
             // rgba32f layer: base64-encoded raw Float32Array bytes (file open path)
             const b64 = pngData.slice('data:raw/f32;base64,'.length)

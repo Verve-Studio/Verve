@@ -18,3 +18,24 @@ export const f32TransferStore = {
     pending.clear()
   },
 }
+
+/**
+ * In-process transfer store for rgba8 layer data during canvas remount.
+ * Same purpose as f32TransferStore — skips the PNG encode/decode round-trip.
+ * Entries are consumed once (take() deletes after reading).
+ */
+const pendingU8 = new Map<string, Uint8Array>()
+
+export const u8TransferStore = {
+  set(layerId: string, data: Uint8Array): void {
+    pendingU8.set(layerId, data)
+  },
+  take(layerId: string): Uint8Array | undefined {
+    const v = pendingU8.get(layerId)
+    pendingU8.delete(layerId)
+    return v
+  },
+  clear(): void {
+    pendingU8.clear()
+  },
+}

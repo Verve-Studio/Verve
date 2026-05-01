@@ -1,5 +1,6 @@
 import type { AppAction } from '@/core/store/AppContext'
 import { cropStore } from '@/core/store/cropStore'
+import { u8TransferStore } from '@/core/store/layerDataTransfer'
 import type { TabRecord } from '@/core/store/tabTypes'
 import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
@@ -236,26 +237,22 @@ export function useCanvasTransforms({
     const wasmAmount: 0 | 1 | 2 = amount === '90cw' ? 0 : amount === '180' ? 1 : 2
 
     try {
-      const encoded = new Map<string, string>()
-      for (const layer of layers) {
+      const entries = await Promise.all(layers.map(async (layer): Promise<[string, string] | null> => {
         if (isIndexed) {
           const srcIdx = handle.getLayerIndexData(layer.id)
-          if (!srcIdx) continue
+          if (!srcIdx) return null
           const dst = await rotateIndexed(srcIdx, oldW, oldH, wasmAmount)
           const binary = btoa(String.fromCharCode(...dst))
-          encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+          return [layer.id, `data:raw/indexed8;base64,${binary}`]
         } else {
           const src = handle.getLayerPixels(layer.id)
-          if (!src) continue
+          if (!src) return null
           const rotated = await rotateRgba(src, oldW, oldH, wasmAmount)
-          const tmp = document.createElement('canvas')
-          tmp.width = newW; tmp.height = newH
-          tmp.getContext('2d')!.putImageData(
-            new ImageData(new Uint8ClampedArray(rotated.buffer as ArrayBuffer), newW, newH), 0, 0
-          )
-          encoded.set(layer.id, tmp.toDataURL('image/png'))
+          u8TransferStore.set(layer.id, rotated)
+          return [layer.id, `data:raw/rgba8-ref;id=${layer.id}`]
         }
-      }
+      }))
+      const encoded = new Map(entries.filter((e): e is [string, string] => e !== null))
 
       const label = amount === '90cw' ? 'Rotate 90° CW' : amount === '270cw' ? 'Rotate 270° CW' : 'Rotate 180°'
       captureHistory(`Before ${label}`)
@@ -285,26 +282,22 @@ export function useCanvasTransforms({
     const wasmAxis: 0 | 1 = axis === 'horizontal' ? 0 : 1
 
     try {
-      const encoded = new Map<string, string>()
-      for (const layer of layers) {
+      const entries = await Promise.all(layers.map(async (layer): Promise<[string, string] | null> => {
         if (isIndexed) {
           const srcIdx = handle.getLayerIndexData(layer.id)
-          if (!srcIdx) continue
+          if (!srcIdx) return null
           const dst = await flipIndexed(srcIdx, w, h, wasmAxis)
           const binary = btoa(String.fromCharCode(...dst))
-          encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+          return [layer.id, `data:raw/indexed8;base64,${binary}`]
         } else {
           const src = handle.getLayerPixels(layer.id)
-          if (!src) continue
+          if (!src) return null
           const flipped = await flipRgba(src, w, h, wasmAxis)
-          const tmp = document.createElement('canvas')
-          tmp.width = w; tmp.height = h
-          tmp.getContext('2d')!.putImageData(
-            new ImageData(new Uint8ClampedArray(flipped.buffer as ArrayBuffer), w, h), 0, 0
-          )
-          encoded.set(layer.id, tmp.toDataURL('image/png'))
+          u8TransferStore.set(layer.id, flipped)
+          return [layer.id, `data:raw/rgba8-ref;id=${layer.id}`]
         }
-      }
+      }))
+      const encoded = new Map(entries.filter((e): e is [string, string] => e !== null))
 
       const label = axis === 'horizontal' ? 'Flip Horizontal' : 'Flip Vertical'
       captureHistory(`Before ${label}`)
