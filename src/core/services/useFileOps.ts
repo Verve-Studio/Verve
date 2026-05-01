@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
+import { historyStore } from '@/core/store/historyStore'
 import { u8TransferStore } from '@/core/store/layerDataTransfer'
 import { IMAGE_EXTENSIONS, EXT_TO_MIME, loadImagePixels } from '@/core/io/imageLoader'
 import { makeTabId, fileTitle, DEFAULT_SWATCHES } from '@/core/store/tabTypes'
@@ -115,7 +115,7 @@ export function useFileOps({
 
   const handleNewConfirm = useCallback(({ width, height, backgroundFill, pixelFormat }: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat }): void => {
     const snapshot        = captureActiveSnapshot()
-    const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+    const savedHistory    = historyStore.detach()
     const savedLayerData  = serializeActiveTabPixels()
     const n               = untitledCounter
     setUntitledCounter(n + 1)
@@ -175,7 +175,7 @@ export function useFileOps({
           pixelFormat: 'rgba32f',
         }
         const snapshot       = captureActiveSnapshot()
-        const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+        const savedHistory   = historyStore.detach()
         const savedLayerData = serializeActiveTabPixels()
         const newId          = makeTabId()
         const updated: TabRecord[] = [
@@ -210,7 +210,7 @@ export function useFileOps({
         pixelFormat: 'rgba8',
       }
       const snapshot      = captureActiveSnapshot()
-      const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+      const savedHistory   = historyStore.detach()
       const savedLayerData = serializeActiveTabPixels()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
@@ -299,7 +299,7 @@ export function useFileOps({
       pixelFormat: docPixelFormat,
     }
     const snapshot      = captureActiveSnapshot()
-    const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+    const savedHistory   = historyStore.detach()
     const savedLayerData = serializeActiveTabPixels()
     const newId          = makeTabId()
     const updated: TabRecord[] = [

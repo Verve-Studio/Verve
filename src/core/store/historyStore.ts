@@ -169,6 +169,21 @@ class HistoryStore {
     this.notify()
   }
 
+  /**
+   * Transfer ownership of the current entries out of the store in O(1).
+   * Unlike cloneHistoryEntries, this performs NO allocation — the returned
+   * object owns the arrays. The store is left empty after the call.
+   * Use this when switching tabs so the caller can stash the history cheaply.
+   */
+  detach(): { entries: HistoryEntry[]; currentIndex: number } {
+    const result = { entries: this.entries, currentIndex: this.currentIndex }
+    this.entries = []
+    this.currentIndex = -1
+    this.selectedIndex = -1
+    this.notify()
+    return result
+  }
+
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)

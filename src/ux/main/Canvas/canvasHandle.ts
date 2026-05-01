@@ -36,6 +36,12 @@ export interface CanvasHandle {
   clearLayerPixels: (layerId: string, mask: Uint8Array) => void
   /** Snapshot all current layers' raw pixel data + geometry for history. */
   captureAllLayerPixels: () => Map<string, Uint8Array | Float32Array>
+  /**
+   * Return direct references to layer data buffers — no copy.
+   * Only safe when the Canvas is about to unmount (tab switch / file open).
+   * Do NOT use for history capture.
+   */
+  borrowAllLayerPixels: () => Map<string, Uint8Array | Float32Array>
   /** Snapshot per-layer geometry (width/height/offset). */
   captureAllLayerGeometry: () => Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>
   /** Snapshot baked selection masks for adjustment layers. */
@@ -335,6 +341,15 @@ export function useCanvasHandle({
       return result
     },
 
+    borrowAllLayerPixels: () => {
+      const result = new Map<string, Uint8Array | Float32Array>()
+      for (const ls of layersStateRef.current) {
+        const layer = glLayersRef.current.get(ls.id)
+        if (layer) result.set(ls.id, layer.data as Uint8Array | Float32Array)
+      }
+      return result
+    },
+
     captureAllLayerGeometry: () => {
       const result = new Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>()
       for (const ls of layersStateRef.current) {
@@ -429,7 +444,7 @@ export function useCanvasHandle({
     getAdjustmentMaskPixels: (adjustmentLayerId) => {
       const maskLayer = adjustmentMaskMap.current.get(adjustmentLayerId)
       if (!maskLayer) return null
-      return maskLayer.data.slice()
+      return maskLayer.data as Uint8Array | Float32Array
     },
 
     writeLayerPixels: (layerId, pixels) => {

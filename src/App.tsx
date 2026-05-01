@@ -110,7 +110,7 @@ function AppContent(): React.JSX.Element {
   } = useTabs(state, dispatch)
 
   // ── History ───────────────────────────────────────────────────────
-  const { captureHistory, pendingLayerLabelRef } = useHistory({
+  const { captureHistory, pendingLayerLabelRef, suppressReadyCaptureRef } = useHistory({
     canvasHandleRef, stateRef, dispatch,
     activeTabIdRef, setTabsRef, setPendingLayerData,
     layers: state.layers,
@@ -120,7 +120,12 @@ function AppContent(): React.JSX.Element {
   const { handleNewConfirm, handleOpen, handleOpenPath, handleSave, handleSaveACopy } = useFileOps({
     canvasHandleRef, state, tabs, activeTabId,
     setTabs, setActiveTabId, setPendingLayerData,
-    captureActiveSnapshot, serializeActiveTabPixels, handleSwitchTab, dispatch,
+    captureActiveSnapshot, serializeActiveTabPixels,
+    handleSwitchTab: useCallback((toId: string) => {
+      suppressReadyCaptureRef.current = true
+      handleSwitchTab(toId)
+    }, [handleSwitchTab, suppressReadyCaptureRef]),
+    dispatch,
     onRecentFilesUpdated: setRecentFiles,
   })
 
@@ -334,8 +339,11 @@ function AppContent(): React.JSX.Element {
   }, [requireTransformDecision, dispatch])
 
   const guardedSwitchTab = useCallback((toId: string): void => {
-    requireTransformDecision(() => handleSwitchTab(toId))
-  }, [requireTransformDecision, handleSwitchTab])
+    requireTransformDecision(() => {
+      suppressReadyCaptureRef.current = true
+      handleSwitchTab(toId)
+    })
+  }, [requireTransformDecision, handleSwitchTab, suppressReadyCaptureRef])
 
   const guardedCloseTab = useCallback((toId: string): void => {
     requireTransformDecision(() => handleCloseTab(toId))

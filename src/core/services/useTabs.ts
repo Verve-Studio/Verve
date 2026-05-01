@@ -81,7 +81,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   /** Encode every active layer's pixel data into Map<layerId, dataURL> (+ geometry entries).
    *  Must be called while the active tab's Canvas is still mounted. Returns null if no data. */
   const serializeActiveTabPixels = useCallback((): Map<string, string> | null => {
-    const layerPixels = canvasHandleRef.current?.captureAllLayerPixels()
+    const layerPixels = canvasHandleRef.current?.borrowAllLayerPixels()
     if (!layerPixels || layerPixels.size === 0) return null
     const layerGeo = canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map()
     const snap = captureActiveSnapshot()
@@ -163,7 +163,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   const handleSwitchTab = useCallback((toId: string): void => {
     if (toId === activeTabId) return
     const snapshot        = captureActiveSnapshot()
-    const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+    const savedHistory    = historyStore.detach()
     const savedLayerData  = serializeActiveTabPixels()
     const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator } : t)
     setTabs(updated)
