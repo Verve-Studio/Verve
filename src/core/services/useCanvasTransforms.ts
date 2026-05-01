@@ -77,11 +77,8 @@ export function useCanvasTransforms({
           const pixels = handle.getLayerPixels(layer.id)
           if (!pixels) continue
           const resized = await resizeFn(pixels, oldW, oldH, newW, newH)
-          const tmp     = document.createElement('canvas')
-          tmp.width = newW; tmp.height = newH
-          const ctx2d = tmp.getContext('2d')!
-          ctx2d.putImageData(new ImageData(new Uint8ClampedArray(resized.buffer as ArrayBuffer), newW, newH), 0, 0)
-          encoded.set(layer.id, tmp.toDataURL('image/png'))
+          u8TransferStore.set(layer.id, resized)
+          encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`)
         }
       }
       captureHistory('Before Resize Image')
@@ -135,15 +132,22 @@ export function useCanvasTransforms({
       } else {
         const oldPixels = handle.getLayerPixels(layer.id)
         if (!oldPixels) continue
-        const tmp    = document.createElement('canvas')
-        tmp.width = newW; tmp.height = newH
-        const ctx2d  = tmp.getContext('2d')!
-        const oldCvs = document.createElement('canvas')
-        oldCvs.width = oldW; oldCvs.height = oldH
-        const oldCtx = oldCvs.getContext('2d')!
-        oldCtx.putImageData(new ImageData(new Uint8ClampedArray(oldPixels.buffer as ArrayBuffer), oldW, oldH), 0, 0)
-        ctx2d.drawImage(oldCvs, offsetX, offsetY)
-        encoded.set(layer.id, tmp.toDataURL('image/png'))
+        const newPixels = new Uint8Array(newW * newH * 4)
+        const srcX0 = Math.max(0, -offsetX)
+        const srcY0 = Math.max(0, -offsetY)
+        const dstX0 = Math.max(0, offsetX)
+        const dstY0 = Math.max(0, offsetY)
+        const cpW = Math.min(oldW - srcX0, newW - dstX0)
+        const cpH = Math.min(oldH - srcY0, newH - dstY0)
+        if (cpW > 0 && cpH > 0) {
+          for (let row = 0; row < cpH; row++) {
+            const srcOff = ((srcY0 + row) * oldW + srcX0) * 4
+            const dstOff = ((dstY0 + row) * newW + dstX0) * 4
+            newPixels.set(oldPixels.subarray(srcOff, srcOff + cpW * 4), dstOff)
+          }
+        }
+        u8TransferStore.set(layer.id, newPixels)
+        encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`)
       }
     }
 
@@ -195,15 +199,14 @@ export function useCanvasTransforms({
       } else {
         const pixels = handle.getLayerPixels(layer.id)
         if (!pixels) continue
-        const cvsSrc    = document.createElement('canvas')
-        cvsSrc.width = oldW; cvsSrc.height = oldH
-        const srcCtx = cvsSrc.getContext('2d')!
-        srcCtx.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), oldW, oldH), 0, 0)
-        const dst    = document.createElement('canvas')
-        dst.width = cropW; dst.height = cropH
-        const dstCtx = dst.getContext('2d')!
-        dstCtx.drawImage(cvsSrc, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
-        encoded.set(layer.id, dst.toDataURL('image/png'))
+        const cropPixels = new Uint8Array(cropW * cropH * 4)
+        for (let row = 0; row < cropH; row++) {
+          const srcOff = ((cropY + row) * oldW + cropX) * 4
+          const dstOff = row * cropW * 4
+          cropPixels.set(pixels.subarray(srcOff, srcOff + cropW * 4), dstOff)
+        }
+        u8TransferStore.set(layer.id, cropPixels)
+        encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`)
       }
     }
 

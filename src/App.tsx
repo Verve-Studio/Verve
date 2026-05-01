@@ -30,7 +30,7 @@ import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { Tool, LayerState, AdjustmentType, PixelFormat } from '@/types'
 import type { FilterKey } from '@/types'
 import { selectionStore } from '@/core/store/selectionStore'
-import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { f32TransferStore, u8TransferStore } from '@/core/store/layerDataTransfer'
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
@@ -298,13 +298,8 @@ function AppContent(): React.JSX.Element {
         }
         encoded.set(ls.id, `data:raw/indexed8;base64,${b64}`)
       } else {
-        const lw = geo?.layerWidth ?? stateRef.current.canvas.width
-        const lh = geo?.layerHeight ?? stateRef.current.canvas.height
-        const tmp = document.createElement('canvas')
-        tmp.width = lw; tmp.height = lh
-        const ctx2d = tmp.getContext('2d')!
-        ctx2d.putImageData(new ImageData(new Uint8ClampedArray((raw as Uint8Array).buffer as ArrayBuffer), lw, lh), 0, 0)
-        encoded.set(ls.id, tmp.toDataURL('image/png'))
+        u8TransferStore.set(ls.id, raw as Uint8Array)
+        encoded.set(ls.id, `data:raw/rgba8-ref;id=${ls.id}`)
       }
     }
     setPendingLayerData(encoded)

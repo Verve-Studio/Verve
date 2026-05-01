@@ -2,7 +2,7 @@ import type { AppAction } from '@/core/store/AppContext'
 import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
 import { DEFAULT_SWATCHES, makeTabId } from '@/core/store/tabTypes'
-import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { f32TransferStore, u8TransferStore } from '@/core/store/layerDataTransfer'
 import { displayStore } from '@/core/store/displayStore'
 import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
@@ -86,14 +86,16 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     const layerGeo = canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map()
     const snap = captureActiveSnapshot()
     const result = new Map<string, string>()
+    const tabId = activeTabIdRef.current
     for (const [id, pixels] of layerPixels) {
       const geo = layerGeo.get(id)
       const lw = geo?.layerWidth ?? snap.canvasWidth
       const lh = geo?.layerHeight ?? snap.canvasHeight
       if ((pixels as unknown) instanceof Float32Array) {
-        // rgba32f layer — store directly, avoid base64 roundtrip
-        f32TransferStore.set(id, pixels as unknown as Float32Array)
-        result.set(id, `data:raw/f32-ref;id=${id}`)
+        // rgba32f layer — use compound key to avoid cross-tab collisions
+        const storeKey = `${tabId}:${id}`
+        f32TransferStore.set(storeKey, pixels as unknown as Float32Array)
+        result.set(id, `data:raw/f32-ref;id=${storeKey}`)
       } else if (pixels.length === lw * lh) {
         // indexed8 layer — 1 byte/pixel palette indices, base64-encode
         const u8 = pixels as Uint8Array
@@ -104,11 +106,10 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
         }
         result.set(id, `data:raw/indexed8;base64,${b64}`)
       } else {
-        const tmp = document.createElement('canvas')
-        tmp.width = lw; tmp.height = lh
-        const ctx2d = tmp.getContext('2d')!
-        ctx2d.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), lw, lh), 0, 0)
-        result.set(id, tmp.toDataURL('image/png'))
+        // rgba8 layer — use compound key to avoid cross-tab collisions
+        const storeKey = `${tabId}:${id}`
+        u8TransferStore.set(storeKey, pixels as Uint8Array)
+        result.set(id, `data:raw/rgba8-ref;id=${storeKey}`)
       }
       if (geo) result.set(`${id}:geo`, JSON.stringify(geo))
     }
