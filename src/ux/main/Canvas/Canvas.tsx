@@ -323,18 +323,25 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         const ls = state.layers[i]
 
         if ('type' in ls && ls.type === 'adjustment') {
-          const maskPng = initialLayerData?.get(`${ls.id}:adjustment-mask`)
-          if (maskPng) {
+          const maskData = initialLayerData?.get(`${ls.id}:adjustment-mask`)
+          if (maskData) {
             const maskLayer = renderer.createLayer(`${ls.id}:adjustment-mask`, `${ls.name} Mask`, cw, ch, 0, 0)
-            try {
-              const rgba = await decodePng(maskPng, cw, ch)
-              if (isStale()) return
-              maskLayer.data.set(rgba)
+            if (maskData.startsWith('data:raw/rgba8-ref;id=')) {
+              const u8 = u8TransferStore.take(maskData.slice('data:raw/rgba8-ref;id='.length))
+              if (u8) maskLayer.data.set(u8)
               renderer.flushLayer(maskLayer)
               adjustmentMaskMap.current.set(ls.id, maskLayer)
-            } catch (e) {
-              renderer.destroyLayer(maskLayer)
-              console.error('[Canvas] Failed to load adjustment mask PNG:', e)
+            } else {
+              try {
+                const rgba = await decodePng(maskData, cw, ch)
+                if (isStale()) return
+                maskLayer.data.set(rgba)
+                renderer.flushLayer(maskLayer)
+                adjustmentMaskMap.current.set(ls.id, maskLayer)
+              } catch (e) {
+                renderer.destroyLayer(maskLayer)
+                console.error('[Canvas] Failed to load adjustment mask PNG:', e)
+              }
             }
           }
           continue

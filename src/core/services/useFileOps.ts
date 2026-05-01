@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
+import { u8TransferStore } from '@/core/store/layerDataTransfer'
 import { IMAGE_EXTENSIONS, EXT_TO_MIME, loadImagePixels } from '@/core/io/imageLoader'
 import { makeTabId, fileTitle, DEFAULT_SWATCHES } from '@/core/store/tabTypes'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
@@ -194,11 +195,10 @@ export function useFileOps({
 
       const data = loaded.data as Uint8Array
       const layerId           = 'layer-0'
-      const tmp               = document.createElement('canvas')
-      tmp.width = width; tmp.height = height
-      const ctx2d             = tmp.getContext('2d')!
-      ctx2d.putImageData(new ImageData(new Uint8ClampedArray(data.buffer as ArrayBuffer), width, height), 0, 0)
-      const layerData         = new Map([[layerId, tmp.toDataURL('image/png')]])
+      const newId             = makeTabId()
+      const storeKey          = `${newId}:${layerId}`
+      u8TransferStore.set(storeKey, data)
+      const layerData         = new Map([[layerId, `data:raw/rgba8-ref;id=${storeKey}`]])
       const layers: LayerState[] = [{ id: layerId, name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }]
       const title             = fileTitle(path)
       const newSnapshot: TabSnapshot = {
@@ -212,7 +212,6 @@ export function useFileOps({
       const snapshot      = captureActiveSnapshot()
       const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
       const savedLayerData = serializeActiveTabPixels()
-      const newId          = makeTabId()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
         { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' },

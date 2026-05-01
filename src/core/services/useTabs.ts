@@ -115,8 +115,12 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     }
     for (const layer of snap.layers) {
       if (!('type' in layer) || layer.type !== 'adjustment') continue
-      const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(layer.id)
-      if (maskPng) result.set(`${layer.id}:adjustment-mask`, maskPng)
+      const maskPixels = canvasHandleRef.current?.getAdjustmentMaskPixels(layer.id)
+      if (maskPixels) {
+        const storeKey = `${tabId}:${layer.id}:mask`
+        u8TransferStore.set(storeKey, maskPixels as Uint8Array)
+        result.set(`${layer.id}:adjustment-mask`, `data:raw/rgba8-ref;id=${storeKey}`)
+      }
     }
     return result
   }, [canvasHandleRef, captureActiveSnapshot])
