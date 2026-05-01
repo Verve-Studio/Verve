@@ -153,17 +153,17 @@ The `.verve` format is a JSON document. This feature advances the format to **ve
 | Format | Encoding in `.verve` |
 |---|---|
 | `rgba8` | Unchanged: base64-encoded PNG (lossless, 8-bit RGBA). |
-| `rgba32f` | Base64-encoded binary blob of raw `Float32Array` bytes (little-endian IEEE 754), stored under a new `layerDataF32` sibling key instead of `pngData`. |
+| `rgba32f` | Base64-encoded binary blob of raw `Float32Array` bytes (little-endian IEEE 754), stored under a new `layerDataF32` sibling key instead of `imageData`. |
 | `indexed8` | Base64-encoded raw `Uint8Array` of palette indices (1 byte/pixel), stored under a new `layerDataIndexed` sibling key. |
 
-The existing `pngData` key continues to be used for `rgba8` layers. A layer record in a version 5 file will contain exactly one of `pngData`, `layerDataF32`, or `layerDataIndexed` depending on the document's pixel format.
+The existing `imageData` key continues to be used for `rgba8` layers. A layer record in a version 5 file will contain exactly one of `imageData`, `layerDataF32`, or `layerDataIndexed` depending on the document's pixel format.
 
 ### Version compatibility
 
 | Reading a file | Behavior |
 |---|---|
 | Version 1–4 (no `pixelFormat` field) | Loaded as `rgba8`. No conversion. Full backward compatibility. |
-| Version 5 with `pixelFormat: "rgba8"` | Loaded normally; `pngData` fields decoded as today. |
+| Version 5 with `pixelFormat: "rgba8"` | Loaded normally; `imageData` fields decoded as today. |
 | Version 5 with `pixelFormat: "rgba32f"` | `layerDataF32` fields decoded as `Float32Array`. |
 | Version 5 with `pixelFormat: "indexed8"` | `layerDataIndexed` fields decoded as `Uint8Array` of indices. |
 | Version 5 with an unrecognized `pixelFormat` value | Open is aborted; error is shown to the user. The document is not loaded. |

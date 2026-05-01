@@ -272,7 +272,7 @@ The render plan compositor (`WebGPURenderer.renderPlan` and `readFlattenedPlan`)
 
 The `rgba32f` layer serialization format is defined by the [Pixel Format Abstraction](pixel-format-abstraction.md) spec (version 5). This section restates the rules that directly affect the `rgba32f` implementation path.
 
-- Layer pixel data for `rgba32f` documents **must** be stored under the key `layerDataF32` (not `pngData`).
+- Layer pixel data for `rgba32f` documents **must** be stored under the key `layerDataF32` (not `imageData`).
 - The `layerDataF32` value is a base64-encoded binary blob of the raw `Float32Array` bytes: little-endian IEEE 754 single-precision floats, RGBA interleaved, row-major, no padding, total byte length = `layerWidth × layerHeight × 4 × 4`.
 - On save, the encoder reads `GpuLayer.data` (a `Float32Array`) directly, converts to a `Uint8Array` view of the same `ArrayBuffer`, base64-encodes, and writes the result. No compression or quantization is applied.
 - On open, the decoder decodes base64 to bytes, reinterprets as `Float32Array` via a `DataView` or typed array buffer view (preserving host byte order, which is always little-endian on supported platforms), and stores the result in `GpuLayer.data`.

@@ -238,7 +238,7 @@ export function useFileOps({
       canvas: { width: number; height: number; backgroundFill?: BackgroundFill }
       activeLayerId: string | null
       layers: Array<LayerState & {
-        pngData?: string | null
+        layerDataRGBA8?: string | null
         layerDataF32?: string | null
         layerDataIndexed?: string | null
         layerGeo?: { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number } | null
@@ -250,8 +250,8 @@ export function useFileOps({
     }
 
     const layerData = new Map<string, string>()
-    const layers: LayerState[] = doc.layers.map(({ pngData, layerDataF32, layerDataIndexed, layerGeo, adjustmentMaskPng, ...meta }) => {
-      if (pngData)  layerData.set(meta.id, pngData)
+    const layers: LayerState[] = doc.layers.map(({ layerDataRGBA8, layerDataF32, layerDataIndexed, layerGeo, adjustmentMaskPng, ...meta }) => {
+      if (layerDataRGBA8)  layerData.set(meta.id, layerDataRGBA8)
       if (layerDataF32) layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`)
       if (layerDataIndexed) layerData.set(meta.id, `data:raw/indexed8;base64,${layerDataIndexed}`)
       if (layerGeo) layerData.set(`${meta.id}:geo`, JSON.stringify(layerGeo))
@@ -382,7 +382,7 @@ export function useFileOps({
       activeLayerId: state.activeLayerId,
       layers: state.layers.map(l => ({
         ...l,
-        pngData: layerPngs[l.id] ?? null,
+        layerDataRGBA8: layerPngs[l.id] ?? null,
         layerDataF32: layerF32Data[l.id] ?? null,
         layerDataIndexed: layerIndexedData[l.id] ?? null,
         layerGeo: layerGeos[l.id] ?? null,
@@ -448,7 +448,7 @@ export function useFileOps({
       activeLayerId: state.activeLayerId,
       layers: state.layers.map(l => ({
         ...l,
-        pngData: layerPngs2[l.id] ?? null,
+        layerDataRGBA8: layerPngs2[l.id] ?? null,
         layerDataF32: layerF32Data2[l.id] ?? null,
         layerDataIndexed: layerIndexedData2[l.id] ?? null,
         layerGeo: layerGeos2[l.id] ?? null,

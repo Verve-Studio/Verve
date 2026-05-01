@@ -688,8 +688,8 @@ branch alongside the existing PNG and `data:raw/f32` branches (already specified
 design). For `data:raw/indexed8;base64,...` entries:
 
 ```ts
-} else if (pngData.startsWith('data:raw/indexed8;base64,')) {
-  const b64 = pngData.slice('data:raw/indexed8;base64,'.length)
+} else if (imageData.startsWith('data:raw/indexed8;base64,')) {
+  const b64 = imageData.slice('data:raw/indexed8;base64,'.length)
   const raw  = atob(b64)
   const arr  = new Uint8Array(raw.length)
   for (let k = 0; k < raw.length; k++) arr[k] = raw.charCodeAt(k)

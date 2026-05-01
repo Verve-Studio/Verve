@@ -348,22 +348,22 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         }
 
         let layer
-        const pngData = initialLayerData?.get(ls.id)
-        if (!('type' in ls) && !pngData) {
+        const imageData = initialLayerData?.get(ls.id)
+        if (!('type' in ls) && !imageData) {
           const prev = glLayersRef.current.get(ls.id)
           if (prev) {
             layer = renderer.createLayer(ls.id, ls.name, prev.layerWidth, prev.layerHeight, prev.offsetX, prev.offsetY)
             layer.data.set(prev.data)
           }
         }
-        if (pngData) {
-          // ── Opening a file: pngData may be layer-local, canvas-size, or a raw typed-array blob.
+        if (imageData) {
+          // ── Opening a file: imageData may be layer-local, canvas-size, or a raw typed-array blob.
           const geoKey = `${ls.id}:geo`
           const geoJson = initialLayerData?.get(geoKey)
 
-          if (pngData.startsWith('data:raw/f32-ref;id=')) {
+          if (imageData.startsWith('data:raw/f32-ref;id=')) {
             // rgba32f layer via in-process transfer store (no base64 roundtrip)
-            const refId = pngData.slice('data:raw/f32-ref;id='.length)
+            const refId = imageData.slice('data:raw/f32-ref;id='.length)
             const f32 = f32TransferStore.take(refId)
             if (geoJson) {
               const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
@@ -372,9 +372,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
             }
             if (f32) (layer.data as Float32Array).set(f32)
-          } else if (pngData.startsWith('data:raw/rgba8-ref;id=')) {
+          } else if (imageData.startsWith('data:raw/rgba8-ref;id=')) {
             // rgba8 layer via in-process transfer store (no PNG encode/decode roundtrip)
-            const refId = pngData.slice('data:raw/rgba8-ref;id='.length)
+            const refId = imageData.slice('data:raw/rgba8-ref;id='.length)
             const u8 = u8TransferStore.take(refId)
             if (geoJson) {
               const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
@@ -383,9 +383,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba8')
             }
             if (u8) layer.data.set(u8)
-          } else if (pngData.startsWith('data:raw/f32;base64,')) {
+          } else if (imageData.startsWith('data:raw/f32;base64,')) {
             // rgba32f layer: base64-encoded raw Float32Array bytes (file open path)
-            const b64 = pngData.slice('data:raw/f32;base64,'.length)
+            const b64 = imageData.slice('data:raw/f32;base64,'.length)
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
             const f32 = new Float32Array(bytes.buffer)
             if (geoJson) {
@@ -395,9 +395,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
             }
             ;(layer.data as Float32Array).set(f32)
-          } else if (pngData.startsWith('data:raw/indexed8;base64,')) {
+          } else if (imageData.startsWith('data:raw/indexed8;base64,')) {
             // indexed8 layer: base64-encoded raw palette-index bytes
-            const b64 = pngData.slice('data:raw/indexed8;base64,'.length)
+            const b64 = imageData.slice('data:raw/indexed8;base64,'.length)
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
             if (geoJson) {
               const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
@@ -411,7 +411,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
             layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY)
             try {
-              const rgba = await decodePng(pngData, geo.layerWidth, geo.layerHeight)
+              const rgba = await decodePng(imageData, geo.layerWidth, geo.layerHeight)
               if (isStale()) return
               layer.data.set(rgba)
             } catch (e) {
@@ -421,7 +421,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             // Legacy / image import: PNG is canvas-sized
             layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0)
             try {
-              const rgba = await decodePng(pngData, cw, ch)
+              const rgba = await decodePng(imageData, cw, ch)
               if (isStale()) return
               layer.data.set(rgba)
             } catch (e) {
