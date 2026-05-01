@@ -6,7 +6,7 @@ import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { ResizeCanvasSettings } from '@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog'
 import type { ResizeImageSettings } from '@/ux/modals/ResizeImageDialog/ResizeImageDialog'
 import { expandIndicesToRgba } from '@/utils/indexedColorUtils'
-import { matchPaletteIndices, resizeBilinear, resizeNearest } from '@/wasm'
+import { flipIndexed, flipRgba, matchPaletteIndices, resizeBilinear, resizeNearest, rotateIndexed, rotateRgba } from '@/wasm'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useEffect } from 'react'
 
@@ -25,10 +25,15 @@ interface UseCanvasTransformsOptions {
   canvasHeight: number
 }
 
+export type RotateAmount = '90cw' | '180' | '270cw'
+export type FlipAxis    = 'horizontal' | 'vertical'
+
 export interface UseCanvasTransformsReturn {
   handleResizeImage:  (settings: ResizeImageSettings)  => Promise<void>
   handleResizeCanvas: (settings: ResizeCanvasSettings) => void
   handleCrop:         () => void
+  handleRotate:       (amount: RotateAmount) => Promise<void>
+  handleFlip:         (axis: FlipAxis)       => Promise<void>
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -219,5 +224,100 @@ export function useCanvasTransforms({
     return () => { cropStore.onCrop = null }
   }, [handleCrop])
 
-  return { handleResizeImage, handleResizeCanvas, handleCrop }
+  const handleRotate = useCallback(async (amount: RotateAmount): Promise<void> => {
+    const handle = canvasHandleRef.current
+    if (!handle) return
+    const oldW = canvasWidth
+    const oldH = canvasHeight
+    const { layers, pixelFormat } = stateRef.current
+    const isIndexed = pixelFormat === 'indexed8'
+    const newW = (amount === '180') ? oldW : oldH
+    const newH = (amount === '180') ? oldH : oldW
+    const wasmAmount: 0 | 1 | 2 = amount === '90cw' ? 0 : amount === '180' ? 1 : 2
+
+    try {
+      const encoded = new Map<string, string>()
+      for (const layer of layers) {
+        if (isIndexed) {
+          const srcIdx = handle.getLayerIndexData(layer.id)
+          if (!srcIdx) continue
+          const dst = await rotateIndexed(srcIdx, oldW, oldH, wasmAmount)
+          const binary = btoa(String.fromCharCode(...dst))
+          encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+        } else {
+          const src = handle.getLayerPixels(layer.id)
+          if (!src) continue
+          const rotated = await rotateRgba(src, oldW, oldH, wasmAmount)
+          const tmp = document.createElement('canvas')
+          tmp.width = newW; tmp.height = newH
+          tmp.getContext('2d')!.putImageData(
+            new ImageData(new Uint8ClampedArray(rotated.buffer as ArrayBuffer), newW, newH), 0, 0
+          )
+          encoded.set(layer.id, tmp.toDataURL('image/png'))
+        }
+      }
+
+      const label = amount === '90cw' ? 'Rotate 90° CW' : amount === '270cw' ? 'Rotate 270° CW' : 'Rotate 180°'
+      captureHistory(`Before ${label}`)
+      const tabId = activeTabId
+      setTabs(prev => prev.map(t =>
+        t.id === tabId
+          ? { ...t, canvasKey: t.canvasKey + 1, snapshot: { ...t.snapshot, canvasWidth: newW, canvasHeight: newH } }
+          : t
+      ))
+      setPendingLayerData(encoded)
+      pendingLayerLabelRef.current = label
+      if (amount !== '180') {
+        dispatch({ type: 'RESIZE_CANVAS', payload: { width: newW, height: newH } })
+      }
+    } catch (err) {
+      console.error('[Rotate] Failed:', err)
+    }
+  }, [canvasWidth, canvasHeight, canvasHandleRef, stateRef, captureHistory, activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef, dispatch])
+
+  const handleFlip = useCallback(async (axis: FlipAxis): Promise<void> => {
+    const handle = canvasHandleRef.current
+    if (!handle) return
+    const w = canvasWidth
+    const h = canvasHeight
+    const { layers, pixelFormat } = stateRef.current
+    const isIndexed = pixelFormat === 'indexed8'
+    const wasmAxis: 0 | 1 = axis === 'horizontal' ? 0 : 1
+
+    try {
+      const encoded = new Map<string, string>()
+      for (const layer of layers) {
+        if (isIndexed) {
+          const srcIdx = handle.getLayerIndexData(layer.id)
+          if (!srcIdx) continue
+          const dst = await flipIndexed(srcIdx, w, h, wasmAxis)
+          const binary = btoa(String.fromCharCode(...dst))
+          encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`)
+        } else {
+          const src = handle.getLayerPixels(layer.id)
+          if (!src) continue
+          const flipped = await flipRgba(src, w, h, wasmAxis)
+          const tmp = document.createElement('canvas')
+          tmp.width = w; tmp.height = h
+          tmp.getContext('2d')!.putImageData(
+            new ImageData(new Uint8ClampedArray(flipped.buffer as ArrayBuffer), w, h), 0, 0
+          )
+          encoded.set(layer.id, tmp.toDataURL('image/png'))
+        }
+      }
+
+      const label = axis === 'horizontal' ? 'Flip Horizontal' : 'Flip Vertical'
+      captureHistory(`Before ${label}`)
+      const tabId = activeTabId
+      setTabs(prev => prev.map(t =>
+        t.id === tabId ? { ...t, canvasKey: t.canvasKey + 1 } : t
+      ))
+      setPendingLayerData(encoded)
+      pendingLayerLabelRef.current = label
+    } catch (err) {
+      console.error('[Flip] Failed:', err)
+    }
+  }, [canvasWidth, canvasHeight, canvasHandleRef, stateRef, captureHistory, activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef])
+
+  return { handleResizeImage, handleResizeCanvas, handleCrop, handleRotate, handleFlip }
 }

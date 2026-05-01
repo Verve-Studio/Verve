@@ -156,6 +156,8 @@ export interface MainWindowProps {
   // Canvas transform handlers
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>
   handleResizeCanvas: (s: ResizeCanvasSettings) => void
+  handleRotate: (amount: '90cw' | '180' | '270cw') => Promise<void>
+  handleFlip: (axis: 'horizontal' | 'vertical') => Promise<void>
 
   // View handlers
   handleZoomIn: () => void
@@ -230,7 +232,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers,
-    handleResizeImage, handleResizeCanvas,
+    handleResizeImage, handleResizeCanvas, handleRotate, handleFlip,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
@@ -269,6 +271,11 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onDelete={handleDelete}
         onResizeImage={() => setShowResizeDialog(true)}
         onResizeCanvas={() => setShowResizeCanvasDialog(true)}
+        onRotate90CW={() => { void handleRotate('90cw') }}
+        onRotate180={() => { void handleRotate('180') }}
+        onRotate270CW={() => { void handleRotate('270cw') }}
+        onFlipHorizontal={() => { void handleFlip('horizontal') }}
+        onFlipVertical={() => { void handleFlip('vertical') }}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onZoom100={handleZoom100}

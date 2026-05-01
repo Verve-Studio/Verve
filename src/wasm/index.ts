@@ -272,6 +272,70 @@ export async function applyPerspectiveTransform(
 }
 
 /**
+ * Rotate an RGBA image (4 bytes/pixel).
+ * amount: 0 = 90°CW, 1 = 180°, 2 = 270°CW
+ * Returns a new Uint8Array with dimensions swapped for 90/270, same for 180.
+ */
+export async function rotateRgba(
+  src: Uint8Array,
+  srcW: number, srcH: number,
+  amount: 0 | 1 | 2
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  const dstW = (amount === 1) ? srcW : srcH
+  const dstH = (amount === 1) ? srcH : srcW
+  return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
+    m._pixelops_rotate_rgba(srcPtr, srcW, srcH, dstPtr, amount)
+  )
+}
+
+/**
+ * Flip an RGBA image (4 bytes/pixel).
+ * axis: 0 = horizontal, 1 = vertical
+ */
+export async function flipRgba(
+  src: Uint8Array,
+  w: number, h: number,
+  axis: 0 | 1
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  return withSrcDstBuffers(m, src, w * h * 4, (srcPtr, dstPtr) =>
+    m._pixelops_flip_rgba(srcPtr, w, h, dstPtr, axis)
+  )
+}
+
+/**
+ * Rotate an indexed (1 byte/pixel) image.
+ * amount: 0 = 90°CW, 1 = 180°, 2 = 270°CW
+ */
+export async function rotateIndexed(
+  src: Uint8Array,
+  srcW: number, srcH: number,
+  amount: 0 | 1 | 2
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  const dstLen = srcW * srcH // same pixel count regardless of rotation
+  return withSrcDstBuffers(m, src, dstLen, (srcPtr, dstPtr) =>
+    m._pixelops_rotate_indexed(srcPtr, srcW, srcH, dstPtr, amount)
+  )
+}
+
+/**
+ * Flip an indexed (1 byte/pixel) image.
+ * axis: 0 = horizontal, 1 = vertical
+ */
+export async function flipIndexed(
+  src: Uint8Array,
+  w: number, h: number,
+  axis: 0 | 1
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  return withSrcDstBuffers(m, src, w * h, (srcPtr, dstPtr) =>
+    m._pixelops_flip_indexed(srcPtr, w, h, dstPtr, axis)
+  )
+}
+
+/**
  * Content-aware inpainting (PatchMatch).
  *
  * @param pixels   RGBA flat canvas composite, width × height × 4 bytes.

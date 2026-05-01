@@ -126,6 +126,50 @@ void pixelops_perspective_transform(
     transform_perspective(src, srcW, srcH, dst, dstW, dstH, invH, interp);
 }
 
+// ─── Rotate RGBA ──────────────────────────────────────────────────────────────
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_rotate_rgba(
+    const uint8_t* src, int srcW, int srcH,
+    uint8_t* dst,
+    int amount  // 0=90CW, 1=180, 2=270CW
+) {
+    rotate_rgba(src, srcW, srcH, dst, amount);
+}
+
+// ─── Flip RGBA ────────────────────────────────────────────────────────────────
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_flip_rgba(
+    const uint8_t* src, int w, int h,
+    uint8_t* dst,
+    int axis  // 0=horizontal, 1=vertical
+) {
+    flip_rgba(src, w, h, dst, axis);
+}
+
+// ─── Rotate indexed ───────────────────────────────────────────────────────────
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_rotate_indexed(
+    const uint8_t* src, int srcW, int srcH,
+    uint8_t* dst,
+    int amount  // 0=90CW, 1=180, 2=270CW
+) {
+    rotate_indexed(src, srcW, srcH, dst, amount);
+}
+
+// ─── Flip indexed ─────────────────────────────────────────────────────────────
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_flip_indexed(
+    const uint8_t* src, int w, int h,
+    uint8_t* dst,
+    int axis  // 0=horizontal, 1=vertical
+) {
+    flip_indexed(src, w, h, dst, axis);
+}
+
 // ─── Content-Aware Inpainting (PatchMatch) ───────────────────────────────────
 
 EMSCRIPTEN_KEEPALIVE

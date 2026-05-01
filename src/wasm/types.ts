@@ -78,6 +78,34 @@ export interface PixelOpsModule {
     interp: number
   ): void
 
+  /** Rotate RGBA image. amount: 0=90°CW, 1=180°, 2=270°CW. dst must be pre-allocated. */
+  _pixelops_rotate_rgba(
+    srcPtr: number, srcW: number, srcH: number,
+    dstPtr: number,
+    amount: number
+  ): void
+
+  /** Flip RGBA image. axis: 0=horizontal, 1=vertical. dst must be pre-allocated. */
+  _pixelops_flip_rgba(
+    srcPtr: number, w: number, h: number,
+    dstPtr: number,
+    axis: number
+  ): void
+
+  /** Rotate indexed (1 byte/pixel) image. amount: 0=90°CW, 1=180°, 2=270°CW. */
+  _pixelops_rotate_indexed(
+    srcPtr: number, srcW: number, srcH: number,
+    dstPtr: number,
+    amount: number
+  ): void
+
+  /** Flip indexed (1 byte/pixel) image. axis: 0=horizontal, 1=vertical. */
+  _pixelops_flip_indexed(
+    srcPtr: number, w: number, h: number,
+    dstPtr: number,
+    axis: number
+  ): void
+
   /**
    * Content-aware inpainting via PatchMatch.
    * pixels: RGBA source, width×height×4 bytes.

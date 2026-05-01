@@ -145,7 +145,7 @@ function AppContent(): React.JSX.Element {
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Canvas transforms ─────────────────────────────────────────────
-  const { handleResizeImage, handleResizeCanvas } = useCanvasTransforms({
+  const { handleResizeImage, handleResizeCanvas, handleRotate, handleFlip } = useCanvasTransforms({
     canvasHandleRef, stateRef, captureHistory, dispatch,
     activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef,
     canvasWidth: state.canvas.width, canvasHeight: state.canvas.height,
@@ -441,6 +441,8 @@ function AppContent(): React.JSX.Element {
     openExportDialog:        () => setShowExportDialog(true),
     openResizeImageDialog:   () => setShowResizeDialog(true),
     openResizeCanvasDialog:  () => setShowResizeCanvasDialog(true),
+    handleRotate,
+    handleFlip,
     openAboutDialog:         () => setShowAboutDialog(true),
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),
@@ -552,6 +554,8 @@ function AppContent(): React.JSX.Element {
       handleUngroupLayers={handleUngroupLayers}
       handleResizeImage={handleResizeImage}
       handleResizeCanvas={handleResizeCanvas}
+      handleRotate={handleRotate}
+      handleFlip={handleFlip}
       handleZoomIn={handleZoomIn}
       handleZoomOut={handleZoomOut}
       handleZoom100={handleZoom100}

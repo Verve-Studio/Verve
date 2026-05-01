@@ -195,6 +195,22 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         sep(),
         item('Resize Image\u2026', 'resizeImage'),
         item('Resize Image Canvas\u2026', 'resizeCanvas'),
+        sep(),
+        {
+          label: 'Rotate',
+          submenu: [
+            item('90\u00b0 CW',  'rotate90CW'),
+            item('180\u00b0 CW', 'rotate180CW'),
+            item('270\u00b0 CW', 'rotate270CW'),
+          ],
+        },
+        {
+          label: 'Flip',
+          submenu: [
+            item('Horizontal', 'flipHorizontal'),
+            item('Vertical',   'flipVertical'),
+          ],
+        },
       ],
     },
 

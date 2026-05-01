@@ -86,6 +86,8 @@ interface MacNativeMenuParams {
   openExportDialog: () => void
   openResizeImageDialog: () => void
   openResizeCanvasDialog: () => void
+  handleRotate: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
+  handleFlip:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
   openAboutDialog: () => void
   openShortcutsDialog: () => void
   openColorDitheringSetup: () => void
@@ -124,6 +126,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
+    handleRotate, handleFlip,
     openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
@@ -185,6 +188,11 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'contentAwareDelete':  handleOpenCafDialog('delete'); break
       case 'resizeImage':      openResizeImageDialog(); break
       case 'resizeCanvas':     openResizeCanvasDialog(); break
+      case 'rotate90CW':       void handleRotate('90cw');     break
+      case 'rotate180CW':      void handleRotate('180');      break
+      case 'rotate270CW':      void handleRotate('270cw');    break
+      case 'flipHorizontal':   void handleFlip('horizontal'); break
+      case 'flipVertical':     void handleFlip('vertical');   break
       case 'freeTransform':    requireTransformDecision(handleEnterTransform); break
       case 'invertSelection':  selectionStore.invert(); break
       case 'selectAll':        handleSelectAll(); break
@@ -243,6 +251,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     handleOpenCafDialog,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
+    handleRotate, handleFlip,
     openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     colorMode,
