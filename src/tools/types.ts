@@ -78,6 +78,11 @@ export interface ToolContext {
   setEyedropperHdrOverflow: (overflow: boolean) => void
   /** Current guide list — used by tools that snap to guides. */
   guides: Guide[]
+  /**
+   * Map from parent pixel-layer ID → its mask GpuLayer.
+   * Used by tools (e.g. move) that need to keep the mask in sync with the parent.
+   */
+  maskMap: Map<string, GpuLayer>
 }
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────

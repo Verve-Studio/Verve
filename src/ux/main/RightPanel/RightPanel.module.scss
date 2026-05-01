@@ -3,17 +3,26 @@
 .panel {
   display: flex;
   flex-direction: column;
-  width: vars.$right-panel-width;
   flex-shrink: 0;
   background-color: vars.$color-surface;
   border-left: 1px solid vars.$color-border;
   overflow: hidden;
+  position: relative;
+  min-width: 200px;
+  max-width: 600px;
 }
 
-.placeholder {
-  padding: 12px;
-  font-size: vars.$font-size-sm;
-  color: vars.$color-text-muted;
-  text-align: center;
-}
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: ew-resize;
+  z-index: 10;
 
+  &:hover, &:active {
+    background-color: vars.$color-accent-blue;
+    opacity: 0.5;
+  }
+}

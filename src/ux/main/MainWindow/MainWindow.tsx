@@ -134,8 +134,10 @@ export interface MainWindowProps {
   handleUndo: () => void
   handleRedo: () => void
   handleCopy: () => void
+  handleCopyMerged: () => void
   handleCut: () => void
   handlePaste: () => void
+  handlePasteInto: () => void
   handleDelete: () => void
 
   // Layer handlers
@@ -224,7 +226,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleTransformGuardApply, handleTransformGuardDiscard,
     handleNewConfirm, handleOpen, handleOpenPath, handleSave, handleSaveACopy,
     handleClearRecentFiles, recentFiles,
-    handleUndo, handleRedo, handleCopy, handleCut, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers,
@@ -260,8 +262,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onCopy={handleCopy}
+        onCopyMerged={handleCopyMerged}
         onCut={handleCut}
         onPaste={handlePaste}
+        onPasteInto={handlePasteInto}
         onDelete={handleDelete}
         onResizeImage={() => setShowResizeDialog(true)}
         onResizeCanvas={() => setShowResizeCanvasDialog(true)}

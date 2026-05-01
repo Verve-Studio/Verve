@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { selectionStore } from '@/core/store/selectionStore'
 import type { Guide, TextLayerState, ShapeLayerState } from '@/types'
+import type { GpuLayer, WebGPURenderer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
 
 // ─── Snap-to-guide options ────────────────────────────────────────────────────
@@ -187,9 +188,39 @@ function createMoveHandler(): ToolHandler {
   let textLayerOrigY = 0
   // For shape layer move: track original parametric coords
   let shapeLayerSnapshot: ShapeLayerState | null = null
+  // For whole-layer move: snapshot of the mask pixel data at pointer-down
+  let originalMaskData: Uint8Array | null = null
   let isDown = false
   // Cached visible-pixel bounding box for snap-to-guide (computed at pointer-down)
   let cachedVisibleBounds: VisibleBounds | null = null
+
+  /**
+   * Shift a full-canvas RGBA mask layer's pixel data by (dx, dy) relative to
+   * `originalMaskData` (the snapshot taken at pointer-down) and flush to GPU.
+   * This keeps the mask spatially aligned with its parent layer as it moves.
+   */
+  function applyMaskShift(dx: number, dy: number, maskLayer: GpuLayer, renderer: WebGPURenderer): void {
+    if (!originalMaskData) return
+    const w = renderer.pixelWidth
+    const h = renderer.pixelHeight
+    const dst = maskLayer.data as Uint8Array
+    dst.fill(0)
+    for (let sy = 0; sy < h; sy++) {
+      const ty = sy + dy
+      if (ty < 0 || ty >= h) continue
+      for (let sx = 0; sx < w; sx++) {
+        const tx = sx + dx
+        if (tx < 0 || tx >= w) continue
+        const si = (sy * w + sx) * 4
+        const di = (ty * w + tx) * 4
+        dst[di]     = originalMaskData[si]
+        dst[di + 1] = originalMaskData[si + 1]
+        dst[di + 2] = originalMaskData[si + 2]
+        dst[di + 3] = originalMaskData[si + 3]
+      }
+    }
+    renderer.flushLayer(maskLayer)
+  }
 
   function applySelectionMove(dx: number, dy: number, ctx: ToolContext): void {
     const { renderer, layer, layers, render } = ctx
@@ -275,6 +306,9 @@ function createMoveHandler(): ToolHandler {
         originalOffsetX = ctx.layer.offsetX
         originalOffsetY = ctx.layer.offsetY
         cachedVisibleBounds = getVisibleBounds(ctx.layer.data, ctx.layer.layerWidth, ctx.layer.layerHeight, ctx.layer.format)
+        // Snapshot the mask's pixel data so we can shift it during drag
+        const maskGl = ctx.maskMap.get(ctx.layer.id)
+        originalMaskData = maskGl ? (maskGl.data as Uint8Array).slice() : null
         if (textLayerSnapshot) {
           textLayerOrigX = textLayerSnapshot.x
           textLayerOrigY = textLayerSnapshot.y
@@ -319,6 +353,9 @@ function createMoveHandler(): ToolHandler {
         )
         ctx.layer.offsetX = originalOffsetX + sdx
         ctx.layer.offsetY = originalOffsetY + sdy
+        // Shift the linked mask layer in lock-step with the parent
+        const maskGl = ctx.maskMap.get(ctx.layer.id)
+        if (maskGl) applyMaskShift(sdx, sdy, maskGl, ctx.renderer)
         ctx.render(ctx.layers)
       }
       moveDisplay.set(ctx.layer.offsetX, ctx.layer.offsetY, ctx.layer.layerWidth, ctx.layer.layerHeight)
@@ -364,6 +401,10 @@ function createMoveHandler(): ToolHandler {
         )
         ctx.layer.offsetX = originalOffsetX + sdx
         ctx.layer.offsetY = originalOffsetY + sdy
+        // Final mask shift (may differ from last pointermove if pointer jumped on up)
+        const maskGl = ctx.maskMap.get(ctx.layer.id)
+        if (maskGl) applyMaskShift(sdx, sdy, maskGl, ctx.renderer)
+        originalMaskData = null
         // Always exit preview mode and do a full-quality rerender on pointer-up
         // so standalone effects (bloom, halation, etc.) render at the final position.
         ctx.renderer.setPreviewMode(false)

@@ -70,17 +70,17 @@
 }
 
 .viewportInner {
-  display: flex;
-  align-items: safe center;
-  justify-content: safe center;
-  min-width: 100%;
-  min-height: 100%;
-  box-sizing: border-box;
+  // Dimensions set as inline style: max(100%, 3*canvasCSS) so the scroll
+  // area always extends one full canvas width/height in each direction.
+  // position: relative so canvasWrapper can use position: absolute.
+  position: relative;
 }
 
 .canvasWrapper {
-  position: relative;
-  flex-shrink: 0;
+  // position is overridden to 'absolute' via inline style in Canvas.tsx
+  // so it can be placed at (canvasCssW, canvasCssH) inside the explicit-size
+  // viewportInner, keeping all absolutely-positioned children (overlay, brushCursor)
+  // still positioned relative to this element.
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.8),
     0 4px 32px rgba(0, 0, 0, 0.6);

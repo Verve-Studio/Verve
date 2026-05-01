@@ -128,7 +128,7 @@ function AppContent(): React.JSX.Element {
   const { handleExportConfirm, pendingLdrExport, clearPendingLdrExport, confirmLdrExport } = useExportOps({ canvasHandleRef, stateRef })
 
   // ── Clipboard ─────────────────────────────────────────────────────
-  const { handleCopy, handleCut, handlePaste, handleDelete } = useClipboard({
+  const { handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete } = useClipboard({
     canvasHandleRef, state, dispatch, captureHistory, pendingLayerLabelRef,
   })
 
@@ -362,7 +362,7 @@ function AppContent(): React.JSX.Element {
 
   // ── Keyboard shortcuts ────────────────────────────────────────────
   useKeyboardShortcuts({
-    handleUndo, handleRedo, handleCopy, handleCut, handlePaste,
+    handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto,
     handleDelete, handleZoomIn, handleZoomOut, handleFitToWindow, handleToggleGrid,
     handleKeyboardShortcuts: useCallback(() => setShowShortcutsDialog(true), []),
     handleFreeTransform: handleEnterTransform,
@@ -425,7 +425,7 @@ function AppContent(): React.JSX.Element {
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
     handleOpen, handleOpenPath, handleClose, handleCloseAll, handleSave, handleSaveACopy,
     handleClearRecentFiles,
-    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
@@ -534,8 +534,10 @@ function AppContent(): React.JSX.Element {
       handleUndo={handleUndo}
       handleRedo={handleRedo}
       handleCopy={handleCopy}
+      handleCopyMerged={handleCopyMerged}
       handleCut={handleCut}
       handlePaste={handlePaste}
+      handlePasteInto={handlePasteInto}
       handleDelete={handleDelete}
       handleNewLayer={handleNewLayer}
       handleDuplicateLayer={handleDuplicateLayer}

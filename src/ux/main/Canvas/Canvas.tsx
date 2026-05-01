@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import React, { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useWebGPU } from '@/core/services/useWebGPU'
 import { useCanvas } from '@/core/services/useCanvas'
 import { useAppContext } from '@/core/store/AppContext'
@@ -31,6 +31,7 @@ import type { CanvasHandle } from './canvasHandle'
 import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
+import { useSpacePan } from './useSpacePan'
 import { useRulers } from './useRulers'
 import { useGuides } from './useGuides'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
@@ -253,8 +254,30 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     isActive, isActiveRef, viewportRef, zoomRef, pendingScrollRef, scrollPosRef,
     state.canvas.zoom,
     (zoom) => dispatch({ type: 'SET_ZOOM', payload: zoom }),
+    width, height,
     getSelectionAnchorRef,
   )
+
+  // One-shot: center the viewport on the canvas when this tab first becomes active.
+  // Runs after useScrollZoom's restore effect (declaration order) so it wins on mount.
+  const centeredOnceRef = useRef(false)
+  useLayoutEffect(() => {
+    if (!isActive || centeredOnceRef.current) return
+    const vp = viewportRef.current
+    if (!vp) return
+    centeredOnceRef.current = true
+    const dpr = window.devicePixelRatio
+    const zoom = zoomRef.current
+    const canvasW = width  * zoom / dpr
+    const canvasH = height * zoom / dpr
+    // padding = canvasW (left/right) + canvasH (top/bottom); canvas center at 1.5×size
+    const left = canvasW + canvasW / 2 - vp.clientWidth  / 2
+    const top  = canvasH + canvasH / 2 - vp.clientHeight / 2
+    vp.scrollLeft = Math.max(0, left)
+    vp.scrollTop  = Math.max(0, top)
+    scrollPosRef.current = { left: vp.scrollLeft, top: vp.scrollTop }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Init selection store dimensions once canvas is sized
   useEffect(() => {
@@ -265,6 +288,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   // ── Marching ants + crop overlay + polygonal selection overlay ──
   useMarchingAnts(isActive, overlayRef, viewportRef, canvasWrapperRef, zoomRef, activeToolRef)
+  useSpacePan(isActive, viewportRef)
   useRulers({ showRulers: state.canvas.showRulers, hRulerRef, vRulerRef, viewportRef, canvasWrapperRef, zoom: state.canvas.zoom })
   const { dragPreview, startGuideDrag } = useGuides({
     dispatch,
@@ -585,8 +609,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     if (!viewport) return
     const dpr = window.devicePixelRatio
     const zoom = zoomRef.current
-    viewport.scrollLeft = width * zoom / dpr
-    viewport.scrollTop  = height * zoom / dpr
+    // padding = canvasSize*zoom/dpr; middle tile starts at padding + 1×tile = 2×tile
+    viewport.scrollLeft = 2 * width  * zoom / dpr
+    viewport.scrollTop  = 2 * height * zoom / dpr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.canvas.tiledMode, isActive])
 
@@ -958,6 +983,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: overflow })
       },
       guides: state.canvas.guides,
+      maskMap: buildMaskMap(),
     }
   }
 
@@ -1198,11 +1224,23 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         <canvas ref={vRulerRef} className={styles.vRuler} />
       </>}
     <div ref={viewportRef} className={styles.viewport} data-canvas-viewport data-active-viewport={isActive ? '' : undefined}>
-      <div className={styles.viewportInner}>
+      <div
+        className={styles.viewportInner}
+        style={{
+          // Explicit size so browsers count the full area in scrollWidth/scrollHeight.
+          // (Trailing padding on block/flex children is excluded from scroll bounds in Chromium.)
+          // Canvas sits at (canvasCssW, canvasCssH) via absolute positioning on canvasWrapper.
+          width:  `max(100%, ${3 * width  * state.canvas.zoom / window.devicePixelRatio}px)`,
+          height: `max(100%, ${3 * height * state.canvas.zoom / window.devicePixelRatio}px)`,
+        }}
+      >
         <div
           ref={canvasWrapperRef}
           className={styles.canvasWrapper}
           style={{
+            position: 'absolute',
+            left: width  * state.canvas.zoom / window.devicePixelRatio,
+            top:  height * state.canvas.zoom / window.devicePixelRatio,
             width:  (state.canvas.tiledMode ? 3 : 1) * width  * state.canvas.zoom / window.devicePixelRatio,
             height: (state.canvas.tiledMode ? 3 : 1) * height * state.canvas.zoom / window.devicePixelRatio,
           }}

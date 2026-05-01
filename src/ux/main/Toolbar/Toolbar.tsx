@@ -221,7 +221,8 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   const flyoutRef                           = useRef<HTMLDivElement>(null)
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
-  const pixelToolsDisabled = activeLayer == null || 'type' in activeLayer
+  const pixelToolsDisabled = activeLayer == null
+    || ('type' in activeLayer && activeLayer.type !== 'mask')
   const indexedModeActive  = state.pixelFormat === 'indexed8'
 
   // Single always-mounted listener — no mount/unmount race on each toggle

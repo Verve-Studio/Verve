@@ -37,7 +37,9 @@ interface MacNativeMenuParams {
   handleRedo: () => void
   handleCut: () => void
   handleCopy: () => void
+  handleCopyMerged: () => void
   handlePaste: () => void
+  handlePasteInto: () => void
   handleDelete: () => void
 
   // Content-aware fill
@@ -110,7 +112,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
     handleOpen, handleOpenPath, handleClose, handleCloseAll, handleSave, handleSaveACopy,
     handleClearRecentFiles,
-    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
@@ -175,7 +177,9 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'redo':             handleRedo(); break
       case 'cut':              handleCut(); break
       case 'copy':             handleCopy(); break
+      case 'copyMerged':       handleCopyMerged(); break
       case 'paste':            handlePaste(); break
+      case 'pasteInto':        handlePasteInto(); break
       case 'delete':           handleDelete(); break
       case 'contentAwareFill':    handleOpenCafDialog('fill');   break
       case 'contentAwareDelete':  handleOpenCafDialog('delete'); break
@@ -230,7 +234,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
     handleOpen, handleOpenPath, handleClose, handleCloseAll, handleSave, handleSaveACopy,
     handleClearRecentFiles, recentFiles,
-    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
