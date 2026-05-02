@@ -40,6 +40,17 @@ void pixelops_flood_fill(
                fillR, fillG, fillB, fillA, tolerance);
 }
 
+EMSCRIPTEN_KEEPALIVE
+void pixelops_flood_fill_f32(
+    float* pixels, int width, int height,
+    int startX, int startY,
+    float fillR, float fillG, float fillB, float fillA,
+    float tolerance
+) {
+    fill_flood_f32(pixels, width, height, startX, startY,
+                   fillR, fillG, fillB, fillA, tolerance);
+}
+
 // ─── Generic Convolution (src → dst) ─────────────────────────────────────────
 
 EMSCRIPTEN_KEEPALIVE

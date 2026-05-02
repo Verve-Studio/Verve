@@ -102,6 +102,27 @@ export async function floodFill(
   )
 }
 
+/** Flood-fill for float32 RGBA layers (rgba32f).
+ *  r/g/b/a are in [0,1] (may be >1 for HDR).
+ *  tolerance: per-channel Euclidean threshold in [0,1] float space. */
+export async function floodFillF32(
+  pixels: Float32Array, width: number, height: number,
+  x: number, y: number,
+  r: number, g: number, b: number, a: number,
+  tolerance = 0
+): Promise<Float32Array> {
+  const m = await getPixelOps()
+  const byteLen = pixels.byteLength
+  const ptr = m._malloc(byteLen)
+  try {
+    m.HEAPF32.set(pixels, ptr >> 2)
+    m._pixelops_flood_fill_f32(ptr, width, height, x, y, r, g, b, a, tolerance)
+    return new Float32Array(m.HEAPF32.buffer, ptr, pixels.length).slice()
+  } finally {
+    m._free(ptr)
+  }
+}
+
 /** Generic 2-D convolution. kernelSize must be odd. src and dst are separate. */
 export async function convolve(
   pixels: Uint8Array, width: number, height: number,

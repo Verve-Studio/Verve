@@ -24,6 +24,13 @@ export interface PixelOpsModule {
     tolerance: number
   ): void
 
+  _pixelops_flood_fill_f32(
+    pixelsPtr: number, width: number, height: number,
+    startX: number, startY: number,
+    fillR: number, fillG: number, fillB: number, fillA: number,
+    tolerance: number
+  ): void
+
   _pixelops_convolve(
     srcPtr: number, dstPtr: number,
     width: number, height: number,
