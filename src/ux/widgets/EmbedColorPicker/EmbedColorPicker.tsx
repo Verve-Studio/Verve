@@ -142,6 +142,23 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, pixel
   const [sat, setSat] = useState(initHsv[1])
   const [val, setVal] = useState(initHsv[2])
 
+  // Sync internal state when value is changed externally (e.g. eyedropper).
+  // Use a ref to skip re-syncing on changes that fire() itself triggered.
+  const lastEmittedRef = useRef<{ r: number; g: number; b: number } | null>(null)
+  useEffect(() => {
+    const last = lastEmittedRef.current
+    if (last && Math.abs(last.r - value.r) < 1e-9 && Math.abs(last.g - value.g) < 1e-9 && Math.abs(last.b - value.b) < 1e-9) return
+    const newIntensity = Math.max(1.0, value.r, value.g, value.b)
+    const newR = Math.min(value.r / newIntensity, 1)
+    const newG = Math.min(value.g / newIntensity, 1)
+    const newB = Math.min(value.b / newIntensity, 1)
+    const [h, s, v] = rgbToHsv(newR, newG, newB)
+    setRgb([newR, newG, newB])
+    setIntensity(newIntensity)
+    setHue(h); setSat(s); setVal(v)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.r, value.g, value.b, value.a])
+
   // Draw gradient — re-runs whenever hue/sat/val change, or when the canvas
   // is newly mounted after switching away from grayscaleOnly mode.
   useEffect(() => {
@@ -157,7 +174,9 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, pixel
 
   const fire = useCallback((r: number, g: number, b: number, currentIntensity: number): void => {
     setRgb([r, g, b])
-    onChange({ r: r * currentIntensity, g: g * currentIntensity, b: b * currentIntensity, a: 1 })
+    const emitted = { r: r * currentIntensity, g: g * currentIntensity, b: b * currentIntensity }
+    lastEmittedRef.current = emitted
+    onChange({ ...emitted, a: 1 })
   }, [onChange])
 
   const onGradPointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>): void => {

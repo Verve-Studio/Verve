@@ -36,6 +36,7 @@ export function stampAirbrush(
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   const radius  = size / 2
   const outerR  = antiAlias ? radius + 0.5 : radius
@@ -70,6 +71,7 @@ export function stampAirbrush(
         opacity * coverage,
         touched, sel,
         tiledW, tiledH,
+        srcFloat,
       )
     }
   }
@@ -103,6 +105,7 @@ export function drawAirbrushCapsule(
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   const radius = size / 2
   const outerR = antiAlias ? radius + 0.5 : radius
@@ -155,7 +158,7 @@ export function drawAirbrushCapsule(
       const coverage = edgeFactor * softFactor
       if (coverage <= 0) continue
 
-      blendPixelOver(renderer, layer, px, py, r, g, b, a, opacity * coverage, touched, sel, tiledW, tiledH)
+      blendPixelOver(renderer, layer, px, py, r, g, b, a, opacity * coverage, touched, sel, tiledW, tiledH, srcFloat)
     }
   }
 }
@@ -178,13 +181,14 @@ export function drawAirbrushSegment(
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   const dx = x1 - x0, dy = y1 - y0
   const dist = Math.sqrt(dx * dx + dy * dy)
   const spacing = Math.max(1, size * 0.2)
 
   if (dist === 0) {
-    stampAirbrush(renderer, layer, x0, y0, size, r, g, b, a, opacity, hardness, shape, false, touched, sel, tiledW, tiledH)
+    stampAirbrush(renderer, layer, x0, y0, size, r, g, b, a, opacity, hardness, shape, false, touched, sel, tiledW, tiledH, srcFloat)
     return
   }
 
@@ -193,7 +197,7 @@ export function drawAirbrushSegment(
     const t = i / steps
     const sx = Math.round(x0 + dx * t)
     const sy = Math.round(y0 + dy * t)
-    stampAirbrush(renderer, layer, sx, sy, size, r, g, b, a, opacity, hardness, shape, false, touched, sel, tiledW, tiledH)
+    stampAirbrush(renderer, layer, sx, sy, size, r, g, b, a, opacity, hardness, shape, false, touched, sel, tiledW, tiledH, srcFloat)
   }
 }
 
@@ -226,6 +230,7 @@ export function walkQuadBezier(
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   const arcEst = Math.hypot(cpx - p0x, cpy - p0y) + Math.hypot(p1x - cpx, p1y - cpy)
   // Use the smaller end-size for spacing so the narrowing tip never leaves gaps.
@@ -257,12 +262,13 @@ export function walkQuadBezier(
           hardness, shape, antiAlias,
           touched, sel,
           tiledW, tiledH,
+          srcFloat,
         )
       } else {
-        stampAirbrush(renderer, layer, Math.round(x), Math.round(y), sz, r, g, b, a, op, hardness, shape, antiAlias, touched, sel, tiledW, tiledH)
+        stampAirbrush(renderer, layer, Math.round(x), Math.round(y), sz, r, g, b, a, op, hardness, shape, antiAlias, touched, sel, tiledW, tiledH, srcFloat)
       }
     } else {
-      stampAirbrush(renderer, layer, Math.round(x), Math.round(y), sz, r, g, b, a, op, hardness, shape, antiAlias, touched, sel, tiledW, tiledH)
+      stampAirbrush(renderer, layer, Math.round(x), Math.round(y), sz, r, g, b, a, op, hardness, shape, antiAlias, touched, sel, tiledW, tiledH, srcFloat)
     }
   }
 }

@@ -56,41 +56,37 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   const table: [number, number, number][] = [
     [v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q],
   ]
-  const [r, g, b] = table[i]
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)]
+  return table[i] // returns [0,1] floats
 }
 
 function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
-  const rn = r / 255, gn = g / 255, bn = b / 255
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn), d = max - min
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
   const v = max, s = max === 0 ? 0 : d / max
   let h = 0
   if (d !== 0) {
-    if (max === rn) h = 60 * (((gn - bn) / d + 6) % 6)
-    else if (max === gn) h = 60 * ((bn - rn) / d + 2)
-    else h = 60 * ((rn - gn) / d + 4)
+    if (max === r) h = 60 * (((g - b) / d + 6) % 6)
+    else if (max === g) h = 60 * ((b - r) / d + 2)
+    else h = 60 * ((r - g) / d + 4)
   }
   return [h, s, v]
 }
 
 function toHex6(r: number, g: number, b: number): string {
-  return [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()
+  return [r, g, b].map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('').toUpperCase()
 }
 
 function clamp01(v: number): number { return Math.max(0, Math.min(1, v)) }
-function clamp255(v: number): number { return Math.max(0, Math.min(255, Math.round(v))) }
 
 // ─── Lab color math ───────────────────────────────────────────────────────────
 // sRGB → CIE Lab via D65 illuminant
 
 function linearize(c: number): number {
-  const n = c / 255
-  return n <= 0.04045 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4)
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
 }
 
 function delinearize(c: number): number {
   const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055
-  return clamp255(v * 255)
+  return clamp01(v)
 }
 
 function rgbToLab(r: number, g: number, b: number): [number, number, number] {
@@ -126,21 +122,20 @@ function labToRgb(L: number, a: number, bv: number): [number, number, number] {
 // ─── CMYK color math ──────────────────────────────────────────────────────────
 
 function rgbToCmyk(r: number, g: number, b: number): [number, number, number, number] {
-  const rn = r / 255, gn = g / 255, bn = b / 255
-  const k = 1 - Math.max(rn, gn, bn)
+  const k = 1 - Math.max(r, g, b)
   if (k === 1) return [0, 0, 0, 100]
-  const c = (1 - rn - k) / (1 - k)
-  const m = (1 - gn - k) / (1 - k)
-  const y = (1 - bn - k) / (1 - k)
+  const c = (1 - r - k) / (1 - k)
+  const m = (1 - g - k) / (1 - k)
+  const y = (1 - b - k) / (1 - k)
   return [Math.round(c * 100), Math.round(m * 100), Math.round(y * 100), Math.round(k * 100)]
 }
 
 function cmykToRgb(c: number, m: number, y: number, k: number): [number, number, number] {
   const cn = c / 100, mn = m / 100, yn = y / 100, kn = k / 100
   return [
-    clamp255((1 - cn) * (1 - kn) * 255),
-    clamp255((1 - mn) * (1 - kn) * 255),
-    clamp255((1 - yn) * (1 - kn) * 255),
+    clamp01((1 - cn) * (1 - kn)),
+    clamp01((1 - mn) * (1 - kn)),
+    clamp01((1 - yn) * (1 - kn)),
   ]
 }
 
@@ -182,16 +177,16 @@ function drawGradient(
       switch (mode) {
         case 'S': [pr, pg, pb] = hsvToRgb(u * 360, s, t); break       // x=hue y=val
         case 'B': [pr, pg, pb] = hsvToRgb(u * 360, t, v); break       // x=hue y=sat
-        case 'R': pr = r; pg = clamp255(u * 255); pb = clamp255(t * 255); break // x=G y=B
-        case 'G': pr = clamp255(u * 255); pg = g; pb = clamp255(t * 255); break // x=R y=B
-        case 'Bl': pr = clamp255(u * 255); pg = clamp255(t * 255); pb = b; break // x=R y=G
+        case 'R': pr = r; pg = u; pb = t; break // x=G y=B
+        case 'G': pr = u; pg = g; pb = t; break // x=R y=B
+        case 'Bl': pr = u; pg = t; pb = b; break // x=R y=G
         // Lab gradient: x and y are the OTHER two Lab channels, fixed channel is current
         case 'LL': { const [lL] = rgbToLab(r, g, b); [pr,pg,pb] = labToRgb(lL, u*254-127, t*254-127); break } // x=a, y=b
         case 'La': { const [,la] = rgbToLab(r, g, b); [pr,pg,pb] = labToRgb(t*100, la, u*254-127); break }    // x=b, y=L
         case 'Lb': { const [,,lb] = rgbToLab(r, g, b); [pr,pg,pb] = labToRgb(t*100, u*254-127, lb); break }   // x=a, y=L
       }
       const i = (py * W + px) * 4
-      d[i] = pr; d[i + 1] = pg; d[i + 2] = pb; d[i + 3] = 255
+      d[i] = Math.round(pr * 255); d[i + 1] = Math.round(pg * 255); d[i + 2] = Math.round(pb * 255); d[i + 3] = 255
     }
   }
   ctx.putImageData(img, 0, 0)
@@ -222,9 +217,9 @@ function drawStrip(
     switch (mode) {
       case 'S':  [pr, pg, pb] = hsvToRgb(h, t, v); break             // S varies top→bottom
       case 'B':  [pr, pg, pb] = hsvToRgb(h, s, t); break             // V varies
-      case 'R':  pr = clamp255(t * 255); pg = g; pb = b; break        // R varies
-      case 'G':  pr = r; pg = clamp255(t * 255); pb = b; break        // G varies
-      case 'Bl': pr = r; pg = g; pb = clamp255(t * 255); break        // B varies
+      case 'R':  pr = t; pg = g; pb = b; break        // R varies
+      case 'G':  pr = r; pg = t; pb = b; break        // G varies
+      case 'Bl': pr = r; pg = g; pb = t; break        // B varies
       // Lab strips: the selected channel varies top→bottom
       case 'LL': { const [,la,lbv] = rgbToLab(r,g,b); [pr,pg,pb] = labToRgb(t*100, la, lbv); break }
       case 'La': { const [lL,,lbv] = rgbToLab(r,g,b); [pr,pg,pb] = labToRgb(lL, t*254-127, lbv); break }
@@ -232,7 +227,7 @@ function drawStrip(
     }
     for (let px = 0; px < W; px++) {
       const i = (py * W + px) * 4
-      d[i] = pr; d[i + 1] = pg; d[i + 2] = pb; d[i + 3] = 255
+      d[i] = Math.round(pr * 255); d[i + 1] = Math.round(pg * 255); d[i + 2] = Math.round(pb * 255); d[i + 3] = 255
     }
   }
   ctx.putImageData(img, 0, 0)
@@ -245,9 +240,9 @@ function getGradXY(mode: Mode, h: number, s: number, v: number, r: number, g: nu
     case 'H':  return [s,       1 - v      ]
     case 'S':  return [h / 360, 1 - v      ]
     case 'B':  return [h / 360, 1 - s      ]
-    case 'R':  return [g / 255, 1 - b / 255]
-    case 'G':  return [r / 255, 1 - b / 255]
-    case 'Bl': return [r / 255, 1 - g / 255]
+    case 'R':  return [g,       1 - b      ]
+    case 'G':  return [r,       1 - b      ]
+    case 'Bl': return [r,       1 - g      ]
     // Lab: x=a(-127→127), y=L(100→0) for LL; x=b, y=L for La; x=a, y=L for Lb
     case 'LL': return [(la + 127) / 254, 1 - (lbv + 127) / 254]
     case 'La': return [(lbv + 127) / 254, 1 - lL / 100          ]
@@ -262,9 +257,9 @@ function getStripY(mode: Mode, h: number, s: number, v: number, r: number, g: nu
     case 'H':  return h / 360
     case 'S':  return 1 - s
     case 'B':  return 1 - v
-    case 'R':  return 1 - r / 255
-    case 'G':  return 1 - g / 255
-    case 'Bl': return 1 - b / 255
+    case 'R':  return 1 - r
+    case 'G':  return 1 - g
+    case 'Bl': return 1 - b
     case 'LL': return 1 - lL / 100
     case 'La': return 1 - (la + 127) / 254
     case 'Lb': return 1 - (lbv + 127) / 254
@@ -290,18 +285,21 @@ export function ColorPickerDialog({
   const [val, setVal] = useState(0)
   const [mode, setMode] = useState<Mode>('H')
   const [hexText, setHexText] = useState('')
+  const [intensity, setIntensity] = useState(1)
 
-  // Derive integer RGB from HSV
+  // Derive [0,1] float RGB from HSV
   const [r, g, b] = hsvToRgb(hue, sat, val)
 
   // Reset to initialColor whenever dialog opens
   useEffect(() => {
     if (!open) return
-    const ir = Math.round(Math.min(initialColor.r, 1) * 255)
-    const ig = Math.round(Math.min(initialColor.g, 1) * 255)
-    const ib = Math.round(Math.min(initialColor.b, 1) * 255)
+    const initIntensity = Math.max(1, initialColor.r, initialColor.g, initialColor.b)
+    const ir = Math.min(initialColor.r / initIntensity, 1)
+    const ig = Math.min(initialColor.g / initIntensity, 1)
+    const ib = Math.min(initialColor.b / initIntensity, 1)
     const [nh, ns, nv] = rgbToHsv(ir, ig, ib)
     setHue(nh); setSat(ns); setVal(nv)
+    setIntensity(initIntensity)
     setMode('H')
     setHexText(toHex6(ir, ig, ib))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -314,7 +312,7 @@ export function ColorPickerDialog({
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Enter') onConfirm({ r: r/255, g: g/255, b: b/255, a: 1 })
+      if (e.key === 'Enter') onConfirm({ r: r * intensity, g: g * intensity, b: b * intensity, a: 1 })
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -361,9 +359,9 @@ export function ColorPickerDialog({
       case 'H':  setSat(u); setVal(1 - y); break
       case 'S':  setHue(u * 360); setVal(1 - y); break
       case 'B':  setHue(u * 360); setSat(1 - y); break
-      case 'R': { const ng = clamp255(u * 255), nb = clamp255((1-y)*255); const [nh,ns,nv] = rgbToHsv(r,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
-      case 'G': { const nr = clamp255(u * 255), nb = clamp255((1-y)*255); const [nh,ns,nv] = rgbToHsv(nr,g,nb); setHue(nh);setSat(ns);setVal(nv); break }
-      case 'Bl':{ const nr = clamp255(u * 255), ng = clamp255((1-y)*255); const [nh,ns,nv] = rgbToHsv(nr,ng,b); setHue(nh);setSat(ns);setVal(nv); break }
+      case 'R': { const ng = u, nb = 1-y; const [nh,ns,nv] = rgbToHsv(r,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
+      case 'G': { const nr = u, nb = 1-y; const [nh,ns,nv] = rgbToHsv(nr,g,nb); setHue(nh);setSat(ns);setVal(nv); break }
+      case 'Bl':{ const nr = u, ng = 1-y; const [nh,ns,nv] = rgbToHsv(nr,ng,b); setHue(nh);setSat(ns);setVal(nv); break }
       case 'LL': { const [lL] = rgbToLab(r,g,b); const [nr,ng,nb] = labToRgb(lL, u*254-127, (1-y)*254-127); const [nh,ns,nv] = rgbToHsv(nr,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
       case 'La': { const [,la] = rgbToLab(r,g,b); const [nr,ng,nb] = labToRgb((1-y)*100, la, u*254-127); const [nh,ns,nv] = rgbToHsv(nr,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
       case 'Lb': { const [,,lbv] = rgbToLab(r,g,b); const [nr,ng,nb] = labToRgb((1-y)*100, u*254-127, lbv); const [nh,ns,nv] = rgbToHsv(nr,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
@@ -380,9 +378,9 @@ export function ColorPickerDialog({
       case 'H':  setHue(y * 360); break
       case 'S':  setSat(1 - y); break
       case 'B':  setVal(1 - y); break
-      case 'R': { const nr = clamp255((1-y)*255); const [nh,ns,nv] = rgbToHsv(nr,g,b); setHue(nh);setSat(ns);setVal(nv); break }
-      case 'G': { const ng = clamp255((1-y)*255); const [nh,ns,nv] = rgbToHsv(r,ng,b); setHue(nh);setSat(ns);setVal(nv); break }
-      case 'Bl':{ const nb = clamp255((1-y)*255); const [nh,ns,nv] = rgbToHsv(r,g,nb); setHue(nh);setSat(ns);setVal(nv); break }
+      case 'R': { const nr = 1-y; const [nh,ns,nv] = rgbToHsv(nr,g,b); setHue(nh);setSat(ns);setVal(nv); break }
+      case 'G': { const ng = 1-y; const [nh,ns,nv] = rgbToHsv(r,ng,b); setHue(nh);setSat(ns);setVal(nv); break }
+      case 'Bl':{ const nb = 1-y; const [nh,ns,nv] = rgbToHsv(r,g,nb); setHue(nh);setSat(ns);setVal(nv); break }
       case 'LL': { const [,la,lbv] = rgbToLab(r,g,b); const [nr,ng,nb] = labToRgb((1-y)*100, la, lbv); const [nh,ns,nv] = rgbToHsv(nr,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
       case 'La': { const [lL,,lbv] = rgbToLab(r,g,b); const [nr,ng,nb] = labToRgb(lL, (1-y)*254-127, lbv); const [nh,ns,nv] = rgbToHsv(nr,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
       case 'Lb': { const [lL,la]   = rgbToLab(r,g,b); const [nr,ng,nb] = labToRgb(lL, la, (1-y)*254-127); const [nh,ns,nv] = rgbToHsv(nr,ng,nb); setHue(nh);setSat(ns);setVal(nv); break }
@@ -393,9 +391,9 @@ export function ColorPickerDialog({
   const setH = (v: number): void => { setHue(Math.max(0, Math.min(360, v))) }
   const setS = (v: number): void => { setSat(Math.max(0, Math.min(100, v)) / 100) }
   const setV = (v: number): void => { setVal(Math.max(0, Math.min(100, v)) / 100) }
-  const setR = (v: number): void => { const [nh,ns,nv] = rgbToHsv(clamp255(v),g,b); setHue(nh);setSat(ns);setVal(nv) }
-  const setG = (v: number): void => { const [nh,ns,nv] = rgbToHsv(r,clamp255(v),b); setHue(nh);setSat(ns);setVal(nv) }
-  const setB = (v: number): void => { const [nh,ns,nv] = rgbToHsv(r,g,clamp255(v)); setHue(nh);setSat(ns);setVal(nv) }
+  const setR = (v: number): void => { const [nh,ns,nv] = rgbToHsv(clamp01(v),g,b); setHue(nh);setSat(ns);setVal(nv) }
+  const setG = (v: number): void => { const [nh,ns,nv] = rgbToHsv(r,clamp01(v),b); setHue(nh);setSat(ns);setVal(nv) }
+  const setB = (v: number): void => { const [nh,ns,nv] = rgbToHsv(r,g,clamp01(v)); setHue(nh);setSat(ns);setVal(nv) }
 
   const [labL, labA, labB] = rgbToLab(r, g, b)
   const [cmykC, cmykM, cmykY, cmykK] = rgbToCmyk(r, g, b)
@@ -412,15 +410,15 @@ export function ColorPickerDialog({
     const raw = e.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6).toUpperCase()
     setHexText(raw)
     if (raw.length === 6) {
-      const rv = parseInt(raw.slice(0, 2), 16)
-      const gv = parseInt(raw.slice(2, 4), 16)
-      const bv = parseInt(raw.slice(4, 6), 16)
+      const rv = parseInt(raw.slice(0, 2), 16) / 255
+      const gv = parseInt(raw.slice(2, 4), 16) / 255
+      const bv = parseInt(raw.slice(4, 6), 16) / 255
       const [nh, ns, nv] = rgbToHsv(rv, gv, bv)
       setHue(nh); setSat(ns); setVal(nv)
     }
   }
 
-  const currentHex = `#${toHex6(Math.round(Math.min(initialColor.r,1)*255), Math.round(Math.min(initialColor.g,1)*255), Math.round(Math.min(initialColor.b,1)*255))}`
+  const currentHex = `#${toHex6(Math.min(initialColor.r, 1), Math.min(initialColor.g, 1), Math.min(initialColor.b, 1))}`
   const newHex     = `#${toHex6(r, g, b)}`
 
   if (!open) return null
@@ -473,7 +471,7 @@ export function ColorPickerDialog({
                   type="range" min={0} max={100} step={1}
                   value={Math.round(sat * 100)}
                   className={styles.hsvSlider}
-                  style={{ background: `linear-gradient(to right, rgb(${hsvToRgb(hue, 0, val).join(',')}), rgb(${hsvToRgb(hue, 1, val).join(',')}))` }}
+                  style={{ background: `linear-gradient(to right, rgb(${hsvToRgb(hue, 0, val).map(v => Math.round(v*255)).join(',')}), rgb(${hsvToRgb(hue, 1, val).map(v => Math.round(v*255)).join(',')}))`  }}
                   onChange={(e) => setSat(+e.target.value / 100)}
                 />
                 <span className={styles.hsvValue}>{Math.round(sat * 100)}%</span>
@@ -485,11 +483,25 @@ export function ColorPickerDialog({
                   type="range" min={0} max={100} step={1}
                   value={Math.round(val * 100)}
                   className={styles.hsvSlider}
-                  style={{ background: `linear-gradient(to right, #000, rgb(${hsvToRgb(hue, sat, 1).join(',')}))` }}
+                  style={{ background: `linear-gradient(to right, #000, rgb(${hsvToRgb(hue, sat, 1).map(v => Math.round(v*255)).join(',')}))`  }}
                   onChange={(e) => setVal(+e.target.value / 100)}
                 />
                 <span className={styles.hsvValue}>{Math.round(val * 100)}%</span>
               </div>
+              {/* Intensity (HDR only) */}
+              {pixelFormat === 'rgba32f' && (
+                <div className={styles.hsvRow}>
+                  <span className={styles.hsvLabel}>I</span>
+                  <input
+                    type="range" min={1} max={16} step={0.01}
+                    value={intensity}
+                    className={styles.hsvSlider}
+                    style={{ background: `linear-gradient(to right, rgb(${hsvToRgb(hue, sat, val).map(v => Math.round(v*255)).join(',')}), rgb(255,255,255))` }}
+                    onChange={(e) => setIntensity(+e.target.value)}
+                  />
+                  <span className={styles.hsvValue}>{intensity.toFixed(2)}×</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -498,9 +510,9 @@ export function ColorPickerDialog({
 
             {/* OK / Cancel / Add to Swatches */}
             <DialogButtonRow
-              onConfirm={() => onConfirm({ r: r/255, g: g/255, b: b/255, a: 1 })}
+              onConfirm={() => onConfirm({ r: r * intensity, g: g * intensity, b: b * intensity, a: 1 })}
               onCancel={onCancel}
-              onAddSwatch={onAddSwatch ? () => onAddSwatch({ r: r/255, g: g/255, b: b/255, a: 1 }) : undefined}
+              onAddSwatch={onAddSwatch ? () => onAddSwatch({ r: r * intensity, g: g * intensity, b: b * intensity, a: 1 }) : undefined}
             />
 
             {/* New / Current color preview */}
@@ -550,8 +562,8 @@ export function ColorPickerDialog({
                   <input type="radio" name="cpMode" className={styles.radio} checked={mode === 'R'} onChange={() => setMode('R')} />
                   <span className={styles.fieldLabel}>R:</span>
                   {pixelFormat === 'rgba32f'
-                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat((r/255).toFixed(4))} onChange={(e) => setR(Math.round(+e.target.value * 255))} />
-                    : <input type="number" className={styles.numInput} min={0} max={255} value={r} onChange={(e) => setR(+e.target.value)} />}
+                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat(r.toFixed(4))} onChange={(e) => setR(+e.target.value)} />
+                    : <input type="number" className={styles.numInput} min={0} max={255} value={Math.round(r * 255)} onChange={(e) => setR(+e.target.value / 255)} />}
                 </label>
 
                 {/* G */}
@@ -559,8 +571,8 @@ export function ColorPickerDialog({
                   <input type="radio" name="cpMode" className={styles.radio} checked={mode === 'G'} onChange={() => setMode('G')} />
                   <span className={styles.fieldLabel}>G:</span>
                   {pixelFormat === 'rgba32f'
-                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat((g/255).toFixed(4))} onChange={(e) => setG(Math.round(+e.target.value * 255))} />
-                    : <input type="number" className={styles.numInput} min={0} max={255} value={g} onChange={(e) => setG(+e.target.value)} />}
+                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat(g.toFixed(4))} onChange={(e) => setG(+e.target.value)} />
+                    : <input type="number" className={styles.numInput} min={0} max={255} value={Math.round(g * 255)} onChange={(e) => setG(+e.target.value / 255)} />}
                 </label>
 
                 {/* Blue */}
@@ -568,8 +580,8 @@ export function ColorPickerDialog({
                   <input type="radio" name="cpMode" className={styles.radio} checked={mode === 'Bl'} onChange={() => setMode('Bl')} />
                   <span className={styles.fieldLabel}>B:</span>
                   {pixelFormat === 'rgba32f'
-                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat((b/255).toFixed(4))} onChange={(e) => setB(Math.round(+e.target.value * 255))} />
-                    : <input type="number" className={styles.numInput} min={0} max={255} value={b} onChange={(e) => setB(+e.target.value)} />}
+                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat(b.toFixed(4))} onChange={(e) => setB(+e.target.value)} />
+                    : <input type="number" className={styles.numInput} min={0} max={255} value={Math.round(b * 255)} onChange={(e) => setB(+e.target.value / 255)} />}
                 </label>
 
                 {/* Hex */}

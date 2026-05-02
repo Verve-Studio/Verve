@@ -74,11 +74,13 @@ function createBrushHandler(): ToolHandler {
     ctx: ToolContext,
   ): void {
     const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-    // primaryColor is float [0,∞). walkQuadBezier expects 0-255; clamp to SDR for brush strokes.
+    // primaryColor is float [0,∞). Keep SDR 0-255 values as fallback; pass srcFloat for rgba32f so HDR values >1 are preserved.
     const r = Math.round(Math.min(primaryColor.r, 1) * 255)
     const g = Math.round(Math.min(primaryColor.g, 1) * 255)
     const b = Math.round(Math.min(primaryColor.b, 1) * 255)
     const a = Math.round(primaryColor.a * 255)
+    const srcFloat: readonly [number, number, number, number] | undefined =
+      layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
     const padR = Math.ceil(Math.max(size0, size1) / 2) + 2
     growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
@@ -94,6 +96,7 @@ function createBrushHandler(): ToolHandler {
       brushOptions.motionBlur / 100,
       touched ?? undefined, sel,
       tiledW, tiledH,
+      srcFloat,
     )
 
     // Expand the accumulated dirty rect so flushLayer only uploads the touched area.

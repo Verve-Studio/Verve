@@ -473,6 +473,8 @@ function createPencilHandler(): ToolHandler {
     const g = Math.round(Math.min(primaryColor.g, 1) * 255)
     const b = Math.round(Math.min(primaryColor.b, 1) * 255)
     const a = Math.round(primaryColor.a * 255)
+    const srcFloat: readonly [number, number, number, number] | undefined =
+      layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
     const padR = Math.ceil(pencilOptions.size / 2) + 2
     growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
@@ -490,6 +492,7 @@ function createPencilHandler(): ToolHandler {
       pencilOptions.motionBlur / 100,
       touched ?? undefined, sel,
       tiledW, tiledH,
+      srcFloat,
     )
 
     // In tiled mode, wrapped writes may land anywhere on the layer — skip dirty
@@ -599,6 +602,8 @@ function createPencilHandler(): ToolHandler {
         const g = Math.round(Math.min(primaryColor.g, 1) * 255)
         const b = Math.round(Math.min(primaryColor.b, 1) * 255)
         const a = Math.round(primaryColor.a * 255)  // eslint-disable-line @typescript-eslint/no-unused-vars
+        const srcFloat: readonly [number, number, number, number] | undefined =
+          layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
         const padR = Math.ceil(pencilOptions.size / 2) + 2
         growLayerToFit(x, y, padR)
         const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
@@ -607,6 +612,7 @@ function createPencilHandler(): ToolHandler {
           pencilOptions.size, r, g, b, a, pencilOptions.opacity,
           100, pencilOptions.shape, pencilOptions.antiAlias,
           touched ?? undefined, sel,
+          undefined, undefined, srcFloat,
         )
         renderer.flushLayer(layer)
         render(layers)
