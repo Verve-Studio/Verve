@@ -45,12 +45,14 @@ src/
   utils/                     ← palette, color, layer tree, and miscellaneous utilities
   ux/                        ← all UI components
     main/                    ← layout chrome (Canvas, MenuBar, RightPanel, StatusBar, TabBar, ToolOptionsBar, Toolbar, TopBar, TransformToolbar)
-    modals/                  ← dialogs wrapping ModalDialog
+      RightPanel/            ← hosts sub-panels: ColorPicker, Dock, History, Info, Layers, Navigator, Swatch
+    modals/                  ← dialogs wrapping ModalDialog (AboutDialog, ColorDitheringSetupModal, ColorPickerDialog, ContentAwareFillOptionsDialog, ConvertColorModeDialog, ExportDialog, GeneratePaletteDialog, HdrLdrExportWarningDialog, KeyboardShortcutsDialog, NewImageDialog, PixelBrushesModal, ResizeCanvasDialog, ResizeImageDialog, SplashScreen)
     widgets/                 ← stateless, reusable UI components
     windows/
-      adjustments/           ← one panel component per adjustment type (11)
-      effects/               ← one options component per real-time effect (7)
+      adjustments/           ← one panel component per adjustment type (12)
+      effects/               ← one options component per real-time effect (8)
       filters/               ← one panel component per filter layer (+ LensFlareDialog)
+      HDRPanel/              ← HDR/tone-mapping settings panel
   wasm/                      ← TypeScript wrapper over C++/WASM
 ```
 
@@ -102,7 +104,7 @@ Tab state (multi-document) lives in `useTabs`. Canvas pixel data lives in WebGPU
 
 Avoid re-initializing canvas layers in effects that list `rendererRef.current` as a dependency — use a `hasInitializedRef` guard instead.
 
-**Module-level singletons** (`src/core/store/`): stateful objects that tools and canvas components import directly without going through React. These include `selectionStore` (selection mask + pending geometry), `historyStore`, `clipboardStore`, `adjustmentClipboardStore`, `adjustmentPreviewStore`, `cursorStore`, `cropStore`, `transformStore`, `objectSelectionStore`, and `polygonalSelectionStore`. They are not React state; update them imperatively and call their `notify()` method to trigger subscribers.
+**Module-level singletons** (`src/core/store/`): stateful objects that tools and canvas components import directly without going through React. These include `selectionStore` (selection mask + pending geometry), `historyStore`, `clipboardStore`, `adjustmentClipboardStore`, `adjustmentPreviewStore`, `cursorStore`, `cropStore`, `transformStore`, `objectSelectionStore`, `polygonalSelectionStore`, `cloneStampStore`, `pixelBrushStore`, and `displayStore`. They are not React state; update them imperatively and call their `notify()` method to trigger subscribers.
 
 **`selectedLayerIds`** is kept in `AppState` (not as local panel state) so that hooks like `useLayers` can act on multi-layer selections. Any action that resets the layer stack (`SET_ACTIVE_LAYER`, `REORDER_LAYERS`, `RESTORE_LAYERS`, `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB`) also resets `selectedLayerIds` to `[]`.
 
@@ -165,8 +167,38 @@ Key methods used by tools and layer operations:
 
 Do not bypass `WebGPURenderer` to manipulate pixel data directly.
 
-WGSL shaders live in `src/graphicspipeline/webgpu/shaders/rendering/`:
-- `composite.ts`, `blit.ts`, `checker.ts` — compositing and utility passes
+### Shader file layout
+
+WGSL source lives in standalone `.wgsl` files imported with Vite's `?raw` loader. Each shader category has a `wgsl/` subdirectory next to its `.ts` re-export wrappers:
+
+```
+shaders/
+  rendering/
+    blit.ts / checker.ts / composite.ts   ← ?raw re-export wrappers
+    wgsl/
+      blit.wgsl, hdr-blit.wgsl, checker.wgsl, composite.wgsl
+  compute/
+    adjustments/
+      bloom.ts, brightness-contrast.ts, …  ← ?raw re-export wrappers
+      wgsl/
+        bloom-extract.wgsl, bloom-blur-h.wgsl, bc.wgsl, …
+    filters/
+      gaussian-blur.ts, sharpen.ts, …
+      wgsl/
+        filter-gaussian-h.wgsl, filter-sharpen.wgsl, …
+    grabcut/
+      dataterms.ts, nlinks.ts
+      wgsl/
+        filter-grabcut-dataterms.wgsl, filter-grabcut-nlinks.wgsl
+```
+
+The `.ts` wrapper for each shader is minimal:
+```ts
+import FOO_COMPUTE from './wgsl/foo.wgsl?raw'
+export { FOO_COMPUTE }
+```
+
+When adding a new shader: write the `.wgsl` file in the appropriate `wgsl/` subdirectory, then add a corresponding `?raw` import + re-export in the `.ts` wrapper file. Do not embed WGSL as a TypeScript string.
 
 Adjustment shaders are compiled and registered inside `AdjustmentEncoder.ts`. Filter shaders are compiled inside `filterCompute.ts`.
 
@@ -179,14 +211,14 @@ Layer compositing for flatten/merge/export is centralized in the unified rasteri
 Adjustment layers are non-destructive pixel operations inserted into the layer stack. They are backed by WGSL compute shaders and rendered in real time.
 
 **Registry** (`src/core/operations/adjustments/registry.ts`): every adjustment type is registered with a `label`, `defaultParams`, and a `group`:
-- `'color-adjustments'` — shown in the **Adjustments** top menu (11 types)
-- `'real-time-effects'` — shown in the **Effects** top menu (8 types: bloom, chromatic-aberration, halation, color-key, drop-shadow, glow, outline, halftone)
+- `'color-adjustments'` — shown in the **Adjustments** top menu (12 types)
+- `'real-time-effects'` — shown in the **Effects** top menu (8 types: bloom, chromatic-aberration, halation, color-key, drop-shadow, glow, outline, halftone) — panels live in `src/ux/windows/effects/`
 - `'filters'` — shown in the **Filters** top menu (gaussian-blur, box-blur, radial-blur, motion-blur, remove-motion-blur, lens-blur, sharpen, sharpen-more, unsharp-mask, smart-sharpen, add-noise, film-grain, median-filter, bilateral-filter, reduce-noise, clouds, pixelate). These run through `compute/filterCompute.ts` rather than `AdjustmentEncoder.ts`.
 
 **Adding a new adjustment / effect type:**
 1. Add the `AdjustmentType` literal and its `AdjustmentParamsMap` entry in `src/types/index.ts`.
 2. Register it in `src/core/operations/adjustments/registry.ts` with label, defaults, and group (`'color-adjustments'` or `'real-time-effects'`).
-3. Write the WGSL shader and register it in `src/graphicspipeline/webgpu/AdjustmentEncoder.ts`.
+3. Write the WGSL shader as `src/graphicspipeline/webgpu/shaders/compute/adjustments/wgsl/<name>.wgsl`, add a `?raw` re-export in the corresponding `.ts` wrapper, then register it in `AdjustmentEncoder.ts`.
 4. Add the `AdjustmentRenderOp` variant + uniform dispatch in `AdjustmentEncoder.ts`.
 5. Add the render-plan mapping in `src/ux/main/Canvas/canvasPlan.ts`.
 6. Create a panel component in `src/ux/windows/adjustments/<TypeName>Panel/` or `src/ux/windows/effects/<TypeName>Options/`.
@@ -207,7 +239,7 @@ Filters are **non-destructive** layers, just like adjustment and effect layers. 
 1. Add the new `AdjustmentType` literal and its `AdjustmentParamsMap` entry in `src/types/index.ts` (and the `*AdjustmentLayer` interface + union).
 2. Register it in `src/core/operations/adjustments/registry.ts` with `group: 'filters'` and default params.
 3. Add the corresponding `FilterKey` entry to `src/core/operations/filters/registry.ts` so it appears in the Filters top menu under the right submenu.
-4. Implement the WGSL compute shader under `src/graphicspipeline/webgpu/shaders/compute/filters/` and wire it into `compute/filterCompute.ts` (pipeline construction + `runX` dispatch + `pendingDestroy*` cleanup).
+4. Write the WGSL compute shader as `src/graphicspipeline/webgpu/shaders/compute/filters/wgsl/<name>.wgsl`, add a `?raw` re-export in the `.ts` wrapper, then wire it into `compute/filterCompute.ts` (pipeline construction + `runX` dispatch + `pendingDestroy*` cleanup).
 5. Add the render-plan mapping in `src/ux/main/Canvas/canvasPlan.ts` (one branch per `adjustmentType`).
 6. Create a panel component in `src/ux/windows/filters/<Name>Panel/` (use `filterPanel.module.scss` for styling).
 7. Wire the menu handler in `useFilters` (e.g. `handleOpenFoo = () => onCreateFilterAdjLayer('foo')`).
@@ -261,7 +293,7 @@ Menu order: **File → Edit → Select → Layer → Adjustments → Effects →
 
 - **Select** menu: Invert Selection (`Ctrl+Shift+I`)
 - **Adjustments** menu: all `ADJUSTMENT_REGISTRY` entries with `group: 'color-adjustments'`
-- **Effects** menu: all `ADJUSTMENT_REGISTRY` entries with `group: 'real-time-effects'` (bloom, chromatic-aberration, halation, color-key, drop-shadow, glow, outline)
+- **Effects** menu: all `ADJUSTMENT_REGISTRY` entries with `group: 'real-time-effects'` (bloom, chromatic-aberration, halation, color-key, drop-shadow, glow, outline, halftone)
 - **Layer** menu: New Layer, Duplicate Layer, Delete Layer | Rasterize Layer | Group Layers, Ungroup Layers | Merge Selected, Merge Down, Merge Visible, Flatten Image
 
 ### Pointer / Tablet Input
