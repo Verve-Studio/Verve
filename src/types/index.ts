@@ -52,6 +52,11 @@ export interface RGBColor {
   b: number
 }
 
+/**
+ * Generic RGBA color. Semantics depend on context:
+ * - `AppState.primaryColor` / `secondaryColor`: r/g/b are floats in [0,∞) (>1 = HDR), a ∈ [0,1].
+ * - Swatches, text/shape/adjustment colors: r/g/b/a are integers in [0,255].
+ */
 export interface RGBAColor extends RGBColor {
   a: number
 }
@@ -880,8 +885,4 @@ export interface AppState {
   activePaletteIndex: number
   /** The index of the most recently removed swatch (for layer pixel remap); null otherwise. */
   lastRemovedSwatchIndex: number | null
-  /** HDR intensity multiplier for the active color in rgba32f documents. Range [0, 16]. */
-  hdrIntensity: number
-  /** True when the eyedropper sampled a pixel with float values exceeding 1.0 in rgba32f mode. */
-  eyedropperHdrOverflow: boolean
 }

@@ -72,16 +72,14 @@ export type AppAction =
   | { type: 'SET_PIXEL_FORMAT'; payload: PixelFormat }
   | { type: 'SET_ACTIVE_SWATCH'; payload: number }
   | { type: 'CLEAR_REMOVED_SWATCH_INDEX' }
-  | { type: 'SET_HDR_INTENSITY'; payload: number }
-  | { type: 'SET_EYEDROPPER_HDR_OVERFLOW'; payload: boolean }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const initialState: AppState = {
   activeTool: 'pencil',
   activeShape: 'rectangle',
-  primaryColor: { r: 0, g: 0, b: 0, a: 255 },
-  secondaryColor: { r: 255, g: 255, b: 255, a: 255 },
+  primaryColor: { r: 0, g: 0, b: 0, a: 1 },
+  secondaryColor: { r: 1, g: 1, b: 1, a: 1 },
   swatches: DEFAULT_SWATCHES,
   swatchGroups: [],
   pixelBrushes: [],
@@ -94,8 +92,6 @@ const initialState: AppState = {
   pixelFormat: 'rgba8',
   activePaletteIndex: -1,
   lastRemovedSwatchIndex: null,
-  hdrIntensity: 1.0,
-  eyedropperHdrOverflow: false,
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -436,12 +432,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'CLEAR_REMOVED_SWATCH_INDEX':
       return { ...state, lastRemovedSwatchIndex: null }
 
-    case 'SET_HDR_INTENSITY':
-      return { ...state, hdrIntensity: Math.max(0, Math.min(16, action.payload)) }
-
-    case 'SET_EYEDROPPER_HDR_OVERFLOW':
-      return { ...state, eyedropperHdrOverflow: action.payload }
-
     case 'NEW_CANVAS':
       return {
         ...state,
@@ -449,8 +439,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: 'layer-0',
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -472,8 +460,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -513,8 +499,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -539,8 +523,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,

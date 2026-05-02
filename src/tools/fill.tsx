@@ -69,7 +69,11 @@ function createFillHandler(): ToolHandler {
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
       const { renderer, layer, layers, primaryColor, selectionMask, render, commitStroke, growLayerToFit } = ctx
-      const { r, g, b, a } = primaryColor
+      // primaryColor is float [0,1]. Fill operations use 0-255 values.
+      const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+      const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+      const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+      const a = Math.round(primaryColor.a * 255)
 
       // Grow the layer to cover the full canvas so that clicks on transparent
       // areas outside the initial sparse buffer are still reachable.

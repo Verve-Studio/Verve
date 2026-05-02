@@ -398,12 +398,17 @@ function createPencilHandler(): ToolHandler {
 
   function paintOnePixel(px: number, py: number, ctx: ToolContext): void {
     const { renderer, layer, primaryColor, selectionMask, growLayerToFit } = ctx
-    const { r, g, b, a } = primaryColor
+    const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+    const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+    const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+    const a = Math.round(primaryColor.a * 255)
+    const srcFloat: [number, number, number, number] | undefined =
+      layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
     growLayerToFit(px, py, 2)
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
     const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
     const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
-    blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched ?? undefined, sel, tiledW, tiledH)
+    blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched ?? undefined, sel, tiledW, tiledH, srcFloat)
   }
 
   /**
@@ -464,7 +469,10 @@ function createPencilHandler(): ToolHandler {
     ctx: ToolContext,
   ): void {
     const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-    const { r, g, b, a } = primaryColor
+    const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+    const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+    const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+    const a = Math.round(primaryColor.a * 255)
     const padR = Math.ceil(pencilOptions.size / 2) + 2
     growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
@@ -520,13 +528,16 @@ function createPencilHandler(): ToolHandler {
       // ── indexed8 path ──────────────────────────────────────────────────────
       if (ctx.layer.format === 'indexed8') {
         const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-        const { r, g, b, a } = primaryColor
+        const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+        const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+        const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+        const a = Math.round(primaryColor.a * 255)
         strokeIndex = resolveNearestPaletteIndex(r, g, b, a, ctx.swatches)
         // Snap primary color to the resolved palette entry so the UI updates
         if (strokeIndex < ctx.swatches.length) {
           const sc = ctx.swatches[strokeIndex]
           if (sc.r !== r || sc.g !== g || sc.b !== b || sc.a !== a) {
-            ctx.setColor(sc)
+            ctx.setColor({ r: sc.r/255, g: sc.g/255, b: sc.b/255, a: sc.a/255 })
           }
         }
         indexedTouched = new Map()
@@ -557,7 +568,10 @@ function createPencilHandler(): ToolHandler {
           px = snapped.x; py = snapped.y
         }
         const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-        const { r, g, b, a } = primaryColor
+        const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+        const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+        const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+        const a = Math.round(primaryColor.a * 255)
         const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
         if (brush) {
           const pad = Math.ceil(pencilOptions.size / 2) + 2
@@ -581,7 +595,10 @@ function createPencilHandler(): ToolHandler {
         lastRendered = { x, y }
         lastCtrl     = { x, y }
         const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-        const { r, g, b, a } = primaryColor  // eslint-disable-line @typescript-eslint/no-unused-vars
+        const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+        const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+        const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+        const a = Math.round(primaryColor.a * 255)  // eslint-disable-line @typescript-eslint/no-unused-vars
         const padR = Math.ceil(pencilOptions.size / 2) + 2
         growLayerToFit(x, y, padR)
         const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
@@ -638,7 +655,10 @@ function createPencilHandler(): ToolHandler {
         }
         if (lastPx.x === x1 && lastPx.y === y1) return
         const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-        const { r, g, b, a } = primaryColor
+        const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+        const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+        const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+        const a = Math.round(primaryColor.a * 255)
         const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
 
         if (brush) {
@@ -939,7 +959,12 @@ function PencilOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Ele
     captureSelectionAsBrush(dispatch)
   }, [dispatch])
 
-  const shades = getColorShades(primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a)
+  const shades = getColorShades(
+    Math.round(Math.min(primaryColor.r, 1) * 255),
+    Math.round(Math.min(primaryColor.g, 1) * 255),
+    Math.round(Math.min(primaryColor.b, 1) * 255),
+    Math.round(primaryColor.a * 255),
+  )
 
   const brushBtnLabel = activeBrush ? activeBrush.name : 'Brushes'
 
@@ -976,7 +1001,7 @@ function PencilOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Ele
             outline: 'none',
             boxShadow: i === 2 ? '0 0 0 1px rgba(0,0,0,0.5)' : undefined,
           }}
-          onClick={() => dispatch({ type: 'SET_PRIMARY_COLOR', payload: shade })}
+          onClick={() => dispatch({ type: 'SET_PRIMARY_COLOR', payload: { r: shade.r/255, g: shade.g/255, b: shade.b/255, a: shade.a/255 } })}
         />
       ))}
       <span className={styles.optSep} />

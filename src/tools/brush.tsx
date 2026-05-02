@@ -74,7 +74,11 @@ function createBrushHandler(): ToolHandler {
     ctx: ToolContext,
   ): void {
     const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-    const { r, g, b, a } = primaryColor
+    // primaryColor is float [0,∞). walkQuadBezier expects 0-255; clamp to SDR for brush strokes.
+    const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+    const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+    const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+    const a = Math.round(primaryColor.a * 255)
     const padR = Math.ceil(Math.max(size0, size1) / 2) + 2
     growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)

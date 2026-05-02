@@ -24,7 +24,7 @@ export const shapeOptions = {
 // ─── Color conversion helpers ─────────────────────────────────────────────────
 
 function rgbaToHex(c: RGBAColor): string {
-  return '#' + [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('')
+  return '#' + [c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
 }
 
 function hexToRgba(hex: string, a = 255): RGBAColor {
@@ -34,6 +34,16 @@ function hexToRgba(hex: string, a = 255): RGBAColor {
     g: parseInt(h.slice(2, 4), 16) || 0,
     b: parseInt(h.slice(4, 6), 16) || 0,
     a,
+  }
+}
+
+/** Convert float primary/secondary color [0,1] to shape-space [0,255]. */
+function floatToShape(c: RGBAColor): RGBAColor {
+  return {
+    r: Math.round(Math.min(c.r, 1) * 255),
+    g: Math.round(Math.min(c.g, 1) * 255),
+    b: Math.round(Math.min(c.b, 1) * 255),
+    a: Math.round(c.a * 255),
   }
 }
 
@@ -433,8 +443,8 @@ function createShapeHandler(): ToolHandler {
         shapeType:    shapeOptions.shapeType,
         cx: x, cy: y, w: 1, h: 1, rotation: 0,
         x1: x, y1: y, x2: x, y2: y,
-        strokeColor:  shapeOptions.useStroke ? (shapeOptions.strokeColor ?? { ...ctx.primaryColor })   : null,
-        fillColor:    shapeOptions.useFill   ? (shapeOptions.fillColor   ?? { ...ctx.secondaryColor }) : null,
+        strokeColor:  shapeOptions.useStroke ? (shapeOptions.strokeColor ?? floatToShape(ctx.primaryColor))   : null,
+        fillColor:    shapeOptions.useFill   ? (shapeOptions.fillColor   ?? floatToShape(ctx.secondaryColor)) : null,
         strokeWidth:  shapeOptions.strokeWidth,
         cornerRadius: shapeOptions.cornerRadius,
         antiAlias:    shapeOptions.antiAlias,
@@ -579,8 +589,8 @@ function ShapeOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Elem
   // Keep module-level defaults in sync with current state (for new shapes drawn while
   // this options bar is visible).
   // Derive current colors: active shape takes priority, then stored defaults, then app colors
-  const curStrokeColor: RGBAColor = activeShape?.strokeColor ?? shapeOptions.strokeColor ?? state.primaryColor
-  const curFillColor: RGBAColor   = activeShape?.fillColor   ?? shapeOptions.fillColor   ?? state.secondaryColor
+  const curStrokeColor: RGBAColor = activeShape?.strokeColor ?? shapeOptions.strokeColor ?? floatToShape(state.primaryColor)
+  const curFillColor: RGBAColor   = activeShape?.fillColor   ?? shapeOptions.fillColor   ?? floatToShape(state.secondaryColor)
 
   shapeOptions.shapeType    = curType
   shapeOptions.strokeWidth  = curStrokeWidth
@@ -609,7 +619,7 @@ function ShapeOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Elem
     const next = !curUseStroke
     shapeOptions.useStroke = next
     if (activeShape) {
-      const fallback = shapeOptions.strokeColor ?? state.primaryColor
+      const fallback = shapeOptions.strokeColor ?? floatToShape(state.primaryColor)
       update({ strokeColor: next ? (activeShape.strokeColor ?? { ...fallback }) : null })
     }
   }, [curUseStroke, activeShape, state.primaryColor, update])
@@ -618,7 +628,7 @@ function ShapeOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Elem
     const next = !curUseFill
     shapeOptions.useFill = next
     if (activeShape) {
-      const fallback = shapeOptions.fillColor ?? state.secondaryColor
+      const fallback = shapeOptions.fillColor ?? floatToShape(state.secondaryColor)
       update({ fillColor: next ? (activeShape.fillColor ?? { ...fallback }) : null })
     }
   }, [curUseFill, activeShape, state.secondaryColor, update])

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import type { RGBAColor } from '@/types'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import styles from './EmbedColorPicker.module.scss'
 
@@ -101,9 +102,9 @@ const MODES: PickerMode[] = ['RGB', 'HSV', 'HEX']
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export interface EmbedColorPickerProps {
-  /** Hex string, e.g. `#ff0000` */
-  value: string
-  onChange: (hex: string) => void
+  /** Float RGBA color: r/g/b ∈ [0,∞) (>1 = HDR), a ∈ [0,1]. */
+  value: RGBAColor
+  onChange: (color: RGBAColor) => void
   /**
    * When true, restricts the picker to grayscale only.
    * Used when painting on a layer mask.
@@ -111,12 +112,6 @@ export interface EmbedColorPickerProps {
   grayscaleOnly?: boolean
   /** When true, shows HDR intensity field and float channel readout. */
   isHdrMode?: boolean
-  /** Controlled intensity multiplier (0–16). Used in rgba32f documents. */
-  hdrIntensity?: number
-  /** Called when the user changes the intensity field. */
-  onHdrIntensityChange?: (v: number) => void
-  /** When true, shows HDR badge unconditionally (eyedropper sampled overflow). */
-  eyedropperHdrOverflow?: boolean
 }
 
 /**
@@ -124,13 +119,20 @@ export interface EmbedColorPickerProps {
  * switchable input modes (RGB / HSV / HEX). Contains no portal or positioning
  * logic — wrap it in whatever container / popup you need.
  */
-export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdrMode = false, hdrIntensity = 1.0, onHdrIntensityChange, eyedropperHdrOverflow = false }: EmbedColorPickerProps): React.JSX.Element {
+export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdrMode = false }: EmbedColorPickerProps): React.JSX.Element {
   const gradRef = useRef<HTMLCanvasElement>(null)
   const hueRef  = useRef<HTMLCanvasElement>(null)
 
   const [mode, setMode] = useState<PickerMode>('RGB')
-  const [rgb, setRgb] = useState<[number, number, number]>(() => hexToRgb(value))
-  const initHsv = rgbToHsv(...hexToRgb(value))
+
+  // intensity: HDR multiplier (≥1). rgb is the SDR color direction (0-255).
+  const initIntensity = Math.max(1.0, value.r, value.g, value.b)
+  const initR255 = Math.round(Math.min(value.r / initIntensity, 1) * 255)
+  const initG255 = Math.round(Math.min(value.g / initIntensity, 1) * 255)
+  const initB255 = Math.round(Math.min(value.b / initIntensity, 1) * 255)
+  const [rgb, setRgb] = useState<[number, number, number]>(() => [initR255, initG255, initB255])
+  const [intensity, setIntensity] = useState(() => initIntensity)
+  const initHsv = rgbToHsv(initR255, initG255, initB255)
   const [hue, setHue] = useState(initHsv[0])
   const [sat, setSat] = useState(initHsv[1])
   const [val, setVal] = useState(initHsv[2])
@@ -148,9 +150,9 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
     drawHueStrip(c, hue)
   }, [hue, grayscaleOnly])
 
-  const fire = useCallback((r: number, g: number, b: number): void => {
+  const fire = useCallback((r: number, g: number, b: number, currentIntensity: number): void => {
     setRgb([r, g, b])
-    onChange(toHex(r, g, b))
+    onChange({ r: (r / 255) * currentIntensity, g: (g / 255) * currentIntensity, b: (b / 255) * currentIntensity, a: 1 })
   }, [onChange])
 
   const onGradPointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -160,8 +162,8 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
     const s = clamp((e.clientX - rect.left) / rect.width, 0, 1)
     const v = clamp(1 - (e.clientY - rect.top) / rect.height, 0, 1)
     setSat(s); setVal(v)
-    fire(...hsvToRgb(hue, s, v))
-  }, [hue, fire])
+    fire(...hsvToRgb(hue, s, v), intensity)
+  }, [hue, fire, intensity])
 
   const onHuePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>): void => {
     if (e.type === 'pointerdown') e.currentTarget.setPointerCapture(e.pointerId)
@@ -169,8 +171,8 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
     const rect = e.currentTarget.getBoundingClientRect()
     const h = clamp((e.clientY - rect.top) / rect.height, 0, 1) * 360
     setHue(h)
-    fire(...hsvToRgb(h, sat, val))
-  }, [sat, val, fire])
+    fire(...hsvToRgb(h, sat, val), intensity)
+  }, [sat, val, fire, intensity])
 
   // ── RGB mode ────────────────────────────────────────────────────────────────
 
@@ -181,7 +183,7 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
     const nb = ch === 2 ? c : rgb[2]
     const [h, s, v] = rgbToHsv(nr, ng, nb)
     setHue(h); setSat(s); setVal(v)
-    fire(nr, ng, nb)
+    fire(nr, ng, nb, intensity)
   }
 
   // ── HSV mode ────────────────────────────────────────────────────────────────
@@ -191,7 +193,7 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
     const ns = ch === 1 ? clamp(n / 100, 0, 1) : sat
     const nv = ch === 2 ? clamp(n / 100, 0, 1) : val
     setHue(nh); setSat(ns); setVal(nv)
-    fire(...hsvToRgb(nh, ns, nv))
+    fire(...hsvToRgb(nh, ns, nv), intensity)
   }
 
   // Contextual gradients for HSV sliders
@@ -212,7 +214,7 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
       const [r, g, b] = hexToRgb('#' + hex)
       const [h, s, v] = rgbToHsv(r, g, b)
       setHue(h); setSat(s); setVal(v)
-      fire(r, g, b)
+      fire(r, g, b, intensity)
     }
   }
 
@@ -222,7 +224,7 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
 
   const onGraySlider = (v: number): void => {
     const g = Math.max(0, Math.min(255, v))
-    fire(g, g, g)
+    onChange({ r: g / 255, g: g / 255, b: g / 255, a: 1 })
   }
 
   if (grayscaleOnly) {
@@ -363,17 +365,21 @@ export function EmbedColorPicker({ value, onChange, grayscaleOnly = false, isHdr
               min={0}
               max={16}
               step={0.01}
-              value={hdrIntensity}
+              value={intensity}
               inputWidth={48}
-              onChange={(v) => onHdrIntensityChange?.(Math.max(0, Math.min(16, v)))}
+              onChange={(v) => {
+                const newI = Math.max(0, Math.min(16, v))
+                setIntensity(newI)
+                onChange({ r: (rgb[0] / 255) * newI, g: (rgb[1] / 255) * newI, b: (rgb[2] / 255) * newI, a: 1 })
+              }}
             />
           </div>
           <div className={styles.hdrFloatReadout}>
             {(() => {
-              const fr = (rgb[0] / 255) * hdrIntensity
-              const fg = (rgb[1] / 255) * hdrIntensity
-              const fb = (rgb[2] / 255) * hdrIntensity
-              const isOverflow = eyedropperHdrOverflow || fr > 1.0 || fg > 1.0 || fb > 1.0
+              const fr = (rgb[0] / 255) * intensity
+              const fg = (rgb[1] / 255) * intensity
+              const fb = (rgb[2] / 255) * intensity
+              const isOverflow = fr > 1.0 || fg > 1.0 || fb > 1.0
               return (
                 <>
                   <span className={styles.hdrChannels}>

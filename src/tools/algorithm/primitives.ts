@@ -3,15 +3,6 @@ import type { WebGPURenderer, GpuLayer } from '@/graphicspipeline/webgpu/renderi
 // Selection mask shorthand used by draw/erase helpers.
 export type SelMask = { mask: Uint8Array; width: number }
 
-// HDR paint intensity (rgba32f only). Multiplies the source RGB before
-// Porter-Duff "over" compositing, allowing the picker color to paint
-// super-bright values >1.0 in float canvases. Set by Canvas.tsx whenever
-// AppState.hdrIntensity changes; ignored on rgba8 / indexed8 layers.
-let currentHdrIntensity = 1.0
-export function setHdrPaintIntensity(v: number): void {
-  currentHdrIntensity = Math.max(0, v)
-}
-
 /**
  * Bresenham's line algorithm — plots every integer pixel between (x0,y0) and
  * (x1,y1) inclusive, calling `plot` for each.
@@ -81,6 +72,11 @@ export function blendPixelOver(
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
+  /** Native float [r,g,b,a] in [0,1] (or >1 for HDR) for rgba32f layers.
+   * When provided, bypasses the r/g/b/a ÷ 255 normalisation so no precision
+   * is lost. HDR paint intensity is still applied to RGB internally.
+   * Ignored for rgba8 and indexed8 layers. */
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   // Apply modular wrap BEFORE bounds check and touched-map key computation.
   // This ensures a pixel at (-1, 0) and (W-1, 0) share the same touched-map
@@ -102,7 +98,9 @@ export function blendPixelOver(
   const lx = canvasX - layer.offsetX
   const ly = canvasY - layer.offsetY
   if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight) return
-  const srcA = (a / 255) * (opacity / 100)
+  const srcA = (srcFloat !== undefined && layer.format === 'rgba32f')
+    ? srcFloat[3] * (opacity / 100)
+    : (a / 255) * (opacity / 100)
   if (srcA <= 0) return
 
   let blendA = srcA
@@ -118,13 +116,12 @@ export function blendPixelOver(
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly)
   if (layer.format === 'rgba32f') {
-    // samplePixel/drawPixel operate in [0.0, 1.0] for rgba32f;
-    // incoming r/g/b/a are always 0-255 from tools.
-    // Multiply source RGB by HDR paint intensity (default 1.0) so the picker
-    // can produce super-bright values >1.0 in float canvases.
-    const sr = (r / 255) * currentHdrIntensity
-    const sg = (g / 255) * currentHdrIntensity
-    const sb = (b / 255) * currentHdrIntensity
+    // samplePixel/drawPixel operate in [0.0, 1.0] for rgba32f.
+    // When srcFloat is provided, use it directly (no precision loss from 0-255 round-trip).
+    // Otherwise normalise the 0-255 integer inputs.
+    const sr = srcFloat !== undefined ? srcFloat[0] : r / 255
+    const sg = srcFloat !== undefined ? srcFloat[1] : g / 255
+    const sb = srcFloat !== undefined ? srcFloat[2] : b / 255
     const dstA = ea  // already 0.0-1.0
     const outA = blendA + dstA * (1 - blendA)
     if (outA <= 0) {

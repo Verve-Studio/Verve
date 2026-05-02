@@ -267,7 +267,7 @@ CPU fallback policy:
 ### Drawing / Pixel Operations
 
 - All pixel blending uses **Porter-Duff "over" compositing** via `blendPixelOver` in `src/tools/algorithm/primitives.ts`.
-- `blendPixelOver` callers always pass `r/g/b/a` as **0–255**. The function branches on `layer.format` to normalize and write in the correct native range.
+- `blendPixelOver` callers pass `r/g/b/a` as **0–255** for `rgba8`/`indexed8` layers. For `rgba32f` layers, callers may instead pass a `srcFloat: readonly [number, number, number, number]` in native `[0,1]` (or `>1` for HDR) to bypass the `÷255` normalisation and preserve full float precision. HDR paint intensity is still applied to RGB internally in both paths. The clone stamp always uses `srcFloat` when the source buffer is a `Float32Array`.
 - Track per-stroke coverage with a `Map<number, number>` (key = packed pixel index, value = max effective alpha applied) to prevent opacity accumulation within a single stroke.
 - Thick brush shapes: **circle stamp** for hard edges; **capsule SDF** for anti-aliased thick lines. Both helpers live in `src/tools/algorithm/bresenham.ts`.
 - When adding a new drawing operation, always branch on `layer.format` for `rgba32f` (float math, no rounding) and `indexed8` (palette-index write, no alpha blending). Do not assume `rgba8`.
