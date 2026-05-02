@@ -25,11 +25,12 @@ import { useMacNativeMenu } from '@/core/services/useMacNativeMenu'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { pixelBrushStore } from '@/core/store/pixelBrushStore'
 import { MainWindow } from '@/ux/main/MainWindow/MainWindow'
+import { SplashScreen } from '@/ux/modals/SplashScreen/SplashScreen'
 import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { Tool, LayerState, AdjustmentType, PixelFormat } from '@/types'
 import type { FilterKey } from '@/types'
 import { selectionStore } from '@/core/store/selectionStore'
-import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { f32TransferStore, u8TransferStore } from '@/core/store/layerDataTransfer'
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ function AppContent(): React.JSX.Element {
   } = useTabs(state, dispatch)
 
   // ── History ───────────────────────────────────────────────────────
-  const { captureHistory, pendingLayerLabelRef } = useHistory({
+  const { captureHistory, pendingLayerLabelRef, suppressReadyCaptureRef } = useHistory({
     canvasHandleRef, stateRef, dispatch,
     activeTabIdRef, setTabsRef, setPendingLayerData,
     layers: state.layers,
@@ -119,7 +120,12 @@ function AppContent(): React.JSX.Element {
   const { handleNewConfirm, handleOpen, handleOpenPath, handleSave, handleSaveACopy } = useFileOps({
     canvasHandleRef, state, tabs, activeTabId,
     setTabs, setActiveTabId, setPendingLayerData,
-    captureActiveSnapshot, serializeActiveTabPixels, handleSwitchTab, dispatch,
+    captureActiveSnapshot, serializeActiveTabPixels,
+    handleSwitchTab: useCallback((toId: string) => {
+      suppressReadyCaptureRef.current = true
+      handleSwitchTab(toId)
+    }, [handleSwitchTab, suppressReadyCaptureRef]),
+    dispatch,
     onRecentFilesUpdated: setRecentFiles,
   })
 
@@ -127,7 +133,7 @@ function AppContent(): React.JSX.Element {
   const { handleExportConfirm, pendingLdrExport, clearPendingLdrExport, confirmLdrExport } = useExportOps({ canvasHandleRef, stateRef })
 
   // ── Clipboard ─────────────────────────────────────────────────────
-  const { handleCopy, handleCut, handlePaste, handleDelete } = useClipboard({
+  const { handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete } = useClipboard({
     canvasHandleRef, state, dispatch, captureHistory, pendingLayerLabelRef,
   })
 
@@ -144,7 +150,7 @@ function AppContent(): React.JSX.Element {
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Canvas transforms ─────────────────────────────────────────────
-  const { handleResizeImage, handleResizeCanvas } = useCanvasTransforms({
+  const { handleResizeImage, handleResizeCanvas, handleRotate, handleFlip } = useCanvasTransforms({
     canvasHandleRef, stateRef, captureHistory, dispatch,
     activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef,
     canvasWidth: state.canvas.width, canvasHeight: state.canvas.height,
@@ -254,7 +260,8 @@ function AppContent(): React.JSX.Element {
   const {
     findLayersCounter,
     handleZoomIn, handleZoomOut, handleZoom100,
-    handleFitToWindow, handleToggleGrid,
+    handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
+    handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,
@@ -296,13 +303,8 @@ function AppContent(): React.JSX.Element {
         }
         encoded.set(ls.id, `data:raw/indexed8;base64,${b64}`)
       } else {
-        const lw = geo?.layerWidth ?? stateRef.current.canvas.width
-        const lh = geo?.layerHeight ?? stateRef.current.canvas.height
-        const tmp = document.createElement('canvas')
-        tmp.width = lw; tmp.height = lh
-        const ctx2d = tmp.getContext('2d')!
-        ctx2d.putImageData(new ImageData(new Uint8ClampedArray((raw as Uint8Array).buffer as ArrayBuffer), lw, lh), 0, 0)
-        encoded.set(ls.id, tmp.toDataURL('image/png'))
+        u8TransferStore.set(ls.id, raw as Uint8Array)
+        encoded.set(ls.id, `data:raw/rgba8-ref;id=${ls.id}`)
       }
     }
     setPendingLayerData(encoded)
@@ -337,8 +339,11 @@ function AppContent(): React.JSX.Element {
   }, [requireTransformDecision, dispatch])
 
   const guardedSwitchTab = useCallback((toId: string): void => {
-    requireTransformDecision(() => handleSwitchTab(toId))
-  }, [requireTransformDecision, handleSwitchTab])
+    requireTransformDecision(() => {
+      suppressReadyCaptureRef.current = true
+      handleSwitchTab(toId)
+    })
+  }, [requireTransformDecision, handleSwitchTab, suppressReadyCaptureRef])
 
   const guardedCloseTab = useCallback((toId: string): void => {
     requireTransformDecision(() => handleCloseTab(toId))
@@ -360,7 +365,7 @@ function AppContent(): React.JSX.Element {
 
   // ── Keyboard shortcuts ────────────────────────────────────────────
   useKeyboardShortcuts({
-    handleUndo, handleRedo, handleCopy, handleCut, handlePaste,
+    handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto,
     handleDelete, handleZoomIn, handleZoomOut, handleFitToWindow, handleToggleGrid,
     handleKeyboardShortcuts: useCallback(() => setShowShortcutsDialog(true), []),
     handleFreeTransform: handleEnterTransform,
@@ -401,6 +406,8 @@ function AppContent(): React.JSX.Element {
 
   // ── Computed render values ────────────────────────────────────────
   const hasActiveDocument = tabs.length > 0
+  const [showSplash, setShowSplash] = useState(true)
+  useEffect(() => { if (!hasActiveDocument) setShowSplash(true) }, [hasActiveDocument])
   const tabInfos: TabInfo[] = tabs.map(t => ({ id: t.id, title: t.title, pixelFormat: t.pixelFormat }))
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
@@ -421,7 +428,7 @@ function AppContent(): React.JSX.Element {
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
     handleOpen, handleOpenPath, handleClose, handleCloseAll, handleSave, handleSaveACopy,
     handleClearRecentFiles,
-    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
@@ -429,12 +436,16 @@ function AppContent(): React.JSX.Element {
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleToggleRulers, handleToggleGuides,
+    handleApplyGuidePreset,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
     openNewImageDialog:      () => setShowNewImageDialog(true),
     openExportDialog:        () => setShowExportDialog(true),
     openResizeImageDialog:   () => setShowResizeDialog(true),
     openResizeCanvasDialog:  () => setShowResizeCanvasDialog(true),
+    handleRotate,
+    handleFlip,
     openAboutDialog:         () => setShowAboutDialog(true),
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),
@@ -449,9 +460,18 @@ function AppContent(): React.JSX.Element {
     showGrid:     state.canvas.showGrid,
     tiledMode:    state.canvas.tiledMode,
     showTileGrid: state.canvas.showTileGrid,
+    showRulers:   state.canvas.showRulers,
+    showGuides:   state.canvas.showGuides,
   })
 
   return (
+    <>
+    <SplashScreen
+      open={showSplash && !hasActiveDocument}
+      onClose={() => setShowSplash(false)}
+      onNew={() => { setShowSplash(false); setShowNewImageDialog(true) }}
+      onOpen={() => { setShowSplash(false); void handleOpen() }}
+    />
     <MainWindow
       isMac={isMac}
       activeTool={state.activeTool}
@@ -463,6 +483,8 @@ function AppContent(): React.JSX.Element {
       canvasHeight={state.canvas.height}
       zoom={state.canvas.zoom}
       showGrid={state.canvas.showGrid}
+      showRulers={state.canvas.showRulers}
+      showGuides={state.canvas.showGuides}
       tiledMode={state.canvas.tiledMode}
       showTileGrid={state.canvas.showTileGrid}
       tabs={tabs}
@@ -517,8 +539,10 @@ function AppContent(): React.JSX.Element {
       handleUndo={handleUndo}
       handleRedo={handleRedo}
       handleCopy={handleCopy}
+      handleCopyMerged={handleCopyMerged}
       handleCut={handleCut}
       handlePaste={handlePaste}
+      handlePasteInto={handlePasteInto}
       handleDelete={handleDelete}
       handleNewLayer={handleNewLayer}
       handleDuplicateLayer={handleDuplicateLayer}
@@ -533,11 +557,16 @@ function AppContent(): React.JSX.Element {
       handleUngroupLayers={handleUngroupLayers}
       handleResizeImage={handleResizeImage}
       handleResizeCanvas={handleResizeCanvas}
+      handleRotate={handleRotate}
+      handleFlip={handleFlip}
       handleZoomIn={handleZoomIn}
       handleZoomOut={handleZoomOut}
       handleZoom100={handleZoom100}
       handleFitToWindow={handleFitToWindow}
       handleToggleGrid={handleToggleGrid}
+      handleToggleRulers={handleToggleRulers}
+      handleToggleGuides={handleToggleGuides}
+      handleApplyGuidePreset={handleApplyGuidePreset}
       handleSetNormalMode={handleSetNormalMode}
       handleSetTiledMode={handleSetTiledMode}
       handleToggleTileGrid={handleToggleTileGrid}
@@ -558,6 +587,7 @@ function AppContent(): React.JSX.Element {
       handleOpenFilterDialog={handleOpenFilterDialog}
       requireTransformDecision={requireTransformDecision}
     />
+    </>
   )
 }
 

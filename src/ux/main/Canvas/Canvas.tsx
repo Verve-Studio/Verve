@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import React, { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useWebGPU } from '@/core/services/useWebGPU'
 import { useCanvas } from '@/core/services/useCanvas'
 import { useAppContext } from '@/core/store/AppContext'
@@ -31,10 +31,12 @@ import type { CanvasHandle } from './canvasHandle'
 import { buildRenderPlan as buildCanvasRenderPlan } from './canvasPlan'
 import { useMarchingAnts } from './useMarchingAnts'
 import { useScrollZoom } from './useScrollZoom'
-import { ToneMappingControls } from './ToneMappingControls'
+import { useSpacePan } from './useSpacePan'
+import { useRulers } from './useRulers'
+import { useGuides } from './useGuides'
 import { adjustmentPreviewStore } from '@/core/store/adjustmentPreviewStore'
 import { displayStore } from '@/core/store/displayStore'
-import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { f32TransferStore, u8TransferStore } from '@/core/store/layerDataTransfer'
 import styles from './Canvas.module.scss'
 
 // Re-export so external importers (App.tsx etc.) don't need to change their paths.
@@ -83,6 +85,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   const pixelBrushCursorRef = useRef<HTMLDivElement>(null)
   const canvasWrapperRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const hRulerRef = useRef<HTMLCanvasElement>(null)
+  const vRulerRef = useRef<HTMLCanvasElement>(null)
   const zoomRef = useRef(state.canvas.zoom)
   zoomRef.current = state.canvas.zoom
   const activeToolRef = useRef(state.activeTool)
@@ -250,8 +254,30 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     isActive, isActiveRef, viewportRef, zoomRef, pendingScrollRef, scrollPosRef,
     state.canvas.zoom,
     (zoom) => dispatch({ type: 'SET_ZOOM', payload: zoom }),
+    width, height,
     getSelectionAnchorRef,
   )
+
+  // One-shot: center the viewport on the canvas when this tab first becomes active.
+  // Runs after useScrollZoom's restore effect (declaration order) so it wins on mount.
+  const centeredOnceRef = useRef(false)
+  useLayoutEffect(() => {
+    if (!isActive || centeredOnceRef.current) return
+    const vp = viewportRef.current
+    if (!vp) return
+    centeredOnceRef.current = true
+    const dpr = window.devicePixelRatio
+    const zoom = zoomRef.current
+    const canvasW = width  * zoom / dpr
+    const canvasH = height * zoom / dpr
+    // padding = canvasW (left/right) + canvasH (top/bottom); canvas center at 1.5×size
+    const left = canvasW + canvasW / 2 - vp.clientWidth  / 2
+    const top  = canvasH + canvasH / 2 - vp.clientHeight / 2
+    vp.scrollLeft = Math.max(0, left)
+    vp.scrollTop  = Math.max(0, top)
+    scrollPosRef.current = { left: vp.scrollLeft, top: vp.scrollTop }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Init selection store dimensions once canvas is sized
   useEffect(() => {
@@ -262,6 +288,17 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   // ── Marching ants + crop overlay + polygonal selection overlay ──
   useMarchingAnts(isActive, overlayRef, viewportRef, canvasWrapperRef, zoomRef, activeToolRef)
+  useSpacePan(isActive, viewportRef)
+  useRulers({ showRulers: state.canvas.showRulers, hRulerRef, vRulerRef, viewportRef, canvasWrapperRef, zoom: state.canvas.zoom })
+  const { dragPreview, startGuideDrag } = useGuides({
+    dispatch,
+    showRulers: state.canvas.showRulers,
+    showGuides: state.canvas.showGuides,
+    zoom: state.canvas.zoom,
+    hRulerRef,
+    vRulerRef,
+    canvasWrapperRef,
+  })
 
   // Publish canvas element into shared context (active canvas only)
   useEffect(() => {
@@ -286,40 +323,47 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         const ls = state.layers[i]
 
         if ('type' in ls && ls.type === 'adjustment') {
-          const maskPng = initialLayerData?.get(`${ls.id}:adjustment-mask`)
-          if (maskPng) {
+          const maskData = initialLayerData?.get(`${ls.id}:adjustment-mask`)
+          if (maskData) {
             const maskLayer = renderer.createLayer(`${ls.id}:adjustment-mask`, `${ls.name} Mask`, cw, ch, 0, 0)
-            try {
-              const rgba = await decodePng(maskPng, cw, ch)
-              if (isStale()) return
-              maskLayer.data.set(rgba)
+            if (maskData.startsWith('data:raw/rgba8-ref;id=')) {
+              const u8 = u8TransferStore.take(maskData.slice('data:raw/rgba8-ref;id='.length))
+              if (u8) maskLayer.data.set(u8)
               renderer.flushLayer(maskLayer)
               adjustmentMaskMap.current.set(ls.id, maskLayer)
-            } catch (e) {
-              renderer.destroyLayer(maskLayer)
-              console.error('[Canvas] Failed to load adjustment mask PNG:', e)
+            } else {
+              try {
+                const rgba = await decodePng(maskData, cw, ch)
+                if (isStale()) return
+                maskLayer.data.set(rgba)
+                renderer.flushLayer(maskLayer)
+                adjustmentMaskMap.current.set(ls.id, maskLayer)
+              } catch (e) {
+                renderer.destroyLayer(maskLayer)
+                console.error('[Canvas] Failed to load adjustment mask PNG:', e)
+              }
             }
           }
           continue
         }
 
         let layer
-        const pngData = initialLayerData?.get(ls.id)
-        if (!('type' in ls) && !pngData) {
+        const imageData = initialLayerData?.get(ls.id)
+        if (!('type' in ls) && !imageData) {
           const prev = glLayersRef.current.get(ls.id)
           if (prev) {
             layer = renderer.createLayer(ls.id, ls.name, prev.layerWidth, prev.layerHeight, prev.offsetX, prev.offsetY)
             layer.data.set(prev.data)
           }
         }
-        if (pngData) {
-          // ── Opening a file: pngData may be layer-local, canvas-size, or a raw typed-array blob.
+        if (imageData) {
+          // ── Opening a file: imageData may be layer-local, canvas-size, or a raw typed-array blob.
           const geoKey = `${ls.id}:geo`
           const geoJson = initialLayerData?.get(geoKey)
 
-          if (pngData.startsWith('data:raw/f32-ref;id=')) {
+          if (imageData.startsWith('data:raw/f32-ref;id=')) {
             // rgba32f layer via in-process transfer store (no base64 roundtrip)
-            const refId = pngData.slice('data:raw/f32-ref;id='.length)
+            const refId = imageData.slice('data:raw/f32-ref;id='.length)
             const f32 = f32TransferStore.take(refId)
             if (geoJson) {
               const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
@@ -328,9 +372,20 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
             }
             if (f32) (layer.data as Float32Array).set(f32)
-          } else if (pngData.startsWith('data:raw/f32;base64,')) {
+          } else if (imageData.startsWith('data:raw/rgba8-ref;id=')) {
+            // rgba8 layer via in-process transfer store (no PNG encode/decode roundtrip)
+            const refId = imageData.slice('data:raw/rgba8-ref;id='.length)
+            const u8 = u8TransferStore.take(refId)
+            if (geoJson) {
+              const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
+              layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY, 'rgba8')
+            } else {
+              layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba8')
+            }
+            if (u8) layer.data.set(u8)
+          } else if (imageData.startsWith('data:raw/f32;base64,')) {
             // rgba32f layer: base64-encoded raw Float32Array bytes (file open path)
-            const b64 = pngData.slice('data:raw/f32;base64,'.length)
+            const b64 = imageData.slice('data:raw/f32;base64,'.length)
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
             const f32 = new Float32Array(bytes.buffer)
             if (geoJson) {
@@ -340,9 +395,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, 'rgba32f')
             }
             ;(layer.data as Float32Array).set(f32)
-          } else if (pngData.startsWith('data:raw/indexed8;base64,')) {
+          } else if (imageData.startsWith('data:raw/indexed8;base64,')) {
             // indexed8 layer: base64-encoded raw palette-index bytes
-            const b64 = pngData.slice('data:raw/indexed8;base64,'.length)
+            const b64 = imageData.slice('data:raw/indexed8;base64,'.length)
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
             if (geoJson) {
               const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
@@ -356,7 +411,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             const geo = JSON.parse(geoJson) as { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
             layer = renderer.createLayer(ls.id, ls.name, geo.layerWidth, geo.layerHeight, geo.offsetX, geo.offsetY)
             try {
-              const rgba = await decodePng(pngData, geo.layerWidth, geo.layerHeight)
+              const rgba = await decodePng(imageData, geo.layerWidth, geo.layerHeight)
               if (isStale()) return
               layer.data.set(rgba)
             } catch (e) {
@@ -366,7 +421,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             // Legacy / image import: PNG is canvas-sized
             layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0)
             try {
-              const rgba = await decodePng(pngData, cw, ch)
+              const rgba = await decodePng(imageData, cw, ch)
               if (isStale()) return
               layer.data.set(rgba)
             } catch (e) {
@@ -572,8 +627,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     if (!viewport) return
     const dpr = window.devicePixelRatio
     const zoom = zoomRef.current
-    viewport.scrollLeft = width * zoom / dpr
-    viewport.scrollTop  = height * zoom / dpr
+    // padding = canvasSize*zoom/dpr; middle tile starts at padding + 1×tile = 2×tile
+    viewport.scrollLeft = 2 * width  * zoom / dpr
+    viewport.scrollTop  = 2 * height * zoom / dpr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.canvas.tiledMode, isActive])
 
@@ -944,6 +1000,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       setEyedropperHdrOverflow: (overflow) => {
         dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: overflow })
       },
+      guides: state.canvas.guides,
+      maskMap: buildMaskMap(),
     }
   }
 
@@ -1177,12 +1235,30 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   return (
     <>
+    <div className={`${styles.canvasOuter}${state.canvas.showRulers ? ` ${styles.withRulers}` : ''}`}>
+      {state.canvas.showRulers && <>
+        <div className={styles.rulerCorner} />
+        <canvas ref={hRulerRef} className={styles.hRuler} />
+        <canvas ref={vRulerRef} className={styles.vRuler} />
+      </>}
     <div ref={viewportRef} className={styles.viewport} data-canvas-viewport data-active-viewport={isActive ? '' : undefined}>
-      <div className={styles.viewportInner}>
+      <div
+        className={styles.viewportInner}
+        style={{
+          // Explicit size so browsers count the full area in scrollWidth/scrollHeight.
+          // (Trailing padding on block/flex children is excluded from scroll bounds in Chromium.)
+          // Canvas sits at (canvasCssW, canvasCssH) via absolute positioning on canvasWrapper.
+          width:  `max(100%, ${3 * width  * state.canvas.zoom / window.devicePixelRatio}px)`,
+          height: `max(100%, ${3 * height * state.canvas.zoom / window.devicePixelRatio}px)`,
+        }}
+      >
         <div
           ref={canvasWrapperRef}
           className={styles.canvasWrapper}
           style={{
+            position: 'absolute',
+            left: width  * state.canvas.zoom / window.devicePixelRatio,
+            top:  height * state.canvas.zoom / window.devicePixelRatio,
             width:  (state.canvas.tiledMode ? 3 : 1) * width  * state.canvas.zoom / window.devicePixelRatio,
             height: (state.canvas.tiledMode ? 3 : 1) * height * state.canvas.zoom / window.devicePixelRatio,
           }}
@@ -1239,6 +1315,32 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           />
           <div ref={brushCursorRef} className={styles.brushCursor} />
           <div ref={pixelBrushCursorRef} className={styles.pixelBrushCursor} />
+          {/* Guide overlay */}
+          {state.canvas.showGuides && (() => {
+            const dpr = window.devicePixelRatio || 1
+            const cssPxPerDocPx = state.canvas.zoom / dpr
+            const allGuides = [
+              ...state.canvas.guides,
+              ...(dragPreview ? [{ id: '__preview__', axis: dragPreview.axis, position: dragPreview.position }] : []),
+            ]
+            if (allGuides.length === 0) return null
+            return (
+              <div className={styles.guideContainer}>
+                {allGuides.map(guide => {
+                  const isPreview = guide.id === '__preview__'
+                  const px = guide.position * cssPxPerDocPx
+                  return (
+                    <div
+                      key={guide.id}
+                      className={`${styles.guideHitArea} ${guide.axis === 'h' ? styles.guideH : styles.guideV}${isPreview ? ` ${styles.guidePreview}` : ''}`}
+                      style={guide.axis === 'h' ? { top: px } : { left: px }}
+                      onPointerDown={!isPreview ? (e) => startGuideDrag(e, guide.id, guide.axis) : undefined}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })()}
           {state.canvas.showGrid && (() => {
             const { gridType, gridColor, gridSize, zoom } = state.canvas
             const dpr = window.devicePixelRatio
@@ -1294,7 +1396,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       {/* Marching-ants overlay: viewport-sized, screen-space, never scrolls */}
       <canvas ref={overlayRef} className={styles.antsOverlay} />
     </div>
-    <ToneMappingControls pixelFormat={state.pixelFormat} />
+    </div>
     <TextLayerEditor
       editingLayerId={editingLayerId}
       layers={state.layers}

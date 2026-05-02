@@ -37,6 +37,12 @@ export type AppAction =
   | { type: 'SET_GRID_SIZE'; payload: number }
   | { type: 'SET_GRID_COLOR'; payload: string }
   | { type: 'SET_GRID_TYPE'; payload: GridType }
+  | { type: 'TOGGLE_RULERS' }
+  | { type: 'TOGGLE_GUIDES' }
+  | { type: 'ADD_GUIDE'; payload: { id: string; axis: 'h' | 'v'; position: number } }
+  | { type: 'MOVE_GUIDE'; payload: { id: string; position: number } }
+  | { type: 'DELETE_GUIDE'; payload: string }
+  | { type: 'CLEAR_GUIDES' }
   | { type: 'SET_HISTORY'; payload: { canUndo: boolean; canRedo: boolean } }
   | { type: 'NEW_CANVAS'; payload: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat } }
   | { type: 'OPEN_FILE'; payload: { width: number; height: number; layers: LayerState[]; activeLayerId: string | null; pixelFormat?: PixelFormat } }
@@ -82,7 +88,7 @@ const initialState: AppState = {
   layers: [{ id: 'layer-0', name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }],
   activeLayerId: 'layer-0',
   selectedLayerIds: [],
-  canvas: { width: 512, height: 512, zoom: 1, panX: 0, panY: 0, showGrid: false, gridSize: 16, gridColor: '#808080', gridType: 'normal' as GridType, backgroundFill: 'white', key: 0, tiledMode: false, showTileGrid: false },
+  canvas: { width: 512, height: 512, zoom: 1, panX: 0, panY: 0, showGrid: false, gridSize: 16, gridColor: '#808080', gridType: 'normal' as GridType, backgroundFill: 'white', key: 0, tiledMode: false, showTileGrid: false, showRulers: false, showGuides: true, guides: [] },
   history: { canUndo: false, canRedo: false },
   openAdjustmentLayerId: null,
   pixelFormat: 'rgba8',
@@ -378,6 +384,24 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'TOGGLE_GRID':
       return { ...state, canvas: { ...state.canvas, showGrid: !state.canvas.showGrid } }
 
+    case 'TOGGLE_RULERS':
+      return { ...state, canvas: { ...state.canvas, showRulers: !state.canvas.showRulers } }
+
+    case 'TOGGLE_GUIDES':
+      return { ...state, canvas: { ...state.canvas, showGuides: !state.canvas.showGuides } }
+
+    case 'ADD_GUIDE':
+      return { ...state, canvas: { ...state.canvas, guides: [...state.canvas.guides, action.payload] } }
+
+    case 'MOVE_GUIDE':
+      return { ...state, canvas: { ...state.canvas, guides: state.canvas.guides.map(g => g.id === action.payload.id ? { ...g, position: action.payload.position } : g) } }
+
+    case 'DELETE_GUIDE':
+      return { ...state, canvas: { ...state.canvas, guides: state.canvas.guides.filter(g => g.id !== action.payload) } }
+
+    case 'CLEAR_GUIDES':
+      return { ...state, canvas: { ...state.canvas, guides: [] } }
+
     case 'SET_TILED_MODE':
       return {
         ...state,
@@ -435,6 +459,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           zoom: 1,
           panX: 0,
           panY: 0,
+          guides: [],
           key: state.canvas.key + 1
         },
         history: { canUndo: false, canRedo: false }
@@ -456,6 +481,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           zoom: 1,
           panX: 0,
           panY: 0,
+          guides: [],
           key: state.canvas.key + 1
         },
         history: { canUndo: false, canRedo: false }

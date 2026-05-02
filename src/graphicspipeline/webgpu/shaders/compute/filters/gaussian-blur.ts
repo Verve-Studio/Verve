@@ -1,75 +1,10 @@
-import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
-export const FILTER_GAUSSIAN_H_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-struct GaussianBlurParams {
-  radius : u32,
-  _pad0  : u32,
-  _pad1  : u32,
-  _pad2  : u32,
-}
+import FILTER_GAUSSIAN_H_COMPUTE from './wgsl/filter-gaussian-h.wgsl?raw'
+export { FILTER_GAUSSIAN_H_COMPUTE }
 
-@group(0) @binding(0) var srcTex          : texture_2d<f32>;
-@group(0) @binding(1) var smp             : sampler;
-@group(0) @binding(2) var<uniform> params : GaussianBlurParams;
-
-@fragment
-fn fs_gaussian_h(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let dims     = textureDimensions(srcTex);
-  let coord    = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let sigma    = max(f32(params.radius), 1.0) / 3.0;
-  let inv2sig2 = 1.0 / (2.0 * sigma * sigma);
-  let maxR     = i32(params.radius);
-
-  var weightSum = 0.0;
-  var colorSum  = vec4f(0.0);
-
-  for (var x = -maxR; x <= maxR; x++) {
-    let w  = exp(-f32(x * x) * inv2sig2);
-    let sx = clamp(coord.x + x, 0, i32(dims.x) - 1);
-    colorSum  += textureLoad(srcTex, vec2i(sx, coord.y), 0) * w;
-    weightSum += w;
-  }
-
-  return colorSum * (1.0 / weightSum);
-}
-` as const
-
-export const FILTER_GAUSSIAN_V_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-struct GaussianBlurParams {
-  radius : u32,
-  _pad0  : u32,
-  _pad1  : u32,
-  _pad2  : u32,
-}
-
-@group(0) @binding(0) var srcTex          : texture_2d<f32>;
-@group(0) @binding(1) var smp             : sampler;
-@group(0) @binding(2) var<uniform> params : GaussianBlurParams;
-
-@fragment
-fn fs_gaussian_v(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let dims     = textureDimensions(srcTex);
-  let coord    = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let sigma    = max(f32(params.radius), 1.0) / 3.0;
-  let inv2sig2 = 1.0 / (2.0 * sigma * sigma);
-  let maxR     = i32(params.radius);
-
-  var weightSum = 0.0;
-  var colorSum  = vec4f(0.0);
-
-  for (var y = -maxR; y <= maxR; y++) {
-    let w  = exp(-f32(y * y) * inv2sig2);
-    let sy = clamp(coord.y + y, 0, i32(dims.y) - 1);
-    colorSum  += textureLoad(srcTex, vec2i(coord.x, sy), 0) * w;
-    weightSum += w;
-  }
-
-  return colorSum * (1.0 / weightSum);
-}
-` as const
+import FILTER_GAUSSIAN_V_COMPUTE from './wgsl/filter-gaussian-v.wgsl?raw'
+export { FILTER_GAUSSIAN_V_COMPUTE }
 
 export async function runGaussianBlur(
   device: GPUDevice,

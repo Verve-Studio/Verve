@@ -201,14 +201,14 @@ These live in `CurvesPanel` local state/refs because they are UI-session state, 
 
 ### `.verve` documents
 
-`useFileOps.ts` already persists `state.layers` as JSON layer records plus optional `pngData` / `layerGeo`. Curves layer params will therefore persist automatically once the type is added. The missing piece is the baked selection mask.
+`useFileOps.ts` already persists `state.layers` as JSON layer records plus optional `imageData` / `layerGeo`. Curves layer params will therefore persist automatically once the type is added. The missing piece is the baked selection mask.
 
 For any adjustment layer with `hasMask = true`, `handleSave()` must include:
 
 ```ts
 layers: state.layers.map(layer => ({
   ...layer,
-  pngData: layerPngs[layer.id] ?? null,
+  imageData: layerPngs[layer.id] ?? null,
   layerGeo: layerGeos[layer.id] ?? null,
   adjustmentMaskPng: adjustmentMaskPngs[layer.id] ?? null,
 }))

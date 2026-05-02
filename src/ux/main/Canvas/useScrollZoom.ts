@@ -3,21 +3,16 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 /**
  * Manages zoom-to-cursor (Ctrl+scroll) and scroll-position save/restore.
  *
- * @param isActive        Whether this canvas tab is currently visible.
- * @param isActiveRef     Ref mirror of isActive (readable inside async/event handlers).
- * @param viewportRef     Ref to the scrollable viewport div.
- * @param zoomRef         Ref that always holds the current zoom level.
- * @param pendingScrollRef   Written by the wheel handler; consumed by the layout effect.
- * @param scrollPosRef    Persists scroll position across tab switches.
- * @param zoom            Current zoom level (used as layout-effect dependency).
- * @param onZoom          Called with the new zoom value when Ctrl+scroll fires.
- * @param getSelectionAnchorRef  Ref to a callback that returns the selection centroid in
- *                        **image-pixel** space, or null when there is no active selection.
- *                        When provided:
- *                        - Ctrl+scroll zooms toward the centroid's current viewport position.
- *                        - Navigator/toolbar zoom centers the viewport on the centroid.
- *                        Falls back to cursor (Ctrl+scroll) or viewport-centre (Navigator)
- *                        when null.
+ * The viewport-inner div has inline padding = canvasHeight (top/bottom) and
+ * canvasWidth (left/right) in CSS px, so the canvas is always at scroll offset
+ * (paddingLeft, paddingTop) and the viewport is always scrollable at any zoom.
+ *
+ * With this layout the padding terms cancel in the zoom formulas, leaving:
+ *   scrollLeft' = (scrollLeft + anchorX) * r - anchorX   (r = newZoom/oldZoom)
+ *
+ * @param canvasWidth   Image pixel width  (used for selection-centroid repositioning)
+ * @param canvasHeight  Image pixel height (used for selection-centroid repositioning)
+ * @param getSelectionAnchorRef  Returns selection centroid in image-pixel space, or null.
  */
 export function useScrollZoom(
   isActive: boolean,
@@ -28,11 +23,16 @@ export function useScrollZoom(
   scrollPosRef: React.MutableRefObject<{ left: number; top: number }>,
   zoom: number,
   onZoom: (zoom: number) => void,
+  canvasWidth: number,
+  canvasHeight: number,
   getSelectionAnchorRef?: React.RefObject<(() => { x: number; y: number } | null) | null>,
 ): void {
-  // Track previous zoom so the layout effect can compute the image-space centre
-  // before the zoom change when no explicit pending scroll was set.
   const prevZoomRef = useRef(zoom)
+  // Keep canvas dims accessible in layout effects without stale closures.
+  const canvasWidthRef  = useRef(canvasWidth)
+  canvasWidthRef.current  = canvasWidth
+  const canvasHeightRef = useRef(canvasHeight)
+  canvasHeightRef.current = canvasHeight
 
   // Ctrl+scroll → zoom to selection centroid (if active) or cursor position
   useEffect(() => {
@@ -52,17 +52,20 @@ export function useScrollZoom(
       const newZoom = parseFloat(
         Math.min(32, Math.max(0.05, oldZoom * factor)).toFixed(4)
       )
-      // Anchor: selection centroid (in viewport CSS-px) when available, else cursor
+      const r = newZoom / oldZoom
+      // Anchor: selection centroid (in viewport CSS-px) when available, else cursor.
+      // With padding = canvasSize*zoom/dpr on each side, the VIEWPORT_PADDING terms
+      // cancel: scrollLeft' = (scrollLeft + anchorX) * r - anchorX
       const anchor = getSelectionAnchorRef?.current?.()
       const anchorX = anchor
-        ? anchor.x * oldZoom / dpr - vp.scrollLeft
+        ? canvasWidthRef.current  * oldZoom / dpr + anchor.x * oldZoom / dpr - vp.scrollLeft
         : e.clientX - rect.left
       const anchorY = anchor
-        ? anchor.y * oldZoom / dpr - vp.scrollTop
+        ? canvasHeightRef.current * oldZoom / dpr + anchor.y * oldZoom / dpr - vp.scrollTop
         : e.clientY - rect.top
       pendingScrollRef.current = {
-        scrollLeft: (vp.scrollLeft + anchorX) * (newZoom / oldZoom) - anchorX,
-        scrollTop:  (vp.scrollTop  + anchorY) * (newZoom / oldZoom) - anchorY,
+        scrollLeft: (vp.scrollLeft + anchorX) * r - anchorX,
+        scrollTop:  (vp.scrollTop  + anchorY) * r - anchorY,
       }
       onZoom(newZoom)
     }
@@ -115,17 +118,18 @@ export function useScrollZoom(
     // a menu action. Reposition so the anchor stays visually centred.
     if (oldZoom === zoom) return
     const dpr = window.devicePixelRatio
+    const r = zoom / oldZoom
     const anchor = getSelectionAnchorRef?.current?.()
     if (anchor) {
       // Centre the viewport on the selection centroid at the new zoom level.
-      vp.scrollLeft = anchor.x * zoom / dpr - vp.clientWidth  / 2
-      vp.scrollTop  = anchor.y * zoom / dpr - vp.clientHeight / 2
+      // paddingLeft_new = canvasWidth * zoom/dpr
+      vp.scrollLeft = (canvasWidthRef.current  + anchor.x) * zoom / dpr - vp.clientWidth  / 2
+      vp.scrollTop  = (canvasHeightRef.current + anchor.y) * zoom / dpr - vp.clientHeight / 2
     } else {
       // Keep the current viewport centre stable in image space.
-      const centreImgX = (vp.scrollLeft + vp.clientWidth  / 2) / (oldZoom / dpr)
-      const centreImgY = (vp.scrollTop  + vp.clientHeight / 2) / (oldZoom / dpr)
-      vp.scrollLeft = centreImgX * zoom / dpr - vp.clientWidth  / 2
-      vp.scrollTop  = centreImgY * zoom / dpr - vp.clientHeight / 2
+      // Simplifies to: scrollLeft' = (scrollLeft + clientWidth/2) * r - clientWidth/2
+      vp.scrollLeft = (vp.scrollLeft + vp.clientWidth  / 2) * r - vp.clientWidth  / 2
+      vp.scrollTop  = (vp.scrollTop  + vp.clientHeight / 2) * r - vp.clientHeight / 2
     }
   }, [zoom]) // eslint-disable-line react-hooks/exhaustive-deps
 }

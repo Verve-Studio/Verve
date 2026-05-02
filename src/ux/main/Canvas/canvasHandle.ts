@@ -36,6 +36,12 @@ export interface CanvasHandle {
   clearLayerPixels: (layerId: string, mask: Uint8Array) => void
   /** Snapshot all current layers' raw pixel data + geometry for history. */
   captureAllLayerPixels: () => Map<string, Uint8Array | Float32Array>
+  /**
+   * Return direct references to layer data buffers — no copy.
+   * Only safe when the Canvas is about to unmount (tab switch / file open).
+   * Do NOT use for history capture.
+   */
+  borrowAllLayerPixels: () => Map<string, Uint8Array | Float32Array>
   /** Snapshot per-layer geometry (width/height/offset). */
   captureAllLayerGeometry: () => Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>
   /** Snapshot baked selection masks for adjustment layers. */
@@ -81,6 +87,13 @@ export interface CanvasHandle {
   writeLayerIndexData: (layerId: string, indexData: Uint8Array) => void
   /** Return the GpuLayer object for a given layer ID, or null if not found. */
   getGpuLayer: (layerId: string) => GpuLayer | null
+  /**
+   * Pre-populate a mask layer's GPU data from a selection mask before dispatching ADD_MASK_LAYER.
+   * selPixels is a canvas-sized Uint8Array (1 byte/pixel, 0–255) from selectionStore.mask.
+   * Canvas.tsx's layer-init effect skips layers already in glLayersRef, so the mask
+   * will use this data instead of the default all-white fill.
+   */
+  prepareMaskLayer: (maskId: string, maskName: string, selPixels: Uint8Array) => void
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -328,6 +341,15 @@ export function useCanvasHandle({
       return result
     },
 
+    borrowAllLayerPixels: () => {
+      const result = new Map<string, Uint8Array | Float32Array>()
+      for (const ls of layersStateRef.current) {
+        const layer = glLayersRef.current.get(ls.id)
+        if (layer) result.set(ls.id, layer.data as Uint8Array | Float32Array)
+      }
+      return result
+    },
+
     captureAllLayerGeometry: () => {
       const result = new Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>()
       for (const ls of layersStateRef.current) {
@@ -422,7 +444,7 @@ export function useCanvasHandle({
     getAdjustmentMaskPixels: (adjustmentLayerId) => {
       const maskLayer = adjustmentMaskMap.current.get(adjustmentLayerId)
       if (!maskLayer) return null
-      return maskLayer.data.slice()
+      return maskLayer.data as Uint8Array | Float32Array
     },
 
     writeLayerPixels: (layerId, pixels) => {
@@ -579,5 +601,23 @@ export function useCanvasHandle({
     },
 
     getGpuLayer: (layerId) => glLayersRef.current.get(layerId) ?? null,
+
+    prepareMaskLayer: (maskId, maskName, selPixels) => {
+      const renderer = rendererRef.current
+      if (!renderer) return
+      const w = renderer.pixelWidth
+      const h = renderer.pixelHeight
+      const layer = renderer.createLayer(maskId, maskName, w, h, 0, 0)
+      for (let i = 0; i < w * h; i++) {
+        const v = selPixels[i] ?? 0
+        layer.data[i * 4]     = v
+        layer.data[i * 4 + 1] = v
+        layer.data[i * 4 + 2] = v
+        layer.data[i * 4 + 3] = 255
+      }
+      renderer.flushLayer(layer)
+      glLayersRef.current.set(maskId, layer)
+      // No render here — the caller will trigger a render via dispatch
+    },
   }), [width, height]) // eslint-disable-line react-hooks/exhaustive-deps
 }

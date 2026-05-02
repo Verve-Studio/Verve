@@ -1,8 +1,8 @@
 import type { AppAction } from '@/core/store/AppContext'
-import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
+import { historyStore } from '@/core/store/historyStore'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
-import { DEFAULT_SWATCHES, INITIAL_SNAPSHOT, makeTabId } from '@/core/store/tabTypes'
-import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { DEFAULT_SWATCHES } from '@/core/store/tabTypes'
+import { f32TransferStore, u8TransferStore } from '@/core/store/layerDataTransfer'
 import { displayStore } from '@/core/store/displayStore'
 import type { AppState } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
@@ -46,22 +46,8 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [])
 
-  const initialTabId = useRef(makeTabId()).current
-  const [tabs, setTabs] = useState<TabRecord[]>([{
-    id: initialTabId,
-    title: 'Untitled-1',
-    filePath: null,
-    snapshot: INITIAL_SNAPSHOT,
-    savedLayerData: null,
-    savedHistory: null,
-    canvasKey: 1,
-    tiledMode: false,
-    showTileGrid: false,
-    pixelFormat: 'rgba8',
-    exposureEV: 0,
-    toneMappingOperator: 'reinhard',
-  }])
-  const [activeTabId, setActiveTabId]         = useState(initialTabId)
+  const [tabs, setTabs] = useState<TabRecord[]>([])
+  const [activeTabId, setActiveTabId]         = useState('')
   const [pendingLayerData, setPendingLayerData] = useState<Map<string, string> | null>(null)
 
   // Keep refs in sync each render so async closures always see fresh values
@@ -95,19 +81,21 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   /** Encode every active layer's pixel data into Map<layerId, dataURL> (+ geometry entries).
    *  Must be called while the active tab's Canvas is still mounted. Returns null if no data. */
   const serializeActiveTabPixels = useCallback((): Map<string, string> | null => {
-    const layerPixels = canvasHandleRef.current?.captureAllLayerPixels()
+    const layerPixels = canvasHandleRef.current?.borrowAllLayerPixels()
     if (!layerPixels || layerPixels.size === 0) return null
     const layerGeo = canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map()
     const snap = captureActiveSnapshot()
     const result = new Map<string, string>()
+    const tabId = activeTabIdRef.current
     for (const [id, pixels] of layerPixels) {
       const geo = layerGeo.get(id)
       const lw = geo?.layerWidth ?? snap.canvasWidth
       const lh = geo?.layerHeight ?? snap.canvasHeight
       if ((pixels as unknown) instanceof Float32Array) {
-        // rgba32f layer — store directly, avoid base64 roundtrip
-        f32TransferStore.set(id, pixels as unknown as Float32Array)
-        result.set(id, `data:raw/f32-ref;id=${id}`)
+        // rgba32f layer — use compound key to avoid cross-tab collisions
+        const storeKey = `${tabId}:${id}`
+        f32TransferStore.set(storeKey, pixels as unknown as Float32Array)
+        result.set(id, `data:raw/f32-ref;id=${storeKey}`)
       } else if (pixels.length === lw * lh) {
         // indexed8 layer — 1 byte/pixel palette indices, base64-encode
         const u8 = pixels as Uint8Array
@@ -118,18 +106,21 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
         }
         result.set(id, `data:raw/indexed8;base64,${b64}`)
       } else {
-        const tmp = document.createElement('canvas')
-        tmp.width = lw; tmp.height = lh
-        const ctx2d = tmp.getContext('2d')!
-        ctx2d.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), lw, lh), 0, 0)
-        result.set(id, tmp.toDataURL('image/png'))
+        // rgba8 layer — use compound key to avoid cross-tab collisions
+        const storeKey = `${tabId}:${id}`
+        u8TransferStore.set(storeKey, pixels as Uint8Array)
+        result.set(id, `data:raw/rgba8-ref;id=${storeKey}`)
       }
       if (geo) result.set(`${id}:geo`, JSON.stringify(geo))
     }
     for (const layer of snap.layers) {
       if (!('type' in layer) || layer.type !== 'adjustment') continue
-      const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(layer.id)
-      if (maskPng) result.set(`${layer.id}:adjustment-mask`, maskPng)
+      const maskPixels = canvasHandleRef.current?.getAdjustmentMaskPixels(layer.id)
+      if (maskPixels) {
+        const storeKey = `${tabId}:${layer.id}:mask`
+        u8TransferStore.set(storeKey, maskPixels as Uint8Array)
+        result.set(`${layer.id}:adjustment-mask`, `data:raw/rgba8-ref;id=${storeKey}`)
+      }
     }
     return result
   }, [canvasHandleRef, captureActiveSnapshot])
@@ -172,7 +163,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   const handleSwitchTab = useCallback((toId: string): void => {
     if (toId === activeTabId) return
     const snapshot        = captureActiveSnapshot()
-    const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+    const savedHistory    = historyStore.detach()
     const savedLayerData  = serializeActiveTabPixels()
     const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator } : t)
     setTabs(updated)

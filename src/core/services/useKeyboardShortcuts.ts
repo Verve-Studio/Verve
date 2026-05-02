@@ -8,8 +8,10 @@ interface UseKeyboardShortcutsOptions {
   handleUndo:               () => void
   handleRedo:               () => void
   handleCopy:               () => void
+  handleCopyMerged?:        () => void
   handleCut:                () => void
   handlePaste:              () => void
+  handlePasteInto?:         () => void
   handleDelete:             () => void
   handleZoomIn:             () => void
   handleZoomOut:            () => void
@@ -42,8 +44,10 @@ export function useKeyboardShortcuts({
   handleUndo,
   handleRedo,
   handleCopy,
+  handleCopyMerged,
   handleCut,
   handlePaste,
+  handlePasteInto,
   handleDelete,
   handleZoomIn,
   handleZoomOut,
@@ -88,8 +92,10 @@ export function useKeyboardShortcuts({
       const k = e.key.toLowerCase()
       if      (k === 'z')                              { e.preventDefault(); handleUndo() }
       else if (k === 'y')                              { e.preventDefault(); handleRedo() }
+      else if (k === 'c' && e.shiftKey)                { e.preventDefault(); handleCopyMerged?.() }
       else if (k === 'c')                              { e.preventDefault(); handleCopy() }
       else if (k === 'x')                              { e.preventDefault(); handleCut() }
+      else if (k === 'v' && e.shiftKey)                { e.preventDefault(); handlePasteInto?.() }
       else if (k === 'v')                              { e.preventDefault(); handlePaste() }
       else if (k === '=' || k === '+')                 { e.preventDefault(); handleZoomIn() }
       else if (k === '-')                              { e.preventDefault(); handleZoomOut() }
@@ -114,5 +120,5 @@ export function useKeyboardShortcuts({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [handleUndo, handleRedo, handleCopy, handleCut, handlePaste, handleDelete, handleZoomIn, handleZoomOut, handleFitToWindow, handleToggleGrid, handleKeyboardShortcuts, handleFreeTransform, handleInvertSelection, handleSelectAll, handleDeselect, handleSelectAllLayers, handleCloneStamp, handleContentAwareDelete, handleFindLayers, handleCycleLasso, handleCycleWand, handleNew, handleOpen, handleSave, handleSaveAs, handleExport, handleNewLayer, handleGroupLayers, handleUngroupLayers])
+  }, [handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete, handleZoomIn, handleZoomOut, handleFitToWindow, handleToggleGrid, handleKeyboardShortcuts, handleFreeTransform, handleInvertSelection, handleSelectAll, handleDeselect, handleSelectAllLayers, handleCloneStamp, handleContentAwareDelete, handleFindLayers, handleCycleLasso, handleCycleWand, handleNew, handleOpen, handleSave, handleSaveAs, handleExport, handleNewLayer, handleGroupLayers, handleUngroupLayers])
 }

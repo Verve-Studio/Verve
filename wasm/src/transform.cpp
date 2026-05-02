@@ -139,3 +139,78 @@ void transform_perspective(
         }
     }
 }
+
+// ─── Rotate RGBA ──────────────────────────────────────────────────────────────
+
+void rotate_rgba(const uint8_t* src, int srcW, int srcH, uint8_t* dst, int amount) {
+    // dstW/dstH depend on amount
+    const int dstW = (amount == 1) ? srcW : srcH;
+    const int dstH = (amount == 1) ? srcH : srcW;
+    for (int dy = 0; dy < dstH; dy++) {
+        for (int dx = 0; dx < dstW; dx++) {
+            int sx, sy;
+            if (amount == 0) {        // 90° CW
+                sx = dy;
+                sy = srcH - 1 - dx;
+            } else if (amount == 1) { // 180°
+                sx = srcW - 1 - dx;
+                sy = srcH - 1 - dy;
+            } else {                  // 270° CW
+                sx = srcW - 1 - dy;
+                sy = dx;
+            }
+            const uint8_t* s = src + (sy * srcW + sx) * 4;
+            uint8_t*       d = dst + (dy * dstW + dx) * 4;
+            d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+        }
+    }
+}
+
+// ─── Flip RGBA ────────────────────────────────────────────────────────────────
+
+void flip_rgba(const uint8_t* src, int w, int h, uint8_t* dst, int axis) {
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int sx = (axis == 0) ? (w - 1 - x) : x;
+            int sy = (axis == 1) ? (h - 1 - y) : y;
+            const uint8_t* s = src + (sy * w + sx) * 4;
+            uint8_t*       d = dst + ( y * w +  x) * 4;
+            d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+        }
+    }
+}
+
+// ─── Rotate indexed ───────────────────────────────────────────────────────────
+
+void rotate_indexed(const uint8_t* src, int srcW, int srcH, uint8_t* dst, int amount) {
+    const int dstW = (amount == 1) ? srcW : srcH;
+    const int dstH = (amount == 1) ? srcH : srcW;
+    for (int dy = 0; dy < dstH; dy++) {
+        for (int dx = 0; dx < dstW; dx++) {
+            int sx, sy;
+            if (amount == 0) {        // 90° CW
+                sx = dy;
+                sy = srcH - 1 - dx;
+            } else if (amount == 1) { // 180°
+                sx = srcW - 1 - dx;
+                sy = srcH - 1 - dy;
+            } else {                  // 270° CW
+                sx = srcW - 1 - dy;
+                sy = dx;
+            }
+            dst[dy * dstW + dx] = src[sy * srcW + sx];
+        }
+    }
+}
+
+// ─── Flip indexed ─────────────────────────────────────────────────────────────
+
+void flip_indexed(const uint8_t* src, int w, int h, uint8_t* dst, int axis) {
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int sx = (axis == 0) ? (w - 1 - x) : x;
+            int sy = (axis == 1) ? (h - 1 - y) : y;
+            dst[y * w + x] = src[sy * w + sx];
+        }
+    }
+}

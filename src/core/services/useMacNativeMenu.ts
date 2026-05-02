@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { AdjustmentType, FilterKey, PixelFormat } from '@/types'
+import type { GuidePreset } from './useViewActions'
 import { selectionStore } from '@/core/store/selectionStore'
 import { ADJUSTMENT_MENU_ITEMS, EFFECTS_MENU_ITEMS, FILTER_MENU_ITEMS } from '@/core/menuConstants'
+import { dockStore } from '@/ux/main/RightPanel/Dock/dockStore'
+import type { PanelId } from '@/ux/main/RightPanel/Dock/types'
 
 interface MacNativeMenuParams {
   isMac: boolean
@@ -34,7 +37,9 @@ interface MacNativeMenuParams {
   handleRedo: () => void
   handleCut: () => void
   handleCopy: () => void
+  handleCopyMerged: () => void
   handlePaste: () => void
+  handlePasteInto: () => void
   handleDelete: () => void
 
   // Content-aware fill
@@ -61,6 +66,9 @@ interface MacNativeMenuParams {
   handleZoom100: () => void
   handleFitToWindow: () => void
   handleToggleGrid: () => void
+  handleToggleRulers: () => void
+  handleToggleGuides: () => void
+  handleApplyGuidePreset: (preset: GuidePreset) => void
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
@@ -78,6 +86,8 @@ interface MacNativeMenuParams {
   openExportDialog: () => void
   openResizeImageDialog: () => void
   openResizeCanvasDialog: () => void
+  handleRotate: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
+  handleFlip:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
   openAboutDialog: () => void
   openShortcutsDialog: () => void
   openColorDitheringSetup: () => void
@@ -92,6 +102,8 @@ interface MacNativeMenuParams {
   isContentAwareFilling: boolean
   pixelFormat: PixelFormat
   showGrid: boolean
+  showRulers: boolean
+  showGuides: boolean
   tiledMode: boolean
   showTileGrid: boolean
 }
@@ -102,22 +114,24 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
     handleOpen, handleOpenPath, handleClose, handleCloseAll, handleSave, handleSaveACopy,
     handleClearRecentFiles,
-    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
+    handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
+    handleRotate, handleFlip,
     openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
     hasSelection, isContentAwareFilling,
-    pixelFormat, showGrid, tiledMode, showTileGrid,
+    pixelFormat, showGrid, showRulers, showGuides, tiledMode, showTileGrid,
   } = params
 
   // A ref that holds the latest action dispatcher (avoids stale closures in the IPC listener).
@@ -166,12 +180,19 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'redo':             handleRedo(); break
       case 'cut':              handleCut(); break
       case 'copy':             handleCopy(); break
+      case 'copyMerged':       handleCopyMerged(); break
       case 'paste':            handlePaste(); break
+      case 'pasteInto':        handlePasteInto(); break
       case 'delete':           handleDelete(); break
       case 'contentAwareFill':    handleOpenCafDialog('fill');   break
       case 'contentAwareDelete':  handleOpenCafDialog('delete'); break
       case 'resizeImage':      openResizeImageDialog(); break
       case 'resizeCanvas':     openResizeCanvasDialog(); break
+      case 'rotate90CW':       void handleRotate('90cw');     break
+      case 'rotate180CW':      void handleRotate('180');      break
+      case 'rotate270CW':      void handleRotate('270cw');    break
+      case 'flipHorizontal':   void handleFlip('horizontal'); break
+      case 'flipVertical':     void handleFlip('vertical');   break
       case 'freeTransform':    requireTransformDecision(handleEnterTransform); break
       case 'invertSelection':  selectionStore.invert(); break
       case 'selectAll':        handleSelectAll(); break
@@ -194,6 +215,12 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'zoom100':          handleZoom100(); break
       case 'fitToWindow':      handleFitToWindow(); break
       case 'toggleGrid':       handleToggleGrid(); break
+      case 'toggleRulers':     handleToggleRulers(); break
+      case 'toggleGuides':          handleToggleGuides(); break
+      case 'guidePreset:thirds':     handleApplyGuidePreset('thirds'); break
+      case 'guidePreset:fourths':    handleApplyGuidePreset('fourths'); break
+      case 'guidePreset:center-split': handleApplyGuidePreset('center-split'); break
+      case 'guidePreset:safe-zone':  handleApplyGuidePreset('safe-zone'); break
       case 'setNormalMode':    handleSetNormalMode(); break
       case 'setTiledMode':     handleSetTiledMode(); break
       case 'toggleTileGrid':   handleToggleTileGrid(); break
@@ -203,20 +230,28 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'colorMode:rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
       case 'colorMode:indexed8': colorMode.handleConvertColorMode('indexed8'); break
       case 'openDevTools':     window.api.openDevTools(); break
+      default: {
+        if (actionId.startsWith('togglePanel:')) {
+          dockStore.togglePanel(actionId.slice('togglePanel:'.length) as PanelId)
+        } else if (actionId === 'resetPanelLayout') {
+          dockStore.resetLayout()
+        }
+      }
     }
   }, [
     requireTransformDecision, adjustments, filters, handleOpenFilterDialog,
     handleOpen, handleOpenPath, handleClose, handleCloseAll, handleSave, handleSaveACopy,
     handleClearRecentFiles, recentFiles,
-    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
-    handleZoom100, handleFitToWindow, handleToggleGrid, handleEnterTransform,
+    handleZoom100, handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides, handleApplyGuidePreset, handleEnterTransform,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     handleOpenCafDialog,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
+    handleRotate, handleFlip,
     openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     colorMode,
@@ -263,9 +298,27 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     if (!isMac) return
     window.api.setMenuItemChecked({
       toggleGrid:   showGrid,
+      toggleRulers: showRulers,
+      toggleGuides: showGuides,
       normalMode:   !tiledMode,
       tiledMode:    tiledMode,
       showTileGrid: showTileGrid,
     })
-  }, [isMac, showGrid, tiledMode, showTileGrid])
+  }, [isMac, showGrid, showRulers, showGuides, tiledMode, showTileGrid])
+
+  // Sync panel open/closed states to native menu checkboxes.
+  useEffect(() => {
+    if (!isMac) return
+    const sync = () => {
+      const openIds = dockStore.openPanelIds
+      const panels: PanelId[] = ['Color', 'Swatches', 'Navigator', 'Layers', 'History', 'Info']
+      const updates: Record<string, boolean> = {}
+      for (const id of panels) {
+        updates[`togglePanel:${id}`] = openIds.includes(id)
+      }
+      window.api.setMenuItemChecked(updates)
+    }
+    sync()
+    return dockStore.subscribe(sync)
+  }, [isMac])
 }

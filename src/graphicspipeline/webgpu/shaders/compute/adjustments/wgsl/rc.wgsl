@@ -1,10 +1,3 @@
-// ─── Shared fullscreen-quad vertex shader ────────────────────────────────────
-// Included at the top of every adjustment/filter fragment shader. Emits six
-// vertices (two triangles) covering the entire framebuffer in clip space and
-// passes interpolated UV coordinates (origin top-left, (1,1) bottom-right) to
-// the fragment stage. No vertex buffers needed — positions are built from
-// @builtin(vertex_index).
-export const ADJ_VERTEX_SHADER = /* wgsl */ `
 struct AdjVertOut {
   @builtin(position) pos : vec4f,
   @location(0) uv        : vec2f,
@@ -21,63 +14,14 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
   );
   return AdjVertOut(vec4f(positions[vi], 0.0, 1.0), uvs[vi]);
 }
-`
 
-export const MASK_FLAGS_STRUCT = /* wgsl */ `
+
 struct MaskFlags {
   hasMask : u32,
   _pad    : vec3u,
 }
-`
 
-export const HSL_HELPERS = /* wgsl */ `
-fn rgb2hsl(c: vec3f) -> vec3f {
-  let maxC  = max(c.r, max(c.g, c.b));
-  let minC  = min(c.r, min(c.g, c.b));
-  let delta = maxC - minC;
-  let L = (maxC + minC) * 0.5;
-  var S = 0.0f;
-  var H = 0.0f;
-  if (delta > 0.00001) {
-    S = delta / (1.0 - abs(2.0 * L - 1.0));
-    if (maxC == c.r) {
-      H = (c.g - c.b) / delta;
-      H = H - floor(H / 6.0) * 6.0;
-      H = H / 6.0;
-    } else if (maxC == c.g) {
-      H = ((c.b - c.r) / delta + 2.0) / 6.0;
-    } else {
-      H = ((c.r - c.g) / delta + 4.0) / 6.0;
-    }
-  }
-  return vec3f(H, S, L);
-}
 
-fn hsl2rgb(hsl: vec3f) -> vec3f {
-  let H = hsl.x; let S = hsl.y; let L = hsl.z;
-  let C = (1.0 - abs(2.0 * L - 1.0)) * S;
-  let h6 = H * 6.0;
-  let X = C * (1.0 - abs(h6 - floor(h6 / 2.0) * 2.0 - 1.0));
-  let m = L - C * 0.5;
-  var rgb: vec3f;
-  if      (h6 < 1.0) { rgb = vec3f(C, X, 0.0); }
-  else if (h6 < 2.0) { rgb = vec3f(X, C, 0.0); }
-  else if (h6 < 3.0) { rgb = vec3f(0.0, C, X); }
-  else if (h6 < 4.0) { rgb = vec3f(0.0, X, C); }
-  else if (h6 < 5.0) { rgb = vec3f(X, 0.0, C); }
-  else               { rgb = vec3f(C, 0.0, X); }
-  return clamp(rgb + m, vec3f(0.0), vec3f(1.0));
-}
-`
-
-export const HUE_DIST = /* wgsl */ `
-fn hueDist(h: f32, center: f32) -> f32 {
-  let d = abs(h - center);
-  return min(d, 1.0 - d);
-}
-`
-
-export const OKLAB_HELPERS = /* wgsl */ `
 fn srgb_to_linear(c: vec3f) -> vec3f {
   return select(c / 12.92,
                 pow((c + 0.055) / 1.055, vec3f(2.4)),
@@ -114,4 +58,44 @@ fn oklab_to_linear_srgb(lab: vec3f) -> vec3f {
     -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
   );
 }
-`
+
+
+struct RCParams {
+  paletteCount : u32,
+  _pad         : vec3u,
+}
+
+@group(0) @binding(0) var srcTex   : texture_2d<f32>;
+@group(0) @binding(1) var smp      : sampler;
+@group(0) @binding(2) var<uniform> params    : RCParams;
+@group(0) @binding(3) var selMask  : texture_2d<f32>;
+@group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
+@group(0) @binding(5) var<storage, read> palette : array<vec4f>;
+
+@fragment
+fn fs_reduce_colors(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let src = textureSample(srcTex, smp, in.uv);
+
+  if (src.a < 0.0001 || params.paletteCount == 0u) {
+    return src;
+  }
+
+  let srcLinear = srgb_to_linear(src.rgb);
+  let srcLab    = linear_srgb_to_oklab(srcLinear);
+
+  var bestIdx  : u32 = 0u;
+  var bestDist : f32 = 1.0e30;
+  for (var i: u32 = 0u; i < params.paletteCount; i++) {
+    let pLab = palette[i].xyz;
+    let d    = dot(srcLab - pLab, srcLab - pLab);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+
+  let bestLinear = oklab_to_linear_srgb(palette[bestIdx].xyz);
+  let bestSrgb   = linear_to_srgb(bestLinear);
+  let adjusted   = vec4f(bestSrgb, src.a);
+
+  var mask = 1.0f;
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return mix(src, adjusted, mask);
+}

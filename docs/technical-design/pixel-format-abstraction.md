@@ -545,7 +545,7 @@ const doc = {
   layers: state.layers.map(l => {
     const base = {
       ...l,
-      pngData: null as string | null,
+      imageData: null as string | null,
       layerDataF32: null as string | null,
       layerDataIndexed: null as string | null,
       layerGeo: layerGeos[l.id] ?? null,
@@ -554,7 +554,7 @@ const doc = {
     if (!isPixelLayer(l)) return base  // adjustment/text/shape/group — no pixel data
 
     if (state.pixelFormat === 'rgba8') {
-      base.pngData = layerPngs[l.id] ?? null  // existing PNG export
+      base.imageData = layerPngs[l.id] ?? null  // existing PNG export
     } else if (state.pixelFormat === 'rgba32f') {
       const f32 = canvasHandleRef.current?.exportLayerF32(l.id)
       if (f32) base.layerDataF32 = btoa(String.fromCharCode(...new Uint8Array(f32.buffer)))
@@ -595,7 +595,7 @@ Then, when building `layerData: Map<string, string>`:
 ```ts
 // Inside doc.layers.map():
 if (pixelFormat === 'rgba8') {
-  if (pngData) layerData.set(meta.id, pngData)             // unchanged
+  if (imageData) layerData.set(meta.id, imageData)             // unchanged
 } else if (pixelFormat === 'rgba32f' && layerDataF32) {
   // Validate presence; abort if missing for a pixel layer
   layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`)
@@ -613,7 +613,7 @@ The Canvas's `useEffect` that seeds GPU layers from `pendingLayerData` must be u
 | Version | `pixelFormat` field | Behavior on load |
 |---|---|---|
 | 1–4 | absent | Treat as `rgba8`; existing decode unchanged |
-| 5 | `"rgba8"` | Normal; `pngData` fields decoded as today |
+| 5 | `"rgba8"` | Normal; `imageData` fields decoded as today |
 | 5 | `"rgba32f"` | `layerDataF32` decoded to `Float32Array` |
 | 5 | `"indexed8"` | `layerDataIndexed` decoded to `Uint8Array` |
 | 5 | unrecognized | Open aborted; error shown |

@@ -33,6 +33,9 @@ declare global {
       saveBrushFileDialog: (defaultPath?: string) => Promise<string | null>
       readBrushFile: (filePath: string) => Promise<string>
       writeBrushFile: (filePath: string, data: string) => Promise<void>
+      // Dock layout
+      loadDockLayout: () => Promise<unknown>
+      saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle
       exitApp: () => Promise<void>
       // Platform & native menu (macOS)

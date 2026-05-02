@@ -7,6 +7,7 @@ import type { UseFiltersReturn } from '@/core/services/useFilters'
 import type { UseColorModeReturn } from '@/core/services/useColorMode'
 import type { Tool, PixelFormat, RGBAColor } from '@/types'
 import type { FilterKey } from '@/types'
+import type { GuidePreset } from '@/core/services/useViewActions'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { ExportSettings } from '@/ux/modals/ExportDialog/ExportDialog'
@@ -58,6 +59,8 @@ export interface MainWindowProps {
   showGrid: boolean
   tiledMode: boolean
   showTileGrid: boolean
+  showRulers: boolean
+  showGuides: boolean
 
   // Tabs
   tabs: TabRecord[]
@@ -131,8 +134,10 @@ export interface MainWindowProps {
   handleUndo: () => void
   handleRedo: () => void
   handleCopy: () => void
+  handleCopyMerged: () => void
   handleCut: () => void
   handlePaste: () => void
+  handlePasteInto: () => void
   handleDelete: () => void
 
   // Layer handlers
@@ -151,6 +156,8 @@ export interface MainWindowProps {
   // Canvas transform handlers
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>
   handleResizeCanvas: (s: ResizeCanvasSettings) => void
+  handleRotate: (amount: '90cw' | '180' | '270cw') => Promise<void>
+  handleFlip: (axis: 'horizontal' | 'vertical') => Promise<void>
 
   // View handlers
   handleZoomIn: () => void
@@ -161,6 +168,9 @@ export interface MainWindowProps {
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
+  handleToggleRulers: () => void
+  handleToggleGuides: () => void
+  handleApplyGuidePreset: (preset: GuidePreset) => void
   handleSelectAll: () => void
   handleDeselect: () => void
   handleSelectAllLayers: () => void
@@ -195,7 +205,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
   const {
     isMac,
     activeTool, pixelFormat, activeLayerId, openAdjustmentLayerId, swatches,
-    canvasWidth, canvasHeight, zoom, showGrid, tiledMode, showTileGrid,
+    canvasWidth, canvasHeight, zoom, showGrid, tiledMode, showTileGrid, showRulers, showGuides,
     tabs, tabInfos, activeTabId, canvasHandleRef,
     pendingLayerData, setPendingLayerData, tabCanvasRef,
     captureHistory, pendingLayerLabelRef, dispatch,
@@ -218,13 +228,14 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleTransformGuardApply, handleTransformGuardDiscard,
     handleNewConfirm, handleOpen, handleOpenPath, handleSave, handleSaveACopy,
     handleClearRecentFiles, recentFiles,
-    handleUndo, handleRedo, handleCopy, handleCut, handlePaste, handleDelete,
+    handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers,
-    handleResizeImage, handleResizeCanvas,
+    handleResizeImage, handleResizeCanvas, handleRotate, handleFlip,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers, findLayersCounter,
     handleToolChange, handleEnterTransform,
@@ -253,17 +264,29 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onCopy={handleCopy}
+        onCopyMerged={handleCopyMerged}
         onCut={handleCut}
         onPaste={handlePaste}
+        onPasteInto={handlePasteInto}
         onDelete={handleDelete}
         onResizeImage={() => setShowResizeDialog(true)}
         onResizeCanvas={() => setShowResizeCanvasDialog(true)}
+        onRotate90CW={() => { void handleRotate('90cw') }}
+        onRotate180={() => { void handleRotate('180') }}
+        onRotate270CW={() => { void handleRotate('270cw') }}
+        onFlipHorizontal={() => { void handleFlip('horizontal') }}
+        onFlipVertical={() => { void handleFlip('vertical') }}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onZoom100={handleZoom100}
         onFitToWindow={handleFitToWindow}
         onToggleGrid={handleToggleGrid}
         showGrid={showGrid}
+        onToggleRulers={handleToggleRulers}
+        showRulers={showRulers}
+        onToggleGuides={handleToggleGuides}
+        onApplyGuidePreset={handleApplyGuidePreset}
+        showGuides={showGuides}
         onSetNormalMode={handleSetNormalMode}
         onSetTiledMode={handleSetTiledMode}
         tiledMode={tiledMode}

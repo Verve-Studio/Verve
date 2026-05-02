@@ -187,6 +187,22 @@ export function registerIpcHandlers(): void {
     await writeFile(userBrushesPath(), data, 'utf-8')
   })
 
+  // ── Dock layout ───────────────────────────────────────────────────────────
+  const dockLayoutPath = (): string => join(app.getPath('userData'), 'dock-layout.json')
+
+  ipcMain.handle('dockLayout:load', async () => {
+    try {
+      const data = await readFile(dockLayoutPath(), 'utf-8')
+      return JSON.parse(data) as unknown
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('dockLayout:save', async (_event, layout: unknown) => {
+    await writeFile(dockLayoutPath(), JSON.stringify(layout, null, 2), 'utf-8')
+  })
+
   ipcMain.handle('dialog:openBrushFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],

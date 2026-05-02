@@ -19,10 +19,12 @@ interface UseClipboardOptions {
 }
 
 export interface UseClipboardReturn {
-  handleCopy:   () => void
-  handleCut:    () => void
-  handlePaste:  () => void
-  handleDelete: () => void
+  handleCopy:        () => void
+  handleCopyMerged:  () => void
+  handleCut:         () => void
+  handlePaste:       () => void
+  handlePasteInto:   () => void
+  handleDelete:      () => void
 }
 
 // ─── System clipboard helpers ─────────────────────────────────────────────────
@@ -38,6 +40,22 @@ async function encodePng(data: Uint8Array, width: number, height: number): Promi
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
   return btoa(binary)
+}
+
+/** Return the bounding box (top-left x/y) of non-zero pixels in a canvas-sized selection mask. */
+function selectionBounds(mask: Uint8Array, width: number, height: number): { x: number; y: number } | null {
+  let minX = width, minY = height, maxX = -1, maxY = -1
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (mask[y * width + x] > 0) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  return maxX >= 0 ? { x: minX, y: minY } : null
 }
 
 /** Decode a base64 PNG string to an RGBA Uint8Array. */
@@ -59,6 +77,38 @@ async function decodePng(base64: string): Promise<{ data: Uint8Array; width: num
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
+
+/** Crop to tight bounding box, write to internal store and system clipboard. */
+function writeToClipboard(pixels: Uint8Array, width: number, height: number): void {
+  let minX = width, minY = height, maxX = -1, maxY = -1
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (pixels[(y * width + x) * 4 + 3] > 0) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x
+        if (y < minY) minY = y; if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) return
+
+  const bboxW    = maxX - minX + 1
+  const bboxH    = maxY - minY + 1
+  const bboxData = new Uint8Array(bboxW * bboxH * 4)
+  for (let y = 0; y < bboxH; y++) {
+    for (let x = 0; x < bboxW; x++) {
+      const si = ((minY + y) * width + (minX + x)) * 4
+      const di = (y * bboxW + x) * 4
+      bboxData[di]     = pixels[si]
+      bboxData[di + 1] = pixels[si + 1]
+      bboxData[di + 2] = pixels[si + 2]
+      bboxData[di + 3] = pixels[si + 3]
+    }
+  }
+  clipboardStore.current = { data: bboxData, width: bboxW, height: bboxH, offsetX: minX, offsetY: minY }
+  void encodePng(bboxData, bboxW, bboxH)
+    .then(b64 => window.api.clipboardWriteImage(b64))
+    .catch(() => { /* system clipboard write is best-effort */ })
+}
 
 export function useClipboard({
   canvasHandleRef,
@@ -82,38 +132,7 @@ export function useClipboard({
       }
     }
 
-    // Tight bounding box around non-transparent pixels
-    let minX = width, minY = height, maxX = -1, maxY = -1
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (pixels[(y * width + x) * 4 + 3] > 0) {
-          if (x < minX) minX = x; if (x > maxX) maxX = x
-          if (y < minY) minY = y; if (y > maxY) maxY = y
-        }
-      }
-    }
-    if (maxX < 0) return // fully transparent — nothing to copy
-
-    const bboxW    = maxX - minX + 1
-    const bboxH    = maxY - minY + 1
-    const bboxData = new Uint8Array(bboxW * bboxH * 4)
-    for (let y = 0; y < bboxH; y++) {
-      for (let x = 0; x < bboxW; x++) {
-        const si = ((minY + y) * width + (minX + x)) * 4
-        const di = (y * bboxW + x) * 4
-        bboxData[di]     = pixels[si]
-        bboxData[di + 1] = pixels[si + 1]
-        bboxData[di + 2] = pixels[si + 2]
-        bboxData[di + 3] = pixels[si + 3]
-      }
-    }
-    clipboardStore.current = { data: bboxData, width: bboxW, height: bboxH, offsetX: minX, offsetY: minY }
-
-    // Also write to the system clipboard so the image can be pasted into other apps.
-    // Fire-and-forget — a write failure is non-fatal.
-    void encodePng(bboxData, bboxW, bboxH)
-      .then(b64 => window.api.clipboardWriteImage(b64))
-      .catch(() => { /* system clipboard write is best-effort */ })
+    writeToClipboard(pixels, width, height)
   }, [state.activeLayerId, state.canvas, canvasHandleRef])
 
   const handleCut = useCallback((): void => {
@@ -185,5 +204,62 @@ export function useClipboard({
     })()
   }, [state.canvas, dispatch, canvasHandleRef, pendingLayerLabelRef])
 
-  return { handleCopy, handleCut, handlePaste, handleDelete }
+  const handleCopyMerged = useCallback((): void => {
+    void (async () => {
+      const { width, height } = state.canvas
+      const result = await canvasHandleRef.current?.rasterizeComposite('sample')
+      if (!result) return
+      // Normalize f32→u8 for rgba32f documents; rgba8/indexed8 are already Uint8Array
+      const rgba = result.data instanceof Float32Array
+        ? new Uint8Array(result.data.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255)))
+        : result.data as Uint8Array
+      writeToClipboard(rgba, width, height)
+    })()
+  }, [state.canvas, canvasHandleRef])
+
+  const handlePasteInto = useCallback((): void => {
+    if (!selectionStore.mask) return // no-op without an active selection
+    const selMask = selectionStore.mask.slice() // snapshot before async
+    void (async () => {
+      const { width: dstW, height: dstH } = state.canvas
+
+      // Resolve clipboard — same logic as handlePaste
+      let clipData: ClipboardData | null = null
+      try {
+        const pngBase64 = await window.api.clipboardReadImage()
+        if (pngBase64) {
+          const decoded = await decodePng(pngBase64)
+          if (decoded) {
+            const { data, width: srcW, height: srcH } = decoded
+            const internal = clipboardStore.current
+            if (internal && internal.width === srcW && internal.height === srcH) {
+              clipData = internal
+            } else {
+              clipData = { data, width: srcW, height: srcH, offsetX: Math.floor((dstW - srcW) / 2), offsetY: Math.floor((dstH - srcH) / 2) }
+            }
+          }
+        }
+      } catch { /* fall through */ }
+      if (!clipData) clipData = clipboardStore.current
+      if (!clipData) return
+
+      const { data: srcData, width: srcW, height: srcH, offsetX, offsetY } = clipData
+      // Position the layer at the selection's top-left corner so that the pasted
+      // content's origin aligns with the origin of the selection bounding box.
+      const bounds = selectionBounds(selMask, dstW, dstH)
+      const pasteX = bounds ? bounds.x : offsetX
+      const pasteY = bounds ? bounds.y : offsetY
+      const newId  = makeTabId()
+      const maskId = makeTabId()
+
+      canvasHandleRef.current?.prepareNewLayer(newId, 'Paste Into', srcData, srcW, srcH, pasteX, pasteY)
+      canvasHandleRef.current?.prepareMaskLayer(maskId, 'Layer Mask', selMask)
+
+      pendingLayerLabelRef.current = 'Paste Into'
+      dispatch({ type: 'ADD_LAYER',      payload: { id: newId,  name: 'Paste Into', visible: true, opacity: 1, locked: false, blendMode: 'normal' } })
+      dispatch({ type: 'ADD_MASK_LAYER', payload: { id: maskId, name: 'Layer Mask',  visible: true, type: 'mask', parentId: newId } })
+    })()
+  }, [state.canvas, dispatch, canvasHandleRef, pendingLayerLabelRef])
+
+  return { handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete }
 }

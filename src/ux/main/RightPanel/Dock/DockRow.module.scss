@@ -1,0 +1,146 @@
+@use '@/styles/variables' as vars;
+@use '@/styles/mixins' as m;
+
+// ─── Row ──────────────────────────────────────────────────────────────────────
+
+.row {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+// ─── Tab bar ──────────────────────────────────────────────────────────────────
+
+.tabBar {
+  display: flex;
+  align-items: stretch;
+  background-color: vars.$color-surface;
+  border-bottom: 1px solid vars.$color-border;
+  flex-shrink: 0;
+  min-height: 24px;
+  transition: background-color vars.$transition-fast;
+
+  &.tabBarDragOver {
+    background-color: vars.$color-surface-hover;
+  }
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 4px 6px 4px 9px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color vars.$transition-fast, border-color vars.$transition-fast;
+  white-space: nowrap;
+
+  &:hover {
+    color: vars.$color-text;
+
+    .closeBtn {
+      opacity: 1;
+    }
+  }
+
+  &.tabActive {
+    color: vars.$color-text;
+    border-bottom-color: vars.$color-text-dim;
+  }
+
+  &.tabDragOver {
+    border-bottom-color: vars.$color-accent-blue;
+    color: vars.$color-text;
+  }
+
+  &.tabDragging {
+    opacity: 0.4;
+  }
+
+  &[draggable='true'] {
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  &:focus-visible {
+    @include m.focus-ring;
+  }
+}
+
+.tabLabel {
+  pointer-events: none;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 13px;
+  line-height: 1;
+  color: vars.$color-text-muted;
+  opacity: 0;
+  transition: opacity vars.$transition-fast, background-color vars.$transition-fast, color vars.$transition-fast;
+  flex-shrink: 0;
+
+  &:hover {
+    background-color: vars.$color-surface-hover;
+    color: vars.$color-text;
+  }
+}
+
+.tabSpacer {
+  flex: 1;
+}
+
+// ─── Panel content ────────────────────────────────────────────────────────────
+
+.content {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+// ─── Resize handle ────────────────────────────────────────────────────────────
+
+.resizeHandle {
+  height: 4px;
+  flex-shrink: 0;
+  background: vars.$color-border;
+  cursor: ns-resize;
+  transition: background-color vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-accent-blue;
+  }
+}
+
+// ─── Drop zone ────────────────────────────────────────────────────────────────
+
+.dropZone {
+  height: 6px;
+  flex-shrink: 0;
+  background: transparent;
+  transition: background-color 80ms;
+  z-index: 10;
+}
+
+.dropZoneActive {
+  background: vars.$color-accent-blue;
+  opacity: 0.7;
+}

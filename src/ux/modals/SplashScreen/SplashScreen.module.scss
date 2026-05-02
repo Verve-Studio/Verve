@@ -1,0 +1,159 @@
+@use '@/styles/variables' as vars;
+
+// ─── Backdrop ─────────────────────────────────────────────────────────────────
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+// ─── Dialog shell ─────────────────────────────────────────────────────────────
+
+.dialog {
+  width: 480px;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-xl;
+  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+// ─── Hero section ─────────────────────────────────────────────────────────────
+
+.hero {
+  position: relative;
+  height: 220px;
+  background:
+    linear-gradient(160deg,
+      #0d1117 0%,
+      #0f1e38 45%,
+      #0d2a4a 75%,
+      #102a3e 100%
+    );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+// Subtle geometric pattern in the hero
+.heroPattern {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% 80%, rgba(6, 153, 251, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 60% at 85% 20%, rgba(6, 153, 251, 0.08) 0%, transparent 70%),
+    linear-gradient(135deg, transparent 40%, rgba(6, 153, 251, 0.04) 50%, transparent 60%);
+  pointer-events: none;
+}
+
+.heroIcon {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 4px 16px rgba(6, 153, 251, 0.35));
+  margin-bottom: 4px;
+}
+
+.heroName {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.heroTagline {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: vars.$font-size-sm;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.02em;
+}
+
+// ─── Actions section ──────────────────────────────────────────────────────────
+
+.actions {
+  padding: 20px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.actionGroup {
+  display: flex;
+  gap: 10px;
+}
+
+.actionBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-lg;
+  color: vars.$color-text;
+  font-size: vars.$font-size-base;
+  font-family: vars.$font-sans;
+  cursor: pointer;
+  transition: background vars.$transition-fast, border-color vars.$transition-fast;
+  text-align: left;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    border-color: vars.$color-accent-blue;
+  }
+
+  &:active {
+    background: vars.$color-surface-selected;
+  }
+}
+
+.actionIcon {
+  flex-shrink: 0;
+  color: vars.$color-accent-blue;
+  opacity: 0.85;
+}
+
+.actionLabel {
+  flex: 1;
+  font-weight: 500;
+}
+
+.actionHint {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+}
+
+// ─── Dismiss ──────────────────────────────────────────────────────────────────
+
+.dismissBtn {
+  align-self: center;
+  background: none;
+  border: none;
+  color: vars.$color-text-muted;
+  font-size: vars.$font-size-sm;
+  font-family: vars.$font-sans;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: vars.$radius-sm;
+
+  &:hover {
+    color: vars.$color-text-dim;
+  }
+}

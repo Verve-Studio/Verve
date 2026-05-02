@@ -89,7 +89,7 @@ const doc = {
   activeLayerId: state.activeLayerId,
   layers: state.layers.map(l => ({
     ...l,
-    pngData: layerPngs[l.id] ?? null,
+    imageData: layerPngs[l.id] ?? null,
     layerGeo: layerGeos[l.id] ?? null,
     adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
   })),
@@ -104,7 +104,7 @@ const doc = {
   activeLayerId: state.activeLayerId,
   layers: state.layers.map(l => ({
     ...l,
-    pngData: layerPngs[l.id] ?? null,
+    imageData: layerPngs[l.id] ?? null,
     layerGeo: layerGeos[l.id] ?? null,
     adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
   })),
@@ -127,7 +127,7 @@ const doc  = JSON.parse(json) as {
   canvas: { width: number; height: number; backgroundFill?: BackgroundFill }
   activeLayerId: string | null
   layers: Array<LayerState & {
-    pngData?: string | null
+    imageData?: string | null
     layerGeo?: { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number } | null
     adjustmentMaskPng?: string | null
   }>
@@ -141,7 +141,7 @@ const doc  = JSON.parse(json) as {
   canvas: { width: number; height: number; backgroundFill?: BackgroundFill }
   activeLayerId: string | null
   layers: Array<LayerState & {
-    pngData?: string | null
+    imageData?: string | null
     layerGeo?: { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number } | null
     adjustmentMaskPng?: string | null
   }>

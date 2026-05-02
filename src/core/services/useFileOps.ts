@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { cloneHistoryEntries, historyStore } from '@/core/store/historyStore'
+import { historyStore } from '@/core/store/historyStore'
+import { u8TransferStore } from '@/core/store/layerDataTransfer'
 import { IMAGE_EXTENSIONS, EXT_TO_MIME, loadImagePixels } from '@/core/io/imageLoader'
 import { makeTabId, fileTitle, DEFAULT_SWATCHES } from '@/core/store/tabTypes'
 import type { TabRecord, TabSnapshot } from '@/core/store/tabTypes'
@@ -110,11 +111,11 @@ export function useFileOps({
   dispatch,
   onRecentFilesUpdated,
 }: UseFileOpsOptions): UseFileOpsReturn {
-  const [untitledCounter, setUntitledCounter] = useState(1)
+  const [untitledCounter, setUntitledCounter] = useState(0)
 
   const handleNewConfirm = useCallback(({ width, height, backgroundFill, pixelFormat }: { width: number; height: number; backgroundFill: BackgroundFill; pixelFormat?: PixelFormat }): void => {
     const snapshot        = captureActiveSnapshot()
-    const savedHistory    = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+    const savedHistory    = historyStore.detach()
     const savedLayerData  = serializeActiveTabPixels()
     const n               = untitledCounter
     setUntitledCounter(n + 1)
@@ -174,7 +175,7 @@ export function useFileOps({
           pixelFormat: 'rgba32f',
         }
         const snapshot       = captureActiveSnapshot()
-        const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+        const savedHistory   = historyStore.detach()
         const savedLayerData = serializeActiveTabPixels()
         const newId          = makeTabId()
         const updated: TabRecord[] = [
@@ -194,11 +195,10 @@ export function useFileOps({
 
       const data = loaded.data as Uint8Array
       const layerId           = 'layer-0'
-      const tmp               = document.createElement('canvas')
-      tmp.width = width; tmp.height = height
-      const ctx2d             = tmp.getContext('2d')!
-      ctx2d.putImageData(new ImageData(new Uint8ClampedArray(data.buffer as ArrayBuffer), width, height), 0, 0)
-      const layerData         = new Map([[layerId, tmp.toDataURL('image/png')]])
+      const newId             = makeTabId()
+      const storeKey          = `${newId}:${layerId}`
+      u8TransferStore.set(storeKey, data)
+      const layerData         = new Map([[layerId, `data:raw/rgba8-ref;id=${storeKey}`]])
       const layers: LayerState[] = [{ id: layerId, name: 'Background', visible: true, opacity: 1, locked: false, blendMode: 'normal' }]
       const title             = fileTitle(path)
       const newSnapshot: TabSnapshot = {
@@ -210,9 +210,8 @@ export function useFileOps({
         pixelFormat: 'rgba8',
       }
       const snapshot      = captureActiveSnapshot()
-      const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+      const savedHistory   = historyStore.detach()
       const savedLayerData = serializeActiveTabPixels()
-      const newId          = makeTabId()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
         { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' },
@@ -239,7 +238,7 @@ export function useFileOps({
       canvas: { width: number; height: number; backgroundFill?: BackgroundFill }
       activeLayerId: string | null
       layers: Array<LayerState & {
-        pngData?: string | null
+        layerDataRGBA8?: string | null
         layerDataF32?: string | null
         layerDataIndexed?: string | null
         layerGeo?: { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number } | null
@@ -251,8 +250,8 @@ export function useFileOps({
     }
 
     const layerData = new Map<string, string>()
-    const layers: LayerState[] = doc.layers.map(({ pngData, layerDataF32, layerDataIndexed, layerGeo, adjustmentMaskPng, ...meta }) => {
-      if (pngData)  layerData.set(meta.id, pngData)
+    const layers: LayerState[] = doc.layers.map(({ layerDataRGBA8, layerDataF32, layerDataIndexed, layerGeo, adjustmentMaskPng, ...meta }) => {
+      if (layerDataRGBA8)  layerData.set(meta.id, layerDataRGBA8)
       if (layerDataF32) layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`)
       if (layerDataIndexed) layerData.set(meta.id, `data:raw/indexed8;base64,${layerDataIndexed}`)
       if (layerGeo) layerData.set(`${meta.id}:geo`, JSON.stringify(layerGeo))
@@ -300,7 +299,7 @@ export function useFileOps({
       pixelFormat: docPixelFormat,
     }
     const snapshot      = captureActiveSnapshot()
-    const savedHistory   = { entries: cloneHistoryEntries(historyStore.entries), currentIndex: historyStore.currentIndex }
+    const savedHistory   = historyStore.detach()
     const savedLayerData = serializeActiveTabPixels()
     const newId          = makeTabId()
     const updated: TabRecord[] = [
@@ -383,7 +382,7 @@ export function useFileOps({
       activeLayerId: state.activeLayerId,
       layers: state.layers.map(l => ({
         ...l,
-        pngData: layerPngs[l.id] ?? null,
+        layerDataRGBA8: layerPngs[l.id] ?? null,
         layerDataF32: layerF32Data[l.id] ?? null,
         layerDataIndexed: layerIndexedData[l.id] ?? null,
         layerGeo: layerGeos[l.id] ?? null,
@@ -449,7 +448,7 @@ export function useFileOps({
       activeLayerId: state.activeLayerId,
       layers: state.layers.map(l => ({
         ...l,
-        pngData: layerPngs2[l.id] ?? null,
+        layerDataRGBA8: layerPngs2[l.id] ?? null,
         layerDataF32: layerF32Data2[l.id] ?? null,
         layerDataIndexed: layerIndexedData2[l.id] ?? null,
         layerGeo: layerGeos2[l.id] ?? null,

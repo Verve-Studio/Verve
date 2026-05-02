@@ -1,0 +1,64 @@
+@use '@/styles/variables' as vars;
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.section {
+  padding: 4px 10px 6px;
+
+  & + & {
+    border-top: 1px solid vars.$color-border;
+  }
+}
+
+.sectionTitle {
+  font-size: 10px;
+  font-weight: 600;
+  color: vars.$color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+
+  td {
+    padding: 1px 0;
+    font-size: 11px;
+    vertical-align: middle;
+  }
+}
+
+.ch {
+  width: 40px;
+  padding-right: 8px;
+  color: vars.$color-text-dim;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.val {
+  color: vars.$color-text;
+  font-variant-numeric: tabular-nums;
+  padding-right: 6px;
+}
+
+.hex {
+  color: vars.$color-text-dim;
+  font-variant-numeric: tabular-nums;
+}
+
+.none {
+  font-size: 11px;
+  color: vars.$color-text-muted;
+}
