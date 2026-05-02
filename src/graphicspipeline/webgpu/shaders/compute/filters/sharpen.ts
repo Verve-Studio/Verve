@@ -1,104 +1,13 @@
-import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
-export const FILTER_SHARPEN_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var smp    : sampler;
+import FILTER_SHARPEN_COMPUTE from './wgsl/filter-sharpen.wgsl?raw'
+export { FILTER_SHARPEN_COMPUTE }
 
-const kernel = array<f32, 9>(
-   0.0, -1.0,  0.0,
-  -1.0,  5.0, -1.0,
-   0.0, -1.0,  0.0,
-);
+import FILTER_SHARPEN_MORE_COMPUTE from './wgsl/filter-sharpen-more.wgsl?raw'
+export { FILTER_SHARPEN_MORE_COMPUTE }
 
-@fragment
-fn fs_sharpen(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let dims = textureDimensions(srcTex);
-  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
-  var colorSum = vec4f(0.0);
-  for (var ky = -1; ky <= 1; ky++) {
-    for (var kx = -1; kx <= 1; kx++) {
-      let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
-      let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
-      let k  = kernel[(ky + 1) * 3 + (kx + 1)];
-      colorSum += textureLoad(srcTex, vec2i(sx, sy), 0) * k;
-    }
-  }
-  let orig = textureLoad(srcTex, coord, 0);
-  return vec4f(clamp(colorSum.rgb, vec3f(0.0), vec3f(1.0)), orig.a);
-}
-`
-
-export const FILTER_SHARPEN_MORE_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-@group(0) @binding(0) var srcTex : texture_2d<f32>;
-@group(0) @binding(1) var smp    : sampler;
-
-const kernel = array<f32, 9>(
-  -1.0, -1.0, -1.0,
-  -1.0,  9.0, -1.0,
-  -1.0, -1.0, -1.0,
-);
-
-@fragment
-fn fs_sharpen_more(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let dims = textureDimensions(srcTex);
-  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
-  var colorSum = vec4f(0.0);
-  for (var ky = -1; ky <= 1; ky++) {
-    for (var kx = -1; kx <= 1; kx++) {
-      let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
-      let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
-      let k  = kernel[(ky + 1) * 3 + (kx + 1)];
-      colorSum += textureLoad(srcTex, vec2i(sx, sy), 0) * k;
-    }
-  }
-  let orig = textureLoad(srcTex, coord, 0);
-  return vec4f(clamp(colorSum.rgb, vec3f(0.0), vec3f(1.0)), orig.a);
-}
-`
-
-export const FILTER_UNSHARP_COMBINE_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-struct UnsharpParams {
-  amount    : u32,
-  threshold : u32,
-  _pad0     : u32,
-  _pad1     : u32,
-}
-
-@group(0) @binding(0) var origTex             : texture_2d<f32>;
-@group(0) @binding(1) var smp                 : sampler;
-@group(0) @binding(2) var blurredTex          : texture_2d<f32>;
-@group(0) @binding(3) var<uniform> params     : UnsharpParams;
-
-@fragment
-fn fs_unsharp_combine(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let coord   = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let orig    = textureLoad(origTex,    coord, 0);
-  let blurred = textureLoad(blurredTex, coord, 0);
-
-  let scale = f32(params.amount) / 100.0;
-  let thr   = f32(params.threshold) / 255.0;
-
-  let dR = orig.r - blurred.r;
-  let dG = orig.g - blurred.g;
-  let dB = orig.b - blurred.b;
-
-  let lumaDiff = abs(0.299 * dR + 0.587 * dG + 0.114 * dB);
-
-  if (lumaDiff > thr) {
-    return vec4f(
-      clamp(orig.r + scale * dR, 0.0, 1.0),
-      clamp(orig.g + scale * dG, 0.0, 1.0),
-      clamp(orig.b + scale * dB, 0.0, 1.0),
-      orig.a,
-    );
-  }
-  return vec4f(orig.rgb, orig.a);
-}
-` as const
+import FILTER_UNSHARP_COMBINE_COMPUTE from './wgsl/filter-unsharp-combine.wgsl?raw'
+export { FILTER_UNSHARP_COMBINE_COMPUTE }
 
 export async function runSharpen(
   device: GPUDevice,

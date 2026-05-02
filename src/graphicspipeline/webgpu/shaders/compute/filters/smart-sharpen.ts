@@ -1,95 +1,13 @@
-import { ADJ_VERTEX_SHADER } from '../adjustments/helpers'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
 
-export const FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-struct SmartSharpenGaussParams {
-  amount : u32,
-  _pad0  : u32,
-  _pad1  : u32,
-  _pad2  : u32,
-}
+import FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE from './wgsl/filter-smart-sharpen-gauss-combine.wgsl?raw'
+export { FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE }
 
-@group(0) @binding(0) var srcTex          : texture_2d<f32>;
-@group(0) @binding(1) var smp             : sampler;
-@group(0) @binding(2) var blurredTex      : texture_2d<f32>;
-@group(0) @binding(3) var<uniform> params : SmartSharpenGaussParams;
+import FILTER_SMART_SHARPEN_LENS_COMPUTE from './wgsl/filter-smart-sharpen-lens.wgsl?raw'
+export { FILTER_SMART_SHARPEN_LENS_COMPUTE }
 
-@fragment
-fn fs_smart_sharpen_gauss(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let coord   = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let orig    = textureLoad(srcTex,     coord, 0);
-  let blurred = textureLoad(blurredTex, coord, 0);
-  let scale   = f32(params.amount) / 100.0;
-  let diff    = orig.rgb - blurred.rgb;
-  let outRGB  = clamp(orig.rgb + scale * diff, vec3f(0.0), vec3f(1.0));
-  return vec4f(outRGB, orig.a);
-}
-`
-
-export const FILTER_SMART_SHARPEN_LENS_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-struct SmartSharpenLensParams {
-  amount : u32,
-  _pad0  : u32,
-  _pad1  : u32,
-  _pad2  : u32,
-}
-
-@group(0) @binding(0) var srcTex          : texture_2d<f32>;
-@group(0) @binding(1) var smp             : sampler;
-@group(0) @binding(2) var<uniform> params : SmartSharpenLensParams;
-
-@fragment
-fn fs_smart_sharpen_lens(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let dims  = textureDimensions(srcTex);
-  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let s     = (f32(params.amount) / 100.0) * 0.5;
-
-  var colorSum = vec3f(0.0);
-  for (var ky = -1; ky <= 1; ky++) {
-    for (var kx = -1; kx <= 1; kx++) {
-      let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
-      let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
-      let samp = textureLoad(srcTex, vec2i(sx, sy), 0).rgb;
-      let isCenter = select(0.0, 1.0, kx == 0 && ky == 0);
-      let k = isCenter * (1.0 + 8.0 * s) + (1.0 - isCenter) * (-s);
-      colorSum += samp * k;
-    }
-  }
-
-  let orig = textureLoad(srcTex, coord, 0);
-  return vec4f(clamp(colorSum, vec3f(0.0), vec3f(1.0)), orig.a);
-}
-`
-
-export const FILTER_SMART_SHARPEN_BLEND_COMPUTE = /* wgsl */ `
-${ADJ_VERTEX_SHADER}
-struct SmartSharpenBlendParams {
-  reduceNoise : u32,  // 0–100 (%)
-  _pad0       : u32,
-  _pad1       : u32,
-  _pad2       : u32,
-}
-
-@group(0) @binding(0) var sharpenedTex    : texture_2d<f32>;
-@group(0) @binding(1) var smp             : sampler;
-@group(0) @binding(2) var smoothedTex     : texture_2d<f32>;
-@group(0) @binding(3) var<uniform> params : SmartSharpenBlendParams;
-
-@fragment
-fn fs_smart_sharpen_blend(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let coord     = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let sharpened = textureLoad(sharpenedTex, coord, 0);
-  let smoothed  = textureLoad(smoothedTex,  coord, 0);
-  let blendFactor = (f32(params.reduceNoise) / 100.0) * 0.5;
-  let outRGB = clamp(
-    sharpened.rgb * (1.0 - blendFactor) + smoothed.rgb * blendFactor,
-    vec3f(0.0), vec3f(1.0)
-  );
-  return vec4f(outRGB, sharpened.a);
-}
-`
+import FILTER_SMART_SHARPEN_BLEND_COMPUTE from './wgsl/filter-smart-sharpen-blend.wgsl?raw'
+export { FILTER_SMART_SHARPEN_BLEND_COMPUTE }
 
 export async function runSmartSharpen(
   device: GPUDevice,
