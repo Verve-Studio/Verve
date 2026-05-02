@@ -260,9 +260,7 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   // primaryColor/secondaryColor are float [0,∞). Convert to 0-255 for CSS.
   const fgStyle = `rgb(${Math.round(Math.min(fgColor.r,1)*255)},${Math.round(Math.min(fgColor.g,1)*255)},${Math.round(Math.min(fgColor.b,1)*255)})`
   const bgStyle = `rgb(${Math.round(Math.min(bgColor.r,1)*255)},${Math.round(Math.min(bgColor.g,1)*255)},${Math.round(Math.min(bgColor.b,1)*255)})`
-  // 0-255 color to pass into ColorPickerDialog (expects 0-255)
-  const fgColor255: RGBAColor = { r: Math.round(Math.min(fgColor.r,1)*255), g: Math.round(Math.min(fgColor.g,1)*255), b: Math.round(Math.min(fgColor.b,1)*255), a: Math.round(fgColor.a*255) }
-  const bgColor255: RGBAColor = { r: Math.round(Math.min(bgColor.r,1)*255), g: Math.round(Math.min(bgColor.g,1)*255), b: Math.round(Math.min(bgColor.b,1)*255), a: Math.round(bgColor.a*255) }
+  // ColorPickerDialog now accepts/emits float colors directly
 
   const openPicker = (target: 'fg' | 'bg', e: React.MouseEvent): void => {
     if (state.pixelFormat === 'indexed8') {
@@ -276,14 +274,13 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   }
 
   const handleConfirm = (color: RGBAColor): void => {
-    // ColorPickerDialog returns 0-255; convert to float for AppState.
-    const floatColor: RGBAColor = { r: color.r/255, g: color.g/255, b: color.b/255, a: color.a/255 }
+    // color is float [0,1] from ColorPickerDialog
     if (dialogIsSwatchAdd) {
-      dispatch({ type: 'ADD_SWATCH', payload: color })
+      dispatch({ type: 'ADD_SWATCH', payload: { r: Math.round(color.r*255), g: Math.round(color.g*255), b: Math.round(color.b*255), a: Math.round(color.a*255) } })
     } else {
       dispatch({
         type: dialogTarget === 'fg' ? 'SET_PRIMARY_COLOR' : 'SET_SECONDARY_COLOR',
-        payload: floatColor,
+        payload: color,
       })
     }
     setDialogIsSwatchAdd(false)
@@ -420,10 +417,11 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
     <ColorPickerDialog
       open={dialogOpen}
       title={dialogIsSwatchAdd ? 'Add Color to Palette' : `Color Picker (${dialogTarget === 'fg' ? 'Foreground' : 'Background'} Color)`}
-      initialColor={dialogTarget === 'fg' ? fgColor255 : bgColor255}
+      initialColor={dialogTarget === 'fg' ? fgColor : bgColor}
       onConfirm={handleConfirm}
       onCancel={() => { setDialogIsSwatchAdd(false); setDialogOpen(false) }}
-      onAddSwatch={(c) => dispatch({ type: 'ADD_SWATCH', payload: c })}
+      onAddSwatch={(c) => dispatch({ type: 'ADD_SWATCH', payload: { r: Math.round(c.r*255), g: Math.round(c.g*255), b: Math.round(c.b*255), a: Math.round(c.a*255) } })}
+      pixelFormat={state.pixelFormat}
     />
     {indexedPickerTarget !== null && (
       <IndexedPaletteColorPicker

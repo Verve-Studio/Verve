@@ -37,6 +37,7 @@ export interface ColorPickerDialogProps {
   onConfirm: (color: RGBAColor) => void
   onCancel: () => void
   onAddSwatch?: (color: RGBAColor) => void
+  pixelFormat?: 'rgba8' | 'rgba32f' | 'indexed8'
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -279,6 +280,7 @@ export function ColorPickerDialog({
   onConfirm,
   onCancel,
   onAddSwatch,
+  pixelFormat = 'rgba8',
 }: ColorPickerDialogProps): React.JSX.Element | null {
   const gradRef  = useRef<HTMLCanvasElement>(null)
   const stripRef = useRef<HTMLCanvasElement>(null)
@@ -295,10 +297,13 @@ export function ColorPickerDialog({
   // Reset to initialColor whenever dialog opens
   useEffect(() => {
     if (!open) return
-    const [nh, ns, nv] = rgbToHsv(initialColor.r, initialColor.g, initialColor.b)
+    const ir = Math.round(Math.min(initialColor.r, 1) * 255)
+    const ig = Math.round(Math.min(initialColor.g, 1) * 255)
+    const ib = Math.round(Math.min(initialColor.b, 1) * 255)
+    const [nh, ns, nv] = rgbToHsv(ir, ig, ib)
     setHue(nh); setSat(ns); setVal(nv)
     setMode('H')
-    setHexText(toHex6(initialColor.r, initialColor.g, initialColor.b))
+    setHexText(toHex6(ir, ig, ib))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -309,7 +314,7 @@ export function ColorPickerDialog({
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Enter') onConfirm({ r, g, b, a: 255 })
+      if (e.key === 'Enter') onConfirm({ r: r/255, g: g/255, b: b/255, a: 1 })
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -415,7 +420,7 @@ export function ColorPickerDialog({
     }
   }
 
-  const currentHex = `#${toHex6(initialColor.r, initialColor.g, initialColor.b)}`
+  const currentHex = `#${toHex6(Math.round(Math.min(initialColor.r,1)*255), Math.round(Math.min(initialColor.g,1)*255), Math.round(Math.min(initialColor.b,1)*255))}`
   const newHex     = `#${toHex6(r, g, b)}`
 
   if (!open) return null
@@ -493,9 +498,9 @@ export function ColorPickerDialog({
 
             {/* OK / Cancel / Add to Swatches */}
             <DialogButtonRow
-              onConfirm={() => onConfirm({ r, g, b, a: 255 })}
+              onConfirm={() => onConfirm({ r: r/255, g: g/255, b: b/255, a: 1 })}
               onCancel={onCancel}
-              onAddSwatch={onAddSwatch ? () => onAddSwatch({ r, g, b, a: 255 }) : undefined}
+              onAddSwatch={onAddSwatch ? () => onAddSwatch({ r: r/255, g: g/255, b: b/255, a: 1 }) : undefined}
             />
 
             {/* New / Current color preview */}
@@ -544,21 +549,27 @@ export function ColorPickerDialog({
                 <label className={styles.fieldRow}>
                   <input type="radio" name="cpMode" className={styles.radio} checked={mode === 'R'} onChange={() => setMode('R')} />
                   <span className={styles.fieldLabel}>R:</span>
-                  <input type="number" className={styles.numInput} min={0} max={255} value={r} onChange={(e) => setR(+e.target.value)} />
+                  {pixelFormat === 'rgba32f'
+                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat((r/255).toFixed(4))} onChange={(e) => setR(Math.round(+e.target.value * 255))} />
+                    : <input type="number" className={styles.numInput} min={0} max={255} value={r} onChange={(e) => setR(+e.target.value)} />}
                 </label>
 
                 {/* G */}
                 <label className={styles.fieldRow}>
                   <input type="radio" name="cpMode" className={styles.radio} checked={mode === 'G'} onChange={() => setMode('G')} />
                   <span className={styles.fieldLabel}>G:</span>
-                  <input type="number" className={styles.numInput} min={0} max={255} value={g} onChange={(e) => setG(+e.target.value)} />
+                  {pixelFormat === 'rgba32f'
+                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat((g/255).toFixed(4))} onChange={(e) => setG(Math.round(+e.target.value * 255))} />
+                    : <input type="number" className={styles.numInput} min={0} max={255} value={g} onChange={(e) => setG(+e.target.value)} />}
                 </label>
 
                 {/* Blue */}
                 <label className={styles.fieldRow}>
                   <input type="radio" name="cpMode" className={styles.radio} checked={mode === 'Bl'} onChange={() => setMode('Bl')} />
                   <span className={styles.fieldLabel}>B:</span>
-                  <input type="number" className={styles.numInput} min={0} max={255} value={b} onChange={(e) => setB(+e.target.value)} />
+                  {pixelFormat === 'rgba32f'
+                    ? <input type="number" className={styles.numInput} min={0} max={1} step={0.001} value={parseFloat((b/255).toFixed(4))} onChange={(e) => setB(Math.round(+e.target.value * 255))} />
+                    : <input type="number" className={styles.numInput} min={0} max={255} value={b} onChange={(e) => setB(+e.target.value)} />}
                 </label>
 
                 {/* Hex */}

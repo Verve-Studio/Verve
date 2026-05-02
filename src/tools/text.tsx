@@ -125,7 +125,12 @@ function createTextHandler(): ToolHandler {
         italic: textOptions.italic,
         underline: textOptions.underline,
         align: textOptions.align,
-        color: ctx.primaryColor,
+        color: {
+          r: Math.round(Math.min(ctx.primaryColor.r, 1) * 255),
+          g: Math.round(Math.min(ctx.primaryColor.g, 1) * 255),
+          b: Math.round(Math.min(ctx.primaryColor.b, 1) * 255),
+          a: Math.round(ctx.primaryColor.a * 255),
+        },
       }
       ctx.addTextLayer(layer)
     },

@@ -57,7 +57,7 @@ export function ColorPicker(): React.JSX.Element {
         value={activeColor}
         onChange={handleChange}
         grayscaleOnly={grayscaleOnly}
-        isHdrMode={state.pixelFormat === 'rgba32f'}
+        pixelFormat={state.pixelFormat}
       />
     </div>
   )
