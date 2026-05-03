@@ -1,10 +1,10 @@
 import * as UTIF from 'utif'
 import { decodeRgbe } from './hdrCodec'
-import { decodeExr } from '@/wasm'
+import { decodeExr, getDdsInfo, decodeDds, decodeDdsF32, DdsFormat } from '@/wasm'
 
 // ─── Supported image extensions + MIME types ─────────────────────────────────
 
-export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tga', '.tif', '.tiff', '.exr', '.hdr'])
+export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tga', '.tif', '.tiff', '.exr', '.hdr', '.dds'])
 
 export const EXT_TO_MIME: Record<string, string> = {
   '.png':  'image/png',
@@ -18,6 +18,7 @@ export const EXT_TO_MIME: Record<string, string> = {
   '.tiff': 'image/tiff',
   '.exr':  'image/x-exr',
   '.hdr':  'image/vnd.radiance',
+  '.dds':  'image/vnd.ms-dds',
 }
 
 // ─── TGA decoder ─────────────────────────────────────────────────────────────
@@ -99,6 +100,26 @@ function decodeTgaPixels(raw: Uint8Array): { data: Uint8Array; width: number; he
 // ─── Decode a data URL into raw RGBA pixels ───────────────────────────────────
 
 export async function loadImagePixels(dataUrl: string): Promise<{ data: Uint8Array | Float32Array; width: number; height: number; isHdr?: boolean }> {
+  // DDS — decoded via WASM.
+  if (dataUrl.startsWith('data:image/vnd.ms-dds;base64,')) {
+    try {
+      const base64 = dataUrl.slice('data:image/vnd.ms-dds;base64,'.length)
+      const binary = atob(base64)
+      const bytes  = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      const info = await getDdsInfo(bytes)
+      if (info.fmt === DdsFormat.BC6H || info.fmt === DdsFormat.RGBA32F) {
+        const result = await decodeDdsF32(bytes)
+        return { data: result.pixels, width: result.width, height: result.height, isHdr: true }
+      } else {
+        const result = await decodeDds(bytes)
+        return { data: result.pixels, width: result.width, height: result.height }
+      }
+    } catch (err) {
+      return Promise.reject(new Error(`Failed to decode DDS: ${(err as Error).message}`))
+    }
+  }
+
   // EXR — decoded via WASM (tinyexr).
   if (dataUrl.startsWith('data:image/x-exr;base64,')) {
     try {

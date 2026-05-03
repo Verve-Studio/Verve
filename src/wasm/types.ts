@@ -218,6 +218,15 @@ export interface PixelOpsModule {
     halfFloat: number
   ): number
   _freeExrBytes(resultPtr: number): void
+
+  // DDS I/O
+  _pixelops_dds_get_info(dataPtr: number, size: number, outPtr: number): number
+  _pixelops_dds_decode(dataPtr: number, size: number, outPtr: number, outSize: number): number
+  _pixelops_dds_decode_f32(dataPtr: number, size: number, outPtr: number, outSize: number): number
+  _pixelops_dds_get_encoded_size(width: number, height: number, fmt: number, mipLevels: number, headerMode: number): number
+  _pixelops_dds_max_mip_levels(width: number, height: number, minDim: number): number
+  _pixelops_dds_encode(pixelsPtr: number, width: number, height: number, fmt: number, mipLevels: number, headerMode: number, outPtr: number, outSize: number): number
+  _pixelops_dds_encode_f32(pixelsPtr: number, width: number, height: number, fmt: number, mipLevels: number, headerMode: number, outPtr: number, outSize: number): number
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

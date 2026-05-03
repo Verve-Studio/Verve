@@ -423,6 +423,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
       <ExportDialog
         open={showExportDialog}
         isHdrDocument={pixelFormat === 'rgba32f'}
+        documentWidth={canvasWidth}
+        documentHeight={canvasHeight}
         onCancel={() => setShowExportDialog(false)}
         onConfirm={async (settings) => {
           setShowExportDialog(false)

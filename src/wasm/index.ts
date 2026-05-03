@@ -650,4 +650,165 @@ export async function encodeExr(
   }
 }
 
+// ─── DDS I/O ─────────────────────────────────────────────────────────────────
+
+export const DdsFormat = {
+  BC1:    1,
+  BC2:    2,
+  BC3:    3,
+  BC4:    4,
+  BC5:    5,
+  BC6H:   6,
+  BC7:    7,
+  RGBA8:  8,
+  RGBA32F: 9,
+} as const
+export type DdsFormat = (typeof DdsFormat)[keyof typeof DdsFormat]
+
+export const DdsHeaderMode = {
+  AUTO: 0,
+  DX9:  1,
+  DX10: 2,
+} as const
+
+export interface DdsInfo {
+  width: number
+  height: number
+  fmt: DdsFormat
+  mipLevels: number
+}
+
+function ddsErrorFromCode(code: number): string {
+  switch (code) {
+    case -1: return 'DDS: invalid file'
+    case -2: return 'DDS: unsupported format'
+    case -3: return 'DDS: output buffer too small'
+    default: return `DDS: error code ${code}`
+  }
+}
+
+/** Parse DDS header metadata. */
+export async function getDdsInfo(bytes: Uint8Array): Promise<DdsInfo> {
+  const m = await getPixelOps()
+  const dataPtr = m._malloc(bytes.byteLength)
+  const outPtr  = m._malloc(16) // 4 × int32
+  try {
+    m.HEAPU8.set(bytes, dataPtr)
+    const err = m._pixelops_dds_get_info(dataPtr, bytes.byteLength, outPtr)
+    if (err !== 0) throw new Error(ddsErrorFromCode(err))
+    const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset)
+    return {
+      width:     view.getInt32(outPtr,      true),
+      height:    view.getInt32(outPtr + 4,  true),
+      fmt:       view.getInt32(outPtr + 8,  true) as DdsFormat,
+      mipLevels: view.getInt32(outPtr + 12, true),
+    }
+  } finally {
+    m._free(dataPtr)
+    m._free(outPtr)
+  }
+}
+
+/** Decode a DDS file to RGBA8 pixels. BC6H and RGBA32F are tonemapped to SDR. */
+export async function decodeDds(bytes: Uint8Array): Promise<{ pixels: Uint8Array; width: number; height: number }> {
+  const m = await getPixelOps()
+  const info = await getDdsInfo(bytes)
+  const { width, height } = info
+  const outSize = width * height * 4
+  const dataPtr = m._malloc(bytes.byteLength)
+  const outPtr  = m._malloc(outSize)
+  try {
+    m.HEAPU8.set(bytes, dataPtr)
+    const err = m._pixelops_dds_decode(dataPtr, bytes.byteLength, outPtr, outSize)
+    if (err !== 0) throw new Error(ddsErrorFromCode(err))
+    const pixels = new Uint8Array(outSize)
+    pixels.set(m.HEAPU8.subarray(outPtr, outPtr + outSize))
+    return { pixels, width, height }
+  } finally {
+    m._free(dataPtr)
+    m._free(outPtr)
+  }
+}
+
+/** Decode a DDS file to RGBA float32 pixels. */
+export async function decodeDdsF32(bytes: Uint8Array): Promise<{ pixels: Float32Array; width: number; height: number }> {
+  const m = await getPixelOps()
+  const info = await getDdsInfo(bytes)
+  const { width, height } = info
+  const outSize = width * height * 16 // 4 floats × 4 bytes
+  const dataPtr = m._malloc(bytes.byteLength)
+  const outPtr  = m._malloc(outSize)
+  try {
+    m.HEAPU8.set(bytes, dataPtr)
+    const err = m._pixelops_dds_decode_f32(dataPtr, bytes.byteLength, outPtr, outSize)
+    if (err !== 0) throw new Error(ddsErrorFromCode(err))
+    const pixels = new Float32Array(width * height * 4)
+    const heap = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset)
+    pixels.set(heap.subarray(outPtr >> 2, (outPtr >> 2) + pixels.length))
+    return { pixels, width, height }
+  } finally {
+    m._free(dataPtr)
+    m._free(outPtr)
+  }
+}
+
+/** Encode RGBA8 pixels to a DDS file (BC1, BC3, BC7). */
+export async function encodeDds(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  fmt: number,
+  mipLevels: number = 1,
+  headerMode: number = DdsHeaderMode.AUTO,
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  const outSize = m._pixelops_dds_get_encoded_size(width, height, fmt, mipLevels, headerMode)
+  if (outSize <= 0) throw new Error(ddsErrorFromCode(outSize))
+  const srcPtr = m._malloc(pixels.byteLength)
+  const outPtr = m._malloc(outSize)
+  try {
+    m.HEAPU8.set(pixels, srcPtr)
+    const err = m._pixelops_dds_encode(srcPtr, width, height, fmt, mipLevels, headerMode, outPtr, outSize)
+    if (err !== 0) throw new Error(ddsErrorFromCode(err))
+    const out = new Uint8Array(outSize)
+    out.set(m.HEAPU8.subarray(outPtr, outPtr + outSize))
+    return out
+  } finally {
+    m._free(srcPtr)
+    m._free(outPtr)
+  }
+}
+
+/** Encode RGBA float32 pixels to a DDS file (BC6H UF16 or raw RGBA32F). */
+export async function encodeDdsF32(
+  pixels: Float32Array,
+  width: number,
+  height: number,
+  fmt: number,
+  mipLevels: number = 1,
+): Promise<Uint8Array> {
+  const m = await getPixelOps()
+  const outSize = m._pixelops_dds_get_encoded_size(width, height, fmt, mipLevels, DdsHeaderMode.DX10)
+  if (outSize <= 0) throw new Error(ddsErrorFromCode(outSize))
+  const srcPtr = m._malloc(pixels.byteLength)
+  const outPtr = m._malloc(outSize)
+  try {
+    new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset + srcPtr, pixels.length).set(pixels)
+    const err = m._pixelops_dds_encode_f32(srcPtr, width, height, fmt, mipLevels, DdsHeaderMode.DX10, outPtr, outSize)
+    if (err !== 0) throw new Error(ddsErrorFromCode(err))
+    const out = new Uint8Array(outSize)
+    // Re-read HEAPU8 in case WASM memory grew
+    out.set(m.HEAPU8.subarray(outPtr, outPtr + outSize))
+    return out
+  } finally {
+    m._free(srcPtr)
+    m._free(outPtr)
+  }
+}
+
+/** Maximum mip levels such that the smallest dimension is >= minDim. */
+export async function maxDdsMipLevels(width: number, height: number, minDim: number): Promise<number> {
+  const m = await getPixelOps()
+  return m._pixelops_dds_max_mip_levels(width, height, minDim)
+}
 

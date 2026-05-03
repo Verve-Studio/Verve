@@ -16,7 +16,7 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -37,9 +37,9 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'Verve Document',  extensions: ['verve'] },
-        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
     })
@@ -71,6 +71,7 @@ export function registerIpcHandlers(): void {
       ext === 'tiff32' ? [{ name: 'TIFF 32-bit Float', extensions: ['tif', 'tiff'] }] :
       ext === 'exr'    ? [{ name: 'OpenEXR Image',     extensions: ['exr']         }] :
       ext === 'hdr'    ? [{ name: 'Radiance HDR',      extensions: ['hdr']         }] :
+      ext === 'dds'    ? [{ name: 'DDS Texture',        extensions: ['dds']         }] :
                          [{ name: 'JPEG Image',        extensions: ['jpg', 'jpeg'] }]
     const { canceled, filePath } = await dialog.showSaveDialog({ filters })
     return canceled ? null : filePath

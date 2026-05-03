@@ -5,7 +5,8 @@ import styles from './ExportDialog.module.scss'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'tga' | 'tiff' | 'exr' | 'hdr' | 'tiff32'
+export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'tga' | 'tiff' | 'exr' | 'hdr' | 'tiff32' | 'dds'
+export type DdsCompression = 'bc1' | 'bc3' | 'bc7' | 'bc6h' | 'rgba32f'
 
 export interface ExportSettings {
   filePath: string
@@ -15,11 +16,15 @@ export interface ExportSettings {
   webpQuality: number      // 0–100
   exrCompression: 0 | 1 | 2 | 3  // 0=none,1=zip,2=zips,3=piz
   exrHalfFloat: boolean
+  ddsCompression: DdsCompression
+  ddsMipLevels: number     // >= 1
 }
 
 export interface ExportDialogProps {
   open: boolean
   isHdrDocument?: boolean
+  documentWidth?: number
+  documentHeight?: number
   onConfirm: (settings: ExportSettings) => void
   onCancel: () => void
 }
@@ -29,8 +34,8 @@ export interface ExportDialogProps {
 /** Replace or append the correct extension based on the chosen format. */
 function applyExtension(filePath: string, format: ExportFormat): string {
   if (!filePath) return filePath
-  const ext = format === 'png' ? '.png' : format === 'webp' ? '.webp' : format === 'tga' ? '.tga' : format === 'tiff' ? '.tiff' : format === 'exr' ? '.exr' : format === 'hdr' ? '.hdr' : format === 'tiff32' ? '.tiff' : '.jpg'
-  return filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr)$/i, '') + ext
+  const ext = format === 'png' ? '.png' : format === 'webp' ? '.webp' : format === 'tga' ? '.tga' : format === 'tiff' ? '.tiff' : format === 'exr' ? '.exr' : format === 'hdr' ? '.hdr' : format === 'tiff32' ? '.tiff' : format === 'dds' ? '.dds' : '.jpg'
+  return filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds)$/i, '') + ext
 }
 
 /** Convert a CSS hex colour (#rrggbb) to the format expected by <input type="color">. */
@@ -40,7 +45,7 @@ function toColorInputValue(hex: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: ExportDialogProps): React.JSX.Element | null {
+export function ExportDialog({ open, isHdrDocument, documentWidth, documentHeight, onConfirm, onCancel }: ExportDialogProps): React.JSX.Element | null {
   const [filePath, setFilePath]             = useState('')
   const [format, setFormat]                 = useState<ExportFormat>('png')
   const [jpegQuality, setJpegQuality]       = useState(92)
@@ -48,6 +53,17 @@ export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: Expor
   const [webpQuality, setWebpQuality]       = useState(90)
   const [exrCompression, setExrCompression] = useState<0 | 1 | 2 | 3>(0)
   const [exrHalfFloat, setExrHalfFloat]     = useState(false)
+  const [ddsCompression, setDdsCompression] = useState<DdsCompression>('bc7')
+  const [ddsMipLevels, setDdsMipLevels]     = useState(1)
+
+  // Maximum mip levels such that the smallest dimension is >= 128 (each level halves both dims).
+  const maxDdsMipLevels = (() => {
+    const w = documentWidth ?? 0, h = documentHeight ?? 0
+    if (w <= 0 || h <= 0) return 1
+    let levels = 1, cw = w, ch = h
+    while ((cw >> 1) >= 128 && (ch >> 1) >= 128) { cw >>= 1; ch >>= 1; levels++ }
+    return levels
+  })()
 
   // Reset state on every open
   useEffect(() => {
@@ -59,6 +75,8 @@ export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: Expor
       setWebpQuality(90)
       setExrCompression(0)
       setExrHalfFloat(false)
+      setDdsCompression('bc7')
+      setDdsMipLevels(1)
     }
   }, [open])
 
@@ -84,6 +102,8 @@ export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: Expor
       webpQuality: Math.max(1, Math.min(100, Math.round(webpQuality))),
       exrCompression,
       exrHalfFloat,
+      ddsCompression,
+      ddsMipLevels: Math.max(1, Math.min(maxDdsMipLevels, Math.floor(ddsMipLevels))),
     })
   }, [filePath, format, jpegQuality, jpegBg, onConfirm])
 
@@ -134,6 +154,7 @@ export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: Expor
               <option value="webp">WebP</option>
               <option value="tga">TGA</option>
               <option value="tiff">TIFF</option>
+              <option value="dds">DDS</option>
               {isHdrDocument && (
                 <>
                   <option disabled>──────────</option>
@@ -330,6 +351,47 @@ export function ExportDialog({ open, isHdrDocument, onConfirm, onCancel }: Expor
                 <div className={styles.fieldRow}>
                   <label className={styles.fieldLabel}>Compression</label>
                   <span className={styles.staticNote}>Uncompressed — full float precision</span>
+                </div>
+              </>
+            )}
+
+            {format === 'dds' && (
+              <>
+                <p className={styles.sectionTitle}>DDS OPTIONS</p>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel} htmlFor="ex-dds-comp">Compression</label>
+                  <select
+                    id="ex-dds-comp"
+                    className={styles.select}
+                    value={ddsCompression}
+                    onChange={(e) => setDdsCompression(e.target.value as DdsCompression)}
+                  >
+                    <option value="bc7">BC7 — high quality, RGBA</option>
+                    <option value="bc3">BC3 — DXT5, RGBA</option>
+                    <option value="bc1">BC1 — DXT1, RGB (smallest)</option>
+                    {isHdrDocument && (
+                      <>
+                        <option disabled>──────────</option>
+                        <option value="bc6h">BC6H — HDR, lossy</option>
+                        <option value="rgba32f">RGBA32F — HDR, lossless</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel} htmlFor="ex-dds-mips">Mip levels</label>
+                  <select
+                    id="ex-dds-mips"
+                    className={styles.select}
+                    value={ddsMipLevels}
+                    onChange={(e) => setDdsMipLevels(parseInt(e.target.value, 10))}
+                  >
+                    {Array.from({ length: maxDdsMipLevels }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {n === 1 ? '1 (base only)' : `${n} (down to ${Math.max(1, (documentWidth ?? 0) >> (n - 1))}×${Math.max(1, (documentHeight ?? 0) >> (n - 1))})`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </>
             )}

@@ -6,6 +6,8 @@ DirectDraw Surface (DDS) is the standard texture container format for real-time 
 
 This feature adds first-class DDS support to Verve: DDS files can be opened via the regular **File → Open** dialog and loaded onto the canvas like any other image, and the existing **Export As** dialog gains a DDS option with controls for compression format, mip map generation, and header compatibility. BCx decompression and compression are both executed through the C++/WASM layer; there is no realtime GPU-side compression requirement.
 
+DDS files that contain HDR float content — BC6H-compressed or uncompressed RGBA32F — open as **rgba32f documents**, preserving float values above 1.0. All other DDS formats open as standard **rgba8 documents**. On export, an rgba32f document defaults to BC6H compression; an rgba8 document defaults to BC3.
+
 ---
 
 ## User Stories
@@ -14,7 +16,8 @@ This feature adds first-class DDS support to Verve: DDS files can be opened via 
 - **As a technical artist**, I want to choose a BCx compression format when exporting so the output is immediately usable by the engine's asset pipeline without a separate conversion step.
 - **As a developer reviewing assets**, I want to open a DDS file and see its base mip level on the canvas so I can inspect its content without needing additional tooling.
 - **As an artist targeting legacy platforms**, I want the option to emit a DX9-compatible DDS header so older loaders can read the file.
-- **As an artist targeting modern engines**, I want to emit a DX10-extended header when using BC7 or BC6H, since those formats require it.
+- **As an artist targeting modern engines**, I want to emit a DX10-extended header when using BC7, BC6H, or RGBA32F, since those formats require it.
+- **As a VFX or environment artist working with HDR textures**, I want to open a BC6H or RGBA32F DDS texture and keep its full float range in a 32-bit document so I can edit it and re-export without clipping HDR detail.
 
 ---
 
@@ -33,8 +36,9 @@ This feature adds first-class DDS support to Verve: DDS files can be opened via 
 - The following **BCx-compressed** pixel formats **must** be supported on load:
   - BC1 (DXT1), BC2 (DXT3), BC3 (DXT5), BC4 (ATI1 / BC4_UNORM), BC5 (ATI2 / BC4_SNORM pair / BC5_UNORM), BC6H (BC6H_UF16 and BC6H_SF16), BC7
 - Both **DX9 (legacy)** DDS files (identified by a `FOURCC` code in the header's `ddspf.dwFourCC` field) and **DX10 (extended)** DDS files (identified by the `DX10` FOURCC and a trailing `DDS_HEADER_DXT10` chunk) **must** be supported on load.
-- BCx decompression **must** be performed via the C++/WASM layer. The result delivered to the canvas is always RGBA8 regardless of the source format.
-- BC6H (HDR float) **must** be tone-mapped or clamped to 8-bit RGBA on load so it is usable on the canvas. The exact tone-mapping strategy is an implementation detail, but the output **must not** contain values outside the 0–255 range.
+- BCx decompression **must** be performed via the C++/WASM layer.
+- **BC6H** (BC6H_UF16 and BC6H_SF16) and **uncompressed RGBA32F** (`DXGI_FORMAT_R32G32B32A32_FLOAT`) DDS files **must** open as **rgba32f documents**, with float pixel values preserved as-is (values above 1.0 are retained for HDR content). The resulting layer's `format` field is `'rgba32f'` and the document's pixel format is set accordingly.
+- All other supported DDS formats **must** be decoded to RGBA8 and opened as **rgba8 documents**. The result delivered to the canvas is a `Uint8Array` with values in the 0–255 range.
 - If a DDS file is identified as a **cubemap** (i.e. the `DDSCAPS2_CUBEMAP` flag is set), loading **must** be refused with a user-visible, non-technical error message: *"This DDS file contains a cubemap texture, which is not supported. Only 2D textures can be opened."*
 - If a DDS file is identified as a **volume texture** (i.e. the `DDSCAPS2_VOLUME` flag is set, or `resourceDimension == D3D10_RESOURCE_DIMENSION_TEXTURE3D` in a DX10 header), loading **must** be refused with the message: *"This DDS file contains a 3D volume texture, which is not supported. Only 2D textures can be opened."*
 - If the DDS signature bytes (`DDS ` / `0x44445320`) are present but the header is malformed or the pixel data cannot be decoded, Verve **must** show an error dialog: *"Failed to open DDS file: the file is corrupt or uses an unsupported variant."* The canvas and layer stack **must** remain unchanged.
@@ -50,6 +54,15 @@ This feature adds first-class DDS support to Verve: DDS files can be opened via 
 
 A labeled dropdown titled **"Compression"** with the following options, listed in this order:
 
+For **rgba32f documents**, the HDR-native formats appear first in the list under an **"HDR Formats (float precision preserved)"** group header:
+
+| Display Label                    | Encoding Details                                   |
+|----------------------------------|----------------------------------------------------|
+| BC6H — HDR Float (compressed)    | BC6H_UF16; preserves float values, compressed      |
+| RGBA32F — Uncompressed HDR       | DXGI_FORMAT_R32G32B32A32_FLOAT; 128 bits per pixel |
+
+Followed by an **"LDR Formats (HDR values clipped)"** group header containing the LDR options:
+
 | Display Label              | Encoding Details                          |
 |----------------------------|-------------------------------------------|
 | Uncompressed (RGBA8)       | No compression; 32 bits per pixel         |
@@ -59,10 +72,21 @@ A labeled dropdown titled **"Compression"** with the following options, listed i
 | BC3 — Full Alpha           | BC3 / DXT5, interpolated alpha            |
 | BC4 — Single Channel       | BC4, single luminance/red channel         |
 | BC5 — Dual Channel         | BC5, dual-channel (e.g. normal map RG)    |
-| BC6H — HDR Float           | BC6H_UF16; HDR unsigned float             |
 | BC7 — High Quality         | BC7; best quality, slowest to compress    |
 
-The default selection **must** be **BC3 — Full Alpha**.
+For **rgba8 documents**, all options are presented in a single flat list in the same order as the LDR table above, with BC6H and RGBA32F appended at the bottom (not grouped):
+
+| Display Label              | Encoding Details                          |
+|----------------------------|-------------------------------------------|
+| ...all LDR options above...| ...                                       |
+| BC6H — HDR Float           | BC6H_UF16; HDR unsigned float             |
+| RGBA32F — Uncompressed HDR | DXGI_FORMAT_R32G32B32A32_FLOAT            |
+
+**Default selection:**
+- rgba32f document → **BC6H — HDR Float (compressed)**
+- rgba8 document → **BC3 — Full Alpha**
+
+**HDR clipping warning:** When an **rgba32f document** has an LDR compression format selected, an inline warning **must** appear below the compression dropdown: *"HDR values above 1.0 will be clipped. Use BC6H or RGBA32F to preserve HDR detail."* The warning disappears when BC6H or RGBA32F is selected.
 
 #### Control 2 — Mip Maps
 
@@ -86,7 +110,7 @@ The following constraints on the header format **must** be enforced:
 - In **DX9 mode**, BC4 is encoded with FOURCC `ATI1` and BC5 is encoded with FOURCC `ATI2`.
 - In **DX10 mode**, BC4 is encoded as `DXGI_FORMAT_BC4_UNORM` and BC5 as `DXGI_FORMAT_BC5_UNORM`.
 
-- Clicking **Export** in the dialog **must** flatten the document (all visible layers, adjustments, effects, and filters applied) to a single RGBA8 buffer using the unified rasterization pipeline, then pass that buffer to the WASM compression layer with the selected options.
+- Clicking **Export** in the dialog **must** flatten the document using the unified rasterization pipeline. For **rgba32f documents** with an HDR-native format selected (BC6H or RGBA32F), the pipeline output is a `Float32Array` and is passed directly to the WASM compression layer. For **rgba32f documents** with an LDR format selected, the float buffer is first clamped to RGBA8 (`Uint8Array`, 0–255) before passing to WASM. For **rgba8 documents**, the flattened buffer is a `Uint8Array` regardless of format.
 - Compression **must** run entirely in the C++/WASM layer (e.g. bc7enc_rdo, libsquish, or a compatible library). No GPU-side BCx encoding is required.
 - During compression, a **non-blocking progress indicator** (e.g. a spinner or progress bar on the Export button) **must** be shown. The dialog **must** remain open until compression completes. The user **must** be able to cancel the operation via a **Cancel** button while compression is in progress. Cancelling **must** leave no partial file on disk.
 - On completion, the output file is written to the path chosen in the dialog. The dialog **should** close automatically on success.
@@ -96,24 +120,27 @@ The following constraints on the header format **must** be enforced:
 
 ## Format Support Table
 
-| Format             | On Load | On Export | Alpha Support       | DX9 Header (FOURCC)  | DX10 Header (DXGI)             |
-|--------------------|---------|-----------|---------------------|----------------------|--------------------------------|
-| Uncompressed RGBA8 | ✓       | ✓         | Full 8-bit alpha    | D3DFMT_A8R8G8B8      | DXGI_FORMAT_R8G8B8A8_UNORM     |
-| Uncompressed BGRA8 | ✓       | —         | Full 8-bit alpha    | D3DFMT_A8R8G8B8      | DXGI_FORMAT_B8G8R8A8_UNORM     |
-| BC1 (no alpha)     | ✓       | ✓         | None                | DXT1                 | DXGI_FORMAT_BC1_UNORM          |
-| BC1 (1-bit alpha)  | ✓       | ✓         | Punch-through 1-bit | DXT1 (with alpha)    | DXGI_FORMAT_BC1_UNORM          |
-| BC2                | ✓       | ✓         | Explicit 4-bit      | DXT3                 | DXGI_FORMAT_BC2_UNORM          |
-| BC3                | ✓       | ✓         | Interpolated 8-bit  | DXT5                 | DXGI_FORMAT_BC3_UNORM          |
-| BC4                | ✓       | ✓         | None (single ch.)   | ATI1                 | DXGI_FORMAT_BC4_UNORM          |
-| BC5                | ✓       | ✓         | None (dual ch.)     | ATI2                 | DXGI_FORMAT_BC5_UNORM          |
-| BC6H (UF16)        | ✓       | ✓         | None (HDR)          | Not supported (DX10 only) | DXGI_FORMAT_BC6H_UF16     |
-| BC6H (SF16)        | ✓       | —         | None (HDR signed)   | Not supported (DX10 only) | DXGI_FORMAT_BC6H_SF16     |
-| BC7                | ✓       | ✓         | Full 8-bit alpha    | Not supported (DX10 only) | DXGI_FORMAT_BC7_UNORM     |
+| Format               | On Load | On Export | Opens as    | Alpha Support       | DX9 Header (FOURCC)       | DX10 Header (DXGI)                  |
+|----------------------|---------|-----------|-------------|---------------------|---------------------------|-------------------------------------|
+| Uncompressed RGBA8   | ✓       | ✓         | rgba8       | Full 8-bit alpha    | D3DFMT_A8R8G8B8            | DXGI_FORMAT_R8G8B8A8_UNORM          |
+| Uncompressed BGRA8   | ✓       | —         | rgba8       | Full 8-bit alpha    | D3DFMT_A8R8G8B8            | DXGI_FORMAT_B8G8R8A8_UNORM          |
+| Uncompressed RGBA32F | ✓       | ✓         | **rgba32f** | None (HDR)          | Not supported (DX10 only) | DXGI_FORMAT_R32G32B32A32_FLOAT      |
+| BC1 (no alpha)       | ✓       | ✓         | rgba8       | None                | DXT1                       | DXGI_FORMAT_BC1_UNORM               |
+| BC1 (1-bit alpha)    | ✓       | ✓         | rgba8       | Punch-through 1-bit | DXT1 (with alpha)          | DXGI_FORMAT_BC1_UNORM               |
+| BC2                  | ✓       | ✓         | rgba8       | Explicit 4-bit      | DXT3                       | DXGI_FORMAT_BC2_UNORM               |
+| BC3                  | ✓       | ✓         | rgba8       | Interpolated 8-bit  | DXT5                       | DXGI_FORMAT_BC3_UNORM               |
+| BC4                  | ✓       | ✓         | rgba8       | None (single ch.)   | ATI1                       | DXGI_FORMAT_BC4_UNORM               |
+| BC5                  | ✓       | ✓         | rgba8       | None (dual ch.)     | ATI2                       | DXGI_FORMAT_BC5_UNORM               |
+| BC6H (UF16)          | ✓       | ✓         | **rgba32f** | None (HDR)          | Not supported (DX10 only) | DXGI_FORMAT_BC6H_UF16               |
+| BC6H (SF16)          | ✓       | —         | **rgba32f** | None (HDR signed)   | Not supported (DX10 only) | DXGI_FORMAT_BC6H_SF16               |
+| BC7                  | ✓       | ✓         | rgba8       | Full 8-bit alpha    | Not supported (DX10 only) | DXGI_FORMAT_BC7_UNORM               |
 
 Notes:
 - "On Load" includes both DX9 and DX10 variants unless noted.
-- On export, only **unsigned** BC6H (UF16) is offered. Loading of signed BC6H (SF16) is supported but not re-exported as SF16 because signed float HDR data is outside the 8-bit canvas representation.
+- **"Opens as"** indicates the Verve document pixel format the file creates. `rgba32f` documents preserve float values including those above 1.0 (HDR).
+- On export, only **unsigned** BC6H (UF16) is offered. BC6H (SF16) files can be loaded (producing an rgba32f document) but are not re-exported as SF16.
 - BGRA8 is recognized on load (common in older DX9 game assets) but export always uses RGBA8 for the uncompressed option.
+- RGBA32F requires the DX10 header on export; the header selector is locked automatically.
 
 ---
 
@@ -127,7 +154,7 @@ The following DDS features are explicitly **not** supported in this version:
 - **Mip-level inspection** — there is no UI for selecting and inspecting individual mip levels. Only mip 0 is loaded.
 - **GPU-side BCx encoding** — all compression is WASM-only.
 - **Signed BC4 / BC5** (`BC4_SNORM`, `BC5_SNORM`) on export. These are loadable but not exportable.
-- **HDR canvas pipeline** — BC6H content is tone-mapped to 8-bit LDR on load. Round-tripping HDR float data through the canvas is not supported.
+- **BC6H SF16 (signed) export** — files loaded as BC6H_SF16 open as rgba32f documents but are not re-exported as signed BC6H. Unsigned BC6H (UF16) is the only BC6H export target.
 - **Premultiplied alpha DDS variants** — formats such as `DXGI_FORMAT_R8G8B8A8_UNORM_SRGB` with premultiplied alpha encoding are loaded as-is without alpha un-premultiplication.
 - **sRGB format variants** — `_SRGB` DXGI suffixed formats (e.g. BC1_UNORM_SRGB) are treated as their linear equivalents. No gamma correction is applied during load or export.
 - **DDS files embedded inside other containers** (e.g. `.ktx`, `.pkg`, or game archive formats).
@@ -169,7 +196,15 @@ The controls should be laid out consistently with the JPEG quality row — label
 
 ### Forced DX10 Header
 
-When **BC6H** or **BC7** is selected in the Compression dropdown, the Header control must lock to "Modern (DX10 header)" immediately. The control appears visually disabled and an inline note below it reads: *"BC6H and BC7 require the DX10 header extension."* Switching to any other compression format restores the Header control to its previous selection.
+When **BC6H**, **BC7**, or **RGBA32F** is selected in the Compression dropdown, the Header control must lock to "Modern (DX10 header)" immediately. The control appears visually disabled and an inline note below it reads: *"BC6H, BC7, and RGBA32F require the DX10 header."* Switching to any other compression format restores the Header control to its previous selection.
+
+### HDR Clipping Warning
+
+When the active document is an **rgba32f document** and an LDR compression format is selected (any format other than BC6H or RGBA32F), a warning note appears below the compression dropdown:
+
+> *"HDR values above 1.0 will be clipped. Use BC6H or RGBA32F to preserve HDR detail."*
+
+The warning disappears as soon as an HDR-native format is selected. It is informational only — the user may proceed with an LDR format regardless.
 
 ### DX9 Mode and ATI Codes
 
