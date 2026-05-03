@@ -10,7 +10,9 @@ interface EncodeMsg {
   inputFormat: 'rgba8' | 'rgba32f'
 }
 
-self.onmessage = async (e: MessageEvent<EncodeMsg>) => {
+const ctx = self as unknown as { postMessage(msg: unknown, transfer?: Transferable[]): void; onmessage: ((e: MessageEvent) => void) | null }
+
+ctx.onmessage = async (e: MessageEvent<EncodeMsg>) => {
   try {
     await getPixelOps()
     const { pixels, width, height, fmt, mipLevels, headerMode, inputFormat } = e.data
@@ -20,8 +22,8 @@ self.onmessage = async (e: MessageEvent<EncodeMsg>) => {
     } else {
       result = await encodeDds(pixels as Uint8Array, width, height, fmt, mipLevels, headerMode ?? DdsHeaderMode.AUTO)
     }
-    self.postMessage({ ok: true, data: result }, [result.buffer])
+    ctx.postMessage({ ok: true, data: result }, [result.buffer])
   } catch (err) {
-    self.postMessage({ ok: false, error: (err as Error).message })
+    ctx.postMessage({ ok: false, error: (err as Error).message })
   }
 }
