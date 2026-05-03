@@ -521,6 +521,16 @@ export interface AdjustmentParamsMap {
     /** Blur radius in pixels, 0–100. Controls softness of shadow edges. */
     softness: number
   }
+  'inner-glow': {
+    /** Glow color including alpha. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
+    color:    RGBAColor
+    /** Overall glow opacity, 0–100 (%). Default: 75 */
+    opacity:  number
+    /** Erosion radius in pixels, 0–100. Controls how far the glow spreads inward. Default: 0 */
+    spread:   number
+    /** Blur radius in pixels, 0–100. Controls softness of glow edges. Default: 15 */
+    softness: number
+  }
 }
 
 export type OutlineParams = AdjustmentParamsMap['outline']
@@ -791,6 +801,12 @@ export interface InnerShadowAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean
 }
 
+export interface InnerGlowAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'inner-glow'
+  params: AdjustmentParamsMap['inner-glow']
+  hasMask: boolean
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -831,6 +847,7 @@ export type AdjustmentLayerState =
   | PixelateAdjustmentLayer
   | BevelAdjustmentLayer
   | InnerShadowAdjustmentLayer
+  | InnerGlowAdjustmentLayer
 
 export interface GroupLayerState {
   id:        string

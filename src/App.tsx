@@ -411,8 +411,6 @@ function AppContent(): React.JSX.Element {
 
   // ── Computed render values ────────────────────────────────────────
   const hasActiveDocument = tabs.length > 0
-  const [showSplash, setShowSplash] = useState(true)
-  useEffect(() => { if (!hasActiveDocument) setShowSplash(true) }, [hasActiveDocument])
   const tabInfos: TabInfo[] = tabs.map(t => ({ id: t.id, title: t.title, pixelFormat: t.pixelFormat }))
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
@@ -476,10 +474,9 @@ function AppContent(): React.JSX.Element {
   return (
     <>
     <SplashScreen
-      open={showSplash && !hasActiveDocument}
-      onClose={() => setShowSplash(false)}
-      onNew={() => { setShowSplash(false); setShowNewImageDialog(true) }}
-      onOpen={() => { setShowSplash(false); void handleOpen() }}
+      open={!hasActiveDocument}
+      onNew={() => setShowNewImageDialog(true)}
+      onOpen={() => { void handleOpen() }}
     />
     <MainWindow
       isMac={isMac}

@@ -8,6 +8,6 @@ export const ADJUSTMENT_MENU_ITEMS = (ADJUSTMENT_REGISTRY as readonly Adjustment
 
 export const EFFECTS_MENU_ITEMS = (ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[])
   .filter(e => e.group === 'real-time-effects')
-  .map(e => ({ type: e.adjustmentType, label: e.label, group: e.group }))
+  .map(e => ({ type: e.adjustmentType, label: e.label, group: e.menuGroup }))
 
 export const FILTER_MENU_ITEMS = FILTER_REGISTRY.map(e => ({ key: e.key, label: e.label, instant: e.instant, group: e.group }))

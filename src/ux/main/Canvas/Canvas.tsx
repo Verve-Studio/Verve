@@ -829,7 +829,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   function buildRenderPlan(): RenderPlanEntry[] {
     const plan = buildCanvasRenderPlan(
-      state.layers,
+      layersStateRef.current,
       glLayersRef.current,
       buildMaskMap(),
       adjustmentMaskMap.current,

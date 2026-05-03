@@ -171,11 +171,10 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
   }, [activeTabId, tabs, captureActiveSnapshot, serializeActiveTabPixels, switchToTab])
 
   const handleCloseTab = useCallback((tabId: string): void => {
-    if (tabs.length === 1) return
     const idx  = tabs.findIndex(t => t.id === tabId)
     const next = tabs.filter(t => t.id !== tabId)
     setTabs(next)
-    if (tabId === activeTabId) {
+    if (tabId === activeTabId && next.length > 0) {
       const fallback = next[Math.min(idx, next.length - 1)]
       switchToTab(fallback.id, next)
     }

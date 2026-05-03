@@ -6,6 +6,8 @@ export interface AdjustmentRegistrationEntry<T extends AdjustmentType = Adjustme
   label: string
   defaultParams: AdjustmentParamsMap[T]
   group?: string
+  /** Sub-group within a menu section — used only for inserting separators. */
+  menuGroup?: string
   noPanel?: true
 }
 
@@ -125,6 +127,7 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'bloom' as const,
     label: 'Bloom…',
     group: 'real-time-effects',
+    menuGroup: 'fx-glow',
     defaultParams: {
       threshold: 0.5,
       strength:  0.5,
@@ -136,6 +139,7 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'chromatic-aberration' as const,
     label: 'Chromatic Aberration…',
     group: 'real-time-effects',
+    menuGroup: 'fx-glow',
     defaultParams: {
       type:     'radial',
       distance: 5,
@@ -146,6 +150,7 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'halation' as const,
     label: 'Halation…',
     group: 'real-time-effects',
+    menuGroup: 'fx-glow',
     defaultParams: {
       threshold: 0.5,
       spread:    30,
@@ -158,11 +163,13 @@ export const ADJUSTMENT_REGISTRY = [
     label: 'Color Key…',
     defaultParams: { keyColor: { r: 0, g: 255, b: 0 }, tolerance: 0, softness: 0, dilation: 0 },
     group: 'real-time-effects',
+    menuGroup: 'fx-color',
   },
   {
     adjustmentType: 'drop-shadow' as const,
     label: 'Drop Shadow…',
     group: 'real-time-effects',
+    menuGroup: 'fx-shadow',
     defaultParams: {
       color:     { r: 0, g: 0, b: 0, a: 255 },
       opacity:   75,
@@ -178,6 +185,7 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'glow' as const,
     label: 'Glow…',
     group: 'real-time-effects',
+    menuGroup: 'fx-shadow',
     defaultParams: {
       color:     { r: 255, g: 255, b: 153, a: 255 },
       opacity:   75,
@@ -191,6 +199,7 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'outline' as const,
     label: 'Outline…',
     group: 'real-time-effects',
+    menuGroup: 'fx-shadow',
     defaultParams: {
       color:     { r: 255, g: 0, b: 0, a: 255 },
       opacity:   100,
@@ -200,22 +209,10 @@ export const ADJUSTMENT_REGISTRY = [
     },
   },
   {
-    adjustmentType: 'halftone' as const,
-    label: 'Halftone…',
-    group: 'real-time-effects',
-    defaultParams: {
-      mode:      'color' as const,
-      frequency: 10,
-      offsetC:   0,
-      offsetM:   0,
-      offsetY:   0,
-      offsetK:   0,
-    },
-  },
-  {
     adjustmentType: 'bevel' as const,
     label: 'Bevel…',
     group: 'real-time-effects',
+    menuGroup: 'fx-shadow',
     defaultParams: {
       width:    5,
       softness: 3,
@@ -227,6 +224,7 @@ export const ADJUSTMENT_REGISTRY = [
     adjustmentType: 'inner-shadow' as const,
     label: 'Inner Shadow…',
     group: 'real-time-effects',
+    menuGroup: 'fx-shadow',
     defaultParams: {
       color:    { r: 0, g: 0, b: 0, a: 255 },
       opacity:  75,
@@ -234,6 +232,32 @@ export const ADJUSTMENT_REGISTRY = [
       offsetY:  5,
       spread:   0,
       softness: 10,
+    },
+  },
+  {
+    adjustmentType: 'inner-glow' as const,
+    label: 'Inner Glow…',
+    group: 'real-time-effects',
+    menuGroup: 'fx-shadow',
+    defaultParams: {
+      color:    { r: 255, g: 255, b: 153, a: 255 },
+      opacity:  75,
+      spread:   0,
+      softness: 15,
+    },
+  },
+  {
+    adjustmentType: 'halftone' as const,
+    label: 'Halftone…',
+    group: 'real-time-effects',
+    menuGroup: 'fx-style',
+    defaultParams: {
+      mode:      'color' as const,
+      frequency: 10,
+      offsetC:   0,
+      offsetM:   0,
+      offsetY:   0,
+      offsetK:   0,
     },
   },
   {
