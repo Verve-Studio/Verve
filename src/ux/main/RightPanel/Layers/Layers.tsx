@@ -711,6 +711,7 @@ export function Layers({
         ) : filteredRows.map(({ layer, depth, hasChildren }) => {
           const isMask = 'type' in layer && layer.type === 'mask'
           const isAdjustment = 'type' in layer && layer.type === 'adjustment'
+          const isText = 'type' in layer && layer.type === 'text'
           const isGroup = isGroupLayer(layer)
           const isChild = isMask || isAdjustment
           const isActive = layer.id === displayActiveId
@@ -798,7 +799,9 @@ export function Layers({
                 ? <div className={styles.adjThumb} aria-hidden="true"><AdjustmentIcon /></div>
                 : isGroup
                   ? <div className={styles.groupThumb} aria-hidden="true"><FolderIcon /></div>
-                  : <div className={`${styles.thumb} ${isMask ? styles.maskThumb : ''}`} aria-hidden="true" />
+                  : isText
+                    ? <div className={styles.textThumb} aria-hidden="true">T</div>
+                    : <div className={`${styles.thumb} ${isMask ? styles.maskThumb : ''}`} aria-hidden="true" />
               }
 
               {editingId === layer.id ? (

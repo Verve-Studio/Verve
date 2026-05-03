@@ -144,7 +144,11 @@ export interface TextLayerState {
   bold: boolean
   italic: boolean
   underline: boolean
+  strikethrough: boolean
   align: TextAlign
+  letterSpacing: number  // canvas pixels; 0 = no extra tracking
+  lineHeight: number     // em multiplier; default 1.2
+  kerning: 'auto' | 'none'
   color: RGBAColor
 }
 

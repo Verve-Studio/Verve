@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import type { LayerState, TextLayerState } from '@/types'
+import { getTextBounds } from '@/tools/text'
 import styles from './Canvas.module.scss'
 
 export interface TextLayerEditorProps {
@@ -38,6 +39,20 @@ export function TextLayerEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const onCloseRef  = useRef(onClose)
   onCloseRef.current = onClose
+
+  // Derive ls early (before hooks) so hooks can safely reference it.
+  const ls = editingLayerId
+    ? (layers.find((l): l is TextLayerState => 'type' in l && l.type === 'text' && l.id === editingLayerId) ?? null)
+    : null
+
+  // For point text: imperatively sync the textarea height to its scrollHeight after
+  // every render so the container (height:auto) grows vertically with the content.
+  useLayoutEffect(() => {
+    if (!textareaRef.current || (ls?.boxHeight ?? 0) !== 0) return
+    const ta = textareaRef.current
+    ta.style.height = '0'
+    ta.style.height = ta.scrollHeight + 'px'
+  })
 
   // Focus the textarea as soon as it mounts or editingLayerId changes.
   // Use requestAnimationFrame so the focus call fires AFTER the pointerup
@@ -86,14 +101,17 @@ export function TextLayerEditor({
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
     const dpr = window.devicePixelRatio || 1
     const cssZoom = zoom / dpr
+    // Use the actual rendered bounds as the drag baseline (not MIN_BOX),
+    // so resizing point text doesn't snap to 40px on first move.
+    const actualBounds = getTextBounds(ls)
     resizeDragRef.current = {
       handle,
       startClientX: e.clientX,
       startClientY: e.clientY,
       startX: ls.x,
       startY: ls.y,
-      startBoxW: ls.boxWidth  > 0 ? ls.boxWidth  : MIN_BOX,
-      startBoxH: ls.boxHeight > 0 ? ls.boxHeight : MIN_BOX,
+      startBoxW: Math.max(MIN_BOX, Math.round(actualBounds.w)),
+      startBoxH: Math.max(MIN_BOX, Math.round(actualBounds.h)),
       ls,
     }
     // Capture zoom at drag-start so it's stable
@@ -136,24 +154,22 @@ export function TextLayerEditor({
   }, [])
 
   if (!editingLayerId) return null
-
-  const ls = layers.find(
-    (l): l is TextLayerState => 'type' in l && l.type === 'text' && l.id === editingLayerId
-  )
   if (!ls) return null
 
   const dpr = window.devicePixelRatio || 1
   const cssZoom = zoom / dpr
-  const wrapperRect = canvasWrapperRef.current?.getBoundingClientRect()
   const fontSizePx = ls.fontSize * cssZoom
 
-  // Box dimensions in screen pixels
+  // Box dimensions in canvas-px, converted to CSS px via cssZoom
   const BORDER = 2
-  const boxWpx = (ls.boxWidth  > 0 ? ls.boxWidth  : Math.max(80, fontSizePx * 6)) * cssZoom
-  const boxHpx = (ls.boxHeight > 0 ? ls.boxHeight : Math.max(fontSizePx + 8, fontSizePx * 1.5)) * cssZoom
+  const bounds = getTextBounds(ls)
+  const boxWpx = bounds.w * cssZoom
+  // Area text has a fixed height; point text grows with its content (height: auto).
+  const boxHpx = ls.boxHeight > 0 ? bounds.h * cssZoom : undefined
 
-  const screenX = (wrapperRect?.left ?? 0) + ls.x * cssZoom - BORDER
-  const screenY = (wrapperRect?.top  ?? 0) + ls.y * cssZoom - BORDER
+  // Position relative to canvasWrapper (position:absolute parent), not viewport
+  const posX = ls.x * cssZoom - BORDER
+  const posY = ls.y * cssZoom - BORDER
 
   const fontStyle = [
     ls.italic ? 'italic' : '',
@@ -167,9 +183,9 @@ export function TextLayerEditor({
       data-text-editor-root
       className={styles.textEditorRoot}
       style={{
-        position: 'fixed',
-        left:     screenX,
-        top:      screenY,
+        position: 'absolute',
+        left:     posX,
+        top:      posY,
         width:    boxWpx,
         height:   boxHpx,
       }}
@@ -183,14 +199,22 @@ export function TextLayerEditor({
         autoFocus
         className={styles.textEditor}
         style={{
-          font:           fontStyle,
-          color:          `rgb(${ls.color.r},${ls.color.g},${ls.color.b})`,
-          textDecoration: ls.underline ? 'underline' : 'none',
-          textAlign:      ls.align === 'justify' ? 'justify' : ls.align,
-          lineHeight:     '1.2',
-          width:          '100%',
-          height:         '100%',
-          overflow:       ls.boxHeight > 0 ? 'hidden' : 'visible',
+          font:                fontStyle,
+          color:               'transparent',
+          caretColor:          ls.color ? `rgb(${ls.color.r},${ls.color.g},${ls.color.b})` : '#ffffff',
+          background:          'transparent',
+          WebkitTextFillColor: 'transparent',
+          textDecoration:      'none',
+          textAlign:           ls.align === 'justify' ? 'justify' : ls.align,
+          letterSpacing:       `${(ls.letterSpacing ?? 0) * cssZoom}px`,
+          lineHeight:          String(ls.lineHeight ?? 1.2),
+          width:               '100%',
+          height:              ls.boxHeight > 0 ? '100%' : 'auto',
+          overflow:            'hidden',
+          resize:              'none',
+          outline:             'none',
+          border:              'none',
+          padding:             0,
         }}
         value={ls.text}
         onChange={(e) => onCommit({ ...ls, text: e.target.value })}
@@ -212,5 +236,7 @@ export function TextLayerEditor({
     </div>
   )
 
-  return ReactDOM.createPortal(editor, document.body)
+  const container = canvasWrapperRef.current
+  if (!container) return null
+  return ReactDOM.createPortal(editor, container)
 }

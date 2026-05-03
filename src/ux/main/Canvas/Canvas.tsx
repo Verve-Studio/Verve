@@ -569,16 +569,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       gl.visible   = ls.visible
       gl.blendMode = 'blendMode' in ls ? ls.blendMode : 'normal'
       // Re-rasterize text layers whenever their state changes (text, style, position, color).
-      // While a text layer is being edited, blank its bitmap so only the textarea is visible.
       if ('type' in ls && ls.type === 'text') {
         // Always reset offset — move tool may have shifted it temporarily for preview.
         gl.offsetX = 0
         gl.offsetY = 0
-        if (ls.id === editingLayerId) {
-          gl.data.fill(0)
-        } else {
-          rasterizeTextToLayer(ls, gl)
-        }
+        rasterizeTextToLayer(ls, gl)
         renderer.flushLayer(gl)
       } else if ('type' in ls && ls.type === 'shape') {
         // Re-rasterize whenever shape parameters change
@@ -591,7 +586,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
     doRender()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.layers, isActive, editingLayerId])
+  }, [state.layers, isActive])
 
   useEffect(() => {
     if (!isActive) return
