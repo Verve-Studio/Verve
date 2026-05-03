@@ -1,15 +1,15 @@
 import React, { useState } from 'react'
 import type { RGBAColor } from '@/types'
 import { useAppContext } from '@/core/store/AppContext'
-import { EmbedColorPicker, hexToRgb, toHex } from '@/ux/widgets/EmbedColorPicker/EmbedColorPicker'
+import { EmbedColorPicker, toHex } from '@/ux/widgets/EmbedColorPicker/EmbedColorPicker'
 import styles from './ColorPicker.module.scss'
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ColorPicker(): React.JSX.Element {
   const { state, dispatch } = useAppContext()
-  const primaryColor = state.primaryColor ?? { r: 0, g: 0, b: 0, a: 255 }
-  const secondaryColor = state.secondaryColor ?? { r: 255, g: 255, b: 255, a: 255 }
+  const primaryColor = state.primaryColor ?? { r: 0, g: 0, b: 0, a: 1 }
+  const secondaryColor = state.secondaryColor ?? { r: 1, g: 1, b: 1, a: 1 }
   const activeLayerData = state.layers.find(l => l.id === state.activeLayerId)
   const grayscaleOnly = !!(activeLayerData && 'type' in activeLayerData && activeLayerData.type === 'mask')
 
@@ -17,13 +17,13 @@ export function ColorPicker(): React.JSX.Element {
   const onSecondaryChange = (c: RGBAColor): void => { dispatch({ type: 'SET_SECONDARY_COLOR', payload: c }) }
   const [active, setActive] = useState<'fg' | 'bg'>('fg')
 
-  const fgHex = toHex(primaryColor.r, primaryColor.g, primaryColor.b)
-  const bgHex = toHex(secondaryColor.r, secondaryColor.g, secondaryColor.b)
-  const activeHex = active === 'fg' ? fgHex : bgHex
+  // Convert float [0,1] to CSS hex for swatch display
+  const fgHex = toHex(Math.round(Math.min(primaryColor.r, 1) * 255), Math.round(Math.min(primaryColor.g, 1) * 255), Math.round(Math.min(primaryColor.b, 1) * 255))
+  const bgHex = toHex(Math.round(Math.min(secondaryColor.r, 1) * 255), Math.round(Math.min(secondaryColor.g, 1) * 255), Math.round(Math.min(secondaryColor.b, 1) * 255))
 
-  const handleChange = (hex: string): void => {
-    const [r, g, b] = hexToRgb(hex)
-    const color: RGBAColor = { r, g, b, a: 255 }
+  const activeColor = active === 'fg' ? primaryColor : secondaryColor
+
+  const handleChange = (color: RGBAColor): void => {
     if (active === 'fg') onPrimaryChange(color)
     else onSecondaryChange(color)
   }
@@ -54,16 +54,10 @@ export function ColorPicker(): React.JSX.Element {
       </div>
 
       <EmbedColorPicker
-        value={activeHex}
+        value={activeColor}
         onChange={handleChange}
         grayscaleOnly={grayscaleOnly}
-        isHdrMode={state.pixelFormat === 'rgba32f'}
-        hdrIntensity={state.hdrIntensity}
-        onHdrIntensityChange={(v) => {
-          dispatch({ type: 'SET_HDR_INTENSITY', payload: v })
-          dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: false })
-        }}
-        eyedropperHdrOverflow={state.eyedropperHdrOverflow}
+        pixelFormat={state.pixelFormat}
       />
     </div>
   )

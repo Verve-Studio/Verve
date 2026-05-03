@@ -1,5 +1,5 @@
 import type { AdjustmentLayerState, LayerState, RGBAColor, OutlineParams, PixelFormat } from '@/types'
-import { isGroupLayer } from '@/types'
+import { isGroupLayer, isCompositeLayer, isContainerLayer } from '@/types'
 import { buildCurvesLuts } from '@/core/operations/adjustments/curves'
 import type { GpuLayer, AdjustmentRenderOp, RenderPlanEntry } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 import { buildRootLayerIds } from '@/utils/layerTree'
@@ -360,6 +360,68 @@ export function buildAdjustmentEntry(
   if (ls.adjustmentType === 'pixelate') {
     return { kind: 'pixelate', layerId: ls.id, blockSize: ls.params.blockSize, visible: ls.visible, selMaskLayer: mask }
   }
+  if (ls.adjustmentType === 'bevel') {
+    const { width, softness, angle, strength } = ls.params
+    return {
+      kind:     'bevel',
+      layerId:  ls.id,
+      width,
+      softness,
+      angle,
+      strength,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
+  if (ls.adjustmentType === 'inner-shadow') {
+    const { color, opacity, offsetX, offsetY, spread, softness } = ls.params
+    return {
+      kind:     'inner-shadow',
+      layerId:  ls.id,
+      colorR:   color.r / 255,
+      colorG:   color.g / 255,
+      colorB:   color.b / 255,
+      colorA:   color.a / 255,
+      opacity:  opacity / 100,
+      offsetX,
+      offsetY,
+      spread,
+      softness,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
+  if (ls.adjustmentType === 'inner-glow') {
+    const { color, opacity, spread, softness } = ls.params
+    return {
+      kind:     'inner-glow',
+      layerId:  ls.id,
+      colorR:   color.r / 255,
+      colorG:   color.g / 255,
+      colorB:   color.b / 255,
+      colorA:   color.a / 255,
+      opacity:  opacity / 100,
+      spread,
+      softness,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
+  if (ls.adjustmentType === 'seamless-texture') {
+    const { breakRepetition, cellSize, blendRadius, seamlessBorders, borderRadius, seed } = ls.params
+    return {
+      kind:            'seamless-texture',
+      layerId:         ls.id,
+      breakRepetition,
+      cellSize,
+      blendRadius,
+      seamlessBorders,
+      borderRadius,
+      seed,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
   const _exhaustive: never = ls
   return _exhaustive
 }
@@ -389,8 +451,10 @@ export function buildSubPlan(
       if (pixelFormat === 'indexed8') continue
       const adjLs = ls as AdjustmentLayerState
       const parent = layersById.get(adjLs.parentId)
-      // Per-layer attachment (parentId → non-group layer): skip, bundled with pixel parent
-      if (parent && !isGroupLayer(parent)) continue
+      // Per-layer attachment (parentId → non-container layer): skip, bundled with pixel parent
+      if (parent && !isContainerLayer(parent)) continue
+      // Composite-layer attachment: bundled into composite-layer entry, skip standalone emission
+      if (parent && isCompositeLayer(parent)) continue
       // Group-scoped adjustment: treat as standalone
       if (bypassedAdjustmentIds.has(ls.id)) continue
       const entry = buildAdjustmentEntry(adjLs, adjustmentMaskMap.get(ls.id), swatches)
@@ -409,6 +473,36 @@ export function buildSubPlan(
         children: buildSubPlan(
           ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
         ),
+      })
+      continue
+    }
+
+    // Composite layer → flatten children, apply attached adjustments
+    if (isCompositeLayer(ls)) {
+      const attachedAdj: AdjustmentRenderOp[] = []
+      if (pixelFormat !== 'indexed8') {
+        for (const adj of layers) {
+          if (
+            'type' in adj &&
+            adj.type === 'adjustment' &&
+            (adj as AdjustmentLayerState).parentId === ls.id &&
+            !bypassedAdjustmentIds.has(adj.id)
+          ) {
+            const op = buildAdjustmentEntry(adj as AdjustmentLayerState, adjustmentMaskMap.get(adj.id), swatches)
+            if (op) attachedAdj.push(op)
+          }
+        }
+      }
+      plan.push({
+        kind: 'composite-layer',
+        layerId: ls.id,
+        opacity: ls.opacity,
+        blendMode: ls.blendMode,
+        visible: ls.visible,
+        children: buildSubPlan(
+          ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
+        ),
+        adjustments: attachedAdj,
       })
       continue
     }

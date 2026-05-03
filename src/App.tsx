@@ -10,6 +10,7 @@ import { useClipboard } from '@/core/services/useClipboard'
 import { useLayers } from '@/core/services/useLayers'
 import { useLayerGroups } from '@/core/services/useLayerGroups'
 import { useCanvasTransforms } from '@/core/services/useCanvasTransforms'
+import { useLayerArrange } from '@/core/services/useLayerArrange'
 import { useKeyboardShortcuts } from '@/core/services/useKeyboardShortcuts'
 import { useAdjustments } from '@/core/services/useAdjustments'
 import { useFilters } from '@/core/services/useFilters'
@@ -47,6 +48,7 @@ function AppContent(): React.JSX.Element {
     showResizeCanvasDialog, setShowResizeCanvasDialog,
     showAboutDialog,        setShowAboutDialog,
     showShortcutsDialog,    setShowShortcutsDialog,
+    showSystemInfoDialog,   setShowSystemInfoDialog,
     showLensFlareDialog,    setShowLensFlareDialog,
     showGeneratePaletteDialog, setShowGeneratePaletteDialog,
     showColorDitheringSetup,   setShowColorDitheringSetup,
@@ -54,6 +56,8 @@ function AppContent(): React.JSX.Element {
     contentAwareFillOptionsMode, setContentAwareFillOptionsMode,
     pendingConversion, setPendingConversion,
   } = useDialogState()
+
+  const [showPreferencesDialog, setShowPreferencesDialog] = useState(false)
 
   // ── Notification / progress state ────────────────────────────────
   const [cloneStampNotification,  setCloneStampNotification]  = useState<string | null>(null)
@@ -129,6 +133,16 @@ function AppContent(): React.JSX.Element {
     onRecentFilesUpdated: setRecentFiles,
   })
 
+  // ── Startup file (CLI arg or macOS open-with) ─────────────────────
+  const handleOpenPathRef = useRef(handleOpenPath)
+  handleOpenPathRef.current = handleOpenPath
+  useEffect(() => {
+    void window.api.getStartupFile().then(path => {
+      if (path) void handleOpenPathRef.current(path)
+    })
+    return window.api.onOpenFile(path => { void handleOpenPathRef.current(path) })
+  }, []) // mount-only
+
   // ── Export operations ────────────────────────────────────────────
   const { handleExportConfirm, pendingLdrExport, clearPendingLdrExport, confirmLdrExport } = useExportOps({ canvasHandleRef, stateRef })
 
@@ -141,20 +155,23 @@ function AppContent(): React.JSX.Element {
   const {
     handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleFlattenImage, handleRasterizeLayer,
+    handleFlattenImage, handleRasterizeLayer, handleAddMaskLayer,
   } = useLayers({ canvasHandleRef, stateRef, captureHistory, dispatch, pendingLayerLabelRef })
 
   // ── Layer groups ──────────────────────────────────────────────────
   const {
-    handleMergeGroup, handleGroupLayers, handleUngroupLayers,
+    handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Canvas transforms ─────────────────────────────────────────────
-  const { handleResizeImage, handleResizeCanvas, handleRotate, handleFlip } = useCanvasTransforms({
+  const { handleResizeImage, handleResizeCanvas, handleRotate, handleFlip, handleRotateSelectedLayers, handleFlipSelectedLayers } = useCanvasTransforms({
     canvasHandleRef, stateRef, captureHistory, dispatch,
     activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef,
     canvasWidth: state.canvas.width, canvasHeight: state.canvas.height,
   })
+
+  // ── Layer arrange (align / distribute / order) ──────────────────────
+  const layerArrange = useLayerArrange({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Adjustments ───────────────────────────────────────────────────
   const getSelectionPixels = useCallback((): Uint8Array | null => {
@@ -406,8 +423,6 @@ function AppContent(): React.JSX.Element {
 
   // ── Computed render values ────────────────────────────────────────
   const hasActiveDocument = tabs.length > 0
-  const [showSplash, setShowSplash] = useState(true)
-  useEffect(() => { if (!hasActiveDocument) setShowSplash(true) }, [hasActiveDocument])
   const tabInfos: TabInfo[] = tabs.map(t => ({ id: t.id, title: t.title, pixelFormat: t.pixelFormat }))
 
   const activeLayer = state.layers.find(l => l.id === state.activeLayerId) ?? null
@@ -431,7 +446,7 @@ function AppContent(): React.JSX.Element {
     handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
+    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer,
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
@@ -446,9 +461,14 @@ function AppContent(): React.JSX.Element {
     openResizeCanvasDialog:  () => setShowResizeCanvasDialog(true),
     handleRotate,
     handleFlip,
+    handleRotateSelectedLayers,
+    handleFlipSelectedLayers,
+    layerArrange,
     openAboutDialog:         () => setShowAboutDialog(true),
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
+    openSystemInfoDialog:    () => setShowSystemInfoDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),
+    openPreferencesDialog:   () => setShowPreferencesDialog(true),
     activeLayerId: state.activeLayerId,
     effectiveSelectedIds,
     isFreeTransformEnabled,
@@ -467,10 +487,9 @@ function AppContent(): React.JSX.Element {
   return (
     <>
     <SplashScreen
-      open={showSplash && !hasActiveDocument}
-      onClose={() => setShowSplash(false)}
-      onNew={() => { setShowSplash(false); setShowNewImageDialog(true) }}
-      onOpen={() => { setShowSplash(false); void handleOpen() }}
+      open={!hasActiveDocument}
+      onNew={() => setShowNewImageDialog(true)}
+      onOpen={() => { void handleOpen() }}
     />
     <MainWindow
       isMac={isMac}
@@ -518,7 +537,9 @@ function AppContent(): React.JSX.Element {
       showResizeDialog={showResizeDialog}               setShowResizeDialog={setShowResizeDialog}
       showResizeCanvasDialog={showResizeCanvasDialog}   setShowResizeCanvasDialog={setShowResizeCanvasDialog}
       showAboutDialog={showAboutDialog}                 setShowAboutDialog={setShowAboutDialog}
+      showPreferencesDialog={showPreferencesDialog}     setShowPreferencesDialog={setShowPreferencesDialog}
       showShortcutsDialog={showShortcutsDialog}         setShowShortcutsDialog={setShowShortcutsDialog}
+      showSystemInfoDialog={showSystemInfoDialog}       setShowSystemInfoDialog={setShowSystemInfoDialog}
       showLensFlareDialog={showLensFlareDialog}         setShowLensFlareDialog={setShowLensFlareDialog}
       showGeneratePaletteDialog={showGeneratePaletteDialog} setShowGeneratePaletteDialog={setShowGeneratePaletteDialog}
       showColorDitheringSetup={showColorDitheringSetup} setShowColorDitheringSetup={setShowColorDitheringSetup}
@@ -555,10 +576,15 @@ function AppContent(): React.JSX.Element {
       handleMergeGroup={handleMergeGroup}
       handleGroupLayers={handleGroupLayers}
       handleUngroupLayers={handleUngroupLayers}
+      handleCreateCompositeLayer={handleCreateCompositeLayer}
+      handleAddMaskLayer={handleAddMaskLayer}
       handleResizeImage={handleResizeImage}
       handleResizeCanvas={handleResizeCanvas}
       handleRotate={handleRotate}
       handleFlip={handleFlip}
+      handleRotateSelectedLayers={handleRotateSelectedLayers}
+      handleFlipSelectedLayers={handleFlipSelectedLayers}
+      layerArrange={layerArrange}
       handleZoomIn={handleZoomIn}
       handleZoomOut={handleZoomOut}
       handleZoom100={handleZoom100}

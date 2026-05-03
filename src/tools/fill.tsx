@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { floodFill } from '@/wasm'
+import { floodFill, floodFillF32 } from '@/wasm'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
 import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
 import { resolveNearestPaletteIndex } from '@/utils/indexedColorUtils'
@@ -63,13 +63,45 @@ function fillAllMatching(
   }
 }
 
+function fillAllMatchingF32(
+  data: Float32Array,
+  width: number,
+  height: number,
+  targetR: number, targetG: number, targetB: number, targetA: number,
+  fillR: number, fillG: number, fillB: number, fillA: number,
+  tolerance: number, // [0,1] float space
+): void {
+  const thresh2 = tolerance * tolerance * 4
+  for (let i = 0; i < width * height * 4; i += 4) {
+    const dr = data[i]     - targetR
+    const dg = data[i + 1] - targetG
+    const db = data[i + 2] - targetB
+    const da = data[i + 3] - targetA
+    if (dr * dr + dg * dg + db * db + da * da <= thresh2) {
+      data[i]     = fillR
+      data[i + 1] = fillG
+      data[i + 2] = fillB
+      data[i + 3] = fillA
+    }
+  }
+}
+
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 function createFillHandler(): ToolHandler {
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
       const { renderer, layer, layers, primaryColor, selectionMask, render, commitStroke, growLayerToFit } = ctx
-      const { r, g, b, a } = primaryColor
+      // primaryColor is float [0,1] (may be >1 for HDR on rgba32f layers)
+      const r = Math.round(Math.min(primaryColor.r, 1) * 255)
+      const g = Math.round(Math.min(primaryColor.g, 1) * 255)
+      const b = Math.round(Math.min(primaryColor.b, 1) * 255)
+      const a = Math.round(primaryColor.a * 255)
+      // float fill values for rgba32f (preserve HDR)
+      const fr = primaryColor.r
+      const fg = primaryColor.g
+      const fb = primaryColor.b
+      const fa = primaryColor.a
 
       // Grow the layer to cover the full canvas so that clicks on transparent
       // areas outside the initial sparse buffer are still reachable.
@@ -152,31 +184,55 @@ function createFillHandler(): ToolHandler {
 
       if (fillOptions.contiguous) {
         // Async WASM flood fill (contiguous)
-        floodFill(
-          layer.data.slice() as Uint8Array, // copy — WASM modifies in-place
-          layer.layerWidth,
-          layer.layerHeight,
-          lx, ly,
-          r, g, b, a,
-          fillOptions.tolerance,
-        ).then((result) => {
-          layer.data.set(result)
-          applySelectionMask()
-          renderer.flushLayer(layer)
-          render(layers)
-          commitStroke('Fill')
-        }).catch((err) => {
-          console.error('[Fill] WASM flood fill failed:', err)
-        })
+        if (layer.format === 'rgba32f') {
+          // Float32 path: tolerance normalised to [0,1] space (slider is 0-255)
+          const tolF32 = fillOptions.tolerance / 255
+          floodFillF32(
+            layer.data.slice() as Float32Array,
+            layer.layerWidth, layer.layerHeight,
+            lx, ly, fr, fg, fb, fa, tolF32,
+          ).then((result) => {
+            ;(layer.data as Float32Array).set(result)
+            applySelectionMask()
+            renderer.flushLayer(layer)
+            render(layers)
+            commitStroke('Fill')
+          }).catch((err) => {
+            console.error('[Fill] WASM f32 flood fill failed:', err)
+          })
+        } else {
+          floodFill(
+            layer.data.slice() as Uint8Array,
+            layer.layerWidth, layer.layerHeight,
+            lx, ly, r, g, b, a,
+            fillOptions.tolerance,
+          ).then((result) => {
+            layer.data.set(result)
+            applySelectionMask()
+            renderer.flushLayer(layer)
+            render(layers)
+            commitStroke('Fill')
+          }).catch((err) => {
+            console.error('[Fill] WASM flood fill failed:', err)
+          })
+        }
       } else {
         // Non-contiguous: fill all matching pixels synchronously
         if (lx < 0 || ly < 0 || lx >= layer.layerWidth || ly >= layer.layerHeight) return
-        const startIdx = (ly * layer.layerWidth + lx) * 4
-        const targetR = layer.data[startIdx]
-        const targetG = layer.data[startIdx + 1]
-        const targetB = layer.data[startIdx + 2]
-        const targetA = layer.data[startIdx + 3]
-        fillAllMatching(layer.data as Uint8Array, layer.layerWidth, layer.layerHeight, targetR, targetG, targetB, targetA, r, g, b, a, fillOptions.tolerance)
+        if (layer.format === 'rgba32f') {
+          const data = layer.data as Float32Array
+          const startIdx = (ly * layer.layerWidth + lx) * 4
+          fillAllMatchingF32(data, layer.layerWidth, layer.layerHeight,
+            data[startIdx], data[startIdx + 1], data[startIdx + 2], data[startIdx + 3],
+            fr, fg, fb, fa, fillOptions.tolerance / 255)
+        } else {
+          const startIdx = (ly * layer.layerWidth + lx) * 4
+          const targetR = layer.data[startIdx]
+          const targetG = layer.data[startIdx + 1]
+          const targetB = layer.data[startIdx + 2]
+          const targetA = layer.data[startIdx + 3]
+          fillAllMatching(layer.data as Uint8Array, layer.layerWidth, layer.layerHeight, targetR, targetG, targetB, targetA, r, g, b, a, fillOptions.tolerance)
+        }
         applySelectionMask()
         renderer.flushLayer(layer)
         render(layers)

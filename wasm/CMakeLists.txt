@@ -16,9 +16,13 @@ add_executable(pixelops
   src/inpaint.cpp
   src/grabcut.cpp
   src/exr.cpp
+  src/dds.cpp
+  src/vendor/rgbcx.cpp
+  src/vendor/bc7enc.cpp
 )
 
-target_include_directories(pixelops PRIVATE src)
+target_include_directories(pixelops PRIVATE src src/vendor)
+target_compile_definitions(pixelops PRIVATE BC7ENC_USE_SSE2=0 BC7ENC_USE_SSE41=0)
 
 if(EMSCRIPTEN)
   # Output directory for the generated JS+WASM files
@@ -37,7 +41,7 @@ if(EMSCRIPTEN)
     "-sMODULARIZE=1"
     "-sEXPORT_ES6=1"
     "-sEXPORT_NAME=createPixelOps"
-    "-sEXPORTED_FUNCTIONS=_malloc,_free,_pixelops_flood_fill,_pixelops_convolve,_pixelops_resize_bilinear,_pixelops_resize_nearest,_pixelops_dither_bayer,_pixelops_quantize,_pixelops_curves_histogram,_pixelops_affine_transform,_pixelops_perspective_transform,_pixelops_rotate_rgba,_pixelops_flip_rgba,_pixelops_rotate_indexed,_pixelops_flip_indexed,_pixelops_inpaint,_pixelops_grabcut,_pixelops_grabcut_compute_beta,_pixelops_grabcut_kmeans_init,_pixelops_grabcut_update_gmms,_pixelops_grabcut_mincut,_matchPaletteIndices,_floodFillIndexed,_loadExr,_freeExrResult,_saveExr,_freeExrBytes"
+    "-sEXPORTED_FUNCTIONS=_malloc,_free,_pixelops_flood_fill,_pixelops_flood_fill_f32,_pixelops_convolve,_pixelops_resize_bilinear,_pixelops_resize_nearest,_pixelops_dither_bayer,_pixelops_quantize,_pixelops_curves_histogram,_pixelops_affine_transform,_pixelops_perspective_transform,_pixelops_rotate_rgba,_pixelops_flip_rgba,_pixelops_rotate_indexed,_pixelops_flip_indexed,_pixelops_inpaint,_pixelops_grabcut,_pixelops_grabcut_compute_beta,_pixelops_grabcut_kmeans_init,_pixelops_grabcut_update_gmms,_pixelops_grabcut_mincut,_matchPaletteIndices,_floodFillIndexed,_loadExr,_freeExrResult,_saveExr,_freeExrBytes,_pixelops_dds_get_info,_pixelops_dds_decode,_pixelops_dds_decode_f32,_pixelops_dds_get_encoded_size,_pixelops_dds_max_mip_levels,_pixelops_dds_encode,_pixelops_dds_encode_f32"
     "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF32"
     "-sALLOW_MEMORY_GROWTH=1"
     "-O2"

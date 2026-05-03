@@ -8,6 +8,7 @@ import type { UseColorModeReturn } from '@/core/services/useColorMode'
 import type { Tool, PixelFormat, RGBAColor } from '@/types'
 import type { FilterKey } from '@/types'
 import type { GuidePreset } from '@/core/services/useViewActions'
+import type { AlignEdge, DistributeAxis, OrderOp } from '@/core/services/useLayerArrange'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { ExportSettings } from '@/ux/modals/ExportDialog/ExportDialog'
@@ -24,8 +25,10 @@ import { ExportDialog } from '@/ux/modals/ExportDialog/ExportDialog'
 import { ResizeImageDialog } from '@/ux/modals/ResizeImageDialog/ResizeImageDialog'
 import { ResizeCanvasDialog } from '@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog'
 import { AboutDialog } from '@/ux/modals/AboutDialog/AboutDialog'
+import { PreferencesDialog } from '@/ux/modals/PreferencesDialog/PreferencesDialog'
 import { HdrLdrExportWarningDialog } from '@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
 import { KeyboardShortcutsDialog } from '@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
+import { SystemInfoDialog } from '@/ux/modals/SystemInfoDialog/SystemInfoDialog'
 import { LensFlareDialog } from '@/ux/windows/filters/LensFlareDialog/LensFlareDialog'
 import { GeneratePaletteDialog } from '@/ux/modals/GeneratePaletteDialog/GeneratePaletteDialog'
 import { ColorDitheringSetupModal } from '@/ux/modals/ColorDitheringSetupModal/ColorDitheringSetupModal'
@@ -106,7 +109,9 @@ export interface MainWindowProps {
   showResizeDialog: boolean;        setShowResizeDialog:        (v: boolean) => void
   showResizeCanvasDialog: boolean;  setShowResizeCanvasDialog:  (v: boolean) => void
   showAboutDialog: boolean;         setShowAboutDialog:         (v: boolean) => void
+  showPreferencesDialog: boolean;   setShowPreferencesDialog:   (v: boolean) => void
   showShortcutsDialog: boolean;     setShowShortcutsDialog:     (v: boolean) => void
+  showSystemInfoDialog: boolean;    setShowSystemInfoDialog:    (v: boolean) => void
   showLensFlareDialog: boolean;     setShowLensFlareDialog:     (v: boolean) => void
   showGeneratePaletteDialog: boolean; setShowGeneratePaletteDialog: (v: boolean) => void
   showColorDitheringSetup: boolean;   setShowColorDitheringSetup:   (v: boolean) => void
@@ -152,12 +157,17 @@ export interface MainWindowProps {
   handleMergeGroup: (groupId: string) => void
   handleGroupLayers: (ids: string[]) => void
   handleUngroupLayers: (id: string) => void
+  handleCreateCompositeLayer: () => void
+  handleAddMaskLayer: () => void
 
   // Canvas transform handlers
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>
   handleResizeCanvas: (s: ResizeCanvasSettings) => void
   handleRotate: (amount: '90cw' | '180' | '270cw') => Promise<void>
   handleFlip: (axis: 'horizontal' | 'vertical') => Promise<void>
+  handleRotateSelectedLayers: (amount: '90cw' | '180' | '270cw') => Promise<void>
+  handleFlipSelectedLayers: (axis: 'horizontal' | 'vertical') => Promise<void>
+  layerArrange: { handleAlign: (e: AlignEdge) => void; handleDistribute: (a: DistributeAxis) => void; handleOrder: (o: OrderOp) => void }
 
   // View handlers
   handleZoomIn: () => void
@@ -218,7 +228,9 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     showResizeDialog, setShowResizeDialog,
     showResizeCanvasDialog, setShowResizeCanvasDialog,
     showAboutDialog, setShowAboutDialog,
+    showPreferencesDialog, setShowPreferencesDialog,
     showShortcutsDialog, setShowShortcutsDialog,
+    showSystemInfoDialog, setShowSystemInfoDialog,
     showLensFlareDialog, setShowLensFlareDialog,
     showGeneratePaletteDialog, setShowGeneratePaletteDialog,
     showColorDitheringSetup, setShowColorDitheringSetup,
@@ -231,8 +243,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
-    handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers,
-    handleResizeImage, handleResizeCanvas, handleRotate, handleFlip,
+    handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer,
+    handleResizeImage, handleResizeCanvas, handleRotate, handleFlip, handleRotateSelectedLayers, handleFlipSelectedLayers, layerArrange,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
@@ -293,6 +305,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onToggleTileGrid={handleToggleTileGrid}
         showTileGrid={showTileGrid}
         onNewLayer={handleNewLayer}
+        onNewCompositeLayer={handleCreateCompositeLayer}
+        onAddLayerMask={handleAddMaskLayer}
         onDuplicateLayer={handleDuplicateLayer}
         onDeleteLayer={handleDeleteActiveLayer}
         onMergeDown={handleMergeDown}
@@ -302,8 +316,15 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         isRasterizeEnabled={isRasterizeLayerEnabled}
         onMergeSelected={() => handleMergeSelected([...effectiveSelectedIds])}
         isMergeSelectedEnabled={isMergeSelectedEnabled}
+        onLayerRotate={(amount) => handleRotateSelectedLayers(amount)}
+        onLayerFlip={(axis) => handleFlipSelectedLayers(axis)}
+        onLayerAlign={(edge) => layerArrange.handleAlign(edge)}
+        onLayerDistribute={(axis) => layerArrange.handleDistribute(axis)}
+        onLayerOrder={(op) => layerArrange.handleOrder(op)}
         onAbout={() => setShowAboutDialog(true)}
+        onPreferences={() => setShowPreferencesDialog(true)}
         onKeyboardShortcuts={() => setShowShortcutsDialog(true)}
+        onSystemInfo={() => setShowSystemInfoDialog(true)}
         onCreateAdjustmentLayer={(type) => requireTransformDecision(() => {
           if (type === 'color-dithering') {
             setShowColorDitheringSetup(true)
@@ -380,6 +401,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           onMergeGroup={handleMergeGroup}
           onGroupSelected={handleGroupLayers}
           onUngroup={handleUngroupLayers}
+          onCreateCompositeLayer={handleCreateCompositeLayer}
           findLayersTrigger={findLayersCounter}
         />
       </div>
@@ -401,6 +423,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
       <ExportDialog
         open={showExportDialog}
         isHdrDocument={pixelFormat === 'rgba32f'}
+        documentWidth={canvasWidth}
+        documentHeight={canvasHeight}
         onCancel={() => setShowExportDialog(false)}
         onConfirm={async (settings) => {
           setShowExportDialog(false)
@@ -425,6 +449,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         open={showAboutDialog}
         onClose={() => setShowAboutDialog(false)}
       />
+      <PreferencesDialog
+        open={showPreferencesDialog}
+        onClose={() => setShowPreferencesDialog(false)}
+      />
       <HdrLdrExportWarningDialog
         open={pendingLdrExport !== null}
         format={pendingLdrExport?.format ?? ''}
@@ -434,6 +462,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
       <KeyboardShortcutsDialog
         open={showShortcutsDialog}
         onClose={() => setShowShortcutsDialog(false)}
+      />
+      <SystemInfoDialog
+        open={showSystemInfoDialog}
+        onClose={() => setShowSystemInfoDialog(false)}
       />
       {showLensFlareDialog && (
         <LensFlareDialog

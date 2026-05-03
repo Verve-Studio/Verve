@@ -140,6 +140,14 @@ export class WebGPURenderer {
     paramsKey: string
     tex: GPUTexture
   }>()
+  // Per-composite-layer output cache. Keyed by layerId. Stores the final flattened+
+  // adjusted result texture. The cache hits when all child contentVersions, offsets,
+  // and adjustment params are identical to the previous frame.
+  private compositeLayerCache = new Map<string, {
+    childFp: string   // encodeSubPlan inputFp for children
+    adjKey: string    // serialised adjustment params
+    tex: GPUTexture
+  }>()
   // True while encoding a screen-preview renderPlan() — enables the adj-group cache.
   private adjGroupCacheEnabled = false
   // When true (e.g. during a whole-layer drag), standalone AdjustmentRenderOps
@@ -466,6 +474,11 @@ export class WebGPURenderer {
     if (cachedSO) {
       cachedSO.tex.destroy()
       this.standaloneOpCache.delete(layer.id)
+    }
+    const cachedCL = this.compositeLayerCache.get(layer.id)
+    if (cachedCL) {
+      cachedCL.tex.destroy()
+      this.compositeLayerCache.delete(layer.id)
     }
   }
 
@@ -822,6 +835,74 @@ export class WebGPURenderer {
           inputFp += `|GRP:${entry.groupId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}`
         }
 
+      } else if (entry.kind === 'composite-layer') {
+        if (!entry.visible) continue
+        // Composite all children into an isolated texture pair.
+        const iso1 = this.allocateTempGroupTex()
+        const iso2 = this.allocateTempGroupTex()
+        this.encodeClearTexture(encoder, iso1)
+        this.encodeClearTexture(encoder, iso2)
+        const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '')
+        const adjKey = this.adjGroupCacheEnabled
+          ? computeAdjGroupParamsKey(entry.adjustments)
+          : entry.adjustments.map(a => a.layerId).join(',')
+
+        let compositeSrc: GPUTexture
+
+        // Cache check: skip re-compositing children and re-running adjustments when
+        // the child fingerprint and adjustment params haven't changed.
+        if (this.adjGroupCacheEnabled) {
+          const cached = this.compositeLayerCache.get(entry.layerId)
+          if (cached && cached.childFp === child.inputFp && cached.adjKey === adjKey) {
+            // Hit: composite the cached texture into the parent ping-pong.
+            this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode)
+            ;[src, dst] = [dst, src]
+            inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`
+            continue
+          }
+        }
+
+        // Apply per-composite adjustments to the flattened result.
+        compositeSrc = child.src
+        if (entry.adjustments.length > 0) {
+          // Borrow the shared group ping-pong textures for the adjustment passes.
+          this.encodeClearTexture(encoder, this.groupPingTex)
+          this.encodeClearTexture(encoder, this.groupPongTex)
+          encoder.copyTextureToTexture(
+            { texture: compositeSrc },
+            { texture: this.groupPongTex },
+            { width: this.pixelWidth, height: this.pixelHeight },
+          )
+          let adjSrc = this.groupPongTex
+          let adjDst = this.groupPingTex
+          for (const op of entry.adjustments) {
+            if (!op.visible) continue
+            this.adjEncoder.encode(encoder, op, adjSrc, adjDst, this.internalFormat)
+            ;[adjSrc, adjDst] = [adjDst, adjSrc]
+          }
+          compositeSrc = adjSrc
+        }
+
+        // Store result in cache.
+        if (this.adjGroupCacheEnabled) {
+          const existing = this.compositeLayerCache.get(entry.layerId)
+          const cacheTex = existing?.tex ?? this.device.createTexture({
+            size: { width: this.pixelWidth, height: this.pixelHeight },
+            format: this.internalFormat,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+          })
+          encoder.copyTextureToTexture(
+            { texture: compositeSrc },
+            { texture: cacheTex },
+            { width: this.pixelWidth, height: this.pixelHeight },
+          )
+          this.compositeLayerCache.set(entry.layerId, { childFp: child.inputFp, adjKey, tex: cacheTex })
+        }
+
+        this.encodeCompositeTexture(encoder, compositeSrc, src, dst, entry.opacity, entry.blendMode)
+        ;[src, dst] = [dst, src]
+        inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`
+
       } else if (entry.kind === 'adjustment-group') {
         if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
 
@@ -1174,6 +1255,8 @@ export class WebGPURenderer {
     this.adjGroupCache.clear()
     for (const entry of this.standaloneOpCache.values()) entry.tex.destroy()
     this.standaloneOpCache.clear()
+    for (const entry of this.compositeLayerCache.values()) entry.tex.destroy()
+    this.compositeLayerCache.clear()
     for (const pair of this.compositeBufferPool) {
       pair.unif.destroy()
       pair.pos.destroy()

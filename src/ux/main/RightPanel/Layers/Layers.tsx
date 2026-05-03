@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { LayerState, BlendMode, MaskLayerState, AdjustmentLayerState, GroupLayerState } from '@/types'
-import { isGroupLayer } from '@/types'
+import type { LayerState, BlendMode, MaskLayerState, AdjustmentLayerState, GroupLayerState, CompositeLayerState } from '@/types'
+import { isGroupLayer, isCompositeLayer, isContainerLayer } from '@/types'
 import { useAppContext } from '@/core/store/AppContext'
 import { buildRootLayerIds, getParentGroup, isDescendantOf, reorderRootLayers } from '@/utils/layerTree'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
@@ -114,10 +114,26 @@ const DeleteLayerIcon = (): React.JSX.Element => (
   </svg>
 )
 
+const DuplicateLayerIcon = (): React.JSX.Element => (
+  <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" width="12" height="12">
+    <rect x="4" y="4" width="8" height="8" rx="1" />
+    <path d="M2 10V2h8" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 const FolderIcon = (): React.JSX.Element => (
   <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" width="13" height="13">
     <path d="M1 4h12v7a1 1 0 01-1 1H2a1 1 0 01-1-1V4z" />
     <path d="M1 4V3a1 1 0 011-1h3l1.5 2H1z" />
+  </svg>
+)
+
+/** Stacked-layers icon used for Composite layers */
+const CompositeIcon = (): React.JSX.Element => (
+  <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" width="13" height="13">
+    <rect x="1" y="8" width="12" height="4" rx="1" />
+    <rect x="2" y="5" width="10" height="4" rx="1" />
+    <rect x="3" y="2" width="8"  height="4" rx="1" />
   </svg>
 )
 
@@ -149,6 +165,7 @@ interface LayerPanelProps {
   onMergeGroup:        (groupId: string) => void
   onGroupSelected:     (layerIds: string[]) => void
   onUngroup:           (groupId: string) => void
+  onCreateCompositeLayer: () => void
   activeTabId?:        string
   findLayersTrigger?:  number
 }
@@ -166,6 +183,7 @@ export function Layers({
   onMergeGroup,
   onGroupSelected,
   onUngroup,
+  onCreateCompositeLayer,
   activeTabId,
   findLayersTrigger,
 }: LayerPanelProps): React.JSX.Element {
@@ -199,6 +217,7 @@ export function Layers({
   const setSelectedIds = (next: Set<string>): void => { dispatch({ type: 'SET_SELECTED_LAYERS', payload: [...next] }) }
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flipX: boolean } | null>(null)
   const dragSrcLayerIdRef = useRef<string | null>(null)
+  const anchorLayerIdRef  = useRef<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   // Separate drag state for reordering adjustment children within a parent
   const adjDragSrcIdRef = useRef<string | null>(null)
@@ -246,12 +265,24 @@ export function Layers({
         const id = ids[i]
         const layer = layersById.get(id)
         if (!layer) continue
-        // Skip per-layer mask/adjustment: yielded after their pixel parent
+        // Skip per-layer mask/adjustment: yielded after their pixel/composite parent
         if ('type' in layer && (layer.type === 'mask' || layer.type === 'adjustment')) {
           const parent = layersById.get((layer as MaskLayerState | AdjustmentLayerState).parentId)
           if (parent && !isGroupLayer(parent)) continue
         }
-        if (isGroupLayer(layer)) {
+        if (isCompositeLayer(layer)) {
+          const adjChildren = layers.filter(
+            l => 'type' in l && (l.type === 'mask' || l.type === 'adjustment') &&
+              (l as MaskLayerState | AdjustmentLayerState).parentId === layer.id
+          )
+          result.push({ layer, depth, hasChildren: adjChildren.length > 0 || layer.childIds.length > 0 })
+          if (!layer.collapsed) {
+            for (const child of adjChildren) {
+              result.push({ layer: child, depth: depth + 1, hasChildren: false })
+            }
+            walk(layer.childIds, depth + 1, false)
+          }
+        } else if (isContainerLayer(layer)) {
           result.push({ layer, depth, hasChildren: false })
           walk(layer.childIds, depth + 1, layer.collapsed)
         } else if (!('type' in layer) || (layer.type !== 'mask' && layer.type !== 'adjustment')) {
@@ -293,19 +324,34 @@ export function Layers({
     // Pass 2: compute visible IDs
     const visibleIds = new Set<string>()
 
-    function markAllDescendants(group: GroupLayerState): void {
+    function markAllDescendants(group: GroupLayerState | CompositeLayerState): void {
       for (const childId of group.childIds) {
         visibleIds.add(childId)
         const child = layerMap.get(childId)
-        if (child && isGroupLayer(child)) markAllDescendants(child)
+        if (child && isContainerLayer(child)) markAllDescendants(child)
+      }
+      if (isCompositeLayer(group)) {
+        for (const l of layers) {
+          if ('type' in l && (l.type === 'mask' || l.type === 'adjustment') &&
+              (l as MaskLayerState | AdjustmentLayerState).parentId === group.id) {
+            visibleIds.add(l.id)
+          }
+        }
       }
     }
 
-    function subtreeHasMatch(group: GroupLayerState): boolean {
+    function subtreeHasMatch(group: GroupLayerState | CompositeLayerState): boolean {
       for (const childId of group.childIds) {
         if (nameMatchIds.has(childId)) return true
         const child = layerMap.get(childId)
-        if (child && isGroupLayer(child) && subtreeHasMatch(child)) return true
+        if (child && isContainerLayer(child) && subtreeHasMatch(child)) return true
+      }
+      if (isCompositeLayer(group)) {
+        for (const l of layers) {
+          if ('type' in l && (l.type === 'mask' || l.type === 'adjustment') &&
+              (l as MaskLayerState | AdjustmentLayerState).parentId === group.id &&
+              nameMatchIds.has(l.id)) return true
+        }
       }
       return false
     }
@@ -315,8 +361,8 @@ export function Layers({
 
       if (nameMatchIds.has(layer.id)) {
         visibleIds.add(layer.id)
-        if (isGroupLayer(layer)) markAllDescendants(layer)
-      } else if (isGroupLayer(layer) && subtreeHasMatch(layer)) {
+        if (isContainerLayer(layer)) markAllDescendants(layer)
+      } else if (isContainerLayer(layer) && subtreeHasMatch(layer)) {
         visibleIds.add(layer.id)
       }
     }
@@ -354,15 +400,27 @@ export function Layers({
 
   // ── Interaction ──────────────────────────────────────────────────────────────
 
+  const isMac = window.api.platform === 'darwin'
+
   const handleLayerClick = (layer: LayerState, e: React.MouseEvent): void => {
-    if (e.ctrlKey || e.metaKey) {
+    const isMultiKey = isMac ? e.altKey : e.ctrlKey
+    if (isMultiKey) {
       const next = new Set(selectedIds)
       if (next.has(layer.id)) next.delete(layer.id)
       else next.add(layer.id)
       setSelectedIds(next)
+      anchorLayerIdRef.current = layer.id
+    } else if (e.shiftKey && anchorLayerIdRef.current !== null) {
+      const anchorIdx = filteredRows.findIndex(r => r.layer.id === anchorLayerIdRef.current)
+      const clickIdx  = filteredRows.findIndex(r => r.layer.id === layer.id)
+      if (anchorIdx >= 0 && clickIdx >= 0) {
+        const [lo, hi] = [Math.min(anchorIdx, clickIdx), Math.max(anchorIdx, clickIdx)]
+        setSelectedIds(new Set(filteredRows.slice(lo, hi + 1).map(r => r.layer.id)))
+      }
     } else {
       onActiveLayerChange(layer.id)
       setSelectedIds(new Set())
+      anchorLayerIdRef.current = layer.id
       if ('type' in layer && layer.type === 'adjustment') {
         onOpenAdjustmentPanel?.(layer.id)
       }
@@ -407,13 +465,16 @@ export function Layers({
   // ── Layer panel header state ──────────────────────────────────────────────────
 
   const activeLayer = layers.find((l) => l.id === activeLayerId)
-  const canDelete = layers.length > 1
+  const effectiveDeleteIds = [...new Set([...selectedIds, ...(activeLayerId ? [activeLayerId] : [])])]
+  const canDelete = layers.length > effectiveDeleteIds.length
   const isChildLayer = (l: LayerState): boolean =>
     'type' in l && (l.type === 'mask' || l.type === 'adjustment')
 
   const isActiveGroup = activeLayer !== undefined && isGroupLayer(activeLayer)
+  const isActiveComposite = activeLayer !== undefined && isCompositeLayer(activeLayer)
+  const isActiveContainer = isActiveGroup || isActiveComposite
 
-  const canRasterize = !!activeLayerId && !!activeLayer && !isChildLayer(activeLayer) && !isActiveGroup && (
+  const canRasterize = !!activeLayerId && !!activeLayer && !isChildLayer(activeLayer) && !isActiveContainer && (
     ('type' in activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'shape')) ||
     (!('type' in activeLayer) && layers.some(
       l => 'type' in l && l.type === 'adjustment' && (l as { parentId: string }).parentId === activeLayerId
@@ -426,9 +487,9 @@ export function Layers({
   const opacityValue = (!isChildActive && activeLayer) ? Math.round((activeLayer as { opacity: number }).opacity * 100) : 100
   const blendValue: BlendMode = (!isChildActive && activeLayer) ? (activeLayer as { blendMode: BlendMode }).blendMode : 'normal'
 
-  const activeBlendModes = isActiveGroup ? BLEND_MODES_GROUP : BLEND_MODES_BASE
+  const activeBlendModes = isActiveContainer ? BLEND_MODES_GROUP : BLEND_MODES_BASE
 
-  const canAddMask = activeLayerId && !isChildActive && !isActiveGroup &&
+  const canAddMask = activeLayerId && !isChildActive && !isActiveContainer &&
     !layers.some(l => 'type' in l && l.type === 'mask' && (l as { parentId: string }).parentId === activeLayerId)
 
   // ── Editing ──────────────────────────────────────────────────────────────────
@@ -553,48 +614,85 @@ export function Layers({
     dragSrcLayerIdRef.current = null
     setDropTarget(null)
 
+    // Build the effective selection: selectedIds ∪ activeLayerId (same union used everywhere else).
+    const effectiveSelected = new Set([...selectedIds, ...(activeLayerId ? [activeLayerId] : [])])
+
+    // If the dragged layer is part of the effective selection, move all selected layers.
+    // If not (user started a drag on an unselected layer), move only that layer.
+    const dragSet = effectiveSelected.has(srcId) ? effectiveSelected : new Set([srcId])
+
+    // All layers being moved, in top-to-bottom display order, filtered to moveable layers only.
+    const orderedDragIds = treeRows
+      .map(r => r.layer.id)
+      .filter(id => {
+        if (!dragSet.has(id)) return false
+        const l = layers.find(x => x.id === id)
+        return l !== undefined && !('type' in l && (l.type === 'mask' || l.type === 'adjustment'))
+      })
+
     if (dropTarget.kind === 'into') {
-      if (srcId === dropTarget.groupId) return
-      if (isDescendantOf(layers, dropTarget.groupId, srcId)) return
-      dispatch({ type: 'MOVE_LAYER_INTO_GROUP', payload: { layerId: srcId, targetGroupId: dropTarget.groupId, insertIndex: 0 } })
+      const gId = dropTarget.groupId
+      const validIds = orderedDragIds.filter(id =>
+        id !== gId && !isDescendantOf(layers, gId, id)
+      )
+      if (validIds.length === 0) return
+      // Insert at top of group (index 0), incrementing for each so order is preserved.
+      validIds.forEach((id, i) => {
+        dispatch({ type: 'MOVE_LAYER_INTO_GROUP', payload: { layerId: id, targetGroupId: gId, insertIndex: i } })
+      })
       return
     }
 
     const targetId = dropTarget.layerId
-    if (targetId === srcId) return
-    if (isDescendantOf(layers, targetId, srcId)) return
+    const validIds = orderedDragIds.filter(id =>
+      id !== targetId && !isDescendantOf(layers, targetId, id)
+    )
+    if (validIds.length === 0) return
 
     const targetParent = getParentGroup(layers, targetId)
-    const srcParent = getParentGroup(layers, srcId)
 
     if (targetParent) {
-      // Target is inside a group
       const targetIdx = targetParent.childIds.indexOf(targetId)
-      const insertIndex = dropTarget.kind === 'before' ? targetIdx : targetIdx + 1
-      if (srcParent && srcParent.id === targetParent.id) {
-        // Reorder within same group
-        dispatch({ type: 'MOVE_LAYER_INTO_GROUP', payload: { layerId: srcId, targetGroupId: targetParent.id, insertIndex } })
-      } else {
-        // Move into (or between groups) — MOVE_LAYER_INTO_GROUP handles removing from old group
-        dispatch({ type: 'MOVE_LAYER_INTO_GROUP', payload: { layerId: srcId, targetGroupId: targetParent.id, insertIndex } })
-      }
+      const baseIndex = dropTarget.kind === 'before' ? targetIdx : targetIdx + 1
+      validIds.forEach((id, i) => {
+        dispatch({ type: 'MOVE_LAYER_INTO_GROUP', payload: { layerId: id, targetGroupId: targetParent.id, insertIndex: baseIndex + i } })
+      })
     } else {
-      // Target is at root
-      if (srcParent) {
-        // Moving from group to root — just remove from group; flat position stays
-        dispatch({ type: 'MOVE_LAYER_OUT_OF_GROUP', payload: { layerId: srcId, targetParentGroupId: null, insertIndex: 0 } })
+      // Target is at root.
+      if (validIds.some(id => getParentGroup(layers, id))) {
+        // At least one layer is coming out of a group — move all out first.
+        validIds.forEach(id => {
+          if (getParentGroup(layers, id)) {
+            dispatch({ type: 'MOVE_LAYER_OUT_OF_GROUP', payload: { layerId: id, targetParentGroupId: null, insertIndex: 0 } })
+          }
+        })
       } else {
-        // Both at root — reorder
-        const rootDisplayIds = buildRootLayerIds(layers)
-          .filter(id => {
-            const l = layers.find(x => x.id === id)
-            return l !== undefined && !('type' in l && (l.type === 'mask' || l.type === 'adjustment'))
-          })
-          .reverse() // reverse to get top-first display order
-        const targetDisplayIdx = rootDisplayIds.indexOf(targetId)
-        const dstDisplayIdx = dropTarget.kind === 'before' ? targetDisplayIdx : targetDisplayIdx + 1
-        const newLayers = reorderRootLayers(layers, srcId, dstDisplayIdx)
-        dispatch({ type: 'REORDER_LAYERS', payload: newLayers })
+        // All at root — reorder.
+        if (validIds.length === 1) {
+          const rootDisplayIds = buildRootLayerIds(layers)
+            .filter(id => {
+              const l = layers.find(x => x.id === id)
+              return l !== undefined && !('type' in l && (l.type === 'mask' || l.type === 'adjustment'))
+            })
+            .reverse()
+          const targetDisplayIdx = rootDisplayIds.indexOf(targetId)
+          const dstDisplayIdx = dropTarget.kind === 'before' ? targetDisplayIdx : targetDisplayIdx + 1
+          const newLayers = reorderRootLayers(layers, validIds[0], dstDisplayIdx)
+          dispatch({ type: 'REORDER_LAYERS', payload: newLayers })
+        } else {
+          // Multi-layer root reorder: move each one in sequence.
+          const rootDisplayIds = buildRootLayerIds(layers)
+            .filter(id => {
+              const l = layers.find(x => x.id === id)
+              return l !== undefined && !('type' in l && (l.type === 'mask' || l.type === 'adjustment'))
+            })
+            .reverse()
+          const targetDisplayIdx = rootDisplayIds.indexOf(targetId)
+          const dstDisplayIdx = dropTarget.kind === 'before' ? targetDisplayIdx : targetDisplayIdx + 1
+          // Reorder one at a time; use the first dragged layer as the anchor.
+          const newLayers = reorderRootLayers(layers, validIds[0], dstDisplayIdx)
+          dispatch({ type: 'REORDER_LAYERS', payload: newLayers })
+        }
       }
     }
   }
@@ -711,7 +809,8 @@ export function Layers({
         ) : filteredRows.map(({ layer, depth, hasChildren }) => {
           const isMask = 'type' in layer && layer.type === 'mask'
           const isAdjustment = 'type' in layer && layer.type === 'adjustment'
-          const isGroup = isGroupLayer(layer)
+          const isText = 'type' in layer && layer.type === 'text'
+          const isGroup = isContainerLayer(layer)
           const isChild = isMask || isAdjustment
           const isActive = layer.id === displayActiveId
           const isSelected = selectedIds.has(layer.id)
@@ -758,10 +857,10 @@ export function Layers({
                     e.stopPropagation()
                     dispatch({ type: 'TOGGLE_GROUP_COLLAPSE', payload: layer.id })
                   }}
-                  aria-label={(layer as GroupLayerState).collapsed ? 'Expand group' : 'Collapse group'}
-                  title={(layer as GroupLayerState).collapsed ? 'Expand group' : 'Collapse group'}
+                  aria-label={(layer as GroupLayerState | CompositeLayerState).collapsed ? 'Expand group' : 'Collapse group'}
+                  title={(layer as GroupLayerState | CompositeLayerState).collapsed ? 'Expand group' : 'Collapse group'}
                 >
-                  {(layer as GroupLayerState).collapsed ? '▶' : '▼'}
+                  {(layer as GroupLayerState | CompositeLayerState).collapsed ? '▶' : '▼'}
                 </button>
               ) : !isChild && hasChildren ? (
                 <button
@@ -797,8 +896,12 @@ export function Layers({
               {isAdjustment
                 ? <div className={styles.adjThumb} aria-hidden="true"><AdjustmentIcon /></div>
                 : isGroup
-                  ? <div className={styles.groupThumb} aria-hidden="true"><FolderIcon /></div>
-                  : <div className={`${styles.thumb} ${isMask ? styles.maskThumb : ''}`} aria-hidden="true" />
+                  ? <div className={styles.groupThumb} aria-hidden="true">
+                      {isCompositeLayer(layer) ? <CompositeIcon /> : <FolderIcon />}
+                    </div>
+                  : isText
+                    ? <div className={styles.textThumb} aria-hidden="true">T</div>
+                    : <div className={`${styles.thumb} ${isMask ? styles.maskThumb : ''}`} aria-hidden="true" />
               }
 
               {editingId === layer.id ? (
@@ -840,9 +943,30 @@ export function Layers({
         <button className={styles.footerBtn} onClick={onAddGroup} aria-label="New group" title="New layer group">
           <AddGroupIcon />
         </button>
+        <button className={styles.footerBtn} onClick={onCreateCompositeLayer} aria-label="New composite layer" title="New composite layer">
+          <CompositeIcon />
+        </button>
         <button
           className={styles.footerBtn}
-          onClick={() => activeLayerId && onLayerDelete(activeLayerId)}
+          onClick={() => activeLayerId && onAddMaskLayer(activeLayerId)}
+          aria-label="Add layer mask"
+          title="Add layer mask"
+          disabled={!canAddMask}
+        >
+          <MaskIcon active={false} />
+        </button>
+        <button
+          className={styles.footerBtn}
+          onClick={onDuplicateLayer}
+          aria-label="Duplicate layer"
+          title="Duplicate layer"
+          disabled={!activeLayerId}
+        >
+          <DuplicateLayerIcon />
+        </button>
+        <button
+          className={styles.footerBtn}
+          onClick={() => { for (const id of effectiveDeleteIds) onLayerDelete(id) }}
           aria-label="Delete layer"
           title="Delete layer"
           disabled={!canDelete}
@@ -871,6 +995,12 @@ export function Layers({
             </button>
             <button
               className={styles.menuItem}
+              onMouseDown={() => { closeContextMenu(); onCreateCompositeLayer() }}
+            >
+              New Composite Layer
+            </button>
+            <button
+              className={styles.menuItem}
               disabled={!canRasterize}
               onMouseDown={() => { closeContextMenu(); if (activeLayerId) onRasterizeLayer(activeLayerId) }}
             >
@@ -888,7 +1018,7 @@ export function Layers({
               disabled={!canDelete}
               onMouseDown={() => {
                 closeContextMenu()
-                if (activeLayerId) onLayerDelete(activeLayerId)
+                for (const id of effectiveDeleteIds) onLayerDelete(id)
               }}
             >
               Delete Layer

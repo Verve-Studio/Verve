@@ -5,7 +5,9 @@ import { exportTiff } from '@/core/io/exportTiff'
 import { exportWebp } from '@/core/io/exportWebp'
 import { exportHdr } from '@/core/io/exportHdr'
 import { exportTiff32 } from '@/core/io/exportTiff32'
+import { exportDds } from '@/core/io/exportDds'
 import { encodeExr } from '@/wasm'
+import { DdsFormat, DdsHeaderMode } from '@/wasm'
 import { displayStore } from '@/core/store/displayStore'
 import type { AppState, ToneMappingOperator } from '@/types'
 import { showOperationError } from '@/utils/userFeedback'
@@ -95,6 +97,30 @@ export function useExportOps({
       await window.api.exportImage(settings.filePath, b64)
       return
     }
+    if (settings.format === 'dds') {
+      const { ddsCompression } = settings
+      const isHdrComp = ddsCompression === 'bc6h' || ddsCompression === 'rgba32f'
+      const fmtMap: Record<string, number> = {
+        bc1: DdsFormat.BC1, bc3: DdsFormat.BC3, bc7: DdsFormat.BC7,
+        bc6h: DdsFormat.BC6H, rgba32f: DdsFormat.RGBA32F,
+      }
+      const fmt = fmtMap[ddsCompression]
+      if (isHdrComp) {
+        if (!(flat.data instanceof Float32Array)) throw new Error('BC6H/RGBA32F DDS export requires a rgba32f document.')
+        const dataUrl = await exportDds({ pixels: flat.data, width, height, fmt, mipLevels: settings.ddsMipLevels, inputFormat: 'rgba32f' })
+        await window.api.exportImage(settings.filePath, dataUrl.replace(/^data:[^;]+;base64,/, ''))
+      } else {
+        let ldrData: Uint8Array
+        if (isHdrDoc && flat.data instanceof Float32Array) {
+          ldrData = toneMapToUint8(flat.data, displayStore.toneMappingOperator, displayStore.exposureEV)
+        } else {
+          ldrData = flat.data instanceof Float32Array ? clampF32ToUint8(flat.data) : flat.data
+        }
+        const dataUrl = await exportDds({ pixels: ldrData, width, height, fmt, mipLevels: settings.ddsMipLevels, headerMode: DdsHeaderMode.AUTO, inputFormat: 'rgba8' })
+        await window.api.exportImage(settings.filePath, dataUrl.replace(/^data:[^;]+;base64,/, ''))
+      }
+      return
+    }
 
     // LDR formats
     let data: Uint8Array
@@ -117,6 +143,7 @@ export function useExportOps({
     try {
       const isHdrDoc = stateRef.current.pixelFormat === 'rgba32f'
       const isLdrFormat = settings.format !== 'exr' && settings.format !== 'hdr' && settings.format !== 'tiff32'
+        && !(settings.format === 'dds' && (settings.ddsCompression === 'bc6h' || settings.ddsCompression === 'rgba32f'))
       if (isHdrDoc && isLdrFormat) {
         // Gate behind warning dialog
         setPendingLdrExport(settings)

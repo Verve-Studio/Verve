@@ -72,18 +72,18 @@ export interface ToolContext {
   swatches: readonly RGBAColor[]
   /** Set the active palette swatch index (used by the eyedropper in indexed8 mode). */
   setSwatch: (index: number) => void
-  /** HDR intensity multiplier — applied to primary color channels when writing rgba32f pixels. */
-  hdrIntensity: number
-  /** Set the eyedropper HDR overflow flag (rgba32f mode: sampled value exceeded 1.0). */
-  setEyedropperHdrOverflow: (overflow: boolean) => void
   /** Current guide list — used by tools that snap to guides. */
   guides: Guide[]
   /**
    * Map from parent pixel-layer ID → its mask GpuLayer.
    * Used by tools (e.g. move) that need to keep the mask in sync with the parent.
    */
-  maskMap: Map<string, GpuLayer>
-}
+  maskMap: Map<string, GpuLayer>  /**
+   * IDs of all layers currently selected in the Layers panel (excluding the
+   * active layer, which is always implicitly included). Used by the move tool
+   * to move all selected layers together.
+   */
+  selectedLayerIds: readonly string[]}
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────
 

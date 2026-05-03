@@ -68,7 +68,6 @@ export function stampCloneSegment(
 
       let sr = 0, sg = 0, sb = 0, sa = 0
       const isF32 = sourceBuffer instanceof Float32Array
-      const scale = isF32 ? 255 : 1
       if (sourceIsCanvas) {
         let sx = Math.round(srcX), sy = Math.round(srcY)
         if (tiledW !== undefined && tiledH !== undefined) {
@@ -77,26 +76,33 @@ export function stampCloneSegment(
         }
         if (sx >= 0 && sy >= 0 && sx < canvasW && sy < canvasH) {
           const i = (sy * canvasW + sx) * 4
-          sr = sourceBuffer[i] * scale; sg = sourceBuffer[i + 1] * scale
-          sb = sourceBuffer[i + 2] * scale; sa = sourceBuffer[i + 3] * scale
+          sr = sourceBuffer[i]; sg = sourceBuffer[i + 1]
+          sb = sourceBuffer[i + 2]; sa = sourceBuffer[i + 3]
         }
       } else if (sourceBounds) {
         const lx = Math.round(srcX) - sourceBounds.offsetX
         const ly = Math.round(srcY) - sourceBounds.offsetY
         if (lx >= 0 && ly >= 0 && lx < sourceBounds.layerWidth && ly < sourceBounds.layerHeight) {
           const i = (ly * sourceBounds.layerWidth + lx) * 4
-          sr = sourceBuffer[i] * scale; sg = sourceBuffer[i + 1] * scale
-          sb = sourceBuffer[i + 2] * scale; sa = sourceBuffer[i + 3] * scale
+          sr = sourceBuffer[i]; sg = sourceBuffer[i + 1]
+          sb = sourceBuffer[i + 2]; sa = sourceBuffer[i + 3]
         }
       }
       if (sa === 0) continue
 
+      // For Float32Array sources (rgba32f), pass values directly as srcFloat so
+      // blendPixelOver skips the /255 normalisation and keeps full float precision.
+      // For Uint8Array sources (rgba8/indexed8), pass as the normal 0-255 path.
       blendPixelOver(
         renderer, destLayer, px, py,
-        sr, sg, sb, sa,
+        isF32 ? 0 : sr,
+        isF32 ? 0 : sg,
+        isF32 ? 0 : sb,
+        isF32 ? 0 : sa,
         opacity * coverage,
         touched, sel,
         tiledW, tiledH,
+        isF32 ? [sr, sg, sb, sa] : undefined,
       )
     }
   }

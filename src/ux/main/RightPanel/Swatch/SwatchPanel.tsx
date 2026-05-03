@@ -134,7 +134,8 @@ export function SwatchPanel({ activeTabId, onGeneratePalette }: SwatchPanelProps
       )
       return
     }
-    dispatch({ type: 'SET_PRIMARY_COLOR', payload: state.swatches[canonicalIndex] })
+    const sw = state.swatches[canonicalIndex]
+    dispatch({ type: 'SET_PRIMARY_COLOR', payload: { r: sw.r/255, g: sw.g/255, b: sw.b/255, a: sw.a/255 } })
     setSelectedIndices([canonicalIndex])
     anchorIndexRef.current = canonicalIndex
   }, [dispatch, displayEntries, state.swatches])
@@ -315,11 +316,12 @@ export function SwatchPanel({ activeTabId, onGeneratePalette }: SwatchPanelProps
         {displayEntries.map((entry, displayIndex) => {
           const { color, canonicalIndex } = entry
           const hex = `#${[color.r, color.g, color.b].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+          // Swatches are 0-255; primaryColor is float [0,1]. Compare in 0-255 space.
           const isActive =
-            color.r === state.primaryColor.r &&
-            color.g === state.primaryColor.g &&
-            color.b === state.primaryColor.b &&
-            color.a === state.primaryColor.a
+            color.r === Math.round(state.primaryColor.r * 255) &&
+            color.g === Math.round(state.primaryColor.g * 255) &&
+            color.b === Math.round(state.primaryColor.b * 255) &&
+            color.a === Math.round(state.primaryColor.a * 255)
           const isSelected = selectedIndices.includes(canonicalIndex)
           const isGroupHighlighted = highlightedCanonicalIndices.has(canonicalIndex)
           const cellClass = [

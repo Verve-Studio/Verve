@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer } from 'react'
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
-import { isGroupLayer } from '@/types'
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
+import { isGroupLayer, isContainerLayer } from '@/types'
 import { getDescendantIds, getParentGroup } from '@/utils/layerTree'
 import { DEFAULT_SWATCHES } from './tabTypes'
 
@@ -63,6 +63,7 @@ export type AppAction =
   | { type: 'REMOVE_SWATCH_GROUP'; payload: string }
   | { type: 'RENAME_SWATCH_GROUP'; payload: { id: string; name: string } }
   | { type: 'ADD_LAYER_GROUP'; payload: { id: string; name: string; aboveLayerId?: string } }
+  | { type: 'ADD_COMPOSITE_LAYER'; payload: { id: string; name: string; aboveLayerId?: string } }
   | { type: 'GROUP_LAYERS'; payload: { groupId: string; groupName: string; layerIds: string[] } }
   | { type: 'UNGROUP_LAYERS'; payload: { groupId: string } }
   | { type: 'TOGGLE_GROUP_COLLAPSE'; payload: string }
@@ -72,16 +73,14 @@ export type AppAction =
   | { type: 'SET_PIXEL_FORMAT'; payload: PixelFormat }
   | { type: 'SET_ACTIVE_SWATCH'; payload: number }
   | { type: 'CLEAR_REMOVED_SWATCH_INDEX' }
-  | { type: 'SET_HDR_INTENSITY'; payload: number }
-  | { type: 'SET_EYEDROPPER_HDR_OVERFLOW'; payload: boolean }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const initialState: AppState = {
   activeTool: 'pencil',
   activeShape: 'rectangle',
-  primaryColor: { r: 0, g: 0, b: 0, a: 255 },
-  secondaryColor: { r: 255, g: 255, b: 255, a: 255 },
+  primaryColor: { r: 0, g: 0, b: 0, a: 1 },
+  secondaryColor: { r: 1, g: 1, b: 1, a: 1 },
   swatches: DEFAULT_SWATCHES,
   swatchGroups: [],
   pixelBrushes: [],
@@ -94,8 +93,6 @@ const initialState: AppState = {
   pixelFormat: 'rgba8',
   activePaletteIndex: -1,
   lastRemovedSwatchIndex: null,
-  hdrIntensity: 1.0,
-  eyedropperHdrOverflow: false,
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -215,9 +212,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
       if (state.layers.length <= 1) return state
       const target = state.layers.find(l => l.id === action.payload)
       if (!target) return state
-      // Collect all IDs to remove: the target + its descendants (for groups) + per-layer children.
+      // Collect all IDs to remove: the target + its descendants (for groups/composites) + per-layer children.
       const toRemove = new Set<string>([action.payload])
-      if (isGroupLayer(target)) {
+      if (isContainerLayer(target)) {
         for (const id of getDescendantIds(state.layers, action.payload)) toRemove.add(id)
       }
       // Also remove per-layer mask/adjustment children.
@@ -229,7 +226,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
       const remaining = state.layers
         .filter(l => !toRemove.has(l.id))
-        .map(l => isGroupLayer(l)
+        .map(l => isContainerLayer(l)
           ? { ...l, childIds: l.childIds.filter(id => !toRemove.has(id)) }
           : l,
         )
@@ -304,7 +301,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'TOGGLE_LAYER_VISIBILITY': {
       const target = state.layers.find(l => l.id === action.payload)
       const newVisible = target ? !target.visible : false
-      const affected = target && isGroupLayer(target)
+      const affected = target && isContainerLayer(target)
         ? new Set([action.payload, ...getDescendantIds(state.layers, action.payload)])
         : new Set([action.payload])
       return {
@@ -436,12 +433,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'CLEAR_REMOVED_SWATCH_INDEX':
       return { ...state, lastRemovedSwatchIndex: null }
 
-    case 'SET_HDR_INTENSITY':
-      return { ...state, hdrIntensity: Math.max(0, Math.min(16, action.payload)) }
-
-    case 'SET_EYEDROPPER_HDR_OVERFLOW':
-      return { ...state, eyedropperHdrOverflow: action.payload }
-
     case 'NEW_CANVAS':
       return {
         ...state,
@@ -449,8 +440,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: 'layer-0',
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -472,8 +461,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -513,8 +500,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -539,8 +524,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
-        hdrIntensity: 1.0,
-        eyedropperHdrOverflow: false,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -568,6 +551,22 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, layers: next, activeLayerId: id }
     }
 
+    case 'ADD_COMPOSITE_LAYER': {
+      const { id, name, aboveLayerId } = action.payload
+      const newComposite: CompositeLayerState = {
+        id, name, visible: true, opacity: 1, locked: false,
+        blendMode: 'normal', type: 'composite', collapsed: false, childIds: [],
+      }
+      if (!aboveLayerId) {
+        return { ...state, layers: [...state.layers, newComposite], activeLayerId: id }
+      }
+      const idx = state.layers.findIndex(l => l.id === aboveLayerId)
+      const insertAt = idx >= 0 ? idx + 1 : state.layers.length
+      const next = [...state.layers]
+      next.splice(insertAt, 0, newComposite)
+      return { ...state, layers: next, activeLayerId: id }
+    }
+
     case 'GROUP_LAYERS': {
       const { groupId, groupName, layerIds } = action.payload
       if (layerIds.length === 0) return state
@@ -576,9 +575,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
       // Determine parent context (they must all share one parent; enforced by UI).
       const parentGroup = getParentGroup(state.layers, layerIds[0])
 
-      // Remove the layers from their current parent's childIds (if in a group).
+      // Remove the layers from their current parent's childIds (if in a group/composite).
       let nextLayers = state.layers.map(l =>
-        isGroupLayer(l) ? { ...l, childIds: l.childIds.filter(id => !layerIdSet.has(id)) } : l,
+        isContainerLayer(l) ? { ...l, childIds: l.childIds.filter(id => !layerIdSet.has(id)) } : l,
       )
 
       // Create the new group with childIds in the caller's supplied order.
@@ -598,7 +597,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
         // Update the parent's childIds to include the new group.
         nextLayers = nextLayers.map(l =>
-          l.id === parentGroup.id && isGroupLayer(l)
+          l.id === parentGroup.id && isContainerLayer(l)
             ? { ...l, childIds: [...l.childIds.slice(0, insertPos), groupId, ...l.childIds.slice(insertPos)] }
             : l,
         )
@@ -625,7 +624,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         nextLayers = state.layers
           .filter(l => l.id !== groupId)
           .map(l =>
-            l.id === parentGroup.id && isGroupLayer(l)
+            l.id === parentGroup.id && isContainerLayer(l)
               ? {
                   ...l,
                   childIds: [
@@ -654,7 +653,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         layers: state.layers.map(l =>
-          l.id === action.payload && isGroupLayer(l)
+          l.id === action.payload && isContainerLayer(l)
             ? { ...l, collapsed: !l.collapsed }
             : l,
         ),
@@ -665,13 +664,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const { layerId, targetGroupId, insertIndex } = action.payload
       // Remove from current parent's childIds (if any).
       let nextLayers = state.layers.map(l =>
-        isGroupLayer(l) && l.id !== targetGroupId
+        isContainerLayer(l) && l.id !== targetGroupId
           ? { ...l, childIds: l.childIds.filter(id => id !== layerId) }
           : l,
       )
       // Insert into target group's childIds.
       nextLayers = nextLayers.map(l => {
-        if (!isGroupLayer(l) || l.id !== targetGroupId) return l
+        if (!isContainerLayer(l) || l.id !== targetGroupId) return l
         const idx = insertIndex !== undefined ? insertIndex : 0
         const next = [...l.childIds.filter(id => id !== layerId)]
         next.splice(Math.max(0, Math.min(idx, next.length)), 0, layerId)
@@ -682,14 +681,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'MOVE_LAYER_OUT_OF_GROUP': {
       const { layerId, targetParentGroupId, insertIndex } = action.payload
-      // Remove from all groups' childIds.
+      // Remove from all containers' childIds.
       let nextLayers = state.layers.map(l =>
-        isGroupLayer(l) ? { ...l, childIds: l.childIds.filter(id => id !== layerId) } : l,
+        isContainerLayer(l) ? { ...l, childIds: l.childIds.filter(id => id !== layerId) } : l,
       )
       if (targetParentGroupId !== null) {
-        // Insert into target group at insertIndex.
+        // Insert into target container at insertIndex.
         nextLayers = nextLayers.map(l => {
-          if (!isGroupLayer(l) || l.id !== targetParentGroupId) return l
+          if (!isContainerLayer(l) || l.id !== targetParentGroupId) return l
           const next = [...l.childIds]
           next.splice(Math.max(0, Math.min(insertIndex, next.length)), 0, layerId)
           return { ...l, childIds: next }

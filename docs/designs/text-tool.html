@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Verve — Text Tool Design (Validation Pass)</title>
+  <style>
+    :root {
+      --color-bg:               #3c3c3c;
+      --color-surface:          #2d2d2d;
+      --color-surface-2:        #323232;
+      --color-surface-hover:    #4a4a4a;
+      --color-surface-selected: #404040;
+      --color-border:           #191919;
+      --color-border-light:     #555555;
+      --color-text:             #d4d4d4;
+      --color-text-dim:         #aaaaaa;
+      --color-text-muted:       #7a7a7a;
+      --color-accent:           #0699fb;
+      --color-accent-hover:     #1aa3ff;
+      --color-accent-glow:      rgba(6, 153, 251, 0.18);
+      --color-accent-border:    rgba(6, 153, 251, 0.45);
+      --color-danger:           #c04040;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #161616;
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      font-size: 12px;
+    }
+
+    /* ── Prototype chrome ──────────────────────────────────────────────── */
+
+    .proto-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #252525;
+    }
+
+    .proto-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a4a4a;
+      white-space: nowrap;
+    }
+
+    .proto-title em {
+      color: var(--color-accent);
+      font-style: normal;
+    }
+
+    .hdiv {
+      width: 1px;
+      height: 14px;
+      background: #262626;
+      flex-shrink: 0;
+    }
+
+    .proto-section {
+      padding: 28px 24px;
+      border-bottom: 1px solid #1c1c1c;
+    }
+
+    .proto-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: #363636;
+      margin-bottom: 16px;
+    }
+
+    .annotation {
+      font-size: 10px;
+      color: #3e3e3e;
+      line-height: 1.55;
+      margin-top: 10px;
+    }
+
+    .annotation strong { color: #585858; }
+
+    /* ── App frame wrapper ─────────────────────────────────────────────── */
+
+    .app-frame {
+      display: inline-flex;
+      flex-direction: column;
+      background: var(--color-bg);
+      border: 1px solid #111;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    /* ── Top bar (menubar stub) ────────────────────────────────────────── */
+
+    .topbar {
+      height: 24px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 0;
+      flex-shrink: 0;
+    }
+
+    .menu-item {
+      font-size: 11px;
+      color: var(--color-text-dim);
+      padding: 0 7px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      border-radius: 2px;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    .menu-item:hover { background: var(--color-surface-hover); color: var(--color-text); }
+
+    /* ── Tool options bar ──────────────────────────────────────────────── */
+
+    .tool-options-bar {
+      display: flex;
+      align-items: center;
+      height: 32px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      padding: 0 8px;
+      flex-shrink: 0;
+      overflow: visible;
+      position: relative;
+      z-index: 10;
+    }
+
+    /* T icon at left */
+    .tool-icon-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      margin-right: 2px;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 16px;
+      font-weight: bold;
+      color: var(--color-text-dim);
+      line-height: 1;
+    }
+
+    .opt-sep {
+      width: 1px;
+      height: 18px;
+      background: var(--color-border-light);
+      margin: 0 8px;
+      flex-shrink: 0;
+    }
+
+    .opt-sep-sm {
+      width: 1px;
+      height: 18px;
+      background: var(--color-border-light);
+      margin: 0 5px;
+      flex-shrink: 0;
+    }
+
+    /* ── Font family combo ────────────────────────────────────────────── */
+
+    .font-family-combo {
+      display: flex;
+      align-items: center;
+      width: 138px;
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      padding: 0 5px 0 7px;
+      cursor: pointer;
+      flex-shrink: 0;
+      gap: 0;
+    }
+
+    .font-family-combo:hover { border-color: var(--color-border-light); }
+
+    .font-family-name {
+      font-size: 11px;
+      color: var(--color-text);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .combo-arrow {
+      font-size: 7px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+      margin-left: 3px;
+      pointer-events: none;
+    }
+
+    /* ── Font size ────────────────────────────────────────────────────── */
+
+    .size-wrap {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: 5px;
+      flex-shrink: 0;
+    }
+
+    .num-input {
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      color: var(--color-text);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      text-align: right;
+      padding: 0 4px;
+      outline: none;
+      -moz-appearance: textfield;
+    }
+
+    .num-input::-webkit-inner-spin-button,
+    .num-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+    .num-input:focus { border-color: var(--color-accent-border); }
+
+    .input-unit {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    /* ── Style toggles B / I / U / S ──────────────────────────────────── */
+
+    .style-group {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      flex-shrink: 0;
+    }
+
+    .style-btn {
+      width: 22px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 2px;
+      background: transparent;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      flex-shrink: 0;
+      transition: background 70ms, color 70ms;
+    }
+
+    .style-btn:hover { background: var(--color-surface-hover); color: var(--color-text); }
+
+    .style-btn.active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    /* ── Alignment buttons ────────────────────────────────────────────── */
+
+    .align-group {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      flex-shrink: 0;
+    }
+
+    .align-btn {
+      width: 22px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 2px;
+      background: transparent;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 70ms, color 70ms;
+    }
+
+    .align-btn:hover { background: var(--color-surface-hover); color: var(--color-text); }
+
+    .align-btn.active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    /* ── Spacing fields (LS / LH) ─────────────────────────────────────── */
+
+    .field-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .field-label {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    /* ── Kerning select ───────────────────────────────────────────────── */
+
+    .kern-select {
+      height: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      color: var(--color-text);
+      font-size: 11px;
+      font-family: var(--font-sans);
+      padding: 0 18px 0 5px;
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      cursor: pointer;
+      flex-shrink: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%237a7a7a'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 5px center;
+      min-width: 52px;
+    }
+
+    .kern-select:focus { border-color: var(--color-accent-border); }
+
+    /* ── Color swatch ─────────────────────────────────────────────────── */
+
+    .color-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 2px;
+      border: 1px solid rgba(0,0,0,0.5);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      cursor: pointer;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .color-swatch:hover { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 0 0 1px var(--color-accent); }
+
+    /* ── App body layout ──────────────────────────────────────────────── */
+
+    .app-body {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Left toolbar ─────────────────────────────────────────────────── */
+
+    .toolbar-strip {
+      width: 36px;
+      background: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 6px;
+      gap: 2px;
+    }
+
+    .tool-btn {
+      width: 30px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--color-text-muted);
+      position: relative;
+    }
+
+    .tool-btn:hover { background: var(--color-surface-hover); color: var(--color-text); }
+
+    .tool-btn.active {
+      background: var(--color-surface-selected);
+      color: var(--color-text);
+    }
+
+    .tool-btn.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 5px;
+      bottom: 5px;
+      width: 2px;
+      background: var(--color-accent);
+      border-radius: 0 1px 1px 0;
+    }
+
+    .tool-sep {
+      width: 22px;
+      height: 1px;
+      background: var(--color-border);
+      margin: 2px 0;
+    }
+
+    /* ── Workspace canvas area ────────────────────────────────────────── */
+
+    .workspace {
+      flex: 1;
+      background: var(--color-bg);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Canvas mock ──────────────────────────────────────────────────── */
+
+    .canvas-mock {
+      position: relative;
+      border: 1px solid #252525;
+      overflow: visible;
+      flex-shrink: 0;
+      background: var(--color-bg);
+    }
+
+    /* Clip everything inside canvas boundaries */
+    .canvas-clip {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    /* Checkerboard pattern */
+    .canvas-checker {
+      position: absolute;
+      inset: 0;
+      background-image: repeating-conic-gradient(#3d3d3d 0% 25%, #4d4d4d 0% 50%);
+      background-size: 16px 16px;
+      pointer-events: none;
+    }
+
+    /* Photo-like scene background */
+    .scene-sky {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(175deg, #1a2e44 0%, #2a4a6e 45%, #5a82a0 70%, #8fb8d0 90%, #c0d8e8 100%);
+    }
+
+    .scene-ground {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 90px;
+      background: linear-gradient(180deg, #4a6a38 0%, #344c28 100%);
+      clip-path: polygon(0 50%, 18% 25%, 42% 38%, 62% 18%, 80% 30%, 100% 15%, 100% 100%, 0 100%);
+    }
+
+    .scene-tree {
+      position: absolute;
+      bottom: 65px;
+    }
+
+    .scene-tree-trunk {
+      width: 6px;
+      height: 22px;
+      background: #3a2a1a;
+      margin: 0 auto;
+    }
+
+    .scene-tree-crown {
+      width: 28px;
+      height: 38px;
+      background: #2e5028;
+      border-radius: 50% 50% 40% 40%;
+      margin-bottom: -4px;
+    }
+
+    /* Rendered text (canvas 2D rasterized layer — always visible beneath overlay) */
+    .text-rendered {
+      position: absolute;
+      pointer-events: none;
+      font-family: Georgia, 'Times New Roman', serif;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: hidden;
+    }
+
+    /* ── Bounding box overlay ─────────────────────────────────────────── */
+
+    .bbox {
+      position: absolute;
+      border: 1px dashed var(--color-accent);
+      pointer-events: none;
+      /* overflow: visible so handles + overflow indicator can extend outside */
+      overflow: visible;
+    }
+
+    /* Resize handle — 7×7px white square, accent border */
+    .handle {
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      background: #fff;
+      border: 1px solid var(--color-accent);
+      border-radius: 1px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+
+    .h-nw { top: -4px;           left: -4px;           cursor: nw-resize; }
+    .h-n  { top: -4px;           left: calc(50% - 3px); cursor: n-resize; }
+    .h-ne { top: -4px;           right: -4px;           cursor: ne-resize; }
+    .h-e  { top: calc(50% - 3px); right: -4px;          cursor: e-resize; }
+    .h-se { bottom: -4px;        right: -4px;           cursor: se-resize; }
+    .h-s  { bottom: -4px;        left: calc(50% - 3px); cursor: s-resize; }
+    .h-sw { bottom: -4px;        left: -4px;            cursor: sw-resize; }
+    .h-w  { top: calc(50% - 3px); left: -4px;           cursor: w-resize; }
+
+    /* Overflow indicator (area text, text overflows box height) */
+    .overflow-indicator {
+      position: absolute;
+      right: -1px;
+      bottom: -14px;
+      width: 13px;
+      height: 13px;
+      border: 1px solid var(--color-accent);
+      background: var(--color-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-accent);
+      line-height: 1;
+      pointer-events: none;
+      border-radius: 1px;
+    }
+
+    /* Invisible contenteditable overlay (no background — renders only cursor+selection) */
+    .text-overlay {
+      position: absolute;
+      pointer-events: none;
+      /* background: transparent — the entire overlay is see-through */
+      background: transparent;
+      /* No border — the bbox handles the visual boundary */
+      border: none;
+      overflow: hidden;
+    }
+
+    /* Text cursor — 1px white vertical bar */
+    .text-cursor {
+      position: absolute;
+      width: 1.5px;
+      background: rgba(255,255,255,0.95);
+      mix-blend-mode: normal;
+      pointer-events: none;
+      /* Blinking in real app via CSS animation — shown solid here */
+      border-radius: 1px;
+    }
+
+    /* Text selection highlight */
+    .text-sel {
+      position: absolute;
+      background: rgba(6, 153, 251, 0.30);
+      pointer-events: none;
+    }
+
+    /* Zoom badge */
+    .zoom-badge {
+      position: absolute;
+      bottom: 6px;
+      right: 7px;
+      font-size: 10px;
+      color: var(--color-text-muted);
+      background: rgba(0,0,0,0.5);
+      padding: 2px 5px;
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    /* ── Right panel ──────────────────────────────────────────────────── */
+
+    .right-panel {
+      width: 210px;
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Layer panel ──────────────────────────────────────────────────── */
+
+    .panel-header {
+      height: 26px;
+      background: var(--color-surface-2);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-text-muted);
+      flex: 1;
+    }
+
+    .panel-action {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      border-radius: 2px;
+    }
+
+    .panel-action:hover { background: var(--color-surface-hover); color: var(--color-text); }
+
+    .layer-row {
+      display: flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 5px;
+      gap: 5px;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .layer-row:hover { background: var(--color-surface-hover); }
+
+    .layer-row.active {
+      background: var(--color-surface-selected);
+      /* Subtle left accent bar */
+      box-shadow: inset 2px 0 0 var(--color-accent);
+    }
+
+    .layer-eye {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    .layer-eye.hidden { opacity: 0.25; }
+
+    /* Pixel layer thumbnail */
+    .layer-thumb {
+      width: 26px;
+      height: 26px;
+      flex-shrink: 0;
+      border: 1px solid var(--color-border-light);
+      border-radius: 1px;
+      overflow: hidden;
+      position: relative;
+      background-image: repeating-conic-gradient(#3d3d3d 0% 25%, #4d4d4d 0% 50%);
+      background-size: 6px 6px;
+    }
+
+    /* Text layer T icon */
+    .layer-t-icon {
+      width: 26px;
+      height: 26px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 20px;
+      font-weight: bold;
+      color: var(--color-text);
+      line-height: 1;
+    }
+
+    .layer-name {
+      flex: 1;
+      font-size: 11px;
+      color: var(--color-text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .layer-opacity {
+      font-size: 10px;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .layer-lock {
+      width: 12px;
+      height: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    .missing-font-badge {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #c07a00;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    /* ── Dropdown expanded demo ───────────────────────────────────────── */
+
+    .font-dropdown-panel {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 0;
+      width: 210px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border-light);
+      border-radius: 2px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+      z-index: 200;
+    }
+
+    .font-search-bar {
+      display: flex;
+      align-items: center;
+      height: 26px;
+      border-bottom: 1px solid var(--color-border);
+      padding: 0 6px;
+      gap: 5px;
+    }
+
+    .font-search-icon {
+      color: var(--color-text-muted);
+      flex-shrink: 0;
+    }
+
+    .font-search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--color-text);
+      font-size: 11px;
+      font-family: var(--font-sans);
+    }
+
+    .font-list { max-height: 152px; overflow-y: auto; }
+
+    .font-list::-webkit-scrollbar { width: 5px; }
+    .font-list::-webkit-scrollbar-track { background: transparent; }
+    .font-list::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+
+    .font-item {
+      height: 23px;
+      display: flex;
+      align-items: center;
+      padding: 0 9px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--color-text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .font-item:hover { background: var(--color-surface-hover); color: var(--color-text); }
+
+    .font-item.selected {
+      background: rgba(6, 153, 251, 0.15);
+      color: var(--color-accent);
+    }
+
+    /* ── Callout annotations ─────────────────────────────────────────── */
+
+    .callout-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .callout {
+      flex: 1;
+      min-width: 200px;
+      max-width: 320px;
+      background: #1c1c1c;
+      border: 1px solid #282828;
+      border-radius: 3px;
+      padding: 10px 12px;
+    }
+
+    .callout-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-text-muted);
+      margin-bottom: 5px;
+    }
+
+    .callout-body {
+      font-size: 11px;
+      color: #4a4a4a;
+      line-height: 1.55;
+    }
+
+    .callout-body strong { color: #686868; }
+    .callout-body code { color: #5a7a5a; font-size: 10px; }
+
+    /* ── Two-column canvas layout ─────────────────────────────────────── */
+
+    .canvas-cols {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .canvas-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .col-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #3c3c3c;
+    }
+
+    /* ── Standalone layer panel section ──────────────────────────────── */
+
+    .layer-panels-row {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .layer-panel-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .layer-panel {
+      width: 212px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    /* editing mode indicator dot in corner of T icon */
+    .t-editing {
+      position: relative;
+    }
+
+    .t-editing::after {
+      content: '';
+      position: absolute;
+      bottom: 1px;
+      right: 1px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--color-accent);
+      border: 1px solid var(--color-surface-selected);
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- ───────────────────────────────────────────────── Proto header -->
+  <div class="proto-header">
+    <span class="proto-title">Verve Design — <em>Text Tool</em></span>
+    <div class="hdiv"></div>
+    <span class="proto-title" style="color:#333;">Tool Options Bar · Canvas Overlay · Font Dropdown · Layer Panel</span>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 1 — TOOL OPTIONS BAR (full width)
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="proto-section">
+    <div class="proto-section-label">1 — Tool Options Bar (all controls, single row)</div>
+
+    <!-- Full-width frame, no overflow clipping so dropdowns can escape -->
+    <div style="display:flex; flex-direction:column; background:var(--color-bg); border:1px solid #111; border-radius:3px; overflow:visible;">
+
+      <!-- Topbar stub for context -->
+      <div class="topbar">
+        <span class="menu-item">File</span>
+        <span class="menu-item">Edit</span>
+        <span class="menu-item">Layer</span>
+        <span class="menu-item">Adjustments</span>
+        <span class="menu-item">Filters</span>
+        <span class="menu-item">View</span>
+      </div>
+
+      <!-- Options bar -->
+      <div class="tool-options-bar" style="overflow:visible;">
+
+        <!-- Tool icon (T — serif bold) -->
+        <div class="tool-icon-badge">T</div>
+
+        <div class="opt-sep"></div>
+
+        <!-- GROUP 1: Font family + size -->
+        <!-- Font family searchable combo -->
+        <div class="font-family-combo">
+          <span class="font-family-name" style="font-family: Georgia, serif;">Georgia</span>
+          <span class="combo-arrow">▾</span>
+        </div>
+
+        <!-- Font size -->
+        <div class="size-wrap">
+          <input class="num-input" type="number" value="24" style="width:38px;" title="Font size (canvas px)">
+          <span class="input-unit">px</span>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <!-- GROUP 2: Style toggles B / I / U / S -->
+        <div class="style-group">
+          <!-- Bold — active state -->
+          <button class="style-btn active" title="Bold" style="font-weight:700;">B</button>
+          <!-- Italic — inactive -->
+          <button class="style-btn" title="Italic" style="font-style:italic; font-family: Georgia, serif;">I</button>
+          <!-- Underline -->
+          <button class="style-btn" title="Underline">
+            <svg width="12" height="14" viewBox="0 0 12 14" fill="none">
+              <path d="M2 1v5.5a4 4 0 0 0 8 0V1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <line x1="0" y1="13" x2="12" y2="13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <!-- Strikethrough -->
+          <button class="style-btn" title="Strikethrough">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M1 3.5C1 2 2.8 1 6 1c1.6 0 3 .4 3.8 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <path d="M11 8.5C11 10 9.2 11 6 11c-1.6 0-3-.4-3.8-1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <line x1="0" y1="6" x2="12" y2="6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <!-- GROUP 3: Text alignment (L / C / R / J) -->
+        <div class="align-group">
+          <!-- Left — active -->
+          <button class="align-btn active" title="Align Left">
+            <svg width="13" height="11" viewBox="0 0 13 11" fill="none">
+              <rect x="0" y="0"   width="13" height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="0" y="4.6" width="8"  height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="0" y="9.2" width="11" height="1.8" rx="0.9" fill="currentColor"/>
+            </svg>
+          </button>
+          <!-- Center -->
+          <button class="align-btn" title="Align Center">
+            <svg width="13" height="11" viewBox="0 0 13 11" fill="none">
+              <rect x="0"   y="0"   width="13" height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="2.5" y="4.6" width="8"  height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="1"   y="9.2" width="11" height="1.8" rx="0.9" fill="currentColor"/>
+            </svg>
+          </button>
+          <!-- Right -->
+          <button class="align-btn" title="Align Right">
+            <svg width="13" height="11" viewBox="0 0 13 11" fill="none">
+              <rect x="0" y="0"   width="13" height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="5" y="4.6" width="8"  height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="2" y="9.2" width="11" height="1.8" rx="0.9" fill="currentColor"/>
+            </svg>
+          </button>
+          <!-- Justify -->
+          <button class="align-btn" title="Justify">
+            <svg width="13" height="11" viewBox="0 0 13 11" fill="none">
+              <rect x="0" y="0"   width="13" height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="0" y="4.6" width="13" height="1.8" rx="0.9" fill="currentColor"/>
+              <rect x="0" y="9.2" width="9"  height="1.8" rx="0.9" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <!-- GROUP 4: Letter spacing + line height -->
+        <div class="field-group">
+          <span class="field-label">LS</span>
+          <input class="num-input" type="number" value="0" style="width:40px;"
+                 title="Letter Spacing (milliems — thousandths of an em)">
+        </div>
+
+        <div style="width:6px; flex-shrink:0;"></div>
+
+        <div class="field-group">
+          <span class="field-label">LH</span>
+          <input class="num-input" type="number" value="1.20" step="0.05" style="width:40px;"
+                 title="Line Height (em multiplier, e.g. 1.20)">
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <!-- GROUP 5: Kerning -->
+        <div class="field-group">
+          <span class="field-label">Kern</span>
+          <select class="kern-select" title="Kerning">
+            <option selected>Auto</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <!-- Color swatch — red for contrast against dark UI -->
+        <div class="color-swatch" style="background: #e03535;" title="Text color — click to open color picker"></div>
+
+      </div>
+    </div>
+
+    <div class="annotation">
+      Left to right: <strong>T icon</strong> · font family (searchable combo, 138px) · size px · separator · <strong>B/I/U/S</strong> style toggles ·
+      separator · alignment (L/C/R/J) · separator · <strong>LS</strong> letter spacing (milliems, 0 = no extra tracking) ·
+      <strong>LH</strong> line height (multiplier, default 1.20) · separator · <strong>Kern</strong> dropdown (Auto / None) ·
+      separator · color swatch. Bold shown active. All controls update the active text layer live.
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 1b — FONT DROPDOWN (expanded)
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="proto-section">
+    <div class="proto-section-label">1b — Font Family Dropdown (expanded / searching)</div>
+
+    <!-- Standalone demo with enough height for the dropdown to breathe -->
+    <div style="position:relative; display:inline-block; padding-bottom: 200px;">
+      <div style="display:flex; flex-direction:column; background:var(--color-bg); border:1px solid #111; border-radius:3px; overflow:visible; width:460px;">
+        <div class="tool-options-bar" style="overflow:visible;">
+          <div class="tool-icon-badge">T</div>
+          <div class="opt-sep"></div>
+
+          <!-- Combo in open/searching state: focus border, text entry -->
+          <div class="font-family-combo" style="border-color: var(--color-accent-border); background:#222; position:relative;">
+            <!-- Mock cursor at end of typed text -->
+            <span class="font-family-name" style="color: var(--color-text);">
+              Geo<span style="display:inline-block;width:1px;height:13px;background:var(--color-accent);vertical-align:middle;margin-left:1px;"></span>
+            </span>
+            <span class="combo-arrow" style="color: var(--color-accent);">▾</span>
+
+            <!-- Dropdown panel -->
+            <div class="font-dropdown-panel">
+              <div class="font-search-bar">
+                <svg class="font-search-icon" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <circle cx="4.5" cy="4.5" r="3" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="7" y1="7" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+                <input type="text" class="font-search-input" value="Geo" placeholder="Search fonts…" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="font-list">
+                <div class="font-item" style="font-family: Arial;">Arial</div>
+                <div class="font-item" style="font-family: 'Courier New', monospace;">Courier New</div>
+                <div class="font-item selected" style="font-family: Georgia, serif;">Georgia</div>
+                <div class="font-item" style="font-family: Impact, fantasy;">Impact</div>
+                <div class="font-item" style="font-family: 'Palatino Linotype', 'Palatino', serif;">Palatino Linotype</div>
+                <div class="font-item" style="font-family: Tahoma, sans-serif;">Tahoma</div>
+                <div class="font-item" style="font-family: 'Times New Roman', serif;">Times New Roman</div>
+                <div class="font-item" style="font-family: Verdana, sans-serif;">Verdana</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Remaining options bar continues after the combo -->
+          <div class="size-wrap">
+            <input class="num-input" type="number" value="24" style="width:38px;">
+            <span class="input-unit">px</span>
+          </div>
+          <div class="opt-sep"></div>
+          <div class="style-group">
+            <button class="style-btn active" style="font-weight:700;">B</button>
+            <button class="style-btn" style="font-style:italic; font-family:Georgia,serif;">I</button>
+          </div>
+          <div class="opt-sep"></div>
+          <!-- ... rest fades out -->
+          <span style="font-size:10px; color:#333; margin-left:4px;">…</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="annotation">
+      Clicking the font combo opens a panel below it. A search input sits at the top (auto-focused, keyboard-driven).
+      Each item is rendered in its own typeface for preview. The currently active font is highlighted in accent blue.
+      Keyboard: ↑/↓ to navigate, Enter to confirm, Escape to cancel. The panel is populated via <strong>queryLocalFonts()</strong> with
+      a curated probe-list fallback.
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 2 — CANVAS EDITING STATES
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="proto-section">
+    <div class="proto-section-label">2 — Canvas Editing State</div>
+
+    <div class="canvas-cols">
+
+      <!-- ── 2a: Area text at 100% zoom, overflow active ── -->
+      <div class="canvas-col">
+        <div class="col-label">Area text · 100% zoom · overflow active</div>
+
+        <div class="app-frame" style="width:420px; height:310px;">
+
+          <!-- Thin toolbar context -->
+          <div style="display:flex; height:100%; overflow:hidden;">
+            <!-- Left toolbar strip -->
+            <div class="toolbar-strip">
+              <button class="tool-btn">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+              </button>
+              <div class="tool-sep"></div>
+              <!-- Move tool -->
+              <button class="tool-btn">
+                <svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M1 1l10 6-5.5 1.5L4 13z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="tool-sep"></div>
+              <!-- Text tool — active -->
+              <button class="tool-btn active" title="Text Tool">
+                <span style="font-family:Georgia,'Times New Roman',serif; font-size:15px; font-weight:bold; line-height:1;">T</span>
+              </button>
+              <div class="tool-sep"></div>
+              <button class="tool-btn">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 8.5 l5-5 M3.5 3.5 l5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Workspace -->
+            <div class="workspace" style="align-items:center; justify-content:center;">
+
+              <!-- Canvas mock: 340px × 250px, relative so overlay can position inside -->
+              <div class="canvas-mock" style="width:340px; height:250px;">
+                <div class="canvas-clip">
+                  <div class="canvas-checker"></div>
+                  <div class="scene-sky"></div>
+                  <div class="scene-ground"></div>
+                  <!-- Trees -->
+                  <div class="scene-tree" style="left:30px;">
+                    <div class="scene-tree-crown" style="width:22px;height:32px;"></div>
+                    <div class="scene-tree-trunk" style="width:5px;"></div>
+                  </div>
+                  <div class="scene-tree" style="left:290px;">
+                    <div class="scene-tree-crown" style="width:26px;height:36px;background:#365e2e;"></div>
+                    <div class="scene-tree-trunk"></div>
+                  </div>
+                </div>
+
+                <!-- Rendered text (Canvas 2D rasterization — always visible, no coverage by overlay) -->
+                <div class="text-rendered" style="
+                  left: 68px; top: 44px;
+                  width: 196px; height: 140px;
+                  font-size: 15px;
+                  font-weight: bold;
+                  line-height: 1.4;
+                  color: rgba(255,255,255,0.93);
+                  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+                  overflow: hidden;
+                ">The quick brown fox jumps over the lazy dog near the riverside.</div>
+
+                <!-- Transparent contenteditable overlay (background:transparent, no border) -->
+                <!-- The dashed bbox is the visual boundary — the overlay itself is invisible -->
+                <div class="text-overlay" style="left:68px; top:44px; width:196px; height:140px;"></div>
+
+                <!-- Bounding box (dashed accent border, drawn on overlay — not on layer pixels) -->
+                <div class="bbox" style="left:67px; top:43px; width:198px; height:142px;">
+                  <!-- 8 resize handles -->
+                  <div class="handle h-nw"></div>
+                  <div class="handle h-n"></div>
+                  <div class="handle h-ne"></div>
+                  <div class="handle h-e"></div>
+                  <div class="handle h-se"></div>
+                  <div class="handle h-s"></div>
+                  <div class="handle h-sw"></div>
+                  <div class="handle h-w"></div>
+                  <!-- Overflow indicator: text exceeds box height -->
+                  <div class="overflow-indicator">+</div>
+                </div>
+
+                <!-- Text cursor: positioned after last visible character -->
+                <div class="text-cursor" style="left:219px; top:170px; height:18px;"></div>
+
+                <!-- Zoom badge -->
+                <div class="zoom-badge">100%</div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 2b: Point text at 2× zoom, selection active ── -->
+      <div class="canvas-col">
+        <div class="col-label">Point text · 2× zoom · text selected</div>
+
+        <div class="app-frame" style="width:340px; height:310px;">
+          <div style="display:flex; height:100%; overflow:hidden;">
+            <div class="toolbar-strip">
+              <button class="tool-btn">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+              </button>
+              <div class="tool-sep"></div>
+              <button class="tool-btn">
+                <svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M1 1l10 6-5.5 1.5L4 13z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="tool-sep"></div>
+              <button class="tool-btn active">
+                <span style="font-family:Georgia,'Times New Roman',serif; font-size:15px; font-weight:bold; line-height:1;">T</span>
+              </button>
+            </div>
+
+            <div class="workspace">
+              <!-- Canvas mock: at 2× zoom the canvas pixel → 2 screen pixels -->
+              <div class="canvas-mock" style="width:280px; height:250px;">
+                <div class="canvas-clip">
+                  <!-- Checkerboard at 2× scale -->
+                  <div class="canvas-checker" style="background-size:32px 32px;"></div>
+                  <div class="scene-sky" style="background: linear-gradient(175deg,#1a2e44,#3a6090 60%,#90bcd4);"></div>
+                </div>
+
+                <!-- Rendered text — at 2× zoom, 16 canvas-px font → 32 screen px -->
+                <div class="text-rendered" style="
+                  left: 30px; top: 96px;
+                  font-size: 32px;
+                  font-weight: bold;
+                  line-height: 1.2;
+                  letter-spacing: 0.03em;
+                  color: rgba(255,255,255,0.95);
+                  text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+                  white-space: nowrap;
+                ">Adventure</div>
+
+                <!-- Transparent overlay -->
+                <div class="text-overlay" style="left:30px; top:96px; width:230px; height:38px;"></div>
+
+                <!-- Selection highlight covering "dvent" -->
+                <div class="text-sel" style="left:50px; top:96px; width:136px; height:38px;"></div>
+
+                <!-- Bounding box for point text (auto-size, fits single line) -->
+                <div class="bbox" style="left:29px; top:95px; width:232px; height:40px;">
+                  <div class="handle h-nw"></div>
+                  <div class="handle h-n"></div>
+                  <div class="handle h-ne"></div>
+                  <div class="handle h-e"></div>
+                  <div class="handle h-se"></div>
+                  <div class="handle h-s"></div>
+                  <div class="handle h-sw"></div>
+                  <div class="handle h-w"></div>
+                  <!-- No overflow indicator for point text -->
+                </div>
+
+                <!-- Cursor at start of selection (left edge of "A" in "Adventure") -->
+                <div class="text-cursor" style="left:49px; top:97px; height:36px;"></div>
+
+                <div class="zoom-badge">200%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /canvas-cols -->
+
+    <!-- Callout annotations -->
+    <div class="callout-row">
+      <div class="callout">
+        <div class="callout-title">Transparent Overlay</div>
+        <div class="callout-body">
+          The <code>contenteditable</code> / <code>textarea</code> element sits on top of the rendered text with
+          <strong>background: transparent, border: none</strong>. Only the <strong>cursor</strong> (1.5px white bar)
+          and <strong>selection highlight</strong> (30% accent blue) are drawn on top. The rasterized text always shows through.
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-title">Bounding Box</div>
+        <div class="callout-body">
+          <strong>1px dashed #0699fb</strong> border drawn on the canvas overlay. Eight <strong>7×7px white square handles</strong>
+          with 1px accent border at all cardinal and corner positions. Handles stay 7×7px in screen space regardless of zoom.
+          Hidden when not in editing mode.
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-title">Overflow Indicator</div>
+        <div class="callout-body">
+          <strong>13×13px</strong> square at the bottom-right of the bounding box, just outside the border.
+          Accent blue <code>+</code> symbol. Visible only for <strong>area text</strong> (<code>boxWidth &gt; 0</code>)
+          when text exceeds <code>boxHeight</code>. Drawn on overlay, not written to layer pixels.
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-title">Point Text vs Area Text</div>
+        <div class="callout-body">
+          <strong>Point text</strong> (click): <code>boxWidth = 0</code>, auto-size box, no wrapping, no overflow indicator.
+          Dragging any handle converts to area text.
+          <strong>Area text</strong> (drag): fixed <code>boxWidth × boxHeight</code>, word-wrap, text clipped at bottom, overflow indicator when content exceeds box.
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 3 — LAYER PANEL ROWS
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="proto-section">
+    <div class="proto-section-label">3 — Layer Panel — Text Layer Rows</div>
+
+    <div class="layer-panels-row">
+
+      <!-- ── 3a: Active text layer in edit mode ── -->
+      <div class="layer-panel-block">
+        <div class="col-label">Active / editing</div>
+        <div class="layer-panel">
+          <div class="panel-header">
+            <span class="panel-title">Layers</span>
+            <div class="panel-action">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="5" y1="1" x2="5" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="panel-action">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+            </div>
+          </div>
+
+          <!-- Pixel layer above (inactive) -->
+          <div class="layer-row">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-thumb">
+              <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1e3a5a,#4a7090);"></div>
+            </div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Sky photo</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+
+          <!-- Text layer — active + editing mode -->
+          <div class="layer-row active">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <!-- T icon with editing dot indicator -->
+            <div class="layer-t-icon t-editing" style="position:relative;">T</div>
+            <span class="layer-name">The quick brown fox...</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+
+          <!-- Background pixel layer (inactive) -->
+          <div class="layer-row">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-thumb">
+              <div style="position:absolute;inset:0;background:linear-gradient(160deg,#3a5228,#5a6a3a);"></div>
+            </div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Background</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 3b: Text layer, hidden visibility ── -->
+      <div class="layer-panel-block">
+        <div class="col-label">Hidden text layer</div>
+        <div class="layer-panel">
+          <div class="panel-header">
+            <span class="panel-title">Layers</span>
+          </div>
+
+          <div class="layer-row">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-thumb">
+              <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1e3a5a,#4a7090);"></div>
+            </div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Photo</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+
+          <!-- Text layer, visibility off -->
+          <div class="layer-row">
+            <div class="layer-eye hidden">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none">
+                <ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="1" y1="1" x2="13" y2="9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="layer-t-icon" style="opacity:0.4;">T</div>
+            <span class="layer-name" style="color:var(--color-text-muted); font-style:italic;">Copyright 2026</span>
+            <span class="layer-opacity" style="color:var(--color-text-muted);">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 3c: Missing font warning ── -->
+      <div class="layer-panel-block">
+        <div class="col-label">Missing font</div>
+        <div class="layer-panel">
+          <div class="panel-header">
+            <span class="panel-title">Layers</span>
+          </div>
+
+          <div class="layer-row active">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-t-icon" style="color:var(--color-text-muted);">T</div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Headline copy</span>
+            <!-- Missing font warning badge -->
+            <div class="missing-font-badge" title="Font 'Neue Haas Grotesk' not installed — using cached render">!</div>
+          </div>
+
+          <div class="layer-row">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-thumb">
+              <div style="position:absolute;inset:0;background:linear-gradient(135deg,#2a2a3a,#3a3a5a);"></div>
+            </div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Background</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 3d: Locked text layer ── -->
+      <div class="layer-panel-block">
+        <div class="col-label">Locked text layer</div>
+        <div class="layer-panel">
+          <div class="panel-header">
+            <span class="panel-title">Layers</span>
+          </div>
+
+          <div class="layer-row" style="opacity:0.72;">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-t-icon" style="color:var(--color-text-muted);">T</div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Footer text</span>
+            <!-- Lock icon -->
+            <svg width="10" height="12" viewBox="0 0 10 12" fill="none" style="flex-shrink:0; color:var(--color-text-muted); margin-left:2px;">
+              <rect x="1" y="5" width="8" height="7" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M3 5V3.5a2 2 0 1 1 4 0V5" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+          </div>
+
+          <div class="layer-row">
+            <div class="layer-eye">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg>
+            </div>
+            <div class="layer-thumb">
+              <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1e3a5a,#4a7090);"></div>
+            </div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Photo</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /layer-panels-row -->
+
+    <div class="annotation" style="margin-top: 14px;">
+      <strong>T icon:</strong> Georgia 20px bold, 26×26px, same slot as the pixel thumbnail — no thumbnail for text layers.
+      <strong>Layer name:</strong> auto-derived from content (first 30 chars); updates live while typing.
+      <strong>Editing dot:</strong> small accent-blue dot at bottom-right of T icon while in editing mode.
+      <strong>Missing font:</strong> amber <code>!</code> badge — hover shows substituted font name.
+      <strong>Locked:</strong> lock icon replaces opacity badge; layer is dimmed, Text tool cannot enter editing mode.
+      <strong>Hidden:</strong> strikethrough eye icon, name italicized and muted.
+      Double-clicking the row (not the name) enters editing mode.
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 4 — FULL APP COMPOSITE (options bar + canvas + panel)
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="proto-section" style="border-bottom:none;">
+    <div class="proto-section-label">4 — Full App Composite (options bar + canvas + right panel)</div>
+
+    <div class="app-frame" style="width:820px;">
+
+      <!-- Menubar stub -->
+      <div class="topbar">
+        <span class="menu-item">File</span>
+        <span class="menu-item">Edit</span>
+        <span class="menu-item">Select</span>
+        <span class="menu-item">Layer</span>
+        <span class="menu-item">Adjustments</span>
+        <span class="menu-item">Effects</span>
+        <span class="menu-item">Filters</span>
+        <span class="menu-item">View</span>
+      </div>
+
+      <!-- Options bar -->
+      <div class="tool-options-bar" style="overflow:visible; z-index:20;">
+        <div class="tool-icon-badge">T</div>
+        <div class="opt-sep"></div>
+
+        <div class="font-family-combo">
+          <span class="font-family-name" style="font-family:Georgia,serif;">Georgia</span>
+          <span class="combo-arrow">▾</span>
+        </div>
+
+        <div class="size-wrap">
+          <input class="num-input" type="number" value="18" style="width:38px;">
+          <span class="input-unit">px</span>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <div class="style-group">
+          <button class="style-btn active" style="font-weight:700;">B</button>
+          <button class="style-btn" style="font-style:italic; font-family:Georgia,serif;">I</button>
+          <button class="style-btn">
+            <svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M2 1v5.5a4 4 0 0 0 8 0V1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="0" y1="13" x2="12" y2="13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </button>
+          <button class="style-btn">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 3.5C1 2 2.8 1 6 1c1.6 0 3 .4 3.8 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11 8.5C11 10 9.2 11 6 11c-1.6 0-3-.4-3.8-1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="0" y1="6" x2="12" y2="6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <div class="align-group">
+          <button class="align-btn active"><svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect x="0" y="0" width="13" height="1.8" rx="0.9" fill="currentColor"/><rect x="0" y="4.6" width="8" height="1.8" rx="0.9" fill="currentColor"/><rect x="0" y="9.2" width="11" height="1.8" rx="0.9" fill="currentColor"/></svg></button>
+          <button class="align-btn"><svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect x="0" y="0" width="13" height="1.8" rx="0.9" fill="currentColor"/><rect x="2.5" y="4.6" width="8" height="1.8" rx="0.9" fill="currentColor"/><rect x="1" y="9.2" width="11" height="1.8" rx="0.9" fill="currentColor"/></svg></button>
+          <button class="align-btn"><svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect x="0" y="0" width="13" height="1.8" rx="0.9" fill="currentColor"/><rect x="5" y="4.6" width="8" height="1.8" rx="0.9" fill="currentColor"/><rect x="2" y="9.2" width="11" height="1.8" rx="0.9" fill="currentColor"/></svg></button>
+          <button class="align-btn"><svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect x="0" y="0" width="13" height="1.8" rx="0.9" fill="currentColor"/><rect x="0" y="4.6" width="13" height="1.8" rx="0.9" fill="currentColor"/><rect x="0" y="9.2" width="9" height="1.8" rx="0.9" fill="currentColor"/></svg></button>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <div class="field-group">
+          <span class="field-label">LS</span>
+          <input class="num-input" type="number" value="0" style="width:40px;">
+        </div>
+        <div style="width:6px;flex-shrink:0;"></div>
+        <div class="field-group">
+          <span class="field-label">LH</span>
+          <input class="num-input" type="number" value="1.20" style="width:40px;">
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <div class="field-group">
+          <span class="field-label">Kern</span>
+          <select class="kern-select">
+            <option selected>Auto</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="opt-sep"></div>
+
+        <div class="color-swatch" style="background: #e03535;"></div>
+      </div>
+
+      <!-- App body -->
+      <div class="app-body" style="height:400px;">
+
+        <!-- Left toolbar -->
+        <div class="toolbar-strip">
+          <button class="tool-btn">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+          <div class="tool-sep"></div>
+          <button class="tool-btn">
+            <svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M1 1l10 6-5.5 1.5L4 13z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="tool-sep"></div>
+          <button class="tool-btn active">
+            <span style="font-family:Georgia,'Times New Roman',serif; font-size:15px; font-weight:bold; line-height:1;">T</span>
+          </button>
+          <div class="tool-sep"></div>
+          <button class="tool-btn">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="1" width="11" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="1" x2="4" y2="12" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="9" y2="12" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+          <button class="tool-btn">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="2" fill="currentColor"/></svg>
+          </button>
+          <div class="tool-sep"></div>
+          <button class="tool-btn">
+            <svg width="11" height="14" viewBox="0 0 11 14" fill="none"><path d="M2 13 L2 5 Q2 2 5.5 1 Q9 2 9 5 L9 13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="0" y1="13" x2="11" y2="13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Workspace -->
+        <div class="workspace">
+          <div class="canvas-mock" style="width:460px; height:340px;">
+            <div class="canvas-clip">
+              <div class="canvas-checker"></div>
+              <div class="scene-sky"></div>
+              <div class="scene-ground"></div>
+              <div class="scene-tree" style="left:50px;">
+                <div class="scene-tree-crown"></div>
+                <div class="scene-tree-trunk"></div>
+              </div>
+              <div class="scene-tree" style="left:370px;">
+                <div class="scene-tree-crown" style="width:24px; height:34px; background:#2a5222;"></div>
+                <div class="scene-tree-trunk"></div>
+              </div>
+              <div class="scene-tree" style="left:310px; bottom:60px;">
+                <div class="scene-tree-crown" style="width:20px; height:28px;"></div>
+                <div class="scene-tree-trunk" style="width:4px; height:18px;"></div>
+              </div>
+            </div>
+
+            <!-- Rendered text, visible beneath transparent overlay -->
+            <div class="text-rendered" style="
+              left: 90px; top: 60px;
+              width: 240px; height: 160px;
+              font-size: 16px;
+              font-weight: bold;
+              color: rgba(255,255,255,0.94);
+              text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+              line-height: 1.45;
+              overflow: hidden;
+            ">The quick brown fox jumps over the lazy dog beside the ancient river valley.</div>
+
+            <!-- Transparent contenteditable overlay (covers same rect, fully transparent) -->
+            <div class="text-overlay" style="left:90px; top:60px; width:240px; height:160px;"></div>
+
+            <!-- Bounding box -->
+            <div class="bbox" style="left:89px; top:59px; width:242px; height:162px;">
+              <div class="handle h-nw"></div>
+              <div class="handle h-n"></div>
+              <div class="handle h-ne"></div>
+              <div class="handle h-e"></div>
+              <div class="handle h-se"></div>
+              <div class="handle h-s"></div>
+              <div class="handle h-sw"></div>
+              <div class="handle h-w"></div>
+              <!-- Overflow indicator visible (text overflows box height) -->
+              <div class="overflow-indicator">+</div>
+            </div>
+
+            <!-- Cursor after last typed character -->
+            <div class="text-cursor" style="left:266px; top:200px; height:20px;"></div>
+
+            <div class="zoom-badge">100%</div>
+          </div>
+        </div>
+
+        <!-- Right panel -->
+        <div class="right-panel">
+          <div class="panel-header">
+            <span class="panel-title">Layers</span>
+            <div class="panel-action">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="5" y1="1" x2="5" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+
+          <!-- Three layer rows in context -->
+          <div class="layer-row">
+            <div class="layer-eye"><svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg></div>
+            <div class="layer-thumb"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#223355,#5070a0);"></div></div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Sky</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+
+          <!-- Active text layer -->
+          <div class="layer-row active">
+            <div class="layer-eye"><svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg></div>
+            <div class="layer-t-icon t-editing" style="position:relative;">T</div>
+            <span class="layer-name">The quick brown fox...</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+
+          <div class="layer-row">
+            <div class="layer-eye"><svg width="14" height="10" viewBox="0 0 14 10" fill="none"><ellipse cx="7" cy="5" rx="6" ry="4" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="5" r="2" fill="currentColor"/></svg></div>
+            <div class="layer-thumb"><div style="position:absolute;inset:0;background:linear-gradient(160deg,#3a5228,#5a6a3a);"></div></div>
+            <span class="layer-name" style="color:var(--color-text-dim);">Background</span>
+            <span class="layer-opacity">100%</span>
+          </div>
+
+          <!-- Spacer fills remaining panel height -->
+          <div style="flex:1; border-top:1px solid var(--color-border);"></div>
+
+          <!-- Blend mode / opacity row at bottom of panel -->
+          <div style="
+            display:flex; align-items:center; gap:6px;
+            padding:5px 6px;
+            border-top:1px solid var(--color-border);
+            background:var(--color-surface-2);
+          ">
+            <select style="
+              flex:1; height:20px;
+              background:var(--color-bg); border:1px solid var(--color-border);
+              border-radius:2px; color:var(--color-text-dim);
+              font-size:11px; font-family:var(--font-sans);
+              padding:0 4px; outline:none; -webkit-appearance:none; appearance:none;
+            ">
+              <option>Normal</option>
+            </select>
+            <input type="number" value="100" style="
+              width:36px; height:20px;
+              background:var(--color-bg); border:1px solid var(--color-border);
+              border-radius:2px; color:var(--color-text);
+              font-size:11px; font-family:var(--font-sans);
+              text-align:right; padding:0 4px; outline:none;
+            ">
+            <span style="font-size:10px; color:var(--color-text-muted);">%</span>
+          </div>
+        </div>
+
+      </div><!-- /app-body -->
+    </div><!-- /app-frame -->
+
+    <div class="annotation" style="margin-top:10px;">
+      Full composite at 820px wide. Options bar holds all controls without overflow. Text tool active (accent bar on toolbar button).
+      Canvas shows rendered text layer always visible beneath the transparent editing overlay + dashed bbox.
+      Right panel shows text layer row with T icon and editing-mode dot.
+    </div>
+  </div>
+
+</body>
+</html>

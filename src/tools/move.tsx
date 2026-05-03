@@ -179,9 +179,11 @@ function createMoveHandler(): ToolHandler {
   // For selection move: full pixel copy per-drag
   let originalPixels: Uint8Array | Float32Array | null = null
   let originalMask: Uint8Array | null = null
-  // For whole-layer move: store original offset
+  // For whole-layer move: store original offset of the active layer
   let originalOffsetX = 0
   let originalOffsetY = 0
+  // For multi-layer move: original offsets for ALL selected layers (keyed by layer id)
+  let multiOriginalOffsets: Map<string, { x: number; y: number }> | null = null
   // For text layer move: track original ls.x / ls.y
   let textLayerSnapshot: TextLayerState | null = null
   let textLayerOrigX = 0
@@ -193,6 +195,8 @@ function createMoveHandler(): ToolHandler {
   let isDown = false
   // Cached visible-pixel bounding box for snap-to-guide (computed at pointer-down)
   let cachedVisibleBounds: VisibleBounds | null = null
+  // When true, cachedVisibleBounds is already in canvas-space (pass origX=0/origY=0 to snapDelta)
+  let boundsAreCanvasSpace = false
 
   /**
    * Shift a full-canvas RGBA mask layer's pixel data by (dx, dy) relative to
@@ -298,6 +302,7 @@ function createMoveHandler(): ToolHandler {
         originalMask   = selectionStore.mask.slice()
         originalOffsetX = 0
         originalOffsetY = 0
+        multiOriginalOffsets = null
         cachedVisibleBounds = null
       } else {
         // Whole-layer move: just update the offset
@@ -312,6 +317,32 @@ function createMoveHandler(): ToolHandler {
         if (textLayerSnapshot) {
           textLayerOrigX = textLayerSnapshot.x
           textLayerOrigY = textLayerSnapshot.y
+        }
+        // Capture offsets for all additional selected layers
+        const extraIds = ctx.selectedLayerIds.filter(id => id !== ctx.layer.id)
+        if (extraIds.length > 0) {
+          multiOriginalOffsets = new Map()
+          multiOriginalOffsets.set(ctx.layer.id, { x: originalOffsetX, y: originalOffsetY })
+          for (const id of extraIds) {
+            const gl = ctx.layers.find(l => l.id === id)
+            if (gl) multiOriginalOffsets.set(id, { x: gl.offsetX, y: gl.offsetY })
+          }
+          // Compute union of visible-pixel bounds in canvas-space across all selected layers
+          const allLayers = [ctx.layer, ...extraIds.map(id => ctx.layers.find(l => l.id === id)).filter(Boolean) as typeof ctx.layer[]]
+          let uMinX = Infinity, uMinY = Infinity, uMaxX = -Infinity, uMaxY = -Infinity
+          for (const gl of allLayers) {
+            const b = getVisibleBounds(gl.data, gl.layerWidth, gl.layerHeight, gl.format)
+            const ox = gl.offsetX, oy = gl.offsetY
+            uMinX = Math.min(uMinX, b.minX + ox)
+            uMinY = Math.min(uMinY, b.minY + oy)
+            uMaxX = Math.max(uMaxX, b.maxX + ox)
+            uMaxY = Math.max(uMaxY, b.maxY + oy)
+          }
+          cachedVisibleBounds = { minX: uMinX, minY: uMinY, maxX: uMaxX, maxY: uMaxY }
+          boundsAreCanvasSpace = true
+        } else {
+          multiOriginalOffsets = null
+          boundsAreCanvasSpace = false
         }
       }
       moveDisplay.set(ctx.layer.offsetX, ctx.layer.offsetY, ctx.layer.layerWidth, ctx.layer.layerHeight)
@@ -347,8 +378,10 @@ function createMoveHandler(): ToolHandler {
         // are skipped during the drag — they rerun at full quality on pointer-up.
         ctx.renderer.setPreviewMode(true)
         const bounds = cachedVisibleBounds ?? { minX: 0, minY: 0, maxX: ctx.layer.layerWidth, maxY: ctx.layer.layerHeight }
+        const snapOrigX = boundsAreCanvasSpace ? 0 : originalOffsetX
+        const snapOrigY = boundsAreCanvasSpace ? 0 : originalOffsetY
         const [sdx, sdy] = snapDelta(
-          originalOffsetX, originalOffsetY, dx, dy,
+          snapOrigX, snapOrigY, dx, dy,
           bounds, ctx.guides, ctx.zoom,
         )
         ctx.layer.offsetX = originalOffsetX + sdx
@@ -356,6 +389,16 @@ function createMoveHandler(): ToolHandler {
         // Shift the linked mask layer in lock-step with the parent
         const maskGl = ctx.maskMap.get(ctx.layer.id)
         if (maskGl) applyMaskShift(sdx, sdy, maskGl, ctx.renderer)
+        // Move all other selected layers by the same delta
+        if (multiOriginalOffsets) {
+          for (const [id, orig] of multiOriginalOffsets) {
+            if (id === ctx.layer.id) continue
+            const gl = ctx.layers.find(l => l.id === id)
+            if (!gl) continue
+            gl.offsetX = orig.x + sdx
+            gl.offsetY = orig.y + sdy
+          }
+        }
         ctx.render(ctx.layers)
       }
       moveDisplay.set(ctx.layer.offsetX, ctx.layer.offsetY, ctx.layer.layerWidth, ctx.layer.layerHeight)
@@ -395,8 +438,10 @@ function createMoveHandler(): ToolHandler {
         const finalDx = (dx !== lastDx || dy !== lastDy) ? dx : lastDx
         const finalDy = (dx !== lastDx || dy !== lastDy) ? dy : lastDy
         const bounds = cachedVisibleBounds ?? { minX: 0, minY: 0, maxX: ctx.layer.layerWidth, maxY: ctx.layer.layerHeight }
+        const snapOrigX = boundsAreCanvasSpace ? 0 : originalOffsetX
+        const snapOrigY = boundsAreCanvasSpace ? 0 : originalOffsetY
         const [sdx, sdy] = snapDelta(
-          originalOffsetX, originalOffsetY, finalDx, finalDy,
+          snapOrigX, snapOrigY, finalDx, finalDy,
           bounds, ctx.guides, ctx.zoom,
         )
         ctx.layer.offsetX = originalOffsetX + sdx
@@ -404,6 +449,18 @@ function createMoveHandler(): ToolHandler {
         // Final mask shift (may differ from last pointermove if pointer jumped on up)
         const maskGl = ctx.maskMap.get(ctx.layer.id)
         if (maskGl) applyMaskShift(sdx, sdy, maskGl, ctx.renderer)
+        // Commit final offsets for all other selected layers
+        if (multiOriginalOffsets) {
+          for (const [id, orig] of multiOriginalOffsets) {
+            if (id === ctx.layer.id) continue
+            const gl = ctx.layers.find(l => l.id === id)
+            if (!gl) continue
+            gl.offsetX = orig.x + sdx
+            gl.offsetY = orig.y + sdy
+          }
+        }
+        multiOriginalOffsets = null
+        boundsAreCanvasSpace = false
         originalMaskData = null
         // Always exit preview mode and do a full-quality rerender on pointer-up
         // so standalone effects (bloom, halation, etc.) render at the final position.

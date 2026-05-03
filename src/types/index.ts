@@ -52,6 +52,11 @@ export interface RGBColor {
   b: number
 }
 
+/**
+ * Generic RGBA color. Semantics depend on context:
+ * - `AppState.primaryColor` / `secondaryColor`: r/g/b are floats in [0,∞) (>1 = HDR), a ∈ [0,1].
+ * - Swatches, text/shape/adjustment colors: r/g/b/a are integers in [0,255].
+ */
 export interface RGBAColor extends RGBColor {
   a: number
 }
@@ -139,7 +144,11 @@ export interface TextLayerState {
   bold: boolean
   italic: boolean
   underline: boolean
+  strikethrough: boolean
   align: TextAlign
+  letterSpacing: number  // canvas pixels; 0 = no extra tracking
+  lineHeight: number     // em multiplier; default 1.2
+  kerning: 'auto' | 'none'
   color: RGBAColor
 }
 
@@ -240,6 +249,10 @@ export type AdjustmentType =
   | 'reduce-noise'
   | 'clouds'
   | 'pixelate'
+  | 'bevel'
+  | 'inner-shadow'
+  | 'inner-glow'
+  | 'seamless-texture'
 
 export type FilterKey =
   | 'gaussian-blur'
@@ -260,6 +273,7 @@ export type FilterKey =
   | 'reduce-noise'
   | 'render-lens-flare'
   | 'pixelate'
+  | 'seamless-texture'
 
 export type CurvesChannel = 'rgb' | 'red' | 'green' | 'blue'
 
@@ -486,6 +500,54 @@ export interface AdjustmentParamsMap {
     seed: number
   }
   'pixelate': { blockSize: number }
+  'seamless-texture': {
+    /** Enable the Voronoi island break-repetition pass. Default: true */
+    breakRepetition: boolean
+    /** Cell/island size in pixels (1–512). Default: 128 */
+    cellSize:        number
+    /** Blend/feather radius in pixels at island borders (0–128). Default: 16 */
+    blendRadius:     number
+    /** Enable the seamless border blending pass. Default: true */
+    seamlessBorders: boolean
+    /** Border blend radius in pixels (1–256). Default: 32 */
+    borderRadius:    number
+    /** Random seed. */
+    seed:            number
+  }
+  'bevel': {
+    /** Dilation radius in pixels (1–50). Controls bevel width. */
+    width:    number
+    /** Blur radius in pixels (0–50). Controls softness of bevel edges. */
+    softness: number
+    /** Light direction in degrees (0–360). 0° = right, 90° = down. */
+    angle:    number
+    /** Bevel intensity, 0–100 (%). */
+    strength: number
+  }
+  'inner-shadow': {
+    /** Shadow color including alpha. r/g/b/a are 0–255. */
+    color:    RGBAColor
+    /** Overall shadow opacity, 0–100 (%). */
+    opacity:  number
+    /** Horizontal offset in pixels, −200 to +200. */
+    offsetX:  number
+    /** Vertical offset in pixels, −200 to +200. */
+    offsetY:  number
+    /** Erosion radius in pixels, 0–100. Controls spread of shadow inside shape. */
+    spread:   number
+    /** Blur radius in pixels, 0–100. Controls softness of shadow edges. */
+    softness: number
+  }
+  'inner-glow': {
+    /** Glow color including alpha. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
+    color:    RGBAColor
+    /** Overall glow opacity, 0–100 (%). Default: 75 */
+    opacity:  number
+    /** Erosion radius in pixels, 0–100. Controls how far the glow spreads inward. Default: 0 */
+    spread:   number
+    /** Blur radius in pixels, 0–100. Controls softness of glow edges. Default: 15 */
+    softness: number
+  }
 }
 
 export type OutlineParams = AdjustmentParamsMap['outline']
@@ -744,6 +806,30 @@ export interface PixelateAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean
 }
 
+export interface BevelAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'bevel'
+  params: AdjustmentParamsMap['bevel']
+  hasMask: boolean
+}
+
+export interface InnerShadowAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'inner-shadow'
+  params: AdjustmentParamsMap['inner-shadow']
+  hasMask: boolean
+}
+
+export interface InnerGlowAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'inner-glow'
+  params: AdjustmentParamsMap['inner-glow']
+  hasMask: boolean
+}
+
+export interface SeamlessTextureAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'seamless-texture'
+  params: AdjustmentParamsMap['seamless-texture']
+  hasMask: boolean
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -782,6 +868,10 @@ export type AdjustmentLayerState =
   | ReduceNoiseAdjustmentLayer
   | CloudsAdjustmentLayer
   | PixelateAdjustmentLayer
+  | BevelAdjustmentLayer
+  | InnerShadowAdjustmentLayer
+  | InnerGlowAdjustmentLayer
+  | SeamlessTextureAdjustmentLayer
 
 export interface GroupLayerState {
   id:        string
@@ -795,10 +885,37 @@ export interface GroupLayerState {
   childIds:  string[]
 }
 
-export type LayerState = PixelLayerState | TextLayerState | ShapeLayerState | MaskLayerState | AdjustmentLayerState | GroupLayerState
+/**
+ * Composite Layer — non-destructively merges all child layers into a single
+ * flattened result at render time. Adjustments / effects / filters can be
+ * attached to the composite layer and are applied to the merged output before
+ * it is composited into the rest of the document.
+ */
+export interface CompositeLayerState {
+  id:        string
+  name:      string
+  visible:   boolean
+  opacity:   number
+  locked:    boolean
+  blendMode: BlendMode
+  type:      'composite'
+  collapsed: boolean
+  childIds:  string[]
+}
+
+export type LayerState = PixelLayerState | TextLayerState | ShapeLayerState | MaskLayerState | AdjustmentLayerState | GroupLayerState | CompositeLayerState
 
 export function isGroupLayer(l: LayerState): l is GroupLayerState {
   return 'type' in l && l.type === 'group'
+}
+
+export function isCompositeLayer(l: LayerState): l is CompositeLayerState {
+  return 'type' in l && l.type === 'composite'
+}
+
+/** True for any layer type that owns child layers (group or composite). */
+export function isContainerLayer(l: LayerState): l is GroupLayerState | CompositeLayerState {
+  return 'type' in l && (l.type === 'group' || l.type === 'composite')
 }
 
 export function isPixelLayer(l: LayerState): l is PixelLayerState {
@@ -880,8 +997,4 @@ export interface AppState {
   activePaletteIndex: number
   /** The index of the most recently removed swatch (for layer pixel remap); null otherwise. */
   lastRemovedSwatchIndex: number | null
-  /** HDR intensity multiplier for the active color in rgba32f documents. Range [0, 16]. */
-  hdrIntensity: number
-  /** True when the eyedropper sampled a pixel with float values exceeding 1.0 in rgba32f mode. */
-  eyedropperHdrOverflow: boolean
 }

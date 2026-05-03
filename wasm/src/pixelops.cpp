@@ -24,6 +24,7 @@
 #include "transform.h"
 #include "inpaint.h"
 #include "grabcut.h"
+#include "dds.h"
 
 extern "C" {
 
@@ -38,6 +39,17 @@ void pixelops_flood_fill(
 ) {
     fill_flood(pixels, width, height, startX, startY,
                fillR, fillG, fillB, fillA, tolerance);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_flood_fill_f32(
+    float* pixels, int width, int height,
+    int startX, int startY,
+    float fillR, float fillG, float fillB, float fillA,
+    float tolerance
+) {
+    fill_flood_f32(pixels, width, height, startX, startY,
+                   fillR, fillG, fillB, fillA, tolerance);
 }
 
 // ─── Generic Convolution (src → dst) ─────────────────────────────────────────
@@ -287,4 +299,50 @@ void floodFillIndexed(
     if (y > 0)     stack.push_back(pos - w);
     if (y < h - 1) stack.push_back(pos + w);
   }
+}
+
+// ─── DDS I/O ──────────────────────────────────────────────────────────────────
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int pixelops_dds_get_info(const uint8_t *data, int32_t size, int32_t *out) {
+    dds_info info;
+    int err = dds_get_info(data, size, &info);
+    if (err != DDS_OK) return err;
+    out[0] = info.width;
+    out[1] = info.height;
+    out[2] = info.fmt;
+    out[3] = info.mipLevels;
+    return DDS_OK;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int pixelops_dds_decode(const uint8_t *data, int32_t size, uint8_t *out, int32_t outSize) {
+    return dds_decode(data, size, out, outSize);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int pixelops_dds_decode_f32(const uint8_t *data, int32_t size, float *out, int32_t outSize) {
+    return dds_decode_f32(data, size, out, outSize);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int32_t pixelops_dds_get_encoded_size(int32_t width, int32_t height, int fmt, int mipLevels, int headerMode) {
+    return dds_get_encoded_size(width, height, fmt, mipLevels, headerMode);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int pixelops_dds_max_mip_levels(int32_t width, int32_t height, int minDim) {
+    return dds_max_mip_levels(width, height, minDim);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int pixelops_dds_encode(const uint8_t *pixels, int32_t width, int32_t height,
+                        int fmt, int mipLevels, int headerMode, uint8_t *out, int32_t outSize) {
+    return dds_encode(pixels, width, height, fmt, mipLevels, headerMode, out, outSize);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int pixelops_dds_encode_f32(const float *pixels, int32_t width, int32_t height,
+                             int fmt, int mipLevels, int headerMode, uint8_t *out, int32_t outSize) {
+    return dds_encode_f32(pixels, width, height, fmt, mipLevels, headerMode, out, outSize);
 }

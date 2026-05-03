@@ -257,8 +257,10 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
 
   const fgColor = state.primaryColor
   const bgColor = state.secondaryColor
-  const fgStyle = `rgb(${fgColor.r},${fgColor.g},${fgColor.b})`
-  const bgStyle = `rgb(${bgColor.r},${bgColor.g},${bgColor.b})`
+  // primaryColor/secondaryColor are float [0,∞). Convert to 0-255 for CSS.
+  const fgStyle = `rgb(${Math.round(Math.min(fgColor.r,1)*255)},${Math.round(Math.min(fgColor.g,1)*255)},${Math.round(Math.min(fgColor.b,1)*255)})`
+  const bgStyle = `rgb(${Math.round(Math.min(bgColor.r,1)*255)},${Math.round(Math.min(bgColor.g,1)*255)},${Math.round(Math.min(bgColor.b,1)*255)})`
+  // ColorPickerDialog now accepts/emits float colors directly
 
   const openPicker = (target: 'fg' | 'bg', e: React.MouseEvent): void => {
     if (state.pixelFormat === 'indexed8') {
@@ -272,8 +274,9 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   }
 
   const handleConfirm = (color: RGBAColor): void => {
+    // color is float [0,1] from ColorPickerDialog
     if (dialogIsSwatchAdd) {
-      dispatch({ type: 'ADD_SWATCH', payload: color })
+      dispatch({ type: 'ADD_SWATCH', payload: { r: Math.round(color.r*255), g: Math.round(color.g*255), b: Math.round(color.b*255), a: Math.round(color.a*255) } })
     } else {
       dispatch({
         type: dialogTarget === 'fg' ? 'SET_PRIMARY_COLOR' : 'SET_SECONDARY_COLOR',
@@ -290,8 +293,8 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
   }
 
   const handleReset = (): void => {
-    dispatch({ type: 'SET_PRIMARY_COLOR',   payload: { r: 0,   g: 0,   b: 0,   a: 255 } })
-    dispatch({ type: 'SET_SECONDARY_COLOR', payload: { r: 255, g: 255, b: 255, a: 255 } })
+    dispatch({ type: 'SET_PRIMARY_COLOR',   payload: { r: 0, g: 0, b: 0, a: 1 } })
+    dispatch({ type: 'SET_SECONDARY_COLOR', payload: { r: 1, g: 1, b: 1, a: 1 } })
   }
 
   return (
@@ -417,7 +420,8 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
       initialColor={dialogTarget === 'fg' ? fgColor : bgColor}
       onConfirm={handleConfirm}
       onCancel={() => { setDialogIsSwatchAdd(false); setDialogOpen(false) }}
-      onAddSwatch={(c) => dispatch({ type: 'ADD_SWATCH', payload: c })}
+      onAddSwatch={(c) => dispatch({ type: 'ADD_SWATCH', payload: { r: Math.round(c.r*255), g: Math.round(c.g*255), b: Math.round(c.b*255), a: Math.round(c.a*255) } })}
+      pixelFormat={state.pixelFormat}
     />
     {indexedPickerTarget !== null && (
       <IndexedPaletteColorPicker
@@ -426,9 +430,10 @@ export function Toolbar({ activeTool = 'pencil', onToolChange }: ToolbarProps): 
         anchorPos={indexedPickerAnchor}
         onSelect={(index, color) => {
           dispatch({ type: 'SET_ACTIVE_SWATCH', payload: index })
+          // color comes from swatches (0-255); convert to float for AppState.
           dispatch({
             type: indexedPickerTarget === 'fg' ? 'SET_PRIMARY_COLOR' : 'SET_SECONDARY_COLOR',
-            payload: color,
+            payload: { r: color.r/255, g: color.g/255, b: color.b/255, a: color.a/255 },
           })
         }}
         onClose={() => setIndexedPickerTarget(null)}

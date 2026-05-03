@@ -1,7 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { EmbedColorPicker } from '@/ux/widgets/EmbedColorPicker/EmbedColorPicker'
+import type { RGBAColor } from '@/types'
 import styles from './ColorSwatch.module.scss'
+
+function hexToFloatColor(hex: string): RGBAColor {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16) / 255
+  const g = parseInt(h.slice(2, 4), 16) / 255
+  const b = parseInt(h.slice(4, 6), 16) / 255
+  return { r, g, b, a: 1 }
+}
+
+function floatColorToHex(c: RGBAColor): string {
+  const r = Math.round(Math.min(c.r, 1) * 255).toString(16).padStart(2, '0')
+  const g = Math.round(Math.min(c.g, 1) * 255).toString(16).padStart(2, '0')
+  const b = Math.round(Math.min(c.b, 1) * 255).toString(16).padStart(2, '0')
+  return `#${r}${g}${b}`
+}
 
 // ─── Popup ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +74,10 @@ function ColorPickerPopup({ value, anchorEl, onClose, onChange }: PopupProps): R
       style={{ top: pos.top, left: pos.left }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <EmbedColorPicker value={value} onChange={onChange} />
+      <EmbedColorPicker
+        value={hexToFloatColor(value)}
+        onChange={(c: RGBAColor) => onChange(floatColorToHex(c))}
+      />
     </div>,
     document.body,
   )

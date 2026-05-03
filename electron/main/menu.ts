@@ -81,6 +81,8 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       submenu: [
         { role: 'about', label: `About ${appName}` },
         sep(),
+        item('Preferences\u2026', 'preferences', { accelerator: 'CmdOrCtrl+,' }),
+        sep(),
         { role: 'services' },
         sep(),
         { role: 'hide' },
@@ -165,6 +167,9 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       label: 'Layer',
       submenu: [
         item('New Layer', 'newLayer', { accelerator: 'CmdOrCtrl+Shift+N' }),
+        item('New Layer Group', 'newLayerGroup'),
+        item('New Composite Layer', 'newCompositeLayer'),
+        item('Add Layer Mask', 'addLayerMask'),
         item('Duplicate Layer', 'duplicateLayer'),
         item('Delete Layer', 'deleteLayer'),
         sep(),
@@ -177,6 +182,52 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         item('Merge Down', 'mergeDown'),
         item('Merge Visible', 'mergeVisible'),
         item('Flatten Image', 'flattenImage'),
+        sep(),
+        {
+          label: 'Rotate',
+          submenu: [
+            item('90\u00b0 CW',  'layer:rotate90CW'),
+            item('180\u00b0 CW', 'layer:rotate180CW'),
+            item('270\u00b0 CW', 'layer:rotate270CW'),
+          ],
+        },
+        {
+          label: 'Flip',
+          submenu: [
+            item('Horizontal', 'layer:flipHorizontal'),
+            item('Vertical',   'layer:flipVertical'),
+          ],
+        },
+        sep(),
+        {
+          label: 'Align',
+          submenu: [
+            item('Left',              'layer:alignLeft'),
+            item('Center Vertical',   'layer:alignCenterV'),
+            item('Right',             'layer:alignRight'),
+            item('Top',               'layer:alignTop'),
+            item('Center Horizontal', 'layer:alignCenterH'),
+            item('Bottom',            'layer:alignBottom'),
+          ],
+        },
+        {
+          label: 'Distribute',
+          submenu: [
+            item('Horizontally', 'layer:distributeH'),
+            item('Vertically',   'layer:distributeV'),
+          ],
+        },
+        {
+          label: 'Order',
+          submenu: [
+            item('Bring to Front', 'layer:orderFront'),
+            item('Bring to Back',  'layer:orderBack'),
+            item('Forward',        'layer:orderForward'),
+            item('Backward',       'layer:orderBackward'),
+            sep(),
+            item('Reverse Order',  'layer:orderReverse'),
+          ],
+        },
       ],
     },
 
@@ -298,6 +349,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       submenu: [
         item('About Verve', 'about'),
         item('Keyboard Shortcuts', 'keyboardShortcuts'),
+        item('System Information', 'systemInfo'),
         sep(),
         item('Open DevTools', 'openDevTools'),
       ],

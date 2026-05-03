@@ -12,7 +12,6 @@ import { pencilOptions, getPencilBrushPreviewDataUrl, getPencilShapePreviewDataU
 import { eraserOptions } from '@/tools/eraser'
 import { cloneStampOptions } from '@/tools/cloneStamp'
 import { dodgeOptions, burnOptions } from '@/tools/dodge'
-import { setHdrPaintIntensity } from '@/tools/algorithm/primitives'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { drawCloneStampOverlay } from './cloneStampOverlay'
 import { polygonalSelectionStore } from '@/core/store/polygonalSelectionStore'
@@ -99,9 +98,6 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   layersStateRef.current = state.layers
   const swatchesRef = useRef(state.swatches)
   swatchesRef.current = state.swatches
-  // Mirror the document-level HDR paint intensity into the primitives module
-  // so blendPixelOver multiplies source RGB by it on rgba32f layers.
-  setHdrPaintIntensity(state.hdrIntensity)
   const onStrokeEndRef = useRef(onStrokeEnd)
   onStrokeEndRef.current = onStrokeEnd
   const onReadyRef = useRef(onReady)
@@ -573,16 +569,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       gl.visible   = ls.visible
       gl.blendMode = 'blendMode' in ls ? ls.blendMode : 'normal'
       // Re-rasterize text layers whenever their state changes (text, style, position, color).
-      // While a text layer is being edited, blank its bitmap so only the textarea is visible.
       if ('type' in ls && ls.type === 'text') {
         // Always reset offset — move tool may have shifted it temporarily for preview.
         gl.offsetX = 0
         gl.offsetY = 0
-        if (ls.id === editingLayerId) {
-          gl.data.fill(0)
-        } else {
-          rasterizeTextToLayer(ls, gl)
-        }
+        rasterizeTextToLayer(ls, gl)
         renderer.flushLayer(gl)
       } else if ('type' in ls && ls.type === 'shape') {
         // Re-rasterize whenever shape parameters change
@@ -595,7 +586,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
     doRender()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.layers, isActive, editingLayerId])
+  }, [state.layers, isActive])
 
   useEffect(() => {
     if (!isActive) return
@@ -838,7 +829,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   function buildRenderPlan(): RenderPlanEntry[] {
     const plan = buildCanvasRenderPlan(
-      state.layers,
+      layersStateRef.current,
       glLayersRef.current,
       buildMaskMap(),
       adjustmentMaskMap.current,
@@ -893,9 +884,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     // Detect mask layer — constrain colors to grayscale
     const activeMeta = state.layers.find((l) => l.id === activeId)
     const isMaskLayer = activeMeta && 'type' in activeMeta && activeMeta.type === 'mask'
+    // For mask layers: convert float primaryColor/secondaryColor to grayscale float.
     const toGray = (c: { r: number; g: number; b: number; a: number }) => {
-      const g = Math.round(0.299 * c.r + 0.587 * c.g + 0.114 * c.b)
-      return { r: g, g: g, b: g, a: 255 }
+      const g = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+      return { r: g, g: g, b: g, a: 1 }
     }
     return {
       renderer,
@@ -996,12 +988,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       setSwatch: (index) => {
         dispatch({ type: 'SET_ACTIVE_SWATCH', payload: index })
       },
-      hdrIntensity: state.hdrIntensity,
-      setEyedropperHdrOverflow: (overflow) => {
-        dispatch({ type: 'SET_EYEDROPPER_HDR_OVERFLOW', payload: overflow })
-      },
       guides: state.canvas.guides,
       maskMap: buildMaskMap(),
+      selectedLayerIds: state.selectedLayerIds,
     }
   }
 
@@ -1116,7 +1105,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         }
       }
       if (tool === 'pencil' && pixelBrushCursorRef.current) {
-        const { r, g, b, a } = state.primaryColor
+        // primaryColor is float [0,1]; scale to 0-255 for cursor preview rendering.
+        const r = Math.round(Math.min(state.primaryColor.r, 1) * 255)
+        const g = Math.round(Math.min(state.primaryColor.g, 1) * 255)
+        const b = Math.round(Math.min(state.primaryColor.b, 1) * 255)
+        const a = Math.round(state.primaryColor.a * 255)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        void a // used below through getPencilBrushPreviewDataUrl / getPencilShapePreviewDataUrl
         const dpr  = window.devicePixelRatio
         const zoom = zoomRef.current
         const preview = pencilOptions.pixelBrush
@@ -1404,7 +1399,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       canvasWrapperRef={canvasWrapperRef}
       onCommit={(ls) => dispatch({ type: 'UPDATE_TEXT_LAYER', payload: ls })}
       onClose={() => {
-        onStrokeEndRef.current?.('Text')
+        // If the layer being closed is empty (never typed into), destroy it.
+        const closingLayer = state.layers.find(
+          (l) => 'type' in l && l.type === 'text' && l.id === editingLayerId
+        )
+        if (closingLayer && 'text' in closingLayer && closingLayer.text.trim() === '') {
+          dispatch({ type: 'REMOVE_LAYER', payload: editingLayerId! })
+        } else {
+          onStrokeEndRef.current?.('Text')
+        }
         setEditingLayerId(null)
       }}
     />

@@ -39,6 +39,8 @@ import {
   OUTLINE_BLUR_V_COMPUTE,
   OUTLINE_COMPOSITE_COMPUTE,
   HALFTONE_COMPUTE,
+  BEVEL_COMPOSITE_COMPUTE,
+  INNER_SHADOW_COMPOSITE_COMPUTE,
 } from './shaders/shaders'
 import type {
   GpuLayer,
@@ -52,6 +54,7 @@ import {
   encodeRemoveMotionBlur, encodeLensBlur, encodeSharpen, encodeSharpenMore,
   encodeUnsharpMask, encodeSmartSharpen, encodeAddNoise, encodeFilmGrain,
   encodeMedian, encodeBilateral, encodeReduceNoise, encodeClouds, encodePixelate,
+  encodeSeamlessTexture,
   flushFilterComputeDestroys,
 } from './compute/filterCompute'
 
@@ -214,6 +217,12 @@ export class AdjustmentEncoder {
   private readonly outlineBlurVPipeline:     GPUComputePipeline
   private readonly outlineCompositePipeline: GPUComputePipeline
 
+  // Compute pipelines for bevel effect
+  private readonly bevelCompositePipeline:       GPUComputePipeline
+
+  // Compute pipelines for inner shadow effect
+  private readonly innerShadowCompositePipeline: GPUComputePipeline
+
   // Render pipeline pair for halftone (converted from compute)
   private readonly halftonePipeline:         AdjPipelinePair
 
@@ -313,6 +322,9 @@ export class AdjustmentEncoder {
     this.outlineBlurHPipeline     = createComputePipeline(device, OUTLINE_BLUR_H_COMPUTE,     'cs_outline_blur_h')
     this.outlineBlurVPipeline     = createComputePipeline(device, OUTLINE_BLUR_V_COMPUTE,     'cs_outline_blur_v')
     this.outlineCompositePipeline = createComputePipeline(device, OUTLINE_COMPOSITE_COMPUTE,  'cs_outline_composite')
+
+    this.bevelCompositePipeline       = createComputePipeline(device, BEVEL_COMPOSITE_COMPUTE,       'cs_bevel_composite')
+    this.innerShadowCompositePipeline = createComputePipeline(device, INNER_SHADOW_COMPOSITE_COMPUTE, 'cs_inner_shadow_composite')
 
     this.halftonePipeline = createAdjRenderPipelinePair(device, HALFTONE_COMPUTE, 'fs_halftone', STD)
 
@@ -485,6 +497,36 @@ export class AdjustmentEncoder {
       this.encodeStdAdjRenderPass(encoder, this.halftonePipeline, srcTex, dstTex, format, buf, entry.selMaskLayer)
       return
     }
+    if (entry.kind === 'bevel') {
+      this.encodeBevelPass(
+        encoder, srcTex, dstTex,
+        entry.width, entry.softness, entry.angle, entry.strength,
+        entry.selMaskLayer,
+      )
+      return
+    }
+    if (entry.kind === 'inner-shadow') {
+      this.encodeInnerShadowPass(
+        encoder, srcTex, dstTex,
+        entry.colorR, entry.colorG, entry.colorB, entry.colorA,
+        entry.opacity,
+        entry.offsetX, entry.offsetY,
+        entry.spread, entry.softness,
+        entry.selMaskLayer,
+      )
+      return
+    }
+    if (entry.kind === 'inner-glow') {
+      this.encodeInnerShadowPass(
+        encoder, srcTex, dstTex,
+        entry.colorR, entry.colorG, entry.colorB, entry.colorA,
+        entry.opacity,
+        0, 0,
+        entry.spread, entry.softness,
+        entry.selMaskLayer,
+      )
+      return
+    }
     const w = this.pixelWidth
     const h = this.pixelHeight
     if (entry.kind === 'gaussian-blur') {
@@ -555,6 +597,14 @@ export class AdjustmentEncoder {
       encodePixelate(encoder, srcTex, dstTex, w, h, entry.blockSize)
       return
     }
+    if (entry.kind === 'seamless-texture') {
+      encodeSeamlessTexture(
+        encoder, srcTex, dstTex, w, h,
+        entry.breakRepetition, entry.cellSize, entry.blendRadius,
+        entry.seamlessBorders, entry.borderRadius, entry.seed,
+      )
+      return
+    }
     const _exhaustive: never = entry
     return _exhaustive
   }
@@ -588,6 +638,12 @@ export class AdjustmentEncoder {
     this.outlineTexCache?.tempB.destroy()
     this.outlineTexCache?.tempC.destroy()
     this.outlineTexCache = null
+    this.bevelTexCache?.tempA.destroy()
+    this.bevelTexCache?.tempB.destroy()
+    this.bevelTexCache = null
+    this.innerShadowTexCache?.tempA.destroy()
+    this.innerShadowTexCache?.tempB.destroy()
+    this.innerShadowTexCache = null
   }
 
   // ─── Generic render pass helpers ────────────────────────────────────────────
@@ -1436,5 +1492,344 @@ export class AdjustmentEncoder {
     compPass.end()
 
     this.pendingDestroyBuffers.push(dilateParamsBuf, maskParamsBuf, compParamsBuf, maskFlagsBuf)
+  }
+
+  // ─── Bevel ───────────────────────────────────────────────────────────────────
+
+  private bevelTexCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null
+
+  private ensureBevelTextures(): { tempA: GPUTexture; tempB: GPUTexture } {
+    if (this.bevelTexCache) return this.bevelTexCache
+    const { device, pixelWidth: w, pixelHeight: h } = this
+    const usage =
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.COPY_SRC
+    const make = (): GPUTexture =>
+      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+    this.bevelTexCache = { tempA: make(), tempB: make() }
+    return this.bevelTexCache
+  }
+
+  private encodeBevelPass(
+    encoder:      GPUCommandEncoder,
+    srcTex:       GPUTexture,
+    dstTex:       GPUTexture,
+    width:        number,
+    softness:     number,
+    angle:        number,
+    strength:     number,
+    selMaskLayer: GpuLayer | undefined,
+  ): void {
+    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { tempA, tempB } = this.ensureBevelTextures()
+
+    // Build height field by:
+    //  1. Erode radius=1 to transfer src.a into the .r channel (the blur pipeline
+    //     reads .r, not .a, so this is required as a channel-copy step).
+    //  2. Box blur with radius = width/2. A box blur of radius R applied to a binary
+    //     edge produces a linear ramp spanning exactly 2R pixels, so radius = width/2
+    //     yields a gradient that spans `width` pixels — giving the correct bevel width.
+    //  3. Optional extra blur for softness.
+
+    const copyParamsBuf = createUniformBuffer(device, 16)
+    writeUniformBuffer(device, copyParamsBuf, new Uint32Array([1, 0, 0, 0]))
+
+    // Pass 1: ErodeH radius=1 (srcTex.a → tempA.r)
+    const copyHBG = device.createBindGroup({
+      layout: this.outlineErodeHPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: tempA.createView() },
+        { binding: 2, resource: { buffer: copyParamsBuf } },
+      ],
+    })
+    const copyHPass = encoder.beginComputePass()
+    copyHPass.setPipeline(this.outlineErodeHPipeline)
+    copyHPass.setBindGroup(0, copyHBG)
+    copyHPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    copyHPass.end()
+
+    // Pass 2: ErodeV radius=1 (tempA.r → tempB.r)
+    const copyVBG = device.createBindGroup({
+      layout: this.outlineErodeVPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: tempA.createView() },
+        { binding: 1, resource: tempB.createView() },
+        { binding: 2, resource: { buffer: copyParamsBuf } },
+      ],
+    })
+    const copyVPass = encoder.beginComputePass()
+    copyVPass.setPipeline(this.outlineErodeVPipeline)
+    copyVPass.setBindGroup(0, copyVBG)
+    copyVPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    copyVPass.end()
+
+    // Passes 3–4: Box blur radius = width. A box blur of radius R on a binary edge
+    // produces a 2R-wide ramp centred on the original edge. Only the inner half
+    // (R pixels deep into the shape) is visible after the alpha mask, so radius=width
+    // gives a `width`-pixel-wide visible bevel.
+    const heightR = Math.max(1, Math.round(width))
+    const heightParamsBuf = createUniformBuffer(device, 16)
+    writeUniformBuffer(device, heightParamsBuf, new Uint32Array([heightR, 0, 0, 0]))
+
+    const htHBG = device.createBindGroup({
+      layout: this.shadowBlurHPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: tempB.createView() },
+        { binding: 1, resource: tempA.createView() },
+        { binding: 2, resource: { buffer: heightParamsBuf } },
+      ],
+    })
+    const htHPass = encoder.beginComputePass()
+    htHPass.setPipeline(this.shadowBlurHPipeline)
+    htHPass.setBindGroup(0, htHBG)
+    htHPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    htHPass.end()
+
+    const htVBG = device.createBindGroup({
+      layout: this.shadowBlurVPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: tempA.createView() },
+        { binding: 1, resource: tempB.createView() },
+        { binding: 2, resource: { buffer: heightParamsBuf } },
+      ],
+    })
+    const htVPass = encoder.beginComputePass()
+    htVPass.setPipeline(this.shadowBlurVPipeline)
+    htVPass.setBindGroup(0, htVBG)
+    htVPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    htVPass.end()
+
+    // Passes 5–6: Optional extra blur for softness
+    let heightTex: GPUTexture = tempB
+    if (softness > 0) {
+      const softR = Math.max(1, Math.round(softness / 2))
+      const softParamsBuf = createUniformBuffer(device, 16)
+      writeUniformBuffer(device, softParamsBuf, new Uint32Array([softR, 0, 0, 0]))
+
+      const sHBG = device.createBindGroup({
+        layout: this.shadowBlurHPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: tempB.createView() },
+          { binding: 1, resource: tempA.createView() },
+          { binding: 2, resource: { buffer: softParamsBuf } },
+        ],
+      })
+      const sHPass = encoder.beginComputePass()
+      sHPass.setPipeline(this.shadowBlurHPipeline)
+      sHPass.setBindGroup(0, sHBG)
+      sHPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+      sHPass.end()
+
+      const sVBG = device.createBindGroup({
+        layout: this.shadowBlurVPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: tempA.createView() },
+          { binding: 1, resource: tempB.createView() },
+          { binding: 2, resource: { buffer: softParamsBuf } },
+        ],
+      })
+      const sVPass = encoder.beginComputePass()
+      sVPass.setPipeline(this.shadowBlurVPipeline)
+      sVPass.setBindGroup(0, sVBG)
+      sVPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+      sVPass.end()
+
+      heightTex = tempB
+      this.pendingDestroyBuffers.push(softParamsBuf)
+    }
+
+    // Composite pass: use height field gradient to compute bevel highlight/shadow
+    const compBuf = new ArrayBuffer(16)
+    const cf = new Float32Array(compBuf)
+    cf[0] = strength / 100
+    cf[1] = angle
+    // The height ramp rises by ~1.0 over `2*heightR` pixels, so per-pixel slope is
+    // ~1/(2*heightR). Scaling the gradient by 2*heightR gives a normalised slope of
+    // ~1.0 (≈45° normal tilt) at the steepest part of the ramp regardless of width.
+    cf[2] = 2 * heightR
+
+    const compParamsBuf = createUniformBuffer(device, 16)
+    device.queue.writeBuffer(compParamsBuf, 0, compBuf)
+
+    const maskFlagsArr = new Uint32Array(8); maskFlagsArr[0] = selMaskLayer ? 1 : 0
+    const maskFlagsBuf = createUniformBuffer(device, 32)
+    writeUniformBuffer(device, maskFlagsBuf, maskFlagsArr)
+
+    const dummyMask = selMaskLayer?.texture ?? srcTex
+
+    const compBG = device.createBindGroup({
+      layout: this.bevelCompositePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: srcTex.createView()     },
+        { binding: 1, resource: heightTex.createView()  },
+        { binding: 2, resource: dstTex.createView()     },
+        { binding: 3, resource: { buffer: compParamsBuf } },
+        { binding: 4, resource: dummyMask.createView()  },
+        { binding: 5, resource: { buffer: maskFlagsBuf } },
+      ],
+    })
+    const compPass = encoder.beginComputePass()
+    compPass.setPipeline(this.bevelCompositePipeline)
+    compPass.setBindGroup(0, compBG)
+    compPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    compPass.end()
+
+    this.pendingDestroyBuffers.push(copyParamsBuf, heightParamsBuf, compParamsBuf, maskFlagsBuf)
+  }
+
+  // ─── Inner Shadow ─────────────────────────────────────────────────────────────
+
+  private innerShadowTexCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null
+
+  private ensureInnerShadowTextures(): { tempA: GPUTexture; tempB: GPUTexture } {
+    if (this.innerShadowTexCache) return this.innerShadowTexCache
+    const { device, pixelWidth: w, pixelHeight: h } = this
+    const usage =
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.COPY_SRC
+    const make = (): GPUTexture =>
+      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+    this.innerShadowTexCache = { tempA: make(), tempB: make() }
+    return this.innerShadowTexCache
+  }
+
+  private encodeInnerShadowPass(
+    encoder:      GPUCommandEncoder,
+    srcTex:       GPUTexture,
+    dstTex:       GPUTexture,
+    colorR:       number,
+    colorG:       number,
+    colorB:       number,
+    colorA:       number,
+    opacity:      number,
+    offsetX:      number,
+    offsetY:      number,
+    spread:       number,
+    softness:     number,
+    selMaskLayer: GpuLayer | undefined,
+  ): void {
+    const { device, pixelWidth: w, pixelHeight: h } = this
+    const { tempA, tempB } = this.ensureInnerShadowTextures()
+
+    // Erode source alpha inward to get the interior region
+    const erodeR = Math.round(spread)
+    const blurR  = softness > 0 ? Math.max(1, Math.round(softness * 0.577)) : 0
+
+    const erodeParamsBuf = createUniformBuffer(device, 16)
+    writeUniformBuffer(device, erodeParamsBuf, new Uint32Array([erodeR, 0, 0, 0]))
+
+    // Pass 1: ErodeH (srcTex.a → tempA.r)
+    const erodeHBG = device.createBindGroup({
+      layout: this.outlineErodeHPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: tempA.createView() },
+        { binding: 2, resource: { buffer: erodeParamsBuf } },
+      ],
+    })
+    const erodeHPass = encoder.beginComputePass()
+    erodeHPass.setPipeline(this.outlineErodeHPipeline)
+    erodeHPass.setBindGroup(0, erodeHBG)
+    erodeHPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    erodeHPass.end()
+
+    // Pass 2: ErodeV (tempA.r → tempB.r)
+    const erodeVBG = device.createBindGroup({
+      layout: this.outlineErodeVPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: tempA.createView() },
+        { binding: 1, resource: tempB.createView() },
+        { binding: 2, resource: { buffer: erodeParamsBuf } },
+      ],
+    })
+    const erodeVPass = encoder.beginComputePass()
+    erodeVPass.setPipeline(this.outlineErodeVPipeline)
+    erodeVPass.setBindGroup(0, erodeVBG)
+    erodeVPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    erodeVPass.end()
+
+    // Passes 3–8: 3× H+V box blur
+    let maskTex: GPUTexture = tempB
+    if (softness > 0) {
+      const blurParamsBuf = createUniformBuffer(device, 16)
+      writeUniformBuffer(device, blurParamsBuf, new Uint32Array([blurR, 0, 0, 0]))
+
+      let src = tempB
+      let dst = tempA
+      for (let i = 0; i < 3; i++) {
+        const hBG = device.createBindGroup({
+          layout: this.shadowBlurHPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: src.createView() },
+            { binding: 1, resource: dst.createView() },
+            { binding: 2, resource: { buffer: blurParamsBuf } },
+          ],
+        })
+        const hPass = encoder.beginComputePass()
+        hPass.setPipeline(this.shadowBlurHPipeline)
+        hPass.setBindGroup(0, hBG)
+        hPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+        hPass.end()
+        ;[src, dst] = [dst, src]
+
+        const vBG = device.createBindGroup({
+          layout: this.shadowBlurVPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: src.createView() },
+            { binding: 1, resource: dst.createView() },
+            { binding: 2, resource: { buffer: blurParamsBuf } },
+          ],
+        })
+        const vPass = encoder.beginComputePass()
+        vPass.setPipeline(this.shadowBlurVPipeline)
+        vPass.setBindGroup(0, vBG)
+        vPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+        vPass.end()
+        ;[src, dst] = [dst, src]
+      }
+      maskTex = src
+      this.pendingDestroyBuffers.push(blurParamsBuf)
+    }
+
+    // Composite pass
+    const compBuf = new ArrayBuffer(32)
+    const cf = new Float32Array(compBuf)
+    const ci = new Int32Array(compBuf)
+    cf[0] = colorR;  cf[1] = colorG;  cf[2] = colorB;  cf[3] = colorA
+    cf[4] = opacity
+    ci[5] = offsetX; ci[6] = offsetY
+
+    const compParamsBuf = createUniformBuffer(device, 32)
+    device.queue.writeBuffer(compParamsBuf, 0, compBuf)
+
+    const maskFlagsArr = new Uint32Array(8); maskFlagsArr[0] = selMaskLayer ? 1 : 0
+    const maskFlagsBuf = createUniformBuffer(device, 32)
+    writeUniformBuffer(device, maskFlagsBuf, maskFlagsArr)
+
+    const dummyMask = selMaskLayer?.texture ?? srcTex
+
+    const compBG = device.createBindGroup({
+      layout: this.innerShadowCompositePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: srcTex.createView()    },
+        { binding: 1, resource: maskTex.createView()   },
+        { binding: 2, resource: dstTex.createView()    },
+        { binding: 3, resource: { buffer: compParamsBuf } },
+        { binding: 4, resource: dummyMask.createView() },
+        { binding: 5, resource: { buffer: maskFlagsBuf } },
+      ],
+    })
+    const compPass = encoder.beginComputePass()
+    compPass.setPipeline(this.innerShadowCompositePipeline)
+    compPass.setBindGroup(0, compBG)
+    compPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+    compPass.end()
+
+    this.pendingDestroyBuffers.push(erodeParamsBuf, compParamsBuf, maskFlagsBuf)
   }
 }

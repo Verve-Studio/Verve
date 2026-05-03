@@ -1,8 +1,11 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { execSync } from 'node:child_process'
+import os from 'node:os'
 import { registerSamHandlers } from './sam'
 import { registerMattingHandlers } from './matting'
+import { SUPPORTED_FILE_TYPES, getRegisteredExtensions, applyExtensions } from './fileAssociations'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('debug:openDevTools', (event) => {
@@ -13,7 +16,7 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -34,9 +37,9 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'Verve Document',  extensions: ['verve'] },
-        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr'] },
+        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
     })
@@ -68,6 +71,7 @@ export function registerIpcHandlers(): void {
       ext === 'tiff32' ? [{ name: 'TIFF 32-bit Float', extensions: ['tif', 'tiff'] }] :
       ext === 'exr'    ? [{ name: 'OpenEXR Image',     extensions: ['exr']         }] :
       ext === 'hdr'    ? [{ name: 'Radiance HDR',      extensions: ['hdr']         }] :
+      ext === 'dds'    ? [{ name: 'DDS Texture',        extensions: ['dds']         }] :
                          [{ name: 'JPEG Image',        extensions: ['jpg', 'jpeg'] }]
     const { canceled, filePath } = await dialog.showSaveDialog({ filters })
     return canceled ? null : filePath
@@ -233,6 +237,77 @@ export function registerIpcHandlers(): void {
     app.quit()
   })
 
+  // ── System info ───────────────────────────────────────────────────────────────
+
+  ipcMain.handle('system:getInfo', async () => {
+    const cpus = os.cpus()
+    const gpuInfo = await app.getGPUInfo('complete') as {
+      gpuDevice?: Array<{
+        vendorString?: string
+        deviceString?: string
+        active?: boolean
+        driverVersion?: string
+        driverDate?: string
+      }>
+      auxAttributes?: Record<string, unknown>
+    }
+    const osType = os.type()
+    const osName = osType === 'Darwin' ? 'macOS' : osType === 'Windows_NT' ? 'Windows' : osType
+    let osVersion: string
+    if (osType === 'Darwin') {
+      try {
+        osVersion = execSync('sw_vers -productVersion', { timeout: 2000 }).toString().trim()
+      } catch {
+        osVersion = os.release()
+      }
+    } else {
+      osVersion = os.version()
+    }
+    return {
+      osName,
+      osVersion,
+      cpuModel: cpus[0]?.model ?? 'Unknown',
+      cpuCores: cpus.length,
+      totalRamBytes: os.totalmem(),
+      gpus: (gpuInfo.gpuDevice ?? []).map(g => ({
+        name: [g.vendorString, g.deviceString].filter(Boolean).join(' ') || 'Unknown GPU',
+        active: g.active ?? false,
+        driverVersion: g.driverVersion ?? '',
+      })),
+    }
+  })
+
   registerSamHandlers()
   registerMattingHandlers()
+
+  // ── File Associations ─────────────────────────────────────────────────────────
+
+  ipcMain.handle('fileAssoc:getState', () => {
+    try {
+      return {
+        supported: SUPPORTED_FILE_TYPES,
+        registered: getRegisteredExtensions(),
+        platform: process.platform,
+      }
+    } catch (e) {
+      return {
+        supported: SUPPORTED_FILE_TYPES,
+        registered: [],
+        platform: process.platform,
+        error: e instanceof Error ? e.message : String(e),
+      }
+    }
+  })
+
+  ipcMain.handle('fileAssoc:apply', (_event, exts: string[]) => {
+    // Validate: only allow known extensions
+    const valid = new Set(SUPPORTED_FILE_TYPES.map(t => t.ext))
+    const sanitized = exts.filter((e): e is string => typeof e === 'string' && valid.has(e))
+    try {
+      applyExtensions(sanitized)
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }

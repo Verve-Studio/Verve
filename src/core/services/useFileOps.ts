@@ -330,7 +330,10 @@ export function useFileOps({
 
   const handleSave = useCallback(async (saveAs = false): Promise<void> => {
     const activeTab = tabs.find(t => t.id === activeTabId)
-    let path        = saveAs ? null : (activeTab?.filePath ?? null)
+    const existingPath = activeTab?.filePath ?? null
+    // Non-.verve files (imported images) must not be overwritten via Save — force Save As dialog.
+    const isVerve = existingPath?.toLowerCase().endsWith('.verve') === true
+    let path = saveAs || !isVerve ? null : existingPath
     if (!path) {
       path = await window.api.saveverveDialog(activeTab?.filePath ?? undefined)
       if (!path) return

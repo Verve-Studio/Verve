@@ -52,6 +52,8 @@ interface MacNativeMenuParams {
   handleRasterizeLayer: (id: string) => void
   handleGroupLayers: (ids: string[]) => void
   handleUngroupLayers: (id: string) => void
+  handleCreateCompositeLayer: () => void
+  handleAddMaskLayer: () => void
   handleMergeSelected: (ids: string[]) => void
   handleMergeDown: () => void
   handleMergeVisible: () => void
@@ -88,9 +90,14 @@ interface MacNativeMenuParams {
   openResizeCanvasDialog: () => void
   handleRotate: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
   handleFlip:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
+  handleRotateSelectedLayers: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
+  handleFlipSelectedLayers:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
+  layerArrange: import('./useLayerArrange').UseLayerArrangeReturn
   openAboutDialog: () => void
   openShortcutsDialog: () => void
+  openSystemInfoDialog: () => void
   openColorDitheringSetup: () => void
+  openPreferencesDialog: () => void
 
   // State for enabled/checked sync
   activeLayerId: string | null
@@ -117,7 +124,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
+    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer,
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
@@ -127,7 +134,10 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     colorMode,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
     handleRotate, handleFlip,
-    openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
+    handleRotateSelectedLayers, handleFlipSelectedLayers,
+    layerArrange,
+    openAboutDialog, openShortcutsDialog, openSystemInfoDialog, openColorDitheringSetup,
+    openPreferencesDialog,
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
     hasSelection, isContentAwareFilling,
@@ -193,6 +203,24 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'rotate270CW':      void handleRotate('270cw');    break
       case 'flipHorizontal':   void handleFlip('horizontal'); break
       case 'flipVertical':     void handleFlip('vertical');   break
+      case 'layer:rotate90CW':  void handleRotateSelectedLayers('90cw');     break
+      case 'layer:rotate180CW': void handleRotateSelectedLayers('180');      break
+      case 'layer:rotate270CW': void handleRotateSelectedLayers('270cw');    break
+      case 'layer:flipHorizontal': void handleFlipSelectedLayers('horizontal'); break
+      case 'layer:flipVertical':   void handleFlipSelectedLayers('vertical');   break
+      case 'layer:alignLeft':     layerArrange.handleAlign('left');     break
+      case 'layer:alignCenterV':  layerArrange.handleAlign('centerV');  break
+      case 'layer:alignRight':    layerArrange.handleAlign('right');    break
+      case 'layer:alignTop':      layerArrange.handleAlign('top');      break
+      case 'layer:alignCenterH':  layerArrange.handleAlign('centerH'); break
+      case 'layer:alignBottom':   layerArrange.handleAlign('bottom');   break
+      case 'layer:distributeH':   layerArrange.handleDistribute('horizontal'); break
+      case 'layer:distributeV':   layerArrange.handleDistribute('vertical');   break
+      case 'layer:orderFront':    layerArrange.handleOrder('front');    break
+      case 'layer:orderBack':     layerArrange.handleOrder('back');     break
+      case 'layer:orderForward':  layerArrange.handleOrder('forward');  break
+      case 'layer:orderBackward': layerArrange.handleOrder('backward'); break
+      case 'layer:orderReverse':  layerArrange.handleOrder('reverse');  break
       case 'freeTransform':    requireTransformDecision(handleEnterTransform); break
       case 'invertSelection':  selectionStore.invert(); break
       case 'selectAll':        handleSelectAll(); break
@@ -201,6 +229,9 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'deselectLayers':   handleDeselectLayers(); break
       case 'findLayers':       handleFindLayers(); break
       case 'newLayer':         handleNewLayer(); break
+      case 'newLayerGroup':    handleGroupLayers([]); break
+      case 'newCompositeLayer': handleCreateCompositeLayer(); break
+      case 'addLayerMask':     handleAddMaskLayer(); break
       case 'duplicateLayer':   handleDuplicateLayer(); break
       case 'deleteLayer':      handleDeleteActiveLayer(); break
       case 'rasterizeLayer':   activeLayerId && handleRasterizeLayer(activeLayerId); break
@@ -224,8 +255,10 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'setNormalMode':    handleSetNormalMode(); break
       case 'setTiledMode':     handleSetTiledMode(); break
       case 'toggleTileGrid':   handleToggleTileGrid(); break
+      case 'preferences':      openPreferencesDialog(); break
       case 'about':            openAboutDialog(); break
       case 'keyboardShortcuts': openShortcutsDialog(); break
+      case 'systemInfo':        openSystemInfoDialog(); break
       case 'colorMode:rgba8':    colorMode.handleConvertColorMode('rgba8');    break
       case 'colorMode:rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
       case 'colorMode:indexed8': colorMode.handleConvertColorMode('indexed8'); break
@@ -244,7 +277,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleClearRecentFiles, recentFiles,
     handleUndo, handleRedo, handleCut, handleCopy, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleMergeSelected,
+    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
     handleZoom100, handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides, handleApplyGuidePreset, handleEnterTransform,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
@@ -252,7 +285,8 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleOpenCafDialog,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
     handleRotate, handleFlip,
-    openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
+    openAboutDialog, openShortcutsDialog, openSystemInfoDialog, openColorDitheringSetup,
+    openPreferencesDialog,
     activeLayerId, effectiveSelectedIds,
     colorMode,
   ])

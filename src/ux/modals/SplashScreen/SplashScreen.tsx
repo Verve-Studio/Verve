@@ -1,31 +1,20 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { createPortal } from 'react-dom'
 import styles from './SplashScreen.module.scss'
 import appIcon from '../../../../build-resources/icon.png'
 
 export interface SplashScreenProps {
   open: boolean
-  onClose: () => void
   onNew: () => void
   onOpen: () => void
 }
 
-export function SplashScreen({ open, onClose, onNew, onOpen }: SplashScreenProps): React.JSX.Element | null {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [open, onClose])
-
+export function SplashScreen({ open, onNew, onOpen }: SplashScreenProps): React.JSX.Element | null {
   if (!open) return null
 
   return createPortal(
     <div
       className={styles.backdrop}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       role="presentation"
     >
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-label="Welcome to Verve">
@@ -62,9 +51,7 @@ export function SplashScreen({ open, onClose, onNew, onOpen }: SplashScreenProps
             </button>
           </div>
 
-          <button className={styles.dismissBtn} onClick={onClose}>
-            Skip
-          </button>
+
         </div>
 
       </div>

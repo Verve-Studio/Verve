@@ -94,6 +94,8 @@ export interface CanvasHandle {
    * will use this data instead of the default all-white fill.
    */
   prepareMaskLayer: (maskId: string, maskName: string, selPixels: Uint8Array) => void
+  /** Trigger a re-render of the canvas without modifying any layer data. Use after imperatively mutating GpuLayer.offsetX/Y. */
+  invalidate: () => void
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -170,7 +172,11 @@ export function useCanvasHandle({
       const renderer = rendererRef.current
       const layer = glLayersRef.current.get(layerId)
       if (!renderer || !layer) return null
-      const png = encodePng(renderer.readLayerPixels(layer) as Uint8Array, layer.layerWidth, layer.layerHeight)
+      const raw = renderer.readLayerPixels(layer)
+      const u8 = raw instanceof Float32Array
+        ? new Uint8Array(raw.length).map((_, i) => Math.round(Math.min(raw[i], 1) * 255))
+        : raw as Uint8Array
+      const png = encodePng(u8, layer.layerWidth, layer.layerHeight)
       return { png, layerWidth: layer.layerWidth, layerHeight: layer.layerHeight, offsetX: layer.offsetX, offsetY: layer.offsetY }
     },
 
@@ -178,7 +184,11 @@ export function useCanvasHandle({
       const renderer = rendererRef.current
       const maskLayer = adjustmentMaskMap.current.get(layerId)
       if (!renderer || !maskLayer) return null
-      return encodePng(renderer.readLayerPixels(maskLayer) as Uint8Array, renderer.pixelWidth, renderer.pixelHeight)
+      const raw = renderer.readLayerPixels(maskLayer)
+      const u8 = raw instanceof Float32Array
+        ? new Uint8Array(raw.length).map((_, i) => Math.round(Math.min(raw[i], 1) * 255))
+        : raw as Uint8Array
+      return encodePng(u8, renderer.pixelWidth, renderer.pixelHeight)
     },
 
     rasterizeComposite: async (reason) => {
@@ -278,6 +288,8 @@ export function useCanvasHandle({
         return result
       }
       const result = new Uint8Array(w * h * 4)
+      const isF32 = layer.format === 'rgba32f'
+      const src = layer.data
       for (let ly = 0; ly < layer.layerHeight; ly++) {
         const cy = layer.offsetY + ly
         if (cy < 0 || cy >= h) continue
@@ -286,10 +298,17 @@ export function useCanvasHandle({
           if (cx < 0 || cx >= w) continue
           const si = (ly * layer.layerWidth + lx) * 4
           const di = (cy * w + cx) * 4
-          result[di]     = layer.data[si]
-          result[di + 1] = layer.data[si + 1]
-          result[di + 2] = layer.data[si + 2]
-          result[di + 3] = layer.data[si + 3]
+          if (isF32) {
+            result[di]     = Math.round(Math.min(src[si],     1) * 255)
+            result[di + 1] = Math.round(Math.min(src[si + 1], 1) * 255)
+            result[di + 2] = Math.round(Math.min(src[si + 2], 1) * 255)
+            result[di + 3] = Math.round(Math.min(src[si + 3], 1) * 255)
+          } else {
+            result[di]     = src[si]
+            result[di + 1] = src[si + 1]
+            result[di + 2] = src[si + 2]
+            result[di + 3] = src[si + 3]
+          }
         }
       }
       return result
@@ -323,10 +342,17 @@ export function useCanvasHandle({
         if (lx < 0 || ly < 0 || lx >= layer.layerWidth || ly >= layer.layerHeight) continue
         const pi = (ly * layer.layerWidth + lx) * 4
         const f = 1 - mask[i] / 255
-        layer.data[pi]     = Math.round(layer.data[pi]     * f)
-        layer.data[pi + 1] = Math.round(layer.data[pi + 1] * f)
-        layer.data[pi + 2] = Math.round(layer.data[pi + 2] * f)
-        layer.data[pi + 3] = Math.round(layer.data[pi + 3] * f)
+        if (layer.format === 'rgba32f') {
+          layer.data[pi]     *= f
+          layer.data[pi + 1] *= f
+          layer.data[pi + 2] *= f
+          layer.data[pi + 3] *= f
+        } else {
+          layer.data[pi]     = Math.round(layer.data[pi]     * f)
+          layer.data[pi + 1] = Math.round(layer.data[pi + 1] * f)
+          layer.data[pi + 2] = Math.round(layer.data[pi + 2] * f)
+          layer.data[pi + 3] = Math.round(layer.data[pi + 3] * f)
+        }
       }
       renderer.flushLayer(layer)
       renderFromPlan()
@@ -619,5 +645,7 @@ export function useCanvasHandle({
       glLayersRef.current.set(maskId, layer)
       // No render here — the caller will trigger a render via dispatch
     },
+
+    invalidate: () => { renderFromPlan() },
   }), [width, height]) // eslint-disable-line react-hooks/exhaustive-deps
 }

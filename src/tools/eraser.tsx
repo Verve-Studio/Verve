@@ -25,7 +25,9 @@ function createEraserHandler(): ToolHandler {
     ctx: ToolContext
   ): void {
     const { renderer, layer, layers, secondaryColor, selectionMask, render, growLayerToFit } = ctx
-    const { r: secR, g: secG, b: secB } = secondaryColor
+    const secR = Math.round(Math.min(secondaryColor.r, 1) * 255)
+    const secG = Math.round(Math.min(secondaryColor.g, 1) * 255)
+    const secB = Math.round(Math.min(secondaryColor.b, 1) * 255)
     const radius = eraserOptions.size / 2
     growLayerToFit(x0, y0, Math.ceil(radius))
     if (x1 !== x0 || y1 !== y0) growLayerToFit(x1, y1, Math.ceil(radius))

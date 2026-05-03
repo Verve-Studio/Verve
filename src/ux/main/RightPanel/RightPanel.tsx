@@ -26,6 +26,7 @@ interface RightPanelProps {
   onMergeGroup: (groupId: string) => void
   onGroupSelected: (layerIds: string[]) => void
   onUngroup: (groupId: string) => void
+  onCreateCompositeLayer: () => void
 }
 
 const MIN_WIDTH = 200
@@ -33,7 +34,7 @@ const MAX_WIDTH = 600
 const DEFAULT_WIDTH = 250
 const STORAGE_KEY = 'verve-right-panel-width'
 
-export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, onMergeVisible, onMergeDown, onFlattenImage, onRasterizeLayer, onDuplicateLayer, onOpenAdjustmentPanel, onGeneratePalette, onMergeGroup, onGroupSelected, onUngroup }: RightPanelProps): React.JSX.Element {
+export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, onMergeVisible, onMergeDown, onFlattenImage, onRasterizeLayer, onDuplicateLayer, onOpenAdjustmentPanel, onGeneratePalette, onMergeGroup, onGroupSelected, onUngroup, onCreateCompositeLayer }: RightPanelProps): React.JSX.Element {
   useDockLayoutLoader()
 
   const [width, setWidth] = useState<number>(() => {
@@ -101,6 +102,7 @@ export function RightPanel({ activeTabId, findLayersTrigger, onMergeSelected, on
             onMergeGroup={onMergeGroup}
             onGroupSelected={onGroupSelected}
             onUngroup={onUngroup}
+            onCreateCompositeLayer={onCreateCompositeLayer}
             activeTabId={activeTabId}
             findLayersTrigger={findLayersTrigger}
           />

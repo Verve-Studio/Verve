@@ -4,7 +4,7 @@ export interface FilterRegistryEntry {
   key:      FilterKey
   label:    string
   instant?: boolean
-  group?:   'blur' | 'sharpen' | 'noise' | 'render' | 'pixelate'
+  group?:   'blur' | 'sharpen' | 'noise' | 'render' | 'pixelate' | 'texture'
 }
 
 export const FILTER_REGISTRY: FilterRegistryEntry[] = [
@@ -26,4 +26,5 @@ export const FILTER_REGISTRY: FilterRegistryEntry[] = [
   { key: 'clouds',           label: 'Clouds…',            group: 'render'  },
   { key: 'render-lens-flare', label: 'Lens Flare…',       group: 'render'  },
   { key: 'pixelate',         label: 'Pixelate…',         group: 'pixelate' },
+  { key: 'seamless-texture', label: 'Seamless Texture…', group: 'texture'  },
 ]

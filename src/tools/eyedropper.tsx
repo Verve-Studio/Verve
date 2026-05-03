@@ -22,10 +22,14 @@ function sampleCompositedPixel(
 
   for (const layer of layers) {
     if (!layer.visible || layer.opacity === 0) continue
-    const [sr, sg, sb, sa] = renderer.sampleCanvasPixel(layer, cx, cy)
-    if (sa === 0) continue
+    const [sr_raw, sg_raw, sb_raw, sa_raw] = renderer.sampleCanvasPixel(layer, cx, cy)
+    if (sa_raw === 0) continue
 
-    const srcA = (sa / 255) * layer.opacity
+    // Normalize to [0,1]: samplePixel returns 0-255 for rgba8, 0.0-1.0 for rgba32f
+    const scale = layer.format === 'rgba32f' ? 1 : 255
+    const sr = sr_raw / scale, sg = sg_raw / scale, sb = sb_raw / scale, sa = sa_raw / scale
+
+    const srcA = sa * layer.opacity
     const outA = srcA + dstA * (1 - srcA)
     if (outA === 0) continue
 
@@ -35,7 +39,8 @@ function sampleCompositedPixel(
     dstA = outA
   }
 
-  return [Math.round(dstR), Math.round(dstG), Math.round(dstB), Math.round(dstA * 255)]
+  // dstR/G/B are now in [0,1] (or >1 for HDR); return as 0-255 range for sampleArea
+  return [Math.round(dstR * 255), Math.round(dstG * 255), Math.round(dstB * 255), Math.round(dstA * 255)]
 }
 
 function sampleArea(
@@ -58,10 +63,10 @@ function sampleArea(
   }
 
   return {
-    r: Math.round(totalR / count),
-    g: Math.round(totalG / count),
-    b: Math.round(totalB / count),
-    a: Math.round(totalA / count),
+    r: Math.round(totalR / count) / 255,
+    g: Math.round(totalG / count) / 255,
+    b: Math.round(totalB / count) / 255,
+    a: Math.round(totalA / count) / 255,
   }
 }
 
@@ -76,7 +81,7 @@ function createEyedropperHandler(): ToolHandler {
       const ly = canvasY - layer.offsetY
       if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight) continue
       const index = (layer.data as Uint8Array)[ly * layer.layerWidth + lx]
-      const color = index < ctx.swatches.length ? { r: ctx.swatches[index].r, g: ctx.swatches[index].g, b: ctx.swatches[index].b, a: ctx.swatches[index].a } : null
+      const color = index < ctx.swatches.length ? { r: ctx.swatches[index].r/255, g: ctx.swatches[index].g/255, b: ctx.swatches[index].b/255, a: ctx.swatches[index].a/255 } : null
       return { index, color }
     }
     return null
@@ -92,14 +97,6 @@ function createEyedropperHandler(): ToolHandler {
       return
     }
     const color = sampleArea(ctx.layers, ctx.renderer, Math.floor(pos.x), Math.floor(pos.y), eyedropperOptions.sampleSize)
-    if (ctx.pixelFormat === 'rgba32f') {
-      // Check raw float values for HDR overflow before clamping to 8-bit
-      const sampledRaw = sampleCompositedPixel(ctx.layers, ctx.renderer, Math.floor(pos.x), Math.floor(pos.y))
-      const overflow = sampledRaw[0] > 255 || sampledRaw[1] > 255 || sampledRaw[2] > 255
-      ctx.setEyedropperHdrOverflow(overflow)
-    } else {
-      ctx.setEyedropperHdrOverflow(false)
-    }
     ctx.setColor(color)
   }
 

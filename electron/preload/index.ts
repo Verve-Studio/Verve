@@ -57,6 +57,38 @@ const api = {
   // ── App lifecycle ─────────────────────────────────────────────────────────────
   exitApp: (): Promise<void> => ipcRenderer.invoke('app:exit'),
 
+  // ── Startup file path ─────────────────────────────────────────────────────────
+  /** Poll once on mount — returns the file path passed as a CLI arg, or null. */
+  getStartupFile: (): Promise<string | null> => ipcRenderer.invoke('app:getStartupFile'),
+
+  /** Listen for runtime file-open events (macOS dock drop / open-with). */
+  onOpenFile: (callback: (path: string) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, path: string): void => callback(path)
+    ipcRenderer.on('app:open-file', handler)
+    return () => ipcRenderer.removeListener('app:open-file', handler)
+  },
+
+  // ── File Associations ─────────────────────────────────────────────────────────
+  getFileAssocState: (): Promise<{
+    supported: Array<{ ext: string; label: string }>
+    registered: string[]
+    platform: string
+    error?: string
+  }> => ipcRenderer.invoke('fileAssoc:getState'),
+
+  applyFileAssoc: (exts: string[]): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('fileAssoc:apply', exts),
+
+  // ── System info ───────────────────────────────────────────────────────────────
+  getSystemInfo: (): Promise<{
+    osName: string
+    osVersion: string
+    cpuModel: string
+    cpuCores: number
+    totalRamBytes: number
+    gpus: Array<{ name: string; active: boolean; driverVersion: string }>
+  }> => ipcRenderer.invoke('system:getInfo'),
+
   // ── Platform & native menu (macOS) ────────────────────────────────
   platform: process.platform as string,
 
