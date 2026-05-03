@@ -165,6 +165,8 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       label: 'Layer',
       submenu: [
         item('New Layer', 'newLayer', { accelerator: 'CmdOrCtrl+Shift+N' }),
+        item('New Layer Group', 'newLayerGroup'),
+        item('New Composite Layer', 'newCompositeLayer'),
         item('Duplicate Layer', 'duplicateLayer'),
         item('Delete Layer', 'deleteLayer'),
         sep(),

@@ -288,6 +288,17 @@ export type RenderPlanEntry =
       visible:   boolean
       children:  RenderPlanEntry[]
     }
+  | {
+      /** Non-destructive merged layer: children are flattened at render time,
+       *  then `adjustments` are applied to the merged result before compositing. */
+      kind: 'composite-layer'
+      layerId:     string
+      opacity:     number
+      blendMode:   string
+      visible:     boolean
+      children:    RenderPlanEntry[]
+      adjustments: AdjustmentRenderOp[]
+    }
   | AdjustmentRenderOp
 
 // ─── Error ────────────────────────────────────────────────────────────────────

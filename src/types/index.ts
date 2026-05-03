@@ -885,10 +885,37 @@ export interface GroupLayerState {
   childIds:  string[]
 }
 
-export type LayerState = PixelLayerState | TextLayerState | ShapeLayerState | MaskLayerState | AdjustmentLayerState | GroupLayerState
+/**
+ * Composite Layer — non-destructively merges all child layers into a single
+ * flattened result at render time. Adjustments / effects / filters can be
+ * attached to the composite layer and are applied to the merged output before
+ * it is composited into the rest of the document.
+ */
+export interface CompositeLayerState {
+  id:        string
+  name:      string
+  visible:   boolean
+  opacity:   number
+  locked:    boolean
+  blendMode: BlendMode
+  type:      'composite'
+  collapsed: boolean
+  childIds:  string[]
+}
+
+export type LayerState = PixelLayerState | TextLayerState | ShapeLayerState | MaskLayerState | AdjustmentLayerState | GroupLayerState | CompositeLayerState
 
 export function isGroupLayer(l: LayerState): l is GroupLayerState {
   return 'type' in l && l.type === 'group'
+}
+
+export function isCompositeLayer(l: LayerState): l is CompositeLayerState {
+  return 'type' in l && l.type === 'composite'
+}
+
+/** True for any layer type that owns child layers (group or composite). */
+export function isContainerLayer(l: LayerState): l is GroupLayerState | CompositeLayerState {
+  return 'type' in l && (l.type === 'group' || l.type === 'composite')
 }
 
 export function isPixelLayer(l: LayerState): l is PixelLayerState {

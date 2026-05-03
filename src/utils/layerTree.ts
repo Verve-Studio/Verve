@@ -1,13 +1,13 @@
-import type { LayerState, GroupLayerState, MaskLayerState, AdjustmentLayerState } from '@/types'
-import { isGroupLayer } from '@/types'
+import type { LayerState, GroupLayerState, CompositeLayerState, MaskLayerState, AdjustmentLayerState } from '@/types'
+import { isContainerLayer } from '@/types'
 
 // ─── Root layer IDs ───────────────────────────────────────────────────────────
 
-/** All layer IDs not appearing in any group's childIds — in their flat-array order. */
+/** All layer IDs not appearing in any group's/composite's childIds — in their flat-array order. */
 export function buildRootLayerIds(layers: readonly LayerState[]): string[] {
   const inGroup = new Set<string>()
   for (const l of layers) {
-    if (isGroupLayer(l)) {
+    if (isContainerLayer(l)) {
       for (const id of l.childIds) inGroup.add(id)
     }
   }
@@ -16,13 +16,13 @@ export function buildRootLayerIds(layers: readonly LayerState[]): string[] {
 
 // ─── Parent lookup ────────────────────────────────────────────────────────────
 
-/** Direct parent group of a layer, or null if it is a root layer. */
+/** Direct parent container (group or composite) of a layer, or null if it is a root layer. */
 export function getParentGroup(
   layers: readonly LayerState[],
   layerId: string,
-): GroupLayerState | null {
+): GroupLayerState | CompositeLayerState | null {
   for (const l of layers) {
-    if (isGroupLayer(l) && l.childIds.includes(layerId)) return l
+    if (isContainerLayer(l) && l.childIds.includes(layerId)) return l
   }
   return null
 }
@@ -40,7 +40,7 @@ export function getDescendantIds(
   function collect(id: string): void {
     const l = layersById.get(id)
     if (!l) return
-    if (isGroupLayer(l)) {
+    if (isContainerLayer(l)) {
       for (const childId of l.childIds) {
         result.push(childId)
         collect(childId)
@@ -62,7 +62,7 @@ export function isDescendantOf(
 
   function check(id: string): boolean {
     const l = layersById.get(id)
-    if (!l || !isGroupLayer(l)) return false
+    if (!l || !isContainerLayer(l)) return false
     for (const childId of l.childIds) {
       if (childId === candidateId) return true
       if (check(childId)) return true
@@ -127,15 +127,15 @@ export function* walkLayerTree(
       // Skip mask / per-layer adjustment layers here — they are yielded under
       // their pixel parent below.
       if ('type' in layer && (layer.type === 'mask' || layer.type === 'adjustment')) {
-        // Only skip if parentId points to a non-group layer (per-layer attachment).
+        // Only skip if parentId points to a non-container layer (per-layer attachment).
         const parent = layersById.get((layer as MaskLayerState | AdjustmentLayerState).parentId)
-        if (parent && !isGroupLayer(parent)) continue
-        // Group-scoped adjustment (parentId === groupId): fall through and yield.
+        if (parent && !isContainerLayer(parent)) continue
+        // Group/composite-scoped adjustment: fall through and yield.
       }
 
       yield { layer, depth }
 
-      if (isGroupLayer(layer)) {
+      if (isContainerLayer(layer)) {
         yield* walkIds(layer.childIds, depth + 1)
       } else if (!('type' in layer) || (layer.type !== 'mask' && layer.type !== 'adjustment')) {
         // Pixel / text / shape: also yield attached children.
@@ -193,7 +193,7 @@ export function buildClusters(layers: readonly LayerState[]): { clusters: LayerS
     const cluster: LayerState[] = [root]
     const usedIds = new Set<string>([rootId])
 
-    if (isGroupLayer(root)) {
+    if (isContainerLayer(root)) {
       const descIds = getDescendantIds(layers, rootId)
       for (const id of descIds) {
         const l = layers.find(x => x.id === id)
@@ -248,14 +248,14 @@ export function deepDuplicateGroup(
     if (!layer) return
     const newId = ensureId(layerId)
 
-    if (isGroupLayer(layer)) {
+    if (isContainerLayer(layer)) {
       for (const childId of layer.childIds) dupe(childId)
-      const newGroup: GroupLayerState = {
+      const newContainer = {
         ...layer,
         id: newId,
         childIds: layer.childIds.map(id => idMap.get(id) ?? id),
-      }
-      newLayers.push(newGroup)
+      } as GroupLayerState | CompositeLayerState
+      newLayers.push(newContainer)
     } else {
       const newLayer = { ...layer, id: newId } as LayerState
       newLayers.push(newLayer)

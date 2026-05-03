@@ -1,5 +1,5 @@
 import type { AdjustmentLayerState, LayerState, RGBAColor, OutlineParams, PixelFormat } from '@/types'
-import { isGroupLayer } from '@/types'
+import { isGroupLayer, isCompositeLayer, isContainerLayer } from '@/types'
 import { buildCurvesLuts } from '@/core/operations/adjustments/curves'
 import type { GpuLayer, AdjustmentRenderOp, RenderPlanEntry } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
 import { buildRootLayerIds } from '@/utils/layerTree'
@@ -451,8 +451,10 @@ export function buildSubPlan(
       if (pixelFormat === 'indexed8') continue
       const adjLs = ls as AdjustmentLayerState
       const parent = layersById.get(adjLs.parentId)
-      // Per-layer attachment (parentId → non-group layer): skip, bundled with pixel parent
-      if (parent && !isGroupLayer(parent)) continue
+      // Per-layer attachment (parentId → non-container layer): skip, bundled with pixel parent
+      if (parent && !isContainerLayer(parent)) continue
+      // Composite-layer attachment: bundled into composite-layer entry, skip standalone emission
+      if (parent && isCompositeLayer(parent)) continue
       // Group-scoped adjustment: treat as standalone
       if (bypassedAdjustmentIds.has(ls.id)) continue
       const entry = buildAdjustmentEntry(adjLs, adjustmentMaskMap.get(ls.id), swatches)
@@ -471,6 +473,36 @@ export function buildSubPlan(
         children: buildSubPlan(
           ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
         ),
+      })
+      continue
+    }
+
+    // Composite layer → flatten children, apply attached adjustments
+    if (isCompositeLayer(ls)) {
+      const attachedAdj: AdjustmentRenderOp[] = []
+      if (pixelFormat !== 'indexed8') {
+        for (const adj of layers) {
+          if (
+            'type' in adj &&
+            adj.type === 'adjustment' &&
+            (adj as AdjustmentLayerState).parentId === ls.id &&
+            !bypassedAdjustmentIds.has(adj.id)
+          ) {
+            const op = buildAdjustmentEntry(adj as AdjustmentLayerState, adjustmentMaskMap.get(adj.id), swatches)
+            if (op) attachedAdj.push(op)
+          }
+        }
+      }
+      plan.push({
+        kind: 'composite-layer',
+        layerId: ls.id,
+        opacity: ls.opacity,
+        blendMode: ls.blendMode,
+        visible: ls.visible,
+        children: buildSubPlan(
+          ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
+        ),
+        adjustments: attachedAdj,
       })
       continue
     }

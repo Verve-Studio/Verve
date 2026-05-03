@@ -31,7 +31,7 @@ export interface UseAdjustmentsReturn {
 /** Returns true for layer types that can own adjustment/effect children. */
 function isEffectEligibleLayer(layer: LayerState): boolean {
   if (!('type' in layer)) return true  // PixelLayerState has no type discriminant
-  return layer.type === 'text' || layer.type === 'shape'
+  return layer.type === 'text' || layer.type === 'shape' || layer.type === 'composite'
 }
 
 export function useAdjustments({

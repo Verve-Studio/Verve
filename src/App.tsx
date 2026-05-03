@@ -148,7 +148,7 @@ function AppContent(): React.JSX.Element {
 
   // ── Layer groups ──────────────────────────────────────────────────
   const {
-    handleMergeGroup, handleGroupLayers, handleUngroupLayers,
+    handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Canvas transforms ─────────────────────────────────────────────
@@ -434,7 +434,7 @@ function AppContent(): React.JSX.Element {
     handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers,
+    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
@@ -562,6 +562,7 @@ function AppContent(): React.JSX.Element {
       handleMergeGroup={handleMergeGroup}
       handleGroupLayers={handleGroupLayers}
       handleUngroupLayers={handleUngroupLayers}
+      handleCreateCompositeLayer={handleCreateCompositeLayer}
       handleResizeImage={handleResizeImage}
       handleResizeCanvas={handleResizeCanvas}
       handleRotate={handleRotate}

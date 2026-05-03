@@ -102,18 +102,18 @@ function ClipboardIcon(): React.JSX.Element {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function NewImageDialog({ open, onConfirm, onCancel }: NewImageDialogProps): React.JSX.Element | null {
-  const [widthPx, setWidthPx]         = useState(512)
-  const [heightPx, setHeightPx]       = useState(512)
+  const [widthPx, setWidthPx]         = useState(1920)
+  const [heightPx, setHeightPx]       = useState(1080)
   const [ppi, setPpi]                 = useState(72)
   const [unit, setUnit]               = useState<Unit>('px')
   const [backgroundFill, setBg]       = useState<BackgroundFill>('white')
-  const [selectedPreset, setPreset]   = useState('512 × 512')
+  const [selectedPreset, setPreset]   = useState('1920 × 1080')
   const [pixelFormat, setPixelFormat] = useState<PixelFormat>('rgba8')
 
   useEffect(() => {
     if (open) {
-      setWidthPx(512); setHeightPx(512); setPpi(72)
-      setUnit('px'); setBg('white'); setPreset('512 × 512'); setPixelFormat('rgba8')
+      setWidthPx(1920); setHeightPx(1080); setPpi(72)
+      setUnit('px'); setBg('white'); setPreset('1920 × 1080'); setPixelFormat('rgba8')
     }
   }, [open])
 

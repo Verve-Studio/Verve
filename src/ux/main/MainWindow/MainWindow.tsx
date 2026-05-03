@@ -154,6 +154,7 @@ export interface MainWindowProps {
   handleMergeGroup: (groupId: string) => void
   handleGroupLayers: (ids: string[]) => void
   handleUngroupLayers: (id: string) => void
+  handleCreateCompositeLayer: () => void
 
   // Canvas transform handlers
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>
@@ -234,7 +235,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
-    handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers,
+    handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
     handleResizeImage, handleResizeCanvas, handleRotate, handleFlip,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
@@ -296,6 +297,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onToggleTileGrid={handleToggleTileGrid}
         showTileGrid={showTileGrid}
         onNewLayer={handleNewLayer}
+        onNewCompositeLayer={handleCreateCompositeLayer}
         onDuplicateLayer={handleDuplicateLayer}
         onDeleteLayer={handleDeleteActiveLayer}
         onMergeDown={handleMergeDown}

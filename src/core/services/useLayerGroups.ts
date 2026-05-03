@@ -17,10 +17,11 @@ interface UseLayerGroupsOptions {
 }
 
 export interface UseLayerGroupsReturn {
-  handleMergeGroup:    (groupId: string) => Promise<void>
-  handleGroupLayers:   (layerIds: string[]) => void
-  handleUngroupLayers: (groupId: string) => void
-  handleCreateGroup:   () => void
+  handleMergeGroup:          (groupId: string) => Promise<void>
+  handleGroupLayers:         (layerIds: string[]) => void
+  handleUngroupLayers:       (groupId: string) => void
+  handleCreateGroup:         () => void
+  handleCreateCompositeLayer: () => void
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -115,5 +116,11 @@ export function useLayerGroups({
     }
   }, [canvasHandleRef, stateRef, captureHistory, dispatch])
 
-  return { handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateGroup }
+  const handleCreateCompositeLayer = useCallback((): void => {
+    const { activeLayerId } = stateRef.current
+    const id = `composite-${Date.now()}`
+    dispatch({ type: 'ADD_COMPOSITE_LAYER', payload: { id, name: 'Composite', aboveLayerId: activeLayerId ?? undefined } })
+  }, [dispatch, stateRef])
+
+  return { handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateGroup, handleCreateCompositeLayer }
 }
