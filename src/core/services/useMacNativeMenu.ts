@@ -88,6 +88,8 @@ interface MacNativeMenuParams {
   openResizeCanvasDialog: () => void
   handleRotate: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
   handleFlip:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
+  handleRotateSelectedLayers: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
+  handleFlipSelectedLayers:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
   openAboutDialog: () => void
   openShortcutsDialog: () => void
   openColorDitheringSetup: () => void
@@ -127,6 +129,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     colorMode,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
     handleRotate, handleFlip,
+    handleRotateSelectedLayers, handleFlipSelectedLayers,
     openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
@@ -193,6 +196,11 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'rotate270CW':      void handleRotate('270cw');    break
       case 'flipHorizontal':   void handleFlip('horizontal'); break
       case 'flipVertical':     void handleFlip('vertical');   break
+      case 'layer:rotate90CW':  void handleRotateSelectedLayers('90cw');     break
+      case 'layer:rotate180CW': void handleRotateSelectedLayers('180');      break
+      case 'layer:rotate270CW': void handleRotateSelectedLayers('270cw');    break
+      case 'layer:flipHorizontal': void handleFlipSelectedLayers('horizontal'); break
+      case 'layer:flipVertical':   void handleFlipSelectedLayers('vertical');   break
       case 'freeTransform':    requireTransformDecision(handleEnterTransform); break
       case 'invertSelection':  selectionStore.invert(); break
       case 'selectAll':        handleSelectAll(); break

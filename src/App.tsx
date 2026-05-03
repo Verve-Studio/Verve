@@ -150,7 +150,7 @@ function AppContent(): React.JSX.Element {
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Canvas transforms ─────────────────────────────────────────────
-  const { handleResizeImage, handleResizeCanvas, handleRotate, handleFlip } = useCanvasTransforms({
+  const { handleResizeImage, handleResizeCanvas, handleRotate, handleFlip, handleRotateSelectedLayers, handleFlipSelectedLayers } = useCanvasTransforms({
     canvasHandleRef, stateRef, captureHistory, dispatch,
     activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef,
     canvasWidth: state.canvas.width, canvasHeight: state.canvas.height,
@@ -446,6 +446,8 @@ function AppContent(): React.JSX.Element {
     openResizeCanvasDialog:  () => setShowResizeCanvasDialog(true),
     handleRotate,
     handleFlip,
+    handleRotateSelectedLayers,
+    handleFlipSelectedLayers,
     openAboutDialog:         () => setShowAboutDialog(true),
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),

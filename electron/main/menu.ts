@@ -177,6 +177,22 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         item('Merge Down', 'mergeDown'),
         item('Merge Visible', 'mergeVisible'),
         item('Flatten Image', 'flattenImage'),
+        sep(),
+        {
+          label: 'Rotate',
+          submenu: [
+            item('90\u00b0 CW',  'layer:rotate90CW'),
+            item('180\u00b0 CW', 'layer:rotate180CW'),
+            item('270\u00b0 CW', 'layer:rotate270CW'),
+          ],
+        },
+        {
+          label: 'Flip',
+          submenu: [
+            item('Horizontal', 'layer:flipHorizontal'),
+            item('Vertical',   'layer:flipVertical'),
+          ],
+        },
       ],
     },
 
