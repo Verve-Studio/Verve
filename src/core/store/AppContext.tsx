@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer } from 'react'
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat } from '@/types'
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat, AnimationDef, AnimationFrame } from '@/types'
 import { isGroupLayer, isContainerLayer } from '@/types'
 import { getDescendantIds, getParentGroup } from '@/utils/layerTree'
 import { DEFAULT_SWATCHES } from './tabTypes'
@@ -58,6 +58,7 @@ export type AppAction =
   | { type: 'SET_PIXEL_BRUSHES'; payload: PixelBrush[] }
   | { type: 'SET_TILED_MODE'; payload: boolean }
   | { type: 'SET_SHOW_TILE_GRID'; payload: boolean }
+  | { type: 'SET_ANIMATION_MODE'; payload: boolean }
   | { type: 'ADD_SWATCH_GROUP'; payload: { name: string; swatchIndices: number[] } }
   | { type: 'ADD_SWATCHES_TO_GROUP'; payload: { id: string; swatchIndices: number[] } }
   | { type: 'REMOVE_SWATCH_GROUP'; payload: string }
@@ -73,6 +74,15 @@ export type AppAction =
   | { type: 'SET_PIXEL_FORMAT'; payload: PixelFormat }
   | { type: 'SET_ACTIVE_SWATCH'; payload: number }
   | { type: 'CLEAR_REMOVED_SWATCH_INDEX' }
+  | { type: 'SET_SPRITESHEET'; payload: Partial<import('@/types').SpritesheetState> }
+  | { type: 'ADD_ANIMATION'; payload: AnimationDef }
+  | { type: 'UPDATE_ANIMATION'; payload: AnimationDef }
+  | { type: 'DELETE_ANIMATION'; payload: string }
+  | { type: 'SET_SELECTED_ANIMATION'; payload: string | null }
+  | { type: 'SET_SELECTED_FRAME'; payload: string | null }
+  | { type: 'ADD_FRAME'; payload: { animationId: string; frame: AnimationFrame } }
+  | { type: 'UPDATE_FRAME'; payload: { animationId: string; frame: AnimationFrame } }
+  | { type: 'DELETE_FRAME'; payload: { animationId: string; frameId: string } }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
@@ -93,6 +103,17 @@ const initialState: AppState = {
   pixelFormat: 'rgba8',
   activePaletteIndex: -1,
   lastRemovedSwatchIndex: null,
+  animationMode: false,
+  spritesheet: {
+    enabled: false,
+    cellWidth: 32,
+    cellHeight: 32,
+    onionSkin: false,
+    onionFrames: 1,
+    animations: [],
+    selectedAnimationId: null,
+    selectedFrameId: null,
+  },
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -411,6 +432,94 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_SHOW_TILE_GRID':
       return { ...state, canvas: { ...state.canvas, showTileGrid: action.payload } }
+
+    case 'SET_ANIMATION_MODE':
+      return { ...state, animationMode: action.payload }
+
+    case 'SET_SPRITESHEET':
+      return { ...state, spritesheet: { ...state.spritesheet, ...action.payload } }
+
+    case 'ADD_ANIMATION':
+      return {
+        ...state,
+        spritesheet: {
+          ...state.spritesheet,
+          animations: [...state.spritesheet.animations, action.payload],
+          selectedAnimationId: action.payload.id,
+        },
+      }
+
+    case 'UPDATE_ANIMATION':
+      return {
+        ...state,
+        spritesheet: {
+          ...state.spritesheet,
+          animations: state.spritesheet.animations.map(a =>
+            a.id === action.payload.id ? action.payload : a
+          ),
+        },
+      }
+
+    case 'DELETE_ANIMATION': {
+      const remaining = state.spritesheet.animations.filter(a => a.id !== action.payload)
+      const nextSel = state.spritesheet.selectedAnimationId === action.payload
+        ? (remaining[0]?.id ?? null)
+        : state.spritesheet.selectedAnimationId
+      return {
+        ...state,
+        spritesheet: { ...state.spritesheet, animations: remaining, selectedAnimationId: nextSel, selectedFrameId: null },
+      }
+    }
+
+    case 'SET_SELECTED_ANIMATION':
+      return { ...state, spritesheet: { ...state.spritesheet, selectedAnimationId: action.payload, selectedFrameId: null } }
+
+    case 'SET_SELECTED_FRAME':
+      return { ...state, spritesheet: { ...state.spritesheet, selectedFrameId: action.payload } }
+
+    case 'ADD_FRAME':
+      return {
+        ...state,
+        spritesheet: {
+          ...state.spritesheet,
+          animations: state.spritesheet.animations.map(a =>
+            a.id === action.payload.animationId
+              ? { ...a, frames: [...a.frames, action.payload.frame] }
+              : a
+          ),
+        },
+      }
+
+    case 'UPDATE_FRAME':
+      return {
+        ...state,
+        spritesheet: {
+          ...state.spritesheet,
+          animations: state.spritesheet.animations.map(a =>
+            a.id === action.payload.animationId
+              ? { ...a, frames: a.frames.map(f => f.id === action.payload.frame.id ? action.payload.frame : f) }
+              : a
+          ),
+        },
+      }
+
+    case 'DELETE_FRAME': {
+      const nextSelectedFrameId = state.spritesheet.selectedFrameId === action.payload.frameId
+        ? null
+        : state.spritesheet.selectedFrameId
+      return {
+        ...state,
+        spritesheet: {
+          ...state.spritesheet,
+          selectedFrameId: nextSelectedFrameId,
+          animations: state.spritesheet.animations.map(a =>
+            a.id === action.payload.animationId
+              ? { ...a, frames: a.frames.filter(f => f.id !== action.payload.frameId) }
+              : a
+          ),
+        },
+      }
+    }
 
     case 'SET_GRID_SIZE':
       return { ...state, canvas: { ...state.canvas, gridSize: Math.max(1, action.payload) } }

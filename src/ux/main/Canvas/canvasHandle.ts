@@ -96,6 +96,12 @@ export interface CanvasHandle {
   prepareMaskLayer: (maskId: string, maskName: string, selPixels: Uint8Array) => void
   /** Trigger a re-render of the canvas without modifying any layer data. Use after imperatively mutating GpuLayer.offsetX/Y. */
   invalidate: () => void
+  /**
+   * For every raster layer, copy the pixels from the source cell rect into the
+   * destination cell rect (same layer). All three pixel formats are handled
+   * natively (rgba8, rgba32f, indexed8). Does NOT push to undo history.
+   */
+  copyCellRect: (srcX: number, srcY: number, dstX: number, dstY: number, cellW: number, cellH: number) => void
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -647,5 +653,66 @@ export function useCanvasHandle({
     },
 
     invalidate: () => { renderFromPlan() },
+
+    copyCellRect: (srcX, srcY, dstX, dstY, cellW, cellH) => {
+      const renderer = rendererRef.current
+      if (!renderer) return
+      const canvasW = renderer.pixelWidth
+      const canvasH = renderer.pixelHeight
+
+      for (const layer of glLayersRef.current.values()) {
+        // Grow layer to fit destination cell corners (no-op if already large enough)
+        renderer.growLayerToFit(layer, dstX, dstY)
+        renderer.growLayerToFit(layer, Math.min(canvasW - 1, dstX + cellW - 1), Math.min(canvasH - 1, dstY + cellH - 1))
+
+        const stride = layer.layerWidth
+
+        for (let dy = 0; dy < cellH; dy++) {
+          const srcCy = srcY + dy
+          const dstCy = dstY + dy
+          if (dstCy < 0 || dstCy >= canvasH) continue
+
+          const dstLy = dstCy - layer.offsetY
+          if (dstLy < 0 || dstLy >= layer.layerHeight) continue
+
+          for (let dx = 0; dx < cellW; dx++) {
+            const srcCx = srcX + dx
+            const dstCx = dstX + dx
+            if (dstCx < 0 || dstCx >= canvasW) continue
+
+            const dstLx = dstCx - layer.offsetX
+            if (dstLx < 0 || dstLx >= stride) continue
+
+            const srcLx = srcCx - layer.offsetX
+            const srcLy = srcCy - layer.offsetY
+            const srcInBounds =
+              srcCx >= 0 && srcCx < canvasW && srcCy >= 0 && srcCy < canvasH &&
+              srcLx >= 0 && srcLx < stride && srcLy >= 0 && srcLy < layer.layerHeight
+
+            if (layer.format === 'indexed8') {
+              const dstI = dstLy * stride + dstLx
+              ;(layer.data as Uint8Array)[dstI] = srcInBounds
+                ? (layer.data as Uint8Array)[srcLy * stride + srcLx]
+                : 255  // transparent sentinel
+            } else {
+              const dstI = (dstLy * stride + dstLx) * 4
+              if (srcInBounds) {
+                const srcI = (srcLy * stride + srcLx) * 4
+                layer.data[dstI]     = layer.data[srcI]
+                layer.data[dstI + 1] = layer.data[srcI + 1]
+                layer.data[dstI + 2] = layer.data[srcI + 2]
+                layer.data[dstI + 3] = layer.data[srcI + 3]
+              } else {
+                layer.data[dstI] = layer.data[dstI + 1] = layer.data[dstI + 2] = layer.data[dstI + 3] = 0
+              }
+            }
+          }
+        }
+
+        renderer.flushLayer(layer, swatchesRef.current as RGBAColor[])
+      }
+
+      renderFromPlan()
+    },
   }), [width, height]) // eslint-disable-line react-hooks/exhaustive-deps
 }

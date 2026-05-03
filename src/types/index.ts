@@ -973,6 +973,40 @@ export type PixelFormat = 'rgba8' | 'rgba32f' | 'indexed8'
 
 export type ToneMappingOperator = 'reinhard' | 'clamp'
 
+// ─── Spritesheet / Animation ──────────────────────────────────────────────────
+
+export interface AnimationFrame {
+  id: string
+  /** How many playback ticks this frame persists (1 = single tick at the animation fps). */
+  duration: number
+}
+
+export type AnimationPlaybackMode = 'one-shot' | 'loop' | 'ping-pong'
+
+export interface AnimationDef {
+  id: string
+  name: string
+  fps: number
+  playbackMode: AnimationPlaybackMode
+  frames: AnimationFrame[]
+}
+
+export interface SpritesheetState {
+  /** Whether spritesheet mode is active (cells are enabled). */
+  enabled: boolean
+  /** Width of each sprite cell in pixels. */
+  cellWidth: number
+  /** Height of each sprite cell in pixels. */
+  cellHeight: number
+  /** Whether onion-skin overlay is active. */
+  onionSkin: boolean
+  /** Number of frames to preview forward and backward in onion skin (1–3). */
+  onionFrames: number
+  animations: AnimationDef[]
+  selectedAnimationId: string | null
+  selectedFrameId: string | null
+}
+
 export interface AppState {
   activeTool: Tool
   activeShape: ShapeType
@@ -997,4 +1031,7 @@ export interface AppState {
   activePaletteIndex: number
   /** The index of the most recently removed swatch (for layer pixel remap); null otherwise. */
   lastRemovedSwatchIndex: number | null
+  /** When true, the playback bar is visible and the app is in spritesheet animation mode. */
+  animationMode: boolean
+  spritesheet: SpritesheetState
 }

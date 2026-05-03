@@ -247,6 +247,7 @@ export function useFileOps({
       swatches?: unknown
       swatchGroups?: unknown
       pixelBrushes?: unknown
+      spritesheet?: unknown
     }
 
     const layerData = new Map<string, string>()
@@ -290,6 +291,10 @@ export function useFileOps({
       }
       docPixelFormat = fmt as PixelFormat
     }
+    let docSpritesheet: import('@/types').SpritesheetState | undefined
+    if (doc.version >= 6 && doc.spritesheet && typeof doc.spritesheet === 'object') {
+      docSpritesheet = doc.spritesheet as import('@/types').SpritesheetState
+    }
     const newSnapshot: TabSnapshot = {
       canvasWidth: doc.canvas.width, canvasHeight: doc.canvas.height, backgroundFill: bg,
       layers, activeLayerId: doc.activeLayerId ?? layers[0]?.id ?? null, zoom: 1,
@@ -297,6 +302,7 @@ export function useFileOps({
       swatchGroups: docSwatchGroups,
       pixelBrushes: docPixelBrushes,
       pixelFormat: docPixelFormat,
+      spritesheet: docSpritesheet,
     }
     const snapshot      = captureActiveSnapshot()
     const savedHistory   = historyStore.detach()
@@ -314,6 +320,9 @@ export function useFileOps({
     dispatch({ type: 'SET_SWATCHES', payload: docSwatches })
     dispatch({ type: 'SET_SWATCH_GROUPS', payload: docSwatchGroups })
     dispatch({ type: 'SET_PIXEL_BRUSHES', payload: docPixelBrushes })
+    if (docSpritesheet) {
+      dispatch({ type: 'SET_SPRITESHEET', payload: docSpritesheet })
+    }
     const updated2 = await window.api.addRecentFile(path)
     onRecentFilesUpdated?.(updated2)
   }, [tabs, activeTabId, captureActiveSnapshot, serializeActiveTabPixels, handleSwitchTab, dispatch, setTabs, setActiveTabId, setPendingLayerData, onRecentFilesUpdated])
@@ -379,7 +388,7 @@ export function useFileOps({
       }
     }
     const doc = {
-      version: 5,
+      version: 6,
       pixelFormat: state.pixelFormat,
       canvas: { width: state.canvas.width, height: state.canvas.height, backgroundFill: state.canvas.backgroundFill },
       activeLayerId: state.activeLayerId,
@@ -394,6 +403,7 @@ export function useFileOps({
       swatches: state.swatches,
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
+      spritesheet: state.spritesheet,
     }
     await window.api.saveverveFile(path, JSON.stringify(doc))
     const savedPath = path
@@ -445,7 +455,7 @@ export function useFileOps({
       }
     }
     const doc2 = {
-      version: 5,
+      version: 6,
       pixelFormat: state.pixelFormat,
       canvas: { width: state.canvas.width, height: state.canvas.height, backgroundFill: state.canvas.backgroundFill },
       activeLayerId: state.activeLayerId,
@@ -460,6 +470,7 @@ export function useFileOps({
       swatches: state.swatches,
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
+      spritesheet: state.spritesheet,
     }
     await window.api.saveverveFile(path, JSON.stringify(doc2))
     // The current tab's filePath is NOT updated — this is a copy.

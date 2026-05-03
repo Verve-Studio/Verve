@@ -19,6 +19,8 @@ import { Toolbar } from '@/ux/main/Toolbar/Toolbar'
 import { Canvas } from '@/ux/main/Canvas/Canvas'
 import { RightPanel } from '@/ux/main/RightPanel/RightPanel'
 import { StatusBar } from '@/ux/main/StatusBar/StatusBar'
+import { PlaybackBar } from '@/ux/main/PlaybackBar/PlaybackBar'
+import { AnimationPanel } from '@/ux/main/AnimationPanel/AnimationPanel'
 import { AdjustmentPanel } from '@/ux/windows/ToolWindow'
 import { NewImageDialog } from '@/ux/modals/NewImageDialog/NewImageDialog'
 import { ExportDialog } from '@/ux/modals/ExportDialog/ExportDialog'
@@ -64,6 +66,7 @@ export interface MainWindowProps {
   showTileGrid: boolean
   showRulers: boolean
   showGuides: boolean
+  animationMode: boolean
 
   // Tabs
   tabs: TabRecord[]
@@ -178,6 +181,7 @@ export interface MainWindowProps {
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
+  handleSetAnimationMode: (enabled: boolean) => void
   handleToggleRulers: () => void
   handleToggleGuides: () => void
   handleApplyGuidePreset: (preset: GuidePreset) => void
@@ -207,6 +211,22 @@ export interface MainWindowProps {
 
   // Adjustment + filter guards
   requireTransformDecision: (action: () => void) => void
+
+  // Playback
+  isPlaying: boolean
+  isLooping: boolean
+  currentFrame: number
+  totalFrames: number
+  onPlayPause: () => void
+  onLoopToggle: () => void
+  onPrevFrame: () => void
+  onNextFrame: () => void
+  onPrevAnimation: () => void
+  onNextAnimation: () => void
+
+  // Animation panel
+  onCopyPrevFrame: (animationId: string, frameId: string) => void
+  onCopyNextFrame: (animationId: string, frameId: string) => void
 }
 
 // ─── MainWindow ───────────────────────────────────────────────────────────────
@@ -215,7 +235,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
   const {
     isMac,
     activeTool, pixelFormat, activeLayerId, openAdjustmentLayerId, swatches,
-    canvasWidth, canvasHeight, zoom, showGrid, tiledMode, showTileGrid, showRulers, showGuides,
+    canvasWidth, canvasHeight, zoom, showGrid, tiledMode, showTileGrid, showRulers, showGuides, animationMode,
     tabs, tabInfos, activeTabId, canvasHandleRef,
     pendingLayerData, setPendingLayerData, tabCanvasRef,
     captureHistory, pendingLayerLabelRef, dispatch,
@@ -246,7 +266,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer,
     handleResizeImage, handleResizeCanvas, handleRotate, handleFlip, handleRotateSelectedLayers, handleFlipSelectedLayers, layerArrange,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
-    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid, handleSetAnimationMode,
     handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers, findLayersCounter,
@@ -254,6 +274,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     guardedSwitchTab, guardedCloseTab, handleClose, handleCloseAll,
     handleOpenCafDialog, handleCafConfirm, handleOpenFilterDialog,
     requireTransformDecision,
+    isPlaying, isLooping, currentFrame, totalFrames, onPlayPause, onLoopToggle, onPrevFrame, onNextFrame, onPrevAnimation, onNextAnimation,
+    onCopyPrevFrame, onCopyNextFrame,
   } = props
 
   return (
@@ -304,6 +326,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         tiledMode={tiledMode}
         onToggleTileGrid={handleToggleTileGrid}
         showTileGrid={showTileGrid}
+        onSetAnimationMode={handleSetAnimationMode}
+        animationMode={animationMode}
         onNewLayer={handleNewLayer}
         onNewCompositeLayer={handleCreateCompositeLayer}
         onAddLayerMask={handleAddMaskLayer}
@@ -388,6 +412,12 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           })}
           <ContentAwareFillProgress visible={isContentAwareFilling} label={contentAwareFillLabel} sublabel="Analyzing image…" />
         </main>
+        {animationMode && (
+          <AnimationPanel
+            onCopyPrevFrame={onCopyPrevFrame}
+            onCopyNextFrame={onCopyNextFrame}
+          />
+        )}
         <RightPanel
           activeTabId={activeTabId}
           onMergeSelected={handleMergeSelected}
@@ -406,6 +436,20 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         />
       </div>
 
+      {animationMode && (
+        <PlaybackBar
+          isPlaying={isPlaying}
+          isLooping={isLooping}
+          currentFrame={currentFrame}
+          totalFrames={totalFrames}
+          onPrevAnimation={onPrevAnimation}
+          onPrevFrame={onPrevFrame}
+          onPlayPause={onPlayPause}
+          onNextFrame={onNextFrame}
+          onNextAnimation={onNextAnimation}
+          onLoopToggle={onLoopToggle}
+        />
+      )}
       <StatusBar />
 
       {openAdjustmentLayerId !== null && (

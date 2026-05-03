@@ -74,6 +74,7 @@ interface MacNativeMenuParams {
   handleSetNormalMode: () => void
   handleSetTiledMode: () => void
   handleToggleTileGrid: () => void
+  handleSetAnimationMode: (enabled: boolean) => void
   handleSelectAll: () => void
   handleDeselect: () => void
   handleSelectAllLayers: () => void
@@ -113,6 +114,7 @@ interface MacNativeMenuParams {
   showGuides: boolean
   tiledMode: boolean
   showTileGrid: boolean
+  animationMode: boolean
 }
 
 export function useMacNativeMenu(params: MacNativeMenuParams): void {
@@ -129,7 +131,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
-    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid, handleSetAnimationMode,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     colorMode,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
@@ -141,7 +143,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
     hasSelection, isContentAwareFilling,
-    pixelFormat, showGrid, showRulers, showGuides, tiledMode, showTileGrid,
+    pixelFormat, showGrid, showRulers, showGuides, tiledMode, showTileGrid, animationMode,
   } = params
 
   // A ref that holds the latest action dispatcher (avoids stale closures in the IPC listener).
@@ -254,6 +256,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'guidePreset:safe-zone':  handleApplyGuidePreset('safe-zone'); break
       case 'setNormalMode':    handleSetNormalMode(); break
       case 'setTiledMode':     handleSetTiledMode(); break
+      case 'setAnimationMode': handleSetAnimationMode(!animationMode); break
       case 'toggleTileGrid':   handleToggleTileGrid(); break
       case 'preferences':      openPreferencesDialog(); break
       case 'about':            openAboutDialog(); break
@@ -280,7 +283,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer, handleMergeSelected,
     handleMergeDown, handleMergeVisible, handleFlattenImage, handleZoomIn, handleZoomOut,
     handleZoom100, handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides, handleApplyGuidePreset, handleEnterTransform,
-    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid, handleSetAnimationMode,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
     handleOpenCafDialog,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
@@ -334,11 +337,12 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       toggleGrid:   showGrid,
       toggleRulers: showRulers,
       toggleGuides: showGuides,
-      normalMode:   !tiledMode,
-      tiledMode:    tiledMode,
+      normalMode:   !tiledMode && !animationMode,
+      tiledMode:    tiledMode && !animationMode,
       showTileGrid: showTileGrid,
+      animationMode: animationMode,
     })
-  }, [isMac, showGrid, showRulers, showGuides, tiledMode, showTileGrid])
+  }, [isMac, showGrid, showRulers, showGuides, tiledMode, showTileGrid, animationMode])
 
   // Sync panel open/closed states to native menu checkboxes.
   useEffect(() => {

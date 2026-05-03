@@ -1,0 +1,74 @@
+@use '@/styles/variables' as vars;
+@use '@/styles/mixins' as m;
+
+.playbackBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  background-color: vars.$color-surface;
+  border-top: 1px solid vars.$color-border;
+  flex-shrink: 0;
+  padding: 0 12px;
+  gap: 16px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: vars.$radius-md;
+  color: vars.$color-text-dim;
+  cursor: pointer;
+  transition: background vars.$transition-fast, color vars.$transition-fast, border-color vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+    border-color: vars.$color-border-light;
+  }
+
+  &:active {
+    background: vars.$color-surface-selected;
+  }
+}
+
+.playBtn {
+  width: 30px;
+  color: vars.$color-text;
+}
+
+.btnActive {
+  color: vars.$color-accent-blue;
+  filter: drop-shadow(0 0 4px vars.$color-accent-blue);
+
+  &:hover {
+    color: vars.$color-accent-blue-hover;
+    filter: drop-shadow(0 0 6px vars.$color-accent-blue-hover);
+    border-color: vars.$color-accent-border;
+  }
+}
+
+.frameInfo {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.frameLabel {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  user-select: none;
+  white-space: nowrap;
+}

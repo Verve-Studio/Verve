@@ -328,6 +328,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         sep(),
         { id: 'normalMode', label: 'Normal Mode', type: 'checkbox', checked: true, click: () => send('setNormalMode') },
         { id: 'tiledMode', label: 'Tiled Mode', type: 'checkbox', checked: false, click: () => send('setTiledMode') },
+        { id: 'animationMode', label: 'Animation Mode', type: 'checkbox', checked: false, click: () => send('setAnimationMode') },
         sep(),
         { id: 'showTileGrid', label: 'Show Tile Grid', type: 'checkbox', checked: false, enabled: false, click: () => send('toggleTileGrid') },
         sep(),

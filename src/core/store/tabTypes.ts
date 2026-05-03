@@ -1,5 +1,5 @@
 import type { HistoryEntry } from '@/core/store/historyStore'
-import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush, PixelFormat, ToneMappingOperator } from '@/types'
+import type { LayerState, BackgroundFill, RGBAColor, SwatchGroup, PixelBrush, PixelFormat, ToneMappingOperator, SpritesheetState } from '@/types'
 
 // ─── Default swatch palette ───────────────────────────────────────────────────
 
@@ -38,6 +38,7 @@ export interface TabSnapshot {
   /** Pixel brushes stored with this document. */
   pixelBrushes: PixelBrush[]
   pixelFormat: PixelFormat
+  spritesheet?: SpritesheetState
 }
 
 // ─── Tab record ───────────────────────────────────────────────────────────────

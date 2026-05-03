@@ -246,11 +246,48 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     return { x: (lx + rx) / 2, y: (ly + ry) / 2 }
   }
 
+  // ── Frame-clip info: drives layout + clip in animation mode ────────────
+  const frameClipInfo = useMemo(() => {
+    if (!state.animationMode || !state.spritesheet.enabled) return null
+    const ss = state.spritesheet
+    const cellW = Math.max(1, ss.cellWidth)
+    const cellH = Math.max(1, ss.cellHeight)
+    const cols  = Math.max(1, Math.floor(width / cellW))
+    let globalIdx = 0
+    const selectedAnim = ss.animations.find(a => a.id === ss.selectedAnimationId) ?? ss.animations[0]
+    if (selectedAnim) {
+      let animStart = 0
+      for (const a of ss.animations) {
+        if (a.id === selectedAnim.id) break
+        animStart += a.frames.length
+      }
+      if (ss.selectedFrameId) {
+        const fi = selectedAnim.frames.findIndex(f => f.id === ss.selectedFrameId)
+        globalIdx = animStart + (fi >= 0 ? fi : 0)
+      } else {
+        globalIdx = animStart
+      }
+    }
+    const cellX = (globalIdx % cols) * cellW
+    const cellY = Math.floor(globalIdx / cols) * cellH
+    return { cellX, cellY, cellW, cellH }
+  }, [
+    state.animationMode,
+    state.spritesheet.enabled,
+    state.spritesheet.selectedAnimationId,
+    state.spritesheet.selectedFrameId,
+    state.spritesheet.cellWidth,
+    state.spritesheet.cellHeight,
+    width,
+    height,
+  ])
+
   useScrollZoom(
     isActive, isActiveRef, viewportRef, zoomRef, pendingScrollRef, scrollPosRef,
     state.canvas.zoom,
     (zoom) => dispatch({ type: 'SET_ZOOM', payload: zoom }),
-    width, height,
+    frameClipInfo ? frameClipInfo.cellW : width,
+    frameClipInfo ? frameClipInfo.cellH : height,
     getSelectionAnchorRef,
   )
 
@@ -264,11 +301,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     centeredOnceRef.current = true
     const dpr = window.devicePixelRatio
     const zoom = zoomRef.current
-    const canvasW = width  * zoom / dpr
-    const canvasH = height * zoom / dpr
-    // padding = canvasW (left/right) + canvasH (top/bottom); canvas center at 1.5×size
-    const left = canvasW + canvasW / 2 - vp.clientWidth  / 2
-    const top  = canvasH + canvasH / 2 - vp.clientHeight / 2
+    const logW = frameClipInfo ? frameClipInfo.cellW : width
+    const logH = frameClipInfo ? frameClipInfo.cellH : height
+    const padW = logW * zoom / dpr
+    const padH = logH * zoom / dpr
+    // padding = padW (left/right) + padH (top/bottom); logical-canvas centre at 1.5×pad
+    const left = padW + padW / 2 - vp.clientWidth  / 2
+    const top  = padH + padH / 2 - vp.clientHeight / 2
     vp.scrollLeft = Math.max(0, left)
     vp.scrollTop  = Math.max(0, top)
     scrollPosRef.current = { left: vp.scrollLeft, top: vp.scrollTop }
@@ -281,6 +320,36 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     selectionStore.setDimensions(width, height)
     return () => { selectionStore.clear() }
   }, [width, height, isActive])
+
+  // ── Animation mode: fit viewport to the selected frame cell ────────────
+  // Layout already clips to the cell via clip-path + offset canvasWrapper.
+  // This effect only needs to pick a good zoom and centre the scroll.
+  useEffect(() => {
+    if (!isActive || !frameClipInfo) return
+    const { cellW, cellH } = frameClipInfo
+    const vp = viewportRef.current
+    if (!vp) return
+    const dpr = window.devicePixelRatio || 1
+    const newZoom = parseFloat(
+      Math.max(0.05, Math.min(32, Math.min(
+        (vp.clientWidth  / (cellW / dpr)) * 0.95,
+        (vp.clientHeight / (cellH / dpr)) * 0.95,
+      ))).toFixed(4)
+    )
+    dispatch({ type: 'SET_ZOOM', payload: newZoom })
+    requestAnimationFrame(() => {
+      const vp2 = viewportRef.current
+      if (!vp2) return
+      const z = newZoom
+      // padding = cellW*z/dpr on each side; centre scroll centres the cell
+      const scrollLeft = Math.max(0, cellW * z / dpr + cellW / 2 * z / dpr - vp2.clientWidth  / 2)
+      const scrollTop  = Math.max(0, cellH * z / dpr + cellH / 2 * z / dpr - vp2.clientHeight / 2)
+      vp2.scrollLeft = scrollLeft
+      vp2.scrollTop  = scrollTop
+      scrollPosRef.current = { left: scrollLeft, top: scrollTop }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, frameClipInfo])
 
   // ── Marching ants + crop overlay + polygonal selection overlay ──
   useMarchingAnts(isActive, overlayRef, viewportRef, canvasWrapperRef, zoomRef, activeToolRef)
@@ -1239,24 +1308,53 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     <div ref={viewportRef} className={styles.viewport} data-canvas-viewport data-active-viewport={isActive ? '' : undefined}>
       <div
         className={styles.viewportInner}
-        style={{
-          // Explicit size so browsers count the full area in scrollWidth/scrollHeight.
-          // (Trailing padding on block/flex children is excluded from scroll bounds in Chromium.)
-          // Canvas sits at (canvasCssW, canvasCssH) via absolute positioning on canvasWrapper.
-          width:  `max(100%, ${3 * width  * state.canvas.zoom / window.devicePixelRatio}px)`,
-          height: `max(100%, ${3 * height * state.canvas.zoom / window.devicePixelRatio}px)`,
-        }}
+        style={(() => {
+          // In frame mode use cell dimensions as the logical canvas size so the
+          // scroll area is bounded to the frame, not the full sprite sheet.
+          const logW = frameClipInfo ? frameClipInfo.cellW : width
+          const logH = frameClipInfo ? frameClipInfo.cellH : height
+          const z    = state.canvas.zoom / window.devicePixelRatio
+          return {
+            width:  `max(100%, ${3 * logW * z}px)`,
+            height: `max(100%, ${3 * logH * z}px)`,
+            // Clip absolutely-positioned canvasWrapper so it cannot widen the scroll area
+            overflow: frameClipInfo ? 'hidden' : undefined,
+          }
+        })()}
       >
         <div
           ref={canvasWrapperRef}
           className={styles.canvasWrapper}
-          style={{
-            position: 'absolute',
-            left: width  * state.canvas.zoom / window.devicePixelRatio,
-            top:  height * state.canvas.zoom / window.devicePixelRatio,
-            width:  (state.canvas.tiledMode ? 3 : 1) * width  * state.canvas.zoom / window.devicePixelRatio,
-            height: (state.canvas.tiledMode ? 3 : 1) * height * state.canvas.zoom / window.devicePixelRatio,
-          }}
+          style={(() => {
+            const z   = state.canvas.zoom / window.devicePixelRatio
+            const w   = (state.canvas.tiledMode ? 3 : 1) * width  * z
+            const h   = (state.canvas.tiledMode ? 3 : 1) * height * z
+            if (frameClipInfo) {
+              const { cellX, cellY, cellW, cellH } = frameClipInfo
+              // Translate canvas so pixel (cellX, cellY) aligns with the scroll
+              // centre (padding = cellW/H on each side of viewportInner).
+              // clip-path hides every pixel outside the selected frame cell.
+              const top    = cellY * z
+              const right  = (width  - cellX - cellW) * z
+              const bottom = (height - cellY - cellH) * z
+              const left   = cellX * z
+              return {
+                position: 'absolute' as const,
+                left: (frameClipInfo.cellW - cellX) * z,
+                top:  (frameClipInfo.cellH - cellY) * z,
+                width:  w,
+                height: h,
+                clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px)`,
+              }
+            }
+            return {
+              position: 'absolute' as const,
+              left: `max(${width * z}px, calc(50% - ${(width * z) / 2}px))`,
+              top:  `max(${height * z}px, calc(50% - ${(height * z) / 2}px))`,
+              width:  w,
+              height: h,
+            }
+          })()}
         >
           <canvas
             ref={canvasRef}

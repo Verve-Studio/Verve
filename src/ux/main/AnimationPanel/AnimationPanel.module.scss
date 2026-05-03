@@ -1,0 +1,384 @@
+@use '@/styles/variables' as vars;
+
+// ─── Panel shell ──────────────────────────────────────────────────────────────
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background-color: vars.$color-surface;
+  border-left: 1px solid vars.$color-border;
+  overflow: hidden;
+  position: relative;
+  min-width: 220px;
+  max-width: 480px;
+}
+
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: ew-resize;
+  z-index: 10;
+
+  &:hover,
+  &:active {
+    background-color: vars.$color-accent-blue;
+    opacity: 0.5;
+  }
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 10px;
+}
+
+// ─── Section ──────────────────────────────────────────────────────────────────
+
+.section {
+  margin-bottom: 14px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: vars.$font-size-xs;
+  font-weight: 600;
+  color: vars.$color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding-bottom: 5px;
+  border-bottom: 1px solid vars.$color-border;
+  margin-bottom: 6px;
+}
+
+.separator {
+  height: 1px;
+  background: vars.$color-border;
+  margin: 5px 0;
+}
+
+// ─── Row ──────────────────────────────────────────────────────────────────────
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  min-height: 22px;
+}
+
+.rowDisabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.label {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+// ─── Toggle ───────────────────────────────────────────────────────────────────
+
+.toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+}
+
+.toggleDisabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.toggleTrack {
+  display: block;
+  width: 28px;
+  height: 16px;
+  background: vars.$color-surface-hover;
+  border-radius: 8px;
+  border: 1px solid vars.$color-border-light;
+  transition: background vars.$transition-base, border-color vars.$transition-base;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: vars.$color-text-muted;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: transform vars.$transition-base, background vars.$transition-base;
+  }
+}
+
+.toggle input:checked + .toggleTrack {
+  background: vars.$color-accent-blue;
+  border-color: vars.$color-accent-blue;
+
+  &::after {
+    background: #fff;
+    transform: translateX(12px);
+  }
+}
+
+// ─── Buttons ──────────────────────────────────────────────────────────────────
+
+.addBtn {
+  background: transparent;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  color: vars.$color-text-dim;
+  cursor: pointer;
+  font-size: vars.$font-size-base;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background vars.$transition-fast, color vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.removeBtn {
+  background: transparent;
+  border: none;
+  color: vars.$color-text-muted;
+  cursor: pointer;
+  font-size: 13px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: vars.$radius-sm;
+  line-height: 1;
+  transition: background vars.$transition-fast, color vars.$transition-fast;
+
+  &:hover {
+    background: rgba(vars.$color-danger, 0.2);
+    color: vars.$color-danger;
+  }
+}
+
+.empty {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  text-align: center;
+  padding: 6px 0;
+  font-style: italic;
+}
+
+// ─── Animation list ───────────────────────────────────────────────────────────
+
+.animItem {
+  background: vars.$color-surface-2;
+  border: 1px solid transparent;
+  border-radius: vars.$radius-md;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background vars.$transition-fast, border-color vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+}
+
+.animSelected {
+  background: vars.$color-accent !important;
+  border-color: vars.$color-accent-border !important;
+}
+
+.animRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+.nameInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: vars.$color-text;
+  font-size: vars.$font-size-sm;
+  font-family: inherit;
+  padding: 0 2px;
+  cursor: text;
+  transition: border-color vars.$transition-fast, background vars.$transition-fast;
+
+  &:focus {
+    outline: none;
+    border-bottom-color: vars.$color-focus;
+    background: vars.$color-surface;
+  }
+}
+
+.animMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 18px;
+  margin-bottom: 5px;
+}
+
+.metaLabel {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  flex-shrink: 0;
+  width: 76px;
+}
+
+.modeSelect {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  box-sizing: border-box;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  color: vars.$color-text-dim;
+  font-size: vars.$font-size-xs;
+  font-family: inherit;
+  padding: 0 4px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+
+  &:focus {
+    outline: none;
+    border-color: vars.$color-focus;
+  }
+}
+
+// ─── Frame list ───────────────────────────────────────────────────────────────
+
+.frameItem {
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-md;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: border-color vars.$transition-fast;
+
+  &:hover {
+    border-color: vars.$color-border-light;
+  }
+}
+
+.frameSelected {
+  border-color: vars.$color-accent-border !important;
+  background: vars.$color-accent;
+}
+
+.frameHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.frameIndex {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  font-weight: 600;
+}
+
+.frameActions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.frameActionBtn {
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  color: vars.$color-text-dim;
+  cursor: pointer;
+  font-size: vars.$font-size-xs;
+  padding: 1px 5px;
+  transition: background vars.$transition-fast, color vars.$transition-fast;
+
+  &:hover:not(:disabled) {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.frameRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  min-height: 20px;
+}
+
+.frameLabel {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.frameSuffix {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  flex-shrink: 0;
+}
+
+.readonlyVal {
+  flex: 1;
+  min-width: 0;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-dim;
+  font-family: vars.$font-mono;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-sm;
+  padding: 1px 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

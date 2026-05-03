@@ -23,6 +23,7 @@ import { useDialogState } from '@/core/services/useDialogState'
 import { useViewActions } from '@/core/services/useViewActions'
 import { useTransformGuard } from '@/core/services/useTransformGuard'
 import { useMacNativeMenu } from '@/core/services/useMacNativeMenu'
+import { useAnimationPlayback } from '@/core/services/useAnimationPlayback'
 import { cloneStampStore } from '@/core/store/cloneStampStore'
 import { pixelBrushStore } from '@/core/store/pixelBrushStore'
 import { MainWindow } from '@/ux/main/MainWindow/MainWindow'
@@ -280,10 +281,14 @@ function AppContent(): React.JSX.Element {
     handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
     handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleSetAnimationMode,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers,
   } = useViewActions({ dispatch, stateRef, canvasHandleRef })
+
+  // ── Playback state ────────────────────────────────────────────────
+  const playback = useAnimationPlayback(state, dispatch)
 
   // ── Sync state.pixelFormat → active TabRecord.pixelFormat ────────
   // SET_PIXEL_FORMAT updates state but not the tabs array; keep them in sync.
@@ -450,7 +455,7 @@ function AppContent(): React.JSX.Element {
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
-    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid, handleSetAnimationMode,
     handleToggleRulers, handleToggleGuides,
     handleApplyGuidePreset,
     handleSelectAll, handleDeselect, handleSelectAllLayers, handleDeselectLayers, handleFindLayers,
@@ -482,6 +487,7 @@ function AppContent(): React.JSX.Element {
     showTileGrid: state.canvas.showTileGrid,
     showRulers:   state.canvas.showRulers,
     showGuides:   state.canvas.showGuides,
+    animationMode: state.animationMode,
   })
 
   return (
@@ -506,6 +512,7 @@ function AppContent(): React.JSX.Element {
       showGuides={state.canvas.showGuides}
       tiledMode={state.canvas.tiledMode}
       showTileGrid={state.canvas.showTileGrid}
+      animationMode={state.animationMode}
       tabs={tabs}
       tabInfos={tabInfos}
       activeTabId={activeTabId}
@@ -596,6 +603,60 @@ function AppContent(): React.JSX.Element {
       handleSetNormalMode={handleSetNormalMode}
       handleSetTiledMode={handleSetTiledMode}
       handleToggleTileGrid={handleToggleTileGrid}
+      handleSetAnimationMode={handleSetAnimationMode}
+      isPlaying={playback.isPlaying}
+      isLooping={playback.isLooping}
+      currentFrame={playback.currentFrameIdx + 1}
+      totalFrames={playback.selectedAnim?.frames.length ?? 0}
+      onPlayPause={playback.onPlayPause}
+      onLoopToggle={playback.onLoopToggle}
+      onPrevFrame={playback.onPrevFrame}
+      onNextFrame={playback.onNextFrame}
+      onPrevAnimation={playback.onPrevAnimation}
+      onNextAnimation={playback.onNextAnimation}
+      onCopyPrevFrame={useCallback((animationId: string, frameId: string) => {
+        const ss = stateRef.current.spritesheet
+        const anim = ss.animations.find(a => a.id === animationId)
+        if (!anim) return
+        const fi = anim.frames.findIndex(f => f.id === frameId)
+        if (fi <= 0) return  // no previous frame
+        const cellW = Math.max(1, ss.cellWidth)
+        const cellH = Math.max(1, ss.cellHeight)
+        const cols  = Math.max(1, Math.floor(state.canvas.width / cellW))
+        // compute global indices for prev and current frames
+        let animStart = 0
+        for (const a of ss.animations) {
+          if (a.id === animationId) break
+          animStart += a.frames.length
+        }
+        const srcIdx = animStart + fi - 1
+        const dstIdx = animStart + fi
+        const srcX = (srcIdx % cols) * cellW,  srcY = Math.floor(srcIdx / cols) * cellH
+        const dstX = (dstIdx % cols) * cellW,  dstY = Math.floor(dstIdx / cols) * cellH
+        captureHistory('Copy From Previous Frame')
+        canvasHandleRef.current?.copyCellRect(srcX, srcY, dstX, dstY, cellW, cellH)
+      }, [stateRef, state.canvas.width, captureHistory, canvasHandleRef])}
+      onCopyNextFrame={useCallback((animationId: string, frameId: string) => {
+        const ss = stateRef.current.spritesheet
+        const anim = ss.animations.find(a => a.id === animationId)
+        if (!anim) return
+        const fi = anim.frames.findIndex(f => f.id === frameId)
+        if (fi < 0 || fi >= anim.frames.length - 1) return  // no next frame
+        const cellW = Math.max(1, ss.cellWidth)
+        const cellH = Math.max(1, ss.cellHeight)
+        const cols  = Math.max(1, Math.floor(state.canvas.width / cellW))
+        let animStart = 0
+        for (const a of ss.animations) {
+          if (a.id === animationId) break
+          animStart += a.frames.length
+        }
+        const srcIdx = animStart + fi + 1
+        const dstIdx = animStart + fi
+        const srcX = (srcIdx % cols) * cellW,  srcY = Math.floor(srcIdx / cols) * cellH
+        const dstX = (dstIdx % cols) * cellW,  dstY = Math.floor(dstIdx / cols) * cellH
+        captureHistory('Copy From Next Frame')
+        canvasHandleRef.current?.copyCellRect(srcX, srcY, dstX, dstY, cellW, cellH)
+      }, [stateRef, state.canvas.width, captureHistory, canvasHandleRef])}
       handleSelectAll={handleSelectAll}
       handleDeselect={handleDeselect}
       handleSelectAllLayers={handleSelectAllLayers}

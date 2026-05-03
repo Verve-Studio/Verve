@@ -80,10 +80,12 @@ export function useViewActions({ dispatch, stateRef, canvasHandleRef }: ViewActi
 
   const handleSetNormalMode = useCallback(() => {
     dispatch({ type: 'SET_TILED_MODE', payload: false })
+    dispatch({ type: 'SET_ANIMATION_MODE', payload: false })
   }, [dispatch])
 
   const handleSetTiledMode = useCallback(() => {
     dispatch({ type: 'SET_TILED_MODE', payload: true })
+    dispatch({ type: 'SET_ANIMATION_MODE', payload: false })
   }, [dispatch])
 
   const handleToggleTileGrid = useCallback(() => {
@@ -113,12 +115,17 @@ export function useViewActions({ dispatch, stateRef, canvasHandleRef }: ViewActi
     setFindLayersCounter(c => c + 1)
   }, [])
 
+  const handleSetAnimationMode = useCallback((enabled: boolean): void => {
+    dispatch({ type: 'SET_ANIMATION_MODE', payload: enabled })
+  }, [dispatch])
+
   return {
     findLayersCounter,
     handleZoomIn, handleZoomOut, handleZoom100,
     handleFitToWindow, handleToggleGrid, handleToggleRulers, handleToggleGuides,
     handleApplyGuidePreset,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
+    handleSetAnimationMode,
     handleSelectAll, handleDeselect,
     handleSelectAllLayers, handleDeselectLayers,
     handleFindLayers,
