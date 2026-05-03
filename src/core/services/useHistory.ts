@@ -45,7 +45,6 @@ export function useHistory({
   const prevLayersRef         = useRef(layers)
 
   const captureHistory = useCallback((label: string, overrides?: { swatches?: RGBAColor[] }): void => {
-    if (isRestoringRef.current) return
     if (suppressReadyCaptureRef.current) {
       suppressReadyCaptureRef.current = false
       return
