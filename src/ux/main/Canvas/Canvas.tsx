@@ -1398,7 +1398,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       canvasWrapperRef={canvasWrapperRef}
       onCommit={(ls) => dispatch({ type: 'UPDATE_TEXT_LAYER', payload: ls })}
       onClose={() => {
-        onStrokeEndRef.current?.('Text')
+        // If the layer being closed is empty (never typed into), destroy it.
+        const closingLayer = state.layers.find(
+          (l) => 'type' in l && l.type === 'text' && l.id === editingLayerId
+        )
+        if (closingLayer && 'text' in closingLayer && closingLayer.text.trim() === '') {
+          dispatch({ type: 'REMOVE_LAYER', payload: editingLayerId! })
+        } else {
+          onStrokeEndRef.current?.('Text')
+        }
         setEditingLayerId(null)
       }}
     />

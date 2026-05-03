@@ -446,31 +446,31 @@ function TextOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Eleme
 
   const ALIGN_BUTTONS: { value: TextAlign; title: string; icon: React.JSX.Element }[] = [
     { value: 'left', title: 'Align Left', icon: (
-      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor">
-        <rect x="0" y="0"  width="14" height="2"/>
-        <rect x="0" y="5"  width="9"  height="2"/>
-        <rect x="0" y="10" width="14" height="2"/>
+      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor" style={{ display: 'block' }}>
+        <rect x="0" y="0"  width="14" height="1"/>
+        <rect x="0" y="5"  width="9"  height="1"/>
+        <rect x="0" y="10" width="14" height="1"/>
       </svg>
     )},
     { value: 'center', title: 'Align Center', icon: (
-      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor">
-        <rect x="0" y="0"  width="14" height="2"/>
-        <rect x="2.5" y="5" width="9" height="2"/>
-        <rect x="0" y="10" width="14" height="2"/>
+      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor" style={{ display: 'block' }}>
+        <rect x="0"   y="0"  width="14" height="1"/>
+        <rect x="2.5" y="5"  width="9"  height="1"/>
+        <rect x="0"   y="10" width="14" height="1"/>
       </svg>
     )},
     { value: 'right', title: 'Align Right', icon: (
-      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor">
-        <rect x="0" y="0"  width="14" height="2"/>
-        <rect x="5" y="5"  width="9"  height="2"/>
-        <rect x="0" y="10" width="14" height="2"/>
+      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor" style={{ display: 'block' }}>
+        <rect x="0" y="0"  width="14" height="1"/>
+        <rect x="5" y="5"  width="9"  height="1"/>
+        <rect x="0" y="10" width="14" height="1"/>
       </svg>
     )},
     { value: 'justify', title: 'Justify', icon: (
-      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor">
-        <rect x="0" y="0"  width="14" height="2"/>
-        <rect x="0" y="5"  width="14" height="2"/>
-        <rect x="0" y="10" width="14" height="2"/>
+      <svg width="14" height="12" viewBox="0 0 14 12" fill="currentColor" style={{ display: 'block' }}>
+        <rect x="0" y="0"  width="14" height="1"/>
+        <rect x="0" y="5"  width="14" height="1"/>
+        <rect x="0" y="10" width="14" height="1"/>
       </svg>
     )},
   ]
@@ -521,10 +521,10 @@ function TextOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Eleme
         >{icon}</button>
       ))}
       <span className={styles.optSep} data-text-editor-safe />
-      <label className={styles.optLabel} data-text-editor-safe>LS:</label>
+      <label className={styles.optLabel} data-text-editor-safe>Spacing:</label>
       <span data-text-editor-safe><SliderInput value={letterSpacingMilliems} min={-200} max={1000} inputWidth={46} onChange={handleLetterSpacing} /></span>
       <span className={styles.optSep} data-text-editor-safe />
-      <label className={styles.optLabel} data-text-editor-safe>LH:</label>
+      <label className={styles.optLabel} data-text-editor-safe>Line Height:</label>
       <span data-text-editor-safe><SliderInput value={lineHeight} min={0.5} max={4} step={0.05} inputWidth={46} onChange={handleLineHeight} /></span>
       <span className={styles.optSep} data-text-editor-safe />
       <label className={styles.optLabel} data-text-editor-safe>Kern:</label>
