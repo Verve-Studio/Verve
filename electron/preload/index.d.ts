@@ -38,6 +38,17 @@ declare global {
       saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle
       exitApp: () => Promise<void>
+      // Startup file path (CLI arg)
+      getStartupFile: () => Promise<string | null>
+      onOpenFile: (callback: (path: string) => void) => (() => void)
+      // File Associations
+      getFileAssocState: () => Promise<{
+        supported: Array<{ ext: string; label: string }>
+        registered: string[]
+        platform: string
+        error?: string
+      }>
+      applyFileAssoc: (exts: string[]) => Promise<{ success: boolean; error?: string }>
       // System info
       getSystemInfo: () => Promise<{
         osName: string

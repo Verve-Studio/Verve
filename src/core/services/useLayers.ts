@@ -25,6 +25,7 @@ export interface UseLayersReturn {
   handleDeleteActiveLayer: () => void
   handleFlattenImage:     () => void
   handleRasterizeLayer:   (layerId: string) => void
+  handleAddMaskLayer:     () => void
 }
 
 function isPixelRootLayer(layer: LayerState): boolean {
@@ -291,9 +292,22 @@ export function useLayers({
     }
   }, [canvasHandleRef, stateRef, captureHistory, dispatch])
 
+  const handleAddMaskLayer = useCallback((): void => {
+    const { activeLayerId, layers } = stateRef.current
+    if (!activeLayerId) return
+    const hasMask = layers.some(
+      l => 'type' in l && l.type === 'mask' && (l as { parentId: string }).parentId === activeLayerId
+    )
+    if (hasMask) return
+    dispatch({
+      type: 'ADD_MASK_LAYER',
+      payload: { id: `mask-${Date.now()}`, name: 'Layer Mask', visible: true, type: 'mask', parentId: activeLayerId },
+    })
+  }, [stateRef, dispatch])
+
   return {
     handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleFlattenImage, handleRasterizeLayer,
+    handleFlattenImage, handleRasterizeLayer, handleAddMaskLayer,
   }
 }

@@ -114,6 +114,13 @@ const DeleteLayerIcon = (): React.JSX.Element => (
   </svg>
 )
 
+const DuplicateLayerIcon = (): React.JSX.Element => (
+  <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" width="12" height="12">
+    <rect x="4" y="4" width="8" height="8" rx="1" />
+    <path d="M2 10V2h8" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 const FolderIcon = (): React.JSX.Element => (
   <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" width="13" height="13">
     <path d="M1 4h12v7a1 1 0 01-1 1H2a1 1 0 01-1-1V4z" />
@@ -158,6 +165,7 @@ interface LayerPanelProps {
   onMergeGroup:        (groupId: string) => void
   onGroupSelected:     (layerIds: string[]) => void
   onUngroup:           (groupId: string) => void
+  onCreateCompositeLayer: () => void
   activeTabId?:        string
   findLayersTrigger?:  number
 }
@@ -175,6 +183,7 @@ export function Layers({
   onMergeGroup,
   onGroupSelected,
   onUngroup,
+  onCreateCompositeLayer,
   activeTabId,
   findLayersTrigger,
 }: LayerPanelProps): React.JSX.Element {
@@ -456,7 +465,8 @@ export function Layers({
   // ── Layer panel header state ──────────────────────────────────────────────────
 
   const activeLayer = layers.find((l) => l.id === activeLayerId)
-  const canDelete = layers.length > 1
+  const effectiveDeleteIds = [...new Set([...selectedIds, ...(activeLayerId ? [activeLayerId] : [])])]
+  const canDelete = layers.length > effectiveDeleteIds.length
   const isChildLayer = (l: LayerState): boolean =>
     'type' in l && (l.type === 'mask' || l.type === 'adjustment')
 
@@ -933,9 +943,30 @@ export function Layers({
         <button className={styles.footerBtn} onClick={onAddGroup} aria-label="New group" title="New layer group">
           <AddGroupIcon />
         </button>
+        <button className={styles.footerBtn} onClick={onCreateCompositeLayer} aria-label="New composite layer" title="New composite layer">
+          <CompositeIcon />
+        </button>
         <button
           className={styles.footerBtn}
-          onClick={() => activeLayerId && onLayerDelete(activeLayerId)}
+          onClick={() => activeLayerId && onAddMaskLayer(activeLayerId)}
+          aria-label="Add layer mask"
+          title="Add layer mask"
+          disabled={!canAddMask}
+        >
+          <MaskIcon active={false} />
+        </button>
+        <button
+          className={styles.footerBtn}
+          onClick={onDuplicateLayer}
+          aria-label="Duplicate layer"
+          title="Duplicate layer"
+          disabled={!activeLayerId}
+        >
+          <DuplicateLayerIcon />
+        </button>
+        <button
+          className={styles.footerBtn}
+          onClick={() => { for (const id of effectiveDeleteIds) onLayerDelete(id) }}
           aria-label="Delete layer"
           title="Delete layer"
           disabled={!canDelete}
@@ -964,6 +995,12 @@ export function Layers({
             </button>
             <button
               className={styles.menuItem}
+              onMouseDown={() => { closeContextMenu(); onCreateCompositeLayer() }}
+            >
+              New Composite Layer
+            </button>
+            <button
+              className={styles.menuItem}
               disabled={!canRasterize}
               onMouseDown={() => { closeContextMenu(); if (activeLayerId) onRasterizeLayer(activeLayerId) }}
             >
@@ -981,7 +1018,7 @@ export function Layers({
               disabled={!canDelete}
               onMouseDown={() => {
                 closeContextMenu()
-                if (activeLayerId) onLayerDelete(activeLayerId)
+                for (const id of effectiveDeleteIds) onLayerDelete(id)
               }}
             >
               Delete Layer

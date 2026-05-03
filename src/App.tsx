@@ -57,6 +57,8 @@ function AppContent(): React.JSX.Element {
     pendingConversion, setPendingConversion,
   } = useDialogState()
 
+  const [showPreferencesDialog, setShowPreferencesDialog] = useState(false)
+
   // ── Notification / progress state ────────────────────────────────
   const [cloneStampNotification,  setCloneStampNotification]  = useState<string | null>(null)
   const [isContentAwareFilling,   setIsContentAwareFilling]   = useState(false)
@@ -131,6 +133,16 @@ function AppContent(): React.JSX.Element {
     onRecentFilesUpdated: setRecentFiles,
   })
 
+  // ── Startup file (CLI arg or macOS open-with) ─────────────────────
+  const handleOpenPathRef = useRef(handleOpenPath)
+  handleOpenPathRef.current = handleOpenPath
+  useEffect(() => {
+    void window.api.getStartupFile().then(path => {
+      if (path) void handleOpenPathRef.current(path)
+    })
+    return window.api.onOpenFile(path => { void handleOpenPathRef.current(path) })
+  }, []) // mount-only
+
   // ── Export operations ────────────────────────────────────────────
   const { handleExportConfirm, pendingLdrExport, clearPendingLdrExport, confirmLdrExport } = useExportOps({ canvasHandleRef, stateRef })
 
@@ -143,7 +155,7 @@ function AppContent(): React.JSX.Element {
   const {
     handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleFlattenImage, handleRasterizeLayer,
+    handleFlattenImage, handleRasterizeLayer, handleAddMaskLayer,
   } = useLayers({ canvasHandleRef, stateRef, captureHistory, dispatch, pendingLayerLabelRef })
 
   // ── Layer groups ──────────────────────────────────────────────────
@@ -434,7 +446,7 @@ function AppContent(): React.JSX.Element {
     handleUndo, handleRedo, handleCut, handleCopy, handleCopyMerged, handlePaste, handlePasteInto, handleDelete,
     handleOpenCafDialog,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
-    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
+    handleRasterizeLayer, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer,
     handleMergeSelected, handleMergeDown, handleMergeVisible, handleFlattenImage,
     handleEnterTransform,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
@@ -456,6 +468,7 @@ function AppContent(): React.JSX.Element {
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
     openSystemInfoDialog:    () => setShowSystemInfoDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),
+    openPreferencesDialog:   () => setShowPreferencesDialog(true),
     activeLayerId: state.activeLayerId,
     effectiveSelectedIds,
     isFreeTransformEnabled,
@@ -524,6 +537,7 @@ function AppContent(): React.JSX.Element {
       showResizeDialog={showResizeDialog}               setShowResizeDialog={setShowResizeDialog}
       showResizeCanvasDialog={showResizeCanvasDialog}   setShowResizeCanvasDialog={setShowResizeCanvasDialog}
       showAboutDialog={showAboutDialog}                 setShowAboutDialog={setShowAboutDialog}
+      showPreferencesDialog={showPreferencesDialog}     setShowPreferencesDialog={setShowPreferencesDialog}
       showShortcutsDialog={showShortcutsDialog}         setShowShortcutsDialog={setShowShortcutsDialog}
       showSystemInfoDialog={showSystemInfoDialog}       setShowSystemInfoDialog={setShowSystemInfoDialog}
       showLensFlareDialog={showLensFlareDialog}         setShowLensFlareDialog={setShowLensFlareDialog}
@@ -563,6 +577,7 @@ function AppContent(): React.JSX.Element {
       handleGroupLayers={handleGroupLayers}
       handleUngroupLayers={handleUngroupLayers}
       handleCreateCompositeLayer={handleCreateCompositeLayer}
+      handleAddMaskLayer={handleAddMaskLayer}
       handleResizeImage={handleResizeImage}
       handleResizeCanvas={handleResizeCanvas}
       handleRotate={handleRotate}

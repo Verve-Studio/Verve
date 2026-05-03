@@ -53,6 +53,7 @@ interface TopBarProps {
   onNewLayer?: () => void
   onNewLayerGroup?: () => void
   onNewCompositeLayer?: () => void
+  onAddLayerMask?: () => void
   onDuplicateLayer?: () => void
   onDeleteLayer?: () => void
   onGroupLayers?: () => void
@@ -99,6 +100,7 @@ interface TopBarProps {
   onOpenRecent?: (path: string) => void
   onClearRecentFiles?: () => void
   onExit?: () => void
+  onPreferences?: () => void
   /** Current document pixel format — drives the Image → Color Mode checked states. */
   pixelFormat?: PixelFormat
   /** Called when the user picks a color mode from Image → Color Mode. */
@@ -107,7 +109,7 @@ interface TopBarProps {
   isMac?: boolean
 }
 
-export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onNewCompositeLayer, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onLayerRotate, onLayerFlip, onLayerAlign, onLayerDistribute, onLayerOrder, onAbout, onKeyboardShortcuts, onSystemInfo, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode, isMac }: TopBarProps): React.JSX.Element {
+export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onNewCompositeLayer, onAddLayerMask, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onLayerRotate, onLayerFlip, onLayerAlign, onLayerDistribute, onLayerOrder, onAbout, onKeyboardShortcuts, onSystemInfo, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, onPreferences, pixelFormat, onSetColorMode, isMac }: TopBarProps): React.JSX.Element {
   const dockLayout = useDockLayout()
   const menus = useMemo((): MenuDef[] => [
     {
@@ -136,6 +138,8 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
         { label: 'Save As\u2026',    shortcut: 'Ctrl+Shift+S', action: onSaveAs },
         { label: 'Save a Copy\u2026',                          action: onSaveACopy },
         { label: 'Export As\u2026',  shortcut: 'Ctrl+E',       action: onExport },
+        { separator: true, label: '' },
+        { label: 'Preferences…', action: onPreferences },
         { separator: true, label: '' },
         { label: 'Exit',             action: onExit },
       ]
@@ -179,6 +183,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
         { label: 'New Layer',       shortcut: 'Ctrl+Shift+N', action: onNewLayer },
         { label: 'New Layer Group',                           action: onNewLayerGroup },
         { label: 'New Composite Layer',                       action: onNewCompositeLayer },
+        { label: 'Add Layer Mask',  disabled: !onAddLayerMask, action: onAddLayerMask },
         { label: 'Duplicate Layer',                           action: onDuplicateLayer },
         { label: 'Delete Layer',                              action: onDeleteLayer },
         { separator: true, label: '' },
@@ -376,7 +381,7 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
         { label: 'Open DevTools',      action: onDebug },
       ]
     }
-  ], [isMac, dockLayout, onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onNewCompositeLayer, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onLayerRotate, onLayerFlip, onLayerAlign, onLayerDistribute, onLayerOrder, onAbout, onKeyboardShortcuts, onSystemInfo, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode])
+  ], [isMac, dockLayout, onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onNewCompositeLayer, onAddLayerMask, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onLayerRotate, onLayerFlip, onLayerAlign, onLayerDistribute, onLayerOrder, onAbout, onKeyboardShortcuts, onSystemInfo, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, onPreferences, pixelFormat, onSetColorMode])
 
   // On macOS the native application menu replaces the entire custom top bar.
   if (isMac) return <></>

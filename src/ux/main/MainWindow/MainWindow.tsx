@@ -25,6 +25,7 @@ import { ExportDialog } from '@/ux/modals/ExportDialog/ExportDialog'
 import { ResizeImageDialog } from '@/ux/modals/ResizeImageDialog/ResizeImageDialog'
 import { ResizeCanvasDialog } from '@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog'
 import { AboutDialog } from '@/ux/modals/AboutDialog/AboutDialog'
+import { PreferencesDialog } from '@/ux/modals/PreferencesDialog/PreferencesDialog'
 import { HdrLdrExportWarningDialog } from '@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
 import { KeyboardShortcutsDialog } from '@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
 import { SystemInfoDialog } from '@/ux/modals/SystemInfoDialog/SystemInfoDialog'
@@ -108,6 +109,7 @@ export interface MainWindowProps {
   showResizeDialog: boolean;        setShowResizeDialog:        (v: boolean) => void
   showResizeCanvasDialog: boolean;  setShowResizeCanvasDialog:  (v: boolean) => void
   showAboutDialog: boolean;         setShowAboutDialog:         (v: boolean) => void
+  showPreferencesDialog: boolean;   setShowPreferencesDialog:   (v: boolean) => void
   showShortcutsDialog: boolean;     setShowShortcutsDialog:     (v: boolean) => void
   showSystemInfoDialog: boolean;    setShowSystemInfoDialog:    (v: boolean) => void
   showLensFlareDialog: boolean;     setShowLensFlareDialog:     (v: boolean) => void
@@ -156,6 +158,7 @@ export interface MainWindowProps {
   handleGroupLayers: (ids: string[]) => void
   handleUngroupLayers: (id: string) => void
   handleCreateCompositeLayer: () => void
+  handleAddMaskLayer: () => void
 
   // Canvas transform handlers
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>
@@ -225,6 +228,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     showResizeDialog, setShowResizeDialog,
     showResizeCanvasDialog, setShowResizeCanvasDialog,
     showAboutDialog, setShowAboutDialog,
+    showPreferencesDialog, setShowPreferencesDialog,
     showShortcutsDialog, setShowShortcutsDialog,
     showSystemInfoDialog, setShowSystemInfoDialog,
     showLensFlareDialog, setShowLensFlareDialog,
@@ -239,7 +243,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleUndo, handleRedo, handleCopy, handleCopyMerged, handleCut, handlePaste, handlePasteInto, handleDelete,
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
-    handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
+    handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer, handleAddMaskLayer,
     handleResizeImage, handleResizeCanvas, handleRotate, handleFlip, handleRotateSelectedLayers, handleFlipSelectedLayers, layerArrange,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
@@ -302,6 +306,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         showTileGrid={showTileGrid}
         onNewLayer={handleNewLayer}
         onNewCompositeLayer={handleCreateCompositeLayer}
+        onAddLayerMask={handleAddMaskLayer}
         onDuplicateLayer={handleDuplicateLayer}
         onDeleteLayer={handleDeleteActiveLayer}
         onMergeDown={handleMergeDown}
@@ -317,6 +322,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onLayerDistribute={(axis) => layerArrange.handleDistribute(axis)}
         onLayerOrder={(op) => layerArrange.handleOrder(op)}
         onAbout={() => setShowAboutDialog(true)}
+        onPreferences={() => setShowPreferencesDialog(true)}
         onKeyboardShortcuts={() => setShowShortcutsDialog(true)}
         onSystemInfo={() => setShowSystemInfoDialog(true)}
         onCreateAdjustmentLayer={(type) => requireTransformDecision(() => {
@@ -395,6 +401,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           onMergeGroup={handleMergeGroup}
           onGroupSelected={handleGroupLayers}
           onUngroup={handleUngroupLayers}
+          onCreateCompositeLayer={handleCreateCompositeLayer}
           findLayersTrigger={findLayersCounter}
         />
       </div>
@@ -439,6 +446,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
       <AboutDialog
         open={showAboutDialog}
         onClose={() => setShowAboutDialog(false)}
+      />
+      <PreferencesDialog
+        open={showPreferencesDialog}
+        onClose={() => setShowPreferencesDialog(false)}
       />
       <HdrLdrExportWarningDialog
         open={pendingLdrExport !== null}

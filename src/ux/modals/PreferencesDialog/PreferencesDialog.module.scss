@@ -1,0 +1,206 @@
+@use '@/styles/variables' as vars;
+
+// ─── Layout ───────────────────────────────────────────────────────────────────
+
+.layout {
+  display: flex;
+  height: 420px;
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+
+.sidebar {
+  width: 148px;
+  flex-shrink: 0;
+  border-right: 1px solid vars.$color-border;
+  padding: vars.$spacing-2 0;
+  background: vars.$color-surface;
+}
+
+.sidebarItem {
+  display: flex;
+  align-items: center;
+  gap: vars.$spacing-2;
+  padding: 7px vars.$spacing-3;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  cursor: pointer;
+  user-select: none;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  border-radius: 0;
+  transition: background vars.$transition-fast, color vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+  }
+
+  &.active {
+    background: vars.$color-accent;
+    color: vars.$color-text;
+  }
+}
+
+// ─── Content ──────────────────────────────────────────────────────────────────
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sectionHeader {
+  padding: vars.$spacing-3 vars.$spacing-4;
+  border-bottom: 1px solid vars.$color-border;
+  font-size: vars.$font-size-sm;
+  font-weight: 600;
+  color: vars.$color-text;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+}
+
+.sectionBody {
+  flex: 1;
+  padding: vars.$spacing-3 vars.$spacing-4;
+  display: flex;
+  flex-direction: column;
+  gap: vars.$spacing-3;
+  overflow: hidden;
+}
+
+// ─── Transfer list ────────────────────────────────────────────────────────────
+
+.transferRow {
+  flex: 1;
+  display: flex;
+  gap: vars.$spacing-2;
+  min-height: 0;
+}
+
+.transferColumn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: vars.$spacing-1;
+  min-width: 0;
+}
+
+.columnLabel {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.listBox {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-md;
+  padding: 2px;
+
+  &:focus-within {
+    border-color: vars.$color-accent-border;
+  }
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  cursor: default;
+  border-radius: vars.$radius-sm;
+  user-select: none;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+
+  &.selected {
+    background: vars.$color-accent;
+    color: vars.$color-text;
+  }
+}
+
+// ─── Move buttons ─────────────────────────────────────────────────────────────
+
+.moveButtons {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: vars.$spacing-1;
+  flex-shrink: 0;
+}
+
+.moveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  color: vars.$color-text-dim;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background vars.$transition-fast, color vars.$transition-fast, border-color vars.$transition-fast;
+
+  &:hover:not(:disabled) {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+    border-color: vars.$color-text-muted;
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+// ─── Status / hint ────────────────────────────────────────────────────────────
+
+.hint {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  flex-shrink: 0;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: vars.$spacing-2;
+  font-size: vars.$font-size-xs;
+  min-height: 16px;
+  flex-shrink: 0;
+}
+
+.statusOk {
+  color: #6db86d;
+}
+
+.statusError {
+  color: vars.$color-danger;
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: vars.$spacing-2;
+  padding: 10px 14px;
+  border-top: 1px solid vars.$color-border;
+  flex-shrink: 0;
+}

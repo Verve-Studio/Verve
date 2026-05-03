@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process'
 import os from 'node:os'
 import { registerSamHandlers } from './sam'
 import { registerMattingHandlers } from './matting'
+import { SUPPORTED_FILE_TYPES, getRegisteredExtensions, applyExtensions } from './fileAssociations'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('debug:openDevTools', (event) => {
@@ -277,4 +278,35 @@ export function registerIpcHandlers(): void {
 
   registerSamHandlers()
   registerMattingHandlers()
+
+  // ── File Associations ─────────────────────────────────────────────────────────
+
+  ipcMain.handle('fileAssoc:getState', () => {
+    try {
+      return {
+        supported: SUPPORTED_FILE_TYPES,
+        registered: getRegisteredExtensions(),
+        platform: process.platform,
+      }
+    } catch (e) {
+      return {
+        supported: SUPPORTED_FILE_TYPES,
+        registered: [],
+        platform: process.platform,
+        error: e instanceof Error ? e.message : String(e),
+      }
+    }
+  })
+
+  ipcMain.handle('fileAssoc:apply', (_event, exts: string[]) => {
+    // Validate: only allow known extensions
+    const valid = new Set(SUPPORTED_FILE_TYPES.map(t => t.ext))
+    const sanitized = exts.filter((e): e is string => typeof e === 'string' && valid.has(e))
+    try {
+      applyExtensions(sanitized)
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }

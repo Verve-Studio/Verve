@@ -147,7 +147,7 @@ export function SystemInfoDialog({ open, onClose }: SystemInfoDialogProps): Reac
       </div>
 
       <div className={styles.footer}>
-        <DialogButton onClick={onClose} primary>Close</DialogButton>
+        <DialogButton width='196px' align='center' onClick={onClose} primary>Close</DialogButton>
       </div>
     </ModalDialog>
   )

@@ -81,6 +81,8 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       submenu: [
         { role: 'about', label: `About ${appName}` },
         sep(),
+        item('Preferences\u2026', 'preferences', { accelerator: 'CmdOrCtrl+,' }),
+        sep(),
         { role: 'services' },
         sep(),
         { role: 'hide' },
@@ -167,6 +169,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         item('New Layer', 'newLayer', { accelerator: 'CmdOrCtrl+Shift+N' }),
         item('New Layer Group', 'newLayerGroup'),
         item('New Composite Layer', 'newCompositeLayer'),
+        item('Add Layer Mask', 'addLayerMask'),
         item('Duplicate Layer', 'duplicateLayer'),
         item('Delete Layer', 'deleteLayer'),
         sep(),
