@@ -8,6 +8,7 @@ import type { UseColorModeReturn } from '@/core/services/useColorMode'
 import type { Tool, PixelFormat, RGBAColor } from '@/types'
 import type { FilterKey } from '@/types'
 import type { GuidePreset } from '@/core/services/useViewActions'
+import type { AlignEdge, DistributeAxis, OrderOp } from '@/core/services/useLayerArrange'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import type { TabInfo } from '@/ux/main/TabBar/TabBar'
 import type { ExportSettings } from '@/ux/modals/ExportDialog/ExportDialog'
@@ -161,6 +162,9 @@ export interface MainWindowProps {
   handleResizeCanvas: (s: ResizeCanvasSettings) => void
   handleRotate: (amount: '90cw' | '180' | '270cw') => Promise<void>
   handleFlip: (axis: 'horizontal' | 'vertical') => Promise<void>
+  handleRotateSelectedLayers: (amount: '90cw' | '180' | '270cw') => Promise<void>
+  handleFlipSelectedLayers: (axis: 'horizontal' | 'vertical') => Promise<void>
+  layerArrange: { handleAlign: (e: AlignEdge) => void; handleDistribute: (a: DistributeAxis) => void; handleOrder: (o: OrderOp) => void }
 
   // View handlers
   handleZoomIn: () => void
@@ -236,7 +240,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleNewLayer, handleDuplicateLayer, handleDeleteActiveLayer,
     handleRasterizeLayer, handleMergeSelected, handleMergeDown, handleMergeVisible,
     handleFlattenImage, handleMergeGroup, handleGroupLayers, handleUngroupLayers, handleCreateCompositeLayer,
-    handleResizeImage, handleResizeCanvas, handleRotate, handleFlip,
+    handleResizeImage, handleResizeCanvas, handleRotate, handleFlip, handleRotateSelectedLayers, handleFlipSelectedLayers, layerArrange,
     handleZoomIn, handleZoomOut, handleZoom100, handleFitToWindow, handleToggleGrid,
     handleSetNormalMode, handleSetTiledMode, handleToggleTileGrid,
     handleToggleRulers, handleToggleGuides, handleApplyGuidePreset,
@@ -307,6 +311,11 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         isRasterizeEnabled={isRasterizeLayerEnabled}
         onMergeSelected={() => handleMergeSelected([...effectiveSelectedIds])}
         isMergeSelectedEnabled={isMergeSelectedEnabled}
+        onLayerRotate={(amount) => handleRotateSelectedLayers(amount)}
+        onLayerFlip={(axis) => handleFlipSelectedLayers(axis)}
+        onLayerAlign={(edge) => layerArrange.handleAlign(edge)}
+        onLayerDistribute={(axis) => layerArrange.handleDistribute(axis)}
+        onLayerOrder={(op) => layerArrange.handleOrder(op)}
         onAbout={() => setShowAboutDialog(true)}
         onKeyboardShortcuts={() => setShowShortcutsDialog(true)}
         onSystemInfo={() => setShowSystemInfoDialog(true)}

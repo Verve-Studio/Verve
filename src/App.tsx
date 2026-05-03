@@ -567,6 +567,9 @@ function AppContent(): React.JSX.Element {
       handleResizeCanvas={handleResizeCanvas}
       handleRotate={handleRotate}
       handleFlip={handleFlip}
+      handleRotateSelectedLayers={handleRotateSelectedLayers}
+      handleFlipSelectedLayers={handleFlipSelectedLayers}
+      layerArrange={layerArrange}
       handleZoomIn={handleZoomIn}
       handleZoomOut={handleZoomOut}
       handleZoom100={handleZoom100}
