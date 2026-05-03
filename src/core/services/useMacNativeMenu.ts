@@ -90,6 +90,7 @@ interface MacNativeMenuParams {
   handleFlip:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
   handleRotateSelectedLayers: (amount: import('./useCanvasTransforms').RotateAmount) => Promise<void>
   handleFlipSelectedLayers:   (axis:   import('./useCanvasTransforms').FlipAxis)    => Promise<void>
+  layerArrange: import('./useLayerArrange').UseLayerArrangeReturn
   openAboutDialog: () => void
   openShortcutsDialog: () => void
   openColorDitheringSetup: () => void
@@ -130,6 +131,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
     handleRotate, handleFlip,
     handleRotateSelectedLayers, handleFlipSelectedLayers,
+    layerArrange,
     openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
@@ -201,6 +203,19 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'layer:rotate270CW': void handleRotateSelectedLayers('270cw');    break
       case 'layer:flipHorizontal': void handleFlipSelectedLayers('horizontal'); break
       case 'layer:flipVertical':   void handleFlipSelectedLayers('vertical');   break
+      case 'layer:alignLeft':     layerArrange.handleAlign('left');     break
+      case 'layer:alignCenterV':  layerArrange.handleAlign('centerV');  break
+      case 'layer:alignRight':    layerArrange.handleAlign('right');    break
+      case 'layer:alignTop':      layerArrange.handleAlign('top');      break
+      case 'layer:alignCenterH':  layerArrange.handleAlign('centerH'); break
+      case 'layer:alignBottom':   layerArrange.handleAlign('bottom');   break
+      case 'layer:distributeH':   layerArrange.handleDistribute('horizontal'); break
+      case 'layer:distributeV':   layerArrange.handleDistribute('vertical');   break
+      case 'layer:orderFront':    layerArrange.handleOrder('front');    break
+      case 'layer:orderBack':     layerArrange.handleOrder('back');     break
+      case 'layer:orderForward':  layerArrange.handleOrder('forward');  break
+      case 'layer:orderBackward': layerArrange.handleOrder('backward'); break
+      case 'layer:orderReverse':  layerArrange.handleOrder('reverse');  break
       case 'freeTransform':    requireTransformDecision(handleEnterTransform); break
       case 'invertSelection':  selectionStore.invert(); break
       case 'selectAll':        handleSelectAll(); break

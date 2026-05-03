@@ -94,6 +94,8 @@ export interface CanvasHandle {
    * will use this data instead of the default all-white fill.
    */
   prepareMaskLayer: (maskId: string, maskName: string, selPixels: Uint8Array) => void
+  /** Trigger a re-render of the canvas without modifying any layer data. Use after imperatively mutating GpuLayer.offsetX/Y. */
+  invalidate: () => void
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -643,5 +645,7 @@ export function useCanvasHandle({
       glLayersRef.current.set(maskId, layer)
       // No render here — the caller will trigger a render via dispatch
     },
+
+    invalidate: () => { renderFromPlan() },
   }), [width, height]) // eslint-disable-line react-hooks/exhaustive-deps
 }

@@ -199,6 +199,7 @@ export function Layers({
   const setSelectedIds = (next: Set<string>): void => { dispatch({ type: 'SET_SELECTED_LAYERS', payload: [...next] }) }
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flipX: boolean } | null>(null)
   const dragSrcLayerIdRef = useRef<string | null>(null)
+  const anchorLayerIdRef  = useRef<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   // Separate drag state for reordering adjustment children within a parent
   const adjDragSrcIdRef = useRef<string | null>(null)
@@ -354,15 +355,27 @@ export function Layers({
 
   // ── Interaction ──────────────────────────────────────────────────────────────
 
+  const isMac = window.api.platform === 'darwin'
+
   const handleLayerClick = (layer: LayerState, e: React.MouseEvent): void => {
-    if (e.ctrlKey || e.metaKey) {
+    const isMultiKey = isMac ? e.altKey : e.ctrlKey
+    if (isMultiKey) {
       const next = new Set(selectedIds)
       if (next.has(layer.id)) next.delete(layer.id)
       else next.add(layer.id)
       setSelectedIds(next)
+      anchorLayerIdRef.current = layer.id
+    } else if (e.shiftKey && anchorLayerIdRef.current !== null) {
+      const anchorIdx = filteredRows.findIndex(r => r.layer.id === anchorLayerIdRef.current)
+      const clickIdx  = filteredRows.findIndex(r => r.layer.id === layer.id)
+      if (anchorIdx >= 0 && clickIdx >= 0) {
+        const [lo, hi] = [Math.min(anchorIdx, clickIdx), Math.max(anchorIdx, clickIdx)]
+        setSelectedIds(new Set(filteredRows.slice(lo, hi + 1).map(r => r.layer.id)))
+      }
     } else {
       onActiveLayerChange(layer.id)
       setSelectedIds(new Set())
+      anchorLayerIdRef.current = layer.id
       if ('type' in layer && layer.type === 'adjustment') {
         onOpenAdjustmentPanel?.(layer.id)
       }

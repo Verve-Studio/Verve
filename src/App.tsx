@@ -10,6 +10,7 @@ import { useClipboard } from '@/core/services/useClipboard'
 import { useLayers } from '@/core/services/useLayers'
 import { useLayerGroups } from '@/core/services/useLayerGroups'
 import { useCanvasTransforms } from '@/core/services/useCanvasTransforms'
+import { useLayerArrange } from '@/core/services/useLayerArrange'
 import { useKeyboardShortcuts } from '@/core/services/useKeyboardShortcuts'
 import { useAdjustments } from '@/core/services/useAdjustments'
 import { useFilters } from '@/core/services/useFilters'
@@ -155,6 +156,9 @@ function AppContent(): React.JSX.Element {
     activeTabId, setTabs, setPendingLayerData, pendingLayerLabelRef,
     canvasWidth: state.canvas.width, canvasHeight: state.canvas.height,
   })
+
+  // ── Layer arrange (align / distribute / order) ──────────────────────
+  const layerArrange = useLayerArrange({ canvasHandleRef, stateRef, captureHistory, dispatch })
 
   // ── Adjustments ───────────────────────────────────────────────────
   const getSelectionPixels = useCallback((): Uint8Array | null => {
@@ -448,6 +452,7 @@ function AppContent(): React.JSX.Element {
     handleFlip,
     handleRotateSelectedLayers,
     handleFlipSelectedLayers,
+    layerArrange,
     openAboutDialog:         () => setShowAboutDialog(true),
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),

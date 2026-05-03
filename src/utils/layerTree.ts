@@ -162,12 +162,31 @@ export function reorderRootLayers(
   srcId: string,
   dstIndex: number,
 ): LayerState[] {
+  const { clusters, remaining } = buildClusters(layers)
+
+  const realRootIds = clusters.map(c => c[0].id)
+  const srcClusterIdx = realRootIds.findIndex(id => id === srcId)
+  if (srcClusterIdx === -1) return [...layers]
+
+  const [srcCluster] = clusters.splice(srcClusterIdx, 1)
+  // dstIndex 0 = topmost in panel = highest render priority = last in render order.
+  const renderDst = Math.max(0, Math.min(clusters.length, clusters.length - dstIndex))
+  clusters.splice(renderDst, 0, srcCluster)
+
+  return [...clusters.flat(), ...remaining]
+}
+
+/**
+ * Build ordered clusters (bottom-to-top) from a flat layer array.
+ * Each cluster is [rootLayer, ...children/masks/adjustments].
+ * `remaining` contains layers not covered by any cluster (orphaned sub-layers).
+ */
+export function buildClusters(layers: readonly LayerState[]): { clusters: LayerState[][]; remaining: LayerState[] } {
   const realRootIds = buildRootLayerIds(layers).filter(id => {
     const l = layers.find(x => x.id === id)
     return l !== undefined && !('type' in l && (l.type === 'mask' || l.type === 'adjustment'))
   })
 
-  // Build clusters: each cluster is root layer + all associated layers.
   function collectCluster(rootId: string): LayerState[] {
     const root = layers.find(l => l.id === rootId)
     if (!root) return []
@@ -180,7 +199,6 @@ export function reorderRootLayers(
         const l = layers.find(x => x.id === id)
         if (l) { cluster.push(l); usedIds.add(id) }
       }
-      // Attached mask/adj of pixel descendants.
       for (const l of layers) {
         if ('type' in l && (l.type === 'mask' || l.type === 'adjustment')) {
           const parentId = (l as MaskLayerState | AdjustmentLayerState).parentId
@@ -190,7 +208,6 @@ export function reorderRootLayers(
         }
       }
     } else {
-      // Pixel / text / shape: attached mask/adj.
       for (const l of layers) {
         if ('type' in l && (l.type === 'mask' || l.type === 'adjustment') &&
           (l as MaskLayerState | AdjustmentLayerState).parentId === rootId) {
@@ -204,16 +221,7 @@ export function reorderRootLayers(
   const clusters = realRootIds.map(id => collectCluster(id))
   const usedIds = new Set(clusters.flat().map(l => l.id))
   const remaining = layers.filter(l => !usedIds.has(l.id))
-
-  const srcClusterIdx = realRootIds.findIndex(id => id === srcId)
-  if (srcClusterIdx === -1) return [...layers]
-
-  const [srcCluster] = clusters.splice(srcClusterIdx, 1)
-  // dstIndex 0 = topmost in panel = highest render priority = last in render order.
-  const renderDst = Math.max(0, Math.min(clusters.length, clusters.length - dstIndex))
-  clusters.splice(renderDst, 0, srcCluster)
-
-  return [...clusters.flat(), ...remaining]
+  return { clusters, remaining }
 }
 
 // ─── Deep duplicate ───────────────────────────────────────────────────────────

@@ -193,6 +193,36 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
             item('Vertical',   'layer:flipVertical'),
           ],
         },
+        sep(),
+        {
+          label: 'Align',
+          submenu: [
+            item('Left',              'layer:alignLeft'),
+            item('Center Vertical',   'layer:alignCenterV'),
+            item('Right',             'layer:alignRight'),
+            item('Top',               'layer:alignTop'),
+            item('Center Horizontal', 'layer:alignCenterH'),
+            item('Bottom',            'layer:alignBottom'),
+          ],
+        },
+        {
+          label: 'Distribute',
+          submenu: [
+            item('Horizontally', 'layer:distributeH'),
+            item('Vertically',   'layer:distributeV'),
+          ],
+        },
+        {
+          label: 'Order',
+          submenu: [
+            item('Bring to Front', 'layer:orderFront'),
+            item('Bring to Back',  'layer:orderBack'),
+            item('Forward',        'layer:orderForward'),
+            item('Backward',       'layer:orderBackward'),
+            sep(),
+            item('Reverse Order',  'layer:orderReverse'),
+          ],
+        },
       ],
     },
 
