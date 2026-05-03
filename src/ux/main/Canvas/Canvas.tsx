@@ -215,6 +215,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     width,
     height,
     viewportRef,
+    pendingScrollRef,
     onZoom: (zoom) => dispatch({ type: 'SET_ZOOM', payload: zoom }),
     tiledMode: state.canvas.tiledMode,
     requestRender: doRender,

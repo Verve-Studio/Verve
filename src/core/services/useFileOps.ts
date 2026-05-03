@@ -132,7 +132,7 @@ export function useFileOps({
     }
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: fmt, exposureEV: 0, toneMappingOperator: 'reinhard' },
+      { id: newId, title: `Untitled-${n + 1}`, filePath: null, snapshot: newSnapshot, savedLayerData: null, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: fmt, exposureEV: 0, toneMappingOperator: 'reinhard', animationMode: false },
     ]
     setTabs(updated)
     setActiveTabId(newId)
@@ -180,7 +180,7 @@ export function useFileOps({
         const newId          = makeTabId()
         const updated: TabRecord[] = [
           ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-          { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba32f' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' },
+          { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba32f' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard', animationMode: false },
         ]
         setTabs(updated)
         setActiveTabId(newId)
@@ -214,7 +214,7 @@ export function useFileOps({
       const savedLayerData = serializeActiveTabPixels()
       const updated: TabRecord[] = [
         ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' },
+        { id: newId, title, filePath: null, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: 'rgba8' as PixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard', animationMode: false },
       ]
       setTabs(updated)
       setActiveTabId(newId)
@@ -310,7 +310,7 @@ export function useFileOps({
     const newId          = makeTabId()
     const updated: TabRecord[] = [
       ...tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData } : t),
-      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: docPixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' as ToneMappingOperator },
+      { id: newId, title, filePath: path, snapshot: newSnapshot, savedLayerData: layerData, savedHistory: null, canvasKey: 1, tiledMode: false, showTileGrid: false, pixelFormat: docPixelFormat, exposureEV: 0, toneMappingOperator: 'reinhard' as ToneMappingOperator, animationMode: false },
     ]
     setTabs(updated)
     setActiveTabId(newId)
@@ -323,6 +323,7 @@ export function useFileOps({
     if (docSpritesheet) {
       dispatch({ type: 'SET_SPRITESHEET', payload: docSpritesheet })
     }
+    // animationMode is never serialized — always open in normal mode
     const updated2 = await window.api.addRecentFile(path)
     onRecentFilesUpdated?.(updated2)
   }, [tabs, activeTabId, captureActiveSnapshot, serializeActiveTabPixels, handleSwitchTab, dispatch, setTabs, setActiveTabId, setPendingLayerData, onRecentFilesUpdated])

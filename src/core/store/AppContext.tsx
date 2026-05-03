@@ -549,6 +549,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: 'layer-0',
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
+        animationMode: false,
+        spritesheet: initialState.spritesheet,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -633,6 +635,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? 'rgba8',
+        animationMode: false,
+        spritesheet: initialState.spritesheet,
         canvas: {
           ...state.canvas,
           width: action.payload.width,

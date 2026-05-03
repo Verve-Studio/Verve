@@ -406,6 +406,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
                   setPendingLayerData(null)
                   captureHistory(pendingLayerLabelRef.current ?? 'Initial State')
                   pendingLayerLabelRef.current = null
+                  canvasHandleRef.current?.fitToWindow()
                 }}
               />
             )

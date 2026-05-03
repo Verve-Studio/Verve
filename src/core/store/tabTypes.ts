@@ -63,6 +63,8 @@ export interface TabRecord {
   exposureEV: number
   /** Session-only: tone-mapping operator for this tab. Not persisted. */
   toneMappingOperator: ToneMappingOperator
+  /** Session-only: whether this tab is in animation mode. Not persisted. */
+  animationMode: boolean
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

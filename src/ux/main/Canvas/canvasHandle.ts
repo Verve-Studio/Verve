@@ -118,6 +118,7 @@ interface UseCanvasHandleParams {
   width: number
   height: number
   viewportRef: React.RefObject<HTMLDivElement | null>
+  pendingScrollRef: React.MutableRefObject<{ scrollLeft: number; scrollTop: number } | null>
   onZoom: (zoom: number) => void
   tiledMode?: boolean
   /** Re-renders both the WebGPU canvas and (if active) the tiled 2D overlay. */
@@ -135,6 +136,7 @@ export function useCanvasHandle({
   width,
   height,
   viewportRef,
+  pendingScrollRef,
   onZoom,
   tiledMode,
   requestRender,
@@ -403,13 +405,21 @@ export function useCanvasHandle({
       const vp = viewportRef.current
       if (!vp) return
       const dpr = window.devicePixelRatio || 1
-      const margin = 0.9
       const scale = tiledMode ? 3 : 1
-      const zoom = Math.min(
-        (vp.clientWidth  / (width  * scale / dpr)) * margin,
-        (vp.clientHeight / (height * scale / dpr)) * margin,
-      )
-      onZoom(parseFloat(Math.max(0.05, Math.min(32, zoom)).toFixed(4)))
+      const logW = width  * scale
+      const logH = height * scale
+      const zoom = parseFloat(Math.max(0.05, Math.min(32, Math.min(
+        vp.clientWidth  / (logW / dpr),
+        vp.clientHeight / (logH / dpr),
+      ) * 0.95)).toFixed(4))
+      // Set pending scroll so useScrollZoom's layout effect applies centering
+      // atomically with the zoom commit — avoids a rAF race on large canvases.
+      const z = zoom / dpr
+      pendingScrollRef.current = {
+        scrollLeft: Math.max(0, logW * z + (logW / 2) * z - vp.clientWidth  / 2),
+        scrollTop:  Math.max(0, logH * z + (logH / 2) * z - vp.clientHeight / 2),
+      }
+      onZoom(zoom)
     },
 
     restoreAllLayerPixels: (data, geometry?, layerStateForRender?) => {

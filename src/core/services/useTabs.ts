@@ -156,11 +156,14 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
         pixelFormat:    toTab.snapshot.pixelFormat ?? 'rgba8',
       },
     })
+    dispatch({ type: 'SET_ANIMATION_MODE', payload: toTab.animationMode ?? false })
     dispatch({ type: 'SET_SWATCHES', payload: toTab.snapshot.swatches ?? DEFAULT_SWATCHES })
     dispatch({ type: 'SET_SWATCH_GROUPS', payload: toTab.snapshot.swatchGroups ?? [] })
     dispatch({ type: 'SET_PIXEL_BRUSHES', payload: toTab.snapshot.pixelBrushes ?? [] })
     if (toTab.snapshot.spritesheet) {
       dispatch({ type: 'SET_SPRITESHEET', payload: toTab.snapshot.spritesheet })
+    } else {
+      dispatch({ type: 'SET_SPRITESHEET', payload: { enabled: false, animations: [], selectedAnimationId: null, selectedFrameId: null } })
     }
   }, [dispatch])
 
@@ -169,7 +172,7 @@ export function useTabs(state: AppState, dispatch: Dispatch<AppAction>): UseTabs
     const snapshot        = captureActiveSnapshot()
     const savedHistory    = historyStore.detach()
     const savedLayerData  = serializeActiveTabPixels()
-    const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator } : t)
+    const updated         = tabs.map(t => t.id === activeTabId ? { ...t, snapshot, savedHistory, savedLayerData, tiledMode: state.canvas.tiledMode, showTileGrid: state.canvas.showTileGrid, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, animationMode: state.animationMode } : t)
     setTabs(updated)
     switchToTab(toId, updated)
   }, [activeTabId, tabs, captureActiveSnapshot, serializeActiveTabPixels, switchToTab])
