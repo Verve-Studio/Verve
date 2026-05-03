@@ -990,6 +990,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       },
       guides: state.canvas.guides,
       maskMap: buildMaskMap(),
+      selectedLayerIds: state.selectedLayerIds,
     }
   }
 

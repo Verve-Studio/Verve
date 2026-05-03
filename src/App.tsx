@@ -48,6 +48,7 @@ function AppContent(): React.JSX.Element {
     showResizeCanvasDialog, setShowResizeCanvasDialog,
     showAboutDialog,        setShowAboutDialog,
     showShortcutsDialog,    setShowShortcutsDialog,
+    showSystemInfoDialog,   setShowSystemInfoDialog,
     showLensFlareDialog,    setShowLensFlareDialog,
     showGeneratePaletteDialog, setShowGeneratePaletteDialog,
     showColorDitheringSetup,   setShowColorDitheringSetup,
@@ -455,6 +456,7 @@ function AppContent(): React.JSX.Element {
     layerArrange,
     openAboutDialog:         () => setShowAboutDialog(true),
     openShortcutsDialog:     () => setShowShortcutsDialog(true),
+    openSystemInfoDialog:    () => setShowSystemInfoDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),
     activeLayerId: state.activeLayerId,
     effectiveSelectedIds,
@@ -526,6 +528,7 @@ function AppContent(): React.JSX.Element {
       showResizeCanvasDialog={showResizeCanvasDialog}   setShowResizeCanvasDialog={setShowResizeCanvasDialog}
       showAboutDialog={showAboutDialog}                 setShowAboutDialog={setShowAboutDialog}
       showShortcutsDialog={showShortcutsDialog}         setShowShortcutsDialog={setShowShortcutsDialog}
+      showSystemInfoDialog={showSystemInfoDialog}       setShowSystemInfoDialog={setShowSystemInfoDialog}
       showLensFlareDialog={showLensFlareDialog}         setShowLensFlareDialog={setShowLensFlareDialog}
       showGeneratePaletteDialog={showGeneratePaletteDialog} setShowGeneratePaletteDialog={setShowGeneratePaletteDialog}
       showColorDitheringSetup={showColorDitheringSetup} setShowColorDitheringSetup={setShowColorDitheringSetup}

@@ -68,6 +68,7 @@ export type { ResizeCanvasSettings } from './modals/ResizeCanvasDialog/ResizeCan
 export { AboutDialog } from './modals/AboutDialog/AboutDialog'
 export { HdrLdrExportWarningDialog } from './modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
 export { KeyboardShortcutsDialog } from './modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
+export { SystemInfoDialog } from './modals/SystemInfoDialog/SystemInfoDialog'
 export { SizeInputs } from './widgets/SizeInputs/SizeInputs'
 export type { SizeInputsProps } from './widgets/SizeInputs/SizeInputs'
 export { LensFlareDialog } from './windows/filters/LensFlareDialog/LensFlareDialog'

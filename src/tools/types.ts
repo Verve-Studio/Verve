@@ -78,8 +78,12 @@ export interface ToolContext {
    * Map from parent pixel-layer ID → its mask GpuLayer.
    * Used by tools (e.g. move) that need to keep the mask in sync with the parent.
    */
-  maskMap: Map<string, GpuLayer>
-}
+  maskMap: Map<string, GpuLayer>  /**
+   * IDs of all layers currently selected in the Layers panel (excluding the
+   * active layer, which is always implicitly included). Used by the move tool
+   * to move all selected layers together.
+   */
+  selectedLayerIds: readonly string[]}
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────
 

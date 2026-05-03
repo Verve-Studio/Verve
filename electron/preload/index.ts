@@ -57,6 +57,16 @@ const api = {
   // ── App lifecycle ─────────────────────────────────────────────────────────────
   exitApp: (): Promise<void> => ipcRenderer.invoke('app:exit'),
 
+  // ── System info ───────────────────────────────────────────────────────────────
+  getSystemInfo: (): Promise<{
+    osName: string
+    osVersion: string
+    cpuModel: string
+    cpuCores: number
+    totalRamBytes: number
+    gpus: Array<{ name: string; active: boolean; driverVersion: string }>
+  }> => ipcRenderer.invoke('system:getInfo'),
+
   // ── Platform & native menu (macOS) ────────────────────────────────
   platform: process.platform as string,
 

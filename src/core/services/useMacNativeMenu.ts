@@ -93,6 +93,7 @@ interface MacNativeMenuParams {
   layerArrange: import('./useLayerArrange').UseLayerArrangeReturn
   openAboutDialog: () => void
   openShortcutsDialog: () => void
+  openSystemInfoDialog: () => void
   openColorDitheringSetup: () => void
 
   // State for enabled/checked sync
@@ -132,7 +133,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleRotate, handleFlip,
     handleRotateSelectedLayers, handleFlipSelectedLayers,
     layerArrange,
-    openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
+    openAboutDialog, openShortcutsDialog, openSystemInfoDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     isFreeTransformEnabled, isRasterizeLayerEnabled, isMergeSelectedEnabled,
     hasSelection, isContentAwareFilling,
@@ -249,6 +250,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       case 'toggleTileGrid':   handleToggleTileGrid(); break
       case 'about':            openAboutDialog(); break
       case 'keyboardShortcuts': openShortcutsDialog(); break
+      case 'systemInfo':        openSystemInfoDialog(); break
       case 'colorMode:rgba8':    colorMode.handleConvertColorMode('rgba8');    break
       case 'colorMode:rgba32f':  colorMode.handleConvertColorMode('rgba32f');  break
       case 'colorMode:indexed8': colorMode.handleConvertColorMode('indexed8'); break
@@ -275,7 +277,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     handleOpenCafDialog,
     openNewImageDialog, openExportDialog, openResizeImageDialog, openResizeCanvasDialog,
     handleRotate, handleFlip,
-    openAboutDialog, openShortcutsDialog, openColorDitheringSetup,
+    openAboutDialog, openShortcutsDialog, openSystemInfoDialog, openColorDitheringSetup,
     activeLayerId, effectiveSelectedIds,
     colorMode,
   ])

@@ -66,6 +66,7 @@ interface TopBarProps {
   isMergeSelectedEnabled?: boolean
   onAbout?: () => void
   onKeyboardShortcuts?: () => void
+  onSystemInfo?: () => void
   onCreateAdjustmentLayer?: (type: AdjustmentType) => void
   isAdjustmentMenuEnabled?: boolean
   adjustmentMenuItems?: Array<{ type: AdjustmentType; label: string; group?: string }>
@@ -99,7 +100,7 @@ interface TopBarProps {
   isMac?: boolean
 }
 
-export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode, isMac }: TopBarProps): React.JSX.Element {
+export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onSystemInfo, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode, isMac }: TopBarProps): React.JSX.Element {
   const dockLayout = useDockLayout()
   const menus = useMemo((): MenuDef[] => [
     {
@@ -314,11 +315,12 @@ export function TopBar({ onDebug, onNew, onOpen, onSave, onSaveAs, onExport, onU
     {
       label: 'Help',
       items: [
-        { label: 'About Verve',      action: onAbout },
+        { label: 'About Verve',        action: onAbout },
         { label: 'Keyboard Shortcuts', shortcut: '?', action: onKeyboardShortcuts },
+        { label: 'System Information', action: onSystemInfo },
       ]
     }
-  ], [isMac, dockLayout, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode])
+  ], [isMac, dockLayout, onNew, onOpen, onSave, onSaveAs, onExport, onUndo, onRedo, onCut, onCopy, onCopyMerged, onPaste, onPasteInto, onDelete, onResizeImage, onResizeCanvas, onRotate90CW, onRotate180, onRotate270CW, onFlipHorizontal, onFlipVertical, onZoomIn, onZoomOut, onZoom100, onFitToWindow, onToggleGrid, showGrid, onToggleRulers, showRulers, onToggleGuides, showGuides, onApplyGuidePreset, onSetNormalMode, onSetTiledMode, tiledMode, onToggleTileGrid, showTileGrid, onNewLayer, onNewLayerGroup, onDuplicateLayer, onDeleteLayer, onGroupLayers, isGroupLayersEnabled, onUngroupLayers, isUngroupLayersEnabled, onMergeDown, onMergeVisible, onFlattenImage, onRasterizeLayer, isRasterizeEnabled, onMergeSelected, isMergeSelectedEnabled, onAbout, onKeyboardShortcuts, onSystemInfo, onCreateAdjustmentLayer, isAdjustmentMenuEnabled, adjustmentMenuItems, effectsMenuItems, onOpenFilterDialog, onInstantFilter, isFiltersMenuEnabled, filterMenuItems, onContentAwareFill, onContentAwareDelete, onFreeTransform, isFreeTransformEnabled, onInvertSelection, onSelectAll, onDeselect, onSelectAllLayers, onDeselectLayers, onFindLayers, onClose, onCloseAll, onSaveACopy, recentFiles, onOpenRecent, onClearRecentFiles, onExit, pixelFormat, onSetColorMode])
 
   // On macOS the native application menu replaces the entire custom top bar.
   if (isMac) return <></>

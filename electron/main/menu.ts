@@ -344,6 +344,7 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       submenu: [
         item('About Verve', 'about'),
         item('Keyboard Shortcuts', 'keyboardShortcuts'),
+        item('System Information', 'systemInfo'),
         sep(),
         item('Open DevTools', 'openDevTools'),
       ],

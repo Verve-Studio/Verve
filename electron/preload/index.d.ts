@@ -38,6 +38,15 @@ declare global {
       saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle
       exitApp: () => Promise<void>
+      // System info
+      getSystemInfo: () => Promise<{
+        osName: string
+        osVersion: string
+        cpuModel: string
+        cpuCores: number
+        totalRamBytes: number
+        gpus: Array<{ name: string; active: boolean; driverVersion: string }>
+      }>
       // Platform & native menu (macOS)
       platform: string
       onMenuAction: (callback: (actionId: string) => void) => (() => void)

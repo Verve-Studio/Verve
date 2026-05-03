@@ -26,6 +26,7 @@ import { ResizeCanvasDialog } from '@/ux/modals/ResizeCanvasDialog/ResizeCanvasD
 import { AboutDialog } from '@/ux/modals/AboutDialog/AboutDialog'
 import { HdrLdrExportWarningDialog } from '@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
 import { KeyboardShortcutsDialog } from '@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
+import { SystemInfoDialog } from '@/ux/modals/SystemInfoDialog/SystemInfoDialog'
 import { LensFlareDialog } from '@/ux/windows/filters/LensFlareDialog/LensFlareDialog'
 import { GeneratePaletteDialog } from '@/ux/modals/GeneratePaletteDialog/GeneratePaletteDialog'
 import { ColorDitheringSetupModal } from '@/ux/modals/ColorDitheringSetupModal/ColorDitheringSetupModal'
@@ -107,6 +108,7 @@ export interface MainWindowProps {
   showResizeCanvasDialog: boolean;  setShowResizeCanvasDialog:  (v: boolean) => void
   showAboutDialog: boolean;         setShowAboutDialog:         (v: boolean) => void
   showShortcutsDialog: boolean;     setShowShortcutsDialog:     (v: boolean) => void
+  showSystemInfoDialog: boolean;    setShowSystemInfoDialog:    (v: boolean) => void
   showLensFlareDialog: boolean;     setShowLensFlareDialog:     (v: boolean) => void
   showGeneratePaletteDialog: boolean; setShowGeneratePaletteDialog: (v: boolean) => void
   showColorDitheringSetup: boolean;   setShowColorDitheringSetup:   (v: boolean) => void
@@ -219,6 +221,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     showResizeCanvasDialog, setShowResizeCanvasDialog,
     showAboutDialog, setShowAboutDialog,
     showShortcutsDialog, setShowShortcutsDialog,
+    showSystemInfoDialog, setShowSystemInfoDialog,
     showLensFlareDialog, setShowLensFlareDialog,
     showGeneratePaletteDialog, setShowGeneratePaletteDialog,
     showColorDitheringSetup, setShowColorDitheringSetup,
@@ -304,6 +307,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         isMergeSelectedEnabled={isMergeSelectedEnabled}
         onAbout={() => setShowAboutDialog(true)}
         onKeyboardShortcuts={() => setShowShortcutsDialog(true)}
+        onSystemInfo={() => setShowSystemInfoDialog(true)}
         onCreateAdjustmentLayer={(type) => requireTransformDecision(() => {
           if (type === 'color-dithering') {
             setShowColorDitheringSetup(true)
@@ -434,6 +438,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
       <KeyboardShortcutsDialog
         open={showShortcutsDialog}
         onClose={() => setShowShortcutsDialog(false)}
+      />
+      <SystemInfoDialog
+        open={showSystemInfoDialog}
+        onClose={() => setShowSystemInfoDialog(false)}
       />
       {showLensFlareDialog && (
         <LensFlareDialog

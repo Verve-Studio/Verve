@@ -1,0 +1,88 @@
+@use '@/styles/variables' as vars;
+
+// ─── Body ─────────────────────────────────────────────────────────────────────
+
+.body {
+  padding: 16px 20px 8px;
+  min-width: 0;
+}
+
+// ─── Section ─────────────────────────────────────────────────────────────────
+
+.section {
+  margin-bottom: 16px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.sectionTitle {
+  font-size: vars.$font-size-xs;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: vars.$color-text-muted;
+  margin: 0 0 6px;
+}
+
+// ─── Row ─────────────────────────────────────────────────────────────────────
+
+.row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid vars.$color-border;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.label {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  white-space: nowrap;
+}
+
+.value {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  word-break: break-word;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+// ─── GPU chip ─────────────────────────────────────────────────────────────────
+
+.gpuBadge {
+  font-size: vars.$font-size-xs;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(6, 153, 251, 0.18);
+  color: vars.$color-accent-blue;
+  white-space: nowrap;
+}
+
+// ─── Loading / error ─────────────────────────────────────────────────────────
+
+.loading {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  padding: 20px 0;
+  text-align: center;
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 14px;
+  border-top: 1px solid vars.$color-border;
+}

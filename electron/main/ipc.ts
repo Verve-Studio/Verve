@@ -1,6 +1,8 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { execSync } from 'node:child_process'
+import os from 'node:os'
 import { registerSamHandlers } from './sam'
 import { registerMattingHandlers } from './matting'
 
@@ -231,6 +233,46 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('app:exit', () => {
     app.quit()
+  })
+
+  // ── System info ───────────────────────────────────────────────────────────────
+
+  ipcMain.handle('system:getInfo', async () => {
+    const cpus = os.cpus()
+    const gpuInfo = await app.getGPUInfo('complete') as {
+      gpuDevice?: Array<{
+        vendorString?: string
+        deviceString?: string
+        active?: boolean
+        driverVersion?: string
+        driverDate?: string
+      }>
+      auxAttributes?: Record<string, unknown>
+    }
+    const osType = os.type()
+    const osName = osType === 'Darwin' ? 'macOS' : osType === 'Windows_NT' ? 'Windows' : osType
+    let osVersion: string
+    if (osType === 'Darwin') {
+      try {
+        osVersion = execSync('sw_vers -productVersion', { timeout: 2000 }).toString().trim()
+      } catch {
+        osVersion = os.release()
+      }
+    } else {
+      osVersion = os.version()
+    }
+    return {
+      osName,
+      osVersion,
+      cpuModel: cpus[0]?.model ?? 'Unknown',
+      cpuCores: cpus.length,
+      totalRamBytes: os.totalmem(),
+      gpus: (gpuInfo.gpuDevice ?? []).map(g => ({
+        name: [g.vendorString, g.deviceString].filter(Boolean).join(' ') || 'Unknown GPU',
+        active: g.active ?? false,
+        driverVersion: g.driverVersion ?? '',
+      })),
+    }
   })
 
   registerSamHandlers()

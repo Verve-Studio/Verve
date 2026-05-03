@@ -8,6 +8,7 @@ export function useDialogState() {
   const [showResizeCanvasDialog,           setShowResizeCanvasDialog]           = useState(false)
   const [showAboutDialog,                  setShowAboutDialog]                  = useState(false)
   const [showShortcutsDialog,              setShowShortcutsDialog]              = useState(false)
+  const [showSystemInfoDialog,             setShowSystemInfoDialog]             = useState(false)
   const [showLensFlareDialog,              setShowLensFlareDialog]              = useState(false)
   const [showGeneratePaletteDialog,        setShowGeneratePaletteDialog]        = useState(false)
   const [showColorDitheringSetup,          setShowColorDitheringSetup]          = useState(false)
@@ -22,6 +23,7 @@ export function useDialogState() {
     showResizeCanvasDialog, setShowResizeCanvasDialog,
     showAboutDialog,        setShowAboutDialog,
     showShortcutsDialog,    setShowShortcutsDialog,
+    showSystemInfoDialog,   setShowSystemInfoDialog,
     showLensFlareDialog,    setShowLensFlareDialog,
     showGeneratePaletteDialog, setShowGeneratePaletteDialog,
     showColorDitheringSetup,   setShowColorDitheringSetup,
