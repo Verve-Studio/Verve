@@ -360,6 +360,37 @@ export function buildAdjustmentEntry(
   if (ls.adjustmentType === 'pixelate') {
     return { kind: 'pixelate', layerId: ls.id, blockSize: ls.params.blockSize, visible: ls.visible, selMaskLayer: mask }
   }
+  if (ls.adjustmentType === 'bevel') {
+    const { width, softness, angle, strength } = ls.params
+    return {
+      kind:     'bevel',
+      layerId:  ls.id,
+      width,
+      softness,
+      angle,
+      strength,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
+  if (ls.adjustmentType === 'inner-shadow') {
+    const { color, opacity, offsetX, offsetY, spread, softness } = ls.params
+    return {
+      kind:     'inner-shadow',
+      layerId:  ls.id,
+      colorR:   color.r / 255,
+      colorG:   color.g / 255,
+      colorB:   color.b / 255,
+      colorA:   color.a / 255,
+      opacity:  opacity / 100,
+      offsetX,
+      offsetY,
+      spread,
+      softness,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
   const _exhaustive: never = ls
   return _exhaustive
 }

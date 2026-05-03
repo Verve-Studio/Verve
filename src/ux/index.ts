@@ -21,6 +21,8 @@ export { DropShadowOptions } from './windows/effects/DropShadowOptions/DropShado
 export { GlowOptions } from './windows/effects/GlowOptions/GlowOptions'
 export { OutlineOptions } from './windows/effects/OutlineOptions/OutlineOptions'
 export { HalftoneOptions } from './windows/effects/HalftoneOptions/HalftoneOptions'
+export { BevelOptions } from './windows/effects/BevelOptions/BevelOptions'
+export { InnerShadowOptions } from './windows/effects/InnerShadowOptions/InnerShadowOptions'
 export { GaussianBlurPanel } from './windows/filters/GaussianBlurPanel/GaussianBlurPanel'
 export { BoxBlurPanel } from './windows/filters/BoxBlurPanel/BoxBlurPanel'
 export { RadialBlurPanel } from './windows/filters/RadialBlurPanel/RadialBlurPanel'

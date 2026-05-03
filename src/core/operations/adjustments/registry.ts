@@ -213,6 +213,30 @@ export const ADJUSTMENT_REGISTRY = [
     },
   },
   {
+    adjustmentType: 'bevel' as const,
+    label: 'Bevel…',
+    group: 'real-time-effects',
+    defaultParams: {
+      width:    5,
+      softness: 3,
+      angle:    135,
+      strength: 80,
+    },
+  },
+  {
+    adjustmentType: 'inner-shadow' as const,
+    label: 'Inner Shadow…',
+    group: 'real-time-effects',
+    defaultParams: {
+      color:    { r: 0, g: 0, b: 0, a: 255 },
+      opacity:  75,
+      offsetX:  5,
+      offsetY:  5,
+      spread:   0,
+      softness: 10,
+    },
+  },
+  {
     adjustmentType: 'gaussian-blur' as const,
     label: 'Gaussian Blur…',
     group: 'filters',

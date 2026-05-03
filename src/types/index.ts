@@ -249,6 +249,8 @@ export type AdjustmentType =
   | 'reduce-noise'
   | 'clouds'
   | 'pixelate'
+  | 'bevel'
+  | 'inner-shadow'
 
 export type FilterKey =
   | 'gaussian-blur'
@@ -495,6 +497,30 @@ export interface AdjustmentParamsMap {
     seed: number
   }
   'pixelate': { blockSize: number }
+  'bevel': {
+    /** Dilation radius in pixels (1–50). Controls bevel width. */
+    width:    number
+    /** Blur radius in pixels (0–50). Controls softness of bevel edges. */
+    softness: number
+    /** Light direction in degrees (0–360). 0° = right, 90° = down. */
+    angle:    number
+    /** Bevel intensity, 0–100 (%). */
+    strength: number
+  }
+  'inner-shadow': {
+    /** Shadow color including alpha. r/g/b/a are 0–255. */
+    color:    RGBAColor
+    /** Overall shadow opacity, 0–100 (%). */
+    opacity:  number
+    /** Horizontal offset in pixels, −200 to +200. */
+    offsetX:  number
+    /** Vertical offset in pixels, −200 to +200. */
+    offsetY:  number
+    /** Erosion radius in pixels, 0–100. Controls spread of shadow inside shape. */
+    spread:   number
+    /** Blur radius in pixels, 0–100. Controls softness of shadow edges. */
+    softness: number
+  }
 }
 
 export type OutlineParams = AdjustmentParamsMap['outline']
@@ -753,6 +779,18 @@ export interface PixelateAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean
 }
 
+export interface BevelAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'bevel'
+  params: AdjustmentParamsMap['bevel']
+  hasMask: boolean
+}
+
+export interface InnerShadowAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'inner-shadow'
+  params: AdjustmentParamsMap['inner-shadow']
+  hasMask: boolean
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -791,6 +829,8 @@ export type AdjustmentLayerState =
   | ReduceNoiseAdjustmentLayer
   | CloudsAdjustmentLayer
   | PixelateAdjustmentLayer
+  | BevelAdjustmentLayer
+  | InnerShadowAdjustmentLayer
 
 export interface GroupLayerState {
   id:        string

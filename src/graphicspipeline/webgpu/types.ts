@@ -218,6 +218,31 @@ export type AdjustmentRenderOp =
       selMaskLayer?: GpuLayer
     }
   | { kind: 'pixelate'; layerId: string; blockSize: number; visible: boolean; selMaskLayer?: GpuLayer }
+  | {
+      kind:       'bevel'
+      layerId:    string
+      width:      number   // 1–50 px
+      softness:   number   // 0–50 px
+      angle:      number   // 0–360 degrees
+      strength:   number   // 0–1 (pre-divided by 100)
+      visible:    boolean
+      selMaskLayer?: GpuLayer
+    }
+  | {
+      kind:       'inner-shadow'
+      layerId:    string
+      colorR:     number   // 0..1
+      colorG:     number
+      colorB:     number
+      colorA:     number   // 0..1
+      opacity:    number   // 0..1 (pre-divided by 100)
+      offsetX:    number   // signed pixels
+      offsetY:    number   // signed pixels
+      spread:     number   // 0–100 px
+      softness:   number   // 0–100 px
+      visible:    boolean
+      selMaskLayer?: GpuLayer
+    }
 
 // ─── RenderPlanEntry ──────────────────────────────────────────────────────────
 

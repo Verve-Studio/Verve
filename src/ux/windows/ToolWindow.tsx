@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { useAppContext } from '@/core/store/AppContext'
-import type { AdjustmentLayerState, BrightnessContrastAdjustmentLayer, HueSaturationAdjustmentLayer, ColorVibranceAdjustmentLayer, ColorBalanceAdjustmentLayer, BlackAndWhiteAdjustmentLayer, ColorTemperatureAdjustmentLayer, ColorInvertAdjustmentLayer, SelectiveColorAdjustmentLayer, CurvesAdjustmentLayer, ColorGradingAdjustmentLayer, ReduceColorsAdjustmentLayer, ColorDitheringAdjustmentLayer, BloomAdjustmentLayer, ChromaticAberrationAdjustmentLayer, HalationAdjustmentLayer, ColorKeyAdjustmentLayer, DropShadowAdjustmentLayer, GlowAdjustmentLayer, OutlineAdjustmentLayer, HalftoneAdjustmentLayer, GaussianBlurAdjustmentLayer, BoxBlurAdjustmentLayer, RadialBlurAdjustmentLayer, MotionBlurAdjustmentLayer, RemoveMotionBlurAdjustmentLayer, LensBlurAdjustmentLayer, SharpenAdjustmentLayer, SharpenMoreAdjustmentLayer, UnsharpMaskAdjustmentLayer, SmartSharpenAdjustmentLayer, AddNoiseAdjustmentLayer, FilmGrainAdjustmentLayer, MedianFilterAdjustmentLayer, BilateralFilterAdjustmentLayer, ReduceNoiseAdjustmentLayer, CloudsAdjustmentLayer, PixelateAdjustmentLayer } from '@/types'
+import type { AdjustmentLayerState, BrightnessContrastAdjustmentLayer, HueSaturationAdjustmentLayer, ColorVibranceAdjustmentLayer, ColorBalanceAdjustmentLayer, BlackAndWhiteAdjustmentLayer, ColorTemperatureAdjustmentLayer, ColorInvertAdjustmentLayer, SelectiveColorAdjustmentLayer, CurvesAdjustmentLayer, ColorGradingAdjustmentLayer, ReduceColorsAdjustmentLayer, ColorDitheringAdjustmentLayer, BloomAdjustmentLayer, ChromaticAberrationAdjustmentLayer, HalationAdjustmentLayer, ColorKeyAdjustmentLayer, DropShadowAdjustmentLayer, GlowAdjustmentLayer, OutlineAdjustmentLayer, HalftoneAdjustmentLayer, GaussianBlurAdjustmentLayer, BoxBlurAdjustmentLayer, RadialBlurAdjustmentLayer, MotionBlurAdjustmentLayer, RemoveMotionBlurAdjustmentLayer, LensBlurAdjustmentLayer, SharpenAdjustmentLayer, SharpenMoreAdjustmentLayer, UnsharpMaskAdjustmentLayer, SmartSharpenAdjustmentLayer, AddNoiseAdjustmentLayer, FilmGrainAdjustmentLayer, MedianFilterAdjustmentLayer, BilateralFilterAdjustmentLayer, ReduceNoiseAdjustmentLayer, CloudsAdjustmentLayer, PixelateAdjustmentLayer, BevelAdjustmentLayer, InnerShadowAdjustmentLayer } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
 import { BrightnessContrastPanel } from './adjustments/BrightnessContrastPanel/BrightnessContrastPanel'
 import { HueSaturationPanel } from './adjustments/HueSaturationPanel/HueSaturationPanel'
@@ -22,6 +22,8 @@ import { DropShadowOptions } from './effects/DropShadowOptions/DropShadowOptions
 import { GlowOptions } from './effects/GlowOptions/GlowOptions'
 import { OutlineOptions } from './effects/OutlineOptions/OutlineOptions'
 import { HalftoneOptions } from './effects/HalftoneOptions/HalftoneOptions'
+import { BevelOptions } from './effects/BevelOptions/BevelOptions'
+import { InnerShadowOptions } from './effects/InnerShadowOptions/InnerShadowOptions'
 import { GaussianBlurPanel } from './filters/GaussianBlurPanel/GaussianBlurPanel'
 import { SharpenPanel } from './filters/SharpenPanel/SharpenPanel'
 import { BoxBlurPanel } from './filters/BoxBlurPanel/BoxBlurPanel'
@@ -89,6 +91,8 @@ function toolTitle(layer: AdjustmentLayerState): string {
     case 'reduce-noise':         return 'Reduce Noise'
     case 'clouds':               return 'Clouds'
     case 'pixelate':             return 'Pixelate'
+    case 'bevel':                return 'Bevel'
+    case 'inner-shadow':         return 'Inner Shadow'
   }
 }
 
@@ -461,6 +465,12 @@ export function AdjustmentPanel({ onClose, canvasHandleRef }: ToolWindowProps): 
         )}
         {adjLayer.adjustmentType === 'pixelate' && (
           <PixelatePanel layer={adjLayer as PixelateAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'bevel' && (
+          <BevelOptions layer={adjLayer as BevelAdjustmentLayer} parentLayerName={parentLayerName} />
+        )}
+        {adjLayer.adjustmentType === 'inner-shadow' && (
+          <InnerShadowOptions layer={adjLayer as InnerShadowAdjustmentLayer} parentLayerName={parentLayerName} />
         )}
       </div>
     </ToolWindow>
