@@ -38,7 +38,8 @@ export interface UseFiltersReturn {
   handleOpenLensFlare:    () => void
   handleApplyLensFlare:   (pixels: Uint8Array, width: number, height: number) => void
   handleInstantFilter:    (key: FilterKey) => void
-  handleOpenPixelate:     () => void
+  handleOpenPixelate:        () => void
+  handleOpenSeamlessTexture: () => void
 }
 
 export function useFilters({
@@ -170,6 +171,11 @@ export function useFilters({
     [onCreateFilterAdjLayer]
   )
 
+  const handleOpenSeamlessTexture = useCallback(
+    () => onCreateFilterAdjLayer('seamless-texture'),
+    [onCreateFilterAdjLayer]
+  )
+
   return {
     isFiltersMenuEnabled,
     handleOpenGaussianBlur,
@@ -192,5 +198,6 @@ export function useFilters({
     handleApplyLensFlare,
     handleInstantFilter,
     handleOpenPixelate,
+    handleOpenSeamlessTexture,
   }
 }

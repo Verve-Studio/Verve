@@ -13,6 +13,7 @@ import { FILTER_BILATERAL_COMPUTE, runBilateral } from '../shaders/compute/filte
 import { FILTER_REDUCE_NOISE_COMPUTE, runReduceNoise } from '../shaders/compute/filters/reduce-noise'
 import { FILTER_LENS_FLARE_COMPUTE, runRenderLensFlare } from '../shaders/compute/filters/lens-flare'
 import { FILTER_PIXELATE_COMPUTE, runPixelate } from '../shaders/compute/filters/pixelate'
+import { FILTER_SEAMLESS_BREAK_COMPUTE, FILTER_SEAMLESS_BORDER_COMPUTE } from '../shaders/compute/filters/seamless-texture'
 import { createUniformBuffer, writeUniformBuffer } from '../utils'
 import { FILTER_RMB_PSF_COMPUTE, FILTER_RMB_RATIO_COMPUTE, FILTER_RMB_UPDATE_COMPUTE, FILTER_RMB_FINAL_COMPUTE } from '../shaders/compute/filters/remove-motion-blur'
 
@@ -76,6 +77,8 @@ class FilterComputeEngine {
   private readonly reduceNoisePipeline: FilterPipelinePair
   private readonly lensFlareRenderPipeline: GPURenderPipeline
   private readonly pixelatePipeline: FilterPipelinePair
+  private readonly seamlessBreakPipeline: FilterPipelinePair
+  private readonly seamlessBorderPipeline: FilterPipelinePair
   private readonly rmbPsfPipeline: GPURenderPipeline
   private readonly rmbRatioPipeline: GPURenderPipeline
   private readonly rmbUpdatePipeline: GPURenderPipeline
@@ -116,6 +119,8 @@ class FilterComputeEngine {
     this.reduceNoisePipeline             = this.makePair(FILTER_REDUCE_NOISE_COMPUTE, 'fs_reduce_noise')
     this.lensFlareRenderPipeline         = createFilterRenderPipeline(device, FILTER_LENS_FLARE_COMPUTE, 'fs_lens_flare', 'rgba8unorm')
     this.pixelatePipeline                = this.makePair(FILTER_PIXELATE_COMPUTE, 'fs_pixelate')
+    this.seamlessBreakPipeline           = this.makePair(FILTER_SEAMLESS_BREAK_COMPUTE,  'fs_seamless_break')
+    this.seamlessBorderPipeline          = this.makePair(FILTER_SEAMLESS_BORDER_COMPUTE, 'fs_seamless_border')
     this.rmbPsfPipeline                  = createFilterRenderPipeline(device, FILTER_RMB_PSF_COMPUTE, 'fs_rmb_psf', 'rgba16float')
     this.rmbRatioPipeline                = createFilterRenderPipeline(device, FILTER_RMB_RATIO_COMPUTE, 'fs_rmb_ratio', 'rgba16float')
     this.rmbUpdatePipeline               = createFilterRenderPipeline(device, FILTER_RMB_UPDATE_COMPUTE, 'fs_rmb_update', 'rgba16float')
@@ -626,6 +631,60 @@ class FilterComputeEngine {
     ], dstTex)
   }
 
+  encodeSeamlessTexture(
+    encoder:         GPUCommandEncoder,
+    srcTex:          GPUTexture,
+    dstTex:          GPUTexture,
+    w:               number,
+    h:               number,
+    breakRepetition: boolean,
+    cellSize:        number,
+    blendRadius:     number,
+    seamlessBorders: boolean,
+    borderRadius:    number,
+    seed:            number,
+  ): void {
+    // When both passes are disabled, copy src → dst unchanged
+    if (!breakRepetition && !seamlessBorders) {
+      this.encodeRenderPass(encoder, this.selectPipeline(this.seamlessBorderPipeline, dstTex), [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: this.makeParamsBuf(new Uint32Array([w, h, 0, 0])) } },
+      ], dstTex)
+      return
+    }
+
+    // Pass 1: break repetition → intermediate or dstTex
+    if (breakRepetition) {
+      const p1 = this.makeParamsBuf(new Uint32Array([
+        w, h,
+        Math.max(1, cellSize),
+        Math.max(0, blendRadius),
+        seed >>> 0,
+        0, 0, 0,
+      ]))
+      const pass1Dst = seamlessBorders ? this.makeRgba8Tex(w, h) : dstTex
+      this.encodeRenderPass(encoder, this.selectPipeline(this.seamlessBreakPipeline, pass1Dst), [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: p1 } },
+      ], pass1Dst)
+
+      if (seamlessBorders) {
+        const p2 = this.makeParamsBuf(new Uint32Array([w, h, Math.max(1, borderRadius), 0]))
+        this.encodeRenderPass(encoder, this.selectPipeline(this.seamlessBorderPipeline, dstTex), [
+          { binding: 0, resource: pass1Dst.createView() },
+          { binding: 2, resource: { buffer: p2 } },
+        ], dstTex)
+      }
+    } else {
+      // Only seamless borders
+      const p2 = this.makeParamsBuf(new Uint32Array([w, h, Math.max(1, borderRadius), 0]))
+      this.encodeRenderPass(encoder, this.selectPipeline(this.seamlessBorderPipeline, dstTex), [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: p2 } },
+      ], dstTex)
+    }
+  }
+
 }
 
 // ─── Module-level singleton ───────────────────────────────────────────────────
@@ -672,5 +731,6 @@ export function encodeBilateral(encoder: GPUCommandEncoder, srcTex: GPUTexture, 
 export function encodeReduceNoise(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, strength: number, preserveDetails: number, reduceColorNoise: number, sharpenDetails: number): void { _engine!.encodeReduceNoise(encoder, srcTex, dstTex, w, h, strength, preserveDetails, reduceColorNoise, sharpenDetails) }
 export function encodeClouds(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, scale: number, opacity: number, colorMode: number, fgColor: number, bgColor: number, seed: number): void { _engine!.encodeClouds(encoder, srcTex, dstTex, w, h, scale, opacity, colorMode, fgColor, bgColor, seed) }
 export function encodePixelate(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, blockSize: number): void { _engine!.encodePixelate(encoder, srcTex, dstTex, w, h, blockSize) }
+export function encodeSeamlessTexture(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, breakRepetition: boolean, cellSize: number, blendRadius: number, seamlessBorders: boolean, borderRadius: number, seed: number): void { _engine!.encodeSeamlessTexture(encoder, srcTex, dstTex, w, h, breakRepetition, cellSize, blendRadius, seamlessBorders, borderRadius, seed) }
 
 export function flushFilterComputeDestroys(): void { _engine?.flushPendingDestroys() }

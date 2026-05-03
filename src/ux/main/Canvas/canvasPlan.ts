@@ -407,6 +407,21 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     }
   }
+  if (ls.adjustmentType === 'seamless-texture') {
+    const { breakRepetition, cellSize, blendRadius, seamlessBorders, borderRadius, seed } = ls.params
+    return {
+      kind:            'seamless-texture',
+      layerId:         ls.id,
+      breakRepetition,
+      cellSize,
+      blendRadius,
+      seamlessBorders,
+      borderRadius,
+      seed,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
   const _exhaustive: never = ls
   return _exhaustive
 }

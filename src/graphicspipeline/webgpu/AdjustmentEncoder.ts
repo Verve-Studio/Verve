@@ -54,6 +54,7 @@ import {
   encodeRemoveMotionBlur, encodeLensBlur, encodeSharpen, encodeSharpenMore,
   encodeUnsharpMask, encodeSmartSharpen, encodeAddNoise, encodeFilmGrain,
   encodeMedian, encodeBilateral, encodeReduceNoise, encodeClouds, encodePixelate,
+  encodeSeamlessTexture,
   flushFilterComputeDestroys,
 } from './compute/filterCompute'
 
@@ -594,6 +595,14 @@ export class AdjustmentEncoder {
     }
     if (entry.kind === 'pixelate') {
       encodePixelate(encoder, srcTex, dstTex, w, h, entry.blockSize)
+      return
+    }
+    if (entry.kind === 'seamless-texture') {
+      encodeSeamlessTexture(
+        encoder, srcTex, dstTex, w, h,
+        entry.breakRepetition, entry.cellSize, entry.blendRadius,
+        entry.seamlessBorders, entry.borderRadius, entry.seed,
+      )
       return
     }
     const _exhaustive: never = entry

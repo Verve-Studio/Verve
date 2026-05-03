@@ -40,6 +40,7 @@ export { BilateralFilterPanel } from './windows/filters/BilateralFilterPanel/Bil
 export { ReduceNoisePanel } from './windows/filters/ReduceNoisePanel/ReduceNoisePanel'
 export { CloudsPanel } from './windows/filters/CloudsPanel/CloudsPanel'
 export { PixelatePanel } from './windows/filters/PixelatePanel/PixelatePanel'
+export { SeamlessTexturePanel } from './windows/filters/SeamlessTexturePanel/SeamlessTexturePanel'
 export { ColorWheelWidget } from './widgets/ColorWheelWidget/ColorWheelWidget'
 export { SliderInput } from './widgets/SliderInput/SliderInput'
 export { ToolWindow } from './widgets/ToolWindow/ToolWindow'

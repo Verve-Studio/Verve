@@ -252,6 +252,7 @@ export type AdjustmentType =
   | 'bevel'
   | 'inner-shadow'
   | 'inner-glow'
+  | 'seamless-texture'
 
 export type FilterKey =
   | 'gaussian-blur'
@@ -272,6 +273,7 @@ export type FilterKey =
   | 'reduce-noise'
   | 'render-lens-flare'
   | 'pixelate'
+  | 'seamless-texture'
 
 export type CurvesChannel = 'rgb' | 'red' | 'green' | 'blue'
 
@@ -498,6 +500,20 @@ export interface AdjustmentParamsMap {
     seed: number
   }
   'pixelate': { blockSize: number }
+  'seamless-texture': {
+    /** Enable the Voronoi island break-repetition pass. Default: true */
+    breakRepetition: boolean
+    /** Cell/island size in pixels (1–512). Default: 128 */
+    cellSize:        number
+    /** Blend/feather radius in pixels at island borders (0–128). Default: 16 */
+    blendRadius:     number
+    /** Enable the seamless border blending pass. Default: true */
+    seamlessBorders: boolean
+    /** Border blend radius in pixels (1–256). Default: 32 */
+    borderRadius:    number
+    /** Random seed. */
+    seed:            number
+  }
   'bevel': {
     /** Dilation radius in pixels (1–50). Controls bevel width. */
     width:    number
@@ -808,6 +824,12 @@ export interface InnerGlowAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean
 }
 
+export interface SeamlessTextureAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: 'seamless-texture'
+  params: AdjustmentParamsMap['seamless-texture']
+  hasMask: boolean
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -849,6 +871,7 @@ export type AdjustmentLayerState =
   | BevelAdjustmentLayer
   | InnerShadowAdjustmentLayer
   | InnerGlowAdjustmentLayer
+  | SeamlessTextureAdjustmentLayer
 
 export interface GroupLayerState {
   id:        string

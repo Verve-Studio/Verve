@@ -362,4 +362,17 @@ export const ADJUSTMENT_REGISTRY = [
     group: 'filters',
     defaultParams: { blockSize: 10 },
   },
+  {
+    adjustmentType: 'seamless-texture' as const,
+    label: 'Seamless Texture…',
+    group: 'filters',
+    defaultParams: {
+      breakRepetition: true,
+      cellSize:        128,
+      blendRadius:     16,
+      seamlessBorders: true,
+      borderRadius:    32,
+      seed:            0,
+    },
+  },
 ] as const satisfies readonly AdjustmentRegistrationEntry[]

@@ -256,6 +256,18 @@ export type AdjustmentRenderOp =
       visible:    boolean
       selMaskLayer?: GpuLayer
     }
+  | {
+      kind:            'seamless-texture'
+      layerId:         string
+      breakRepetition: boolean
+      cellSize:        number
+      blendRadius:     number
+      seamlessBorders: boolean
+      borderRadius:    number
+      seed:            number
+      visible:         boolean
+      selMaskLayer?:   GpuLayer
+    }
 
 // ─── RenderPlanEntry ──────────────────────────────────────────────────────────
 
