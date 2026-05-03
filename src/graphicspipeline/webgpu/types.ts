@@ -243,6 +243,19 @@ export type AdjustmentRenderOp =
       visible:    boolean
       selMaskLayer?: GpuLayer
     }
+  | {
+      kind:       'inner-glow'
+      layerId:    string
+      colorR:     number   // 0..1
+      colorG:     number
+      colorB:     number
+      colorA:     number   // 0..1
+      opacity:    number   // 0..1 (pre-divided by 100)
+      spread:     number   // 0–100 px
+      softness:   number   // 0–100 px
+      visible:    boolean
+      selMaskLayer?: GpuLayer
+    }
 
 // ─── RenderPlanEntry ──────────────────────────────────────────────────────────
 

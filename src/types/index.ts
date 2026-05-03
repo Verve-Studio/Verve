@@ -251,6 +251,7 @@ export type AdjustmentType =
   | 'pixelate'
   | 'bevel'
   | 'inner-shadow'
+  | 'inner-glow'
 
 export type FilterKey =
   | 'gaussian-blur'

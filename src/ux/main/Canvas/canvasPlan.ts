@@ -391,6 +391,22 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     }
   }
+  if (ls.adjustmentType === 'inner-glow') {
+    const { color, opacity, spread, softness } = ls.params
+    return {
+      kind:     'inner-glow',
+      layerId:  ls.id,
+      colorR:   color.r / 255,
+      colorG:   color.g / 255,
+      colorB:   color.b / 255,
+      colorA:   color.a / 255,
+      opacity:  opacity / 100,
+      spread,
+      softness,
+      visible:      ls.visible,
+      selMaskLayer: mask,
+    }
+  }
   const _exhaustive: never = ls
   return _exhaustive
 }

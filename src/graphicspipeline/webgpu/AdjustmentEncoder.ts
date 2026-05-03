@@ -515,6 +515,17 @@ export class AdjustmentEncoder {
       )
       return
     }
+    if (entry.kind === 'inner-glow') {
+      this.encodeInnerShadowPass(
+        encoder, srcTex, dstTex,
+        entry.colorR, entry.colorG, entry.colorB, entry.colorA,
+        entry.opacity,
+        0, 0,
+        entry.spread, entry.softness,
+        entry.selMaskLayer,
+      )
+      return
+    }
     const w = this.pixelWidth
     const h = this.pixelHeight
     if (entry.kind === 'gaussian-blur') {
