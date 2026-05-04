@@ -961,7 +961,11 @@ export class WebGPURenderer {
         if (cached.adjKey !== adjKey) return false
         const parts: string[] = []
         this.appendPlanFp(entry.children, parts)
-        if (cached.childFp !== parts.join('')) return false
+        if (cached.childFp === parts.join('')) continue
+        // Cache miss: incremental path can still proceed if no per-composite
+        // adjustments — the encode side will do a scissored re-flatten of the
+        // children into the dirty rect of the existing cache tex.
+        if (entry.adjustments.length > 0) return false
         continue
       }
       return false
@@ -1310,6 +1314,63 @@ export class WebGPURenderer {
               inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${upfrontChildFp}:${adjKey}`
               continue
             }
+          }
+        }
+
+        // Scissored re-flatten path: when we're inside the outer incremental
+        // scissor AND a cache exists AND there are no per-composite adjustments,
+        // re-composite the children ONLY inside the dirty rect, snapshot just
+        // that rect back into the existing cache tex, then composite the cache
+        // (also scissored) into the parent. Cost scales with the brush dab
+        // size, not the full canvas — the same trick the outer incremental
+        // path uses, applied recursively to the composite's children.
+        if (
+          this.incrementalScissor !== null &&
+          entry.adjustments.length === 0 &&
+          this.adjGroupCacheEnabled
+        ) {
+          const cached = this.compositeLayerCache.get(entry.layerId)
+          if (cached) {
+            const dirty = this.incrementalScissor
+            const isoA = this.allocateTempGroupTex()
+            const isoB = this.allocateTempGroupTex()
+            // Zero-clear ONLY the dirty subrect of both iso textures so child 0
+            // composites against transparent inside the dirty rect (matches the
+            // 'srcIsEmpty=true' contract). Outside the dirty rect both textures
+            // hold garbage — we never read or snapshot from there.
+            const zeroTex = this.device.createTexture({
+              size: { width: dirty.w, height: dirty.h },
+              format: this.internalFormat,
+              usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+            })
+            this.pendingDestroyTextures.push(zeroTex)
+            this.encodeClearTexture(encoder, zeroTex)
+            encoder.copyTextureToTexture(
+              { texture: zeroTex },
+              { texture: isoA, origin: { x: dirty.x, y: dirty.y } },
+              { width: dirty.w, height: dirty.h },
+            )
+            encoder.copyTextureToTexture(
+              { texture: zeroTex },
+              { texture: isoB, origin: { x: dirty.x, y: dirty.y } },
+              { width: dirty.w, height: dirty.h },
+            )
+            const child = this.encodeSubPlan(encoder, entry.children, isoB, isoA, '', true)
+            // Snapshot the dirty rect of the freshly-composited iso into the
+            // cache. Outside the dirty rect the cache is unchanged — still
+            // correct from prior frames.
+            encoder.copyTextureToTexture(
+              { texture: child.src, origin: { x: dirty.x, y: dirty.y } },
+              { texture: cached.tex, origin: { x: dirty.x, y: dirty.y } },
+              { width: dirty.w, height: dirty.h },
+            )
+            cached.childFp = child.inputFp
+            cached.adjKey = adjKey
+            this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
+            ;[src, dst] = [dst, src]
+            srcIsEmpty = false
+            inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`
+            continue
           }
         }
 
