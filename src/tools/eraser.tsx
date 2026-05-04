@@ -29,6 +29,15 @@ function createEraserHandler(): ToolHandler {
     const secG = Math.round(Math.min(secondaryColor.g, 1) * 255)
     const secB = Math.round(Math.min(secondaryColor.b, 1) * 255)
     const radius = eraserOptions.size / 2
+    // Skip entirely off-canvas segments (see brush.tsx for rationale).
+    if (!ctx.tiledMode) {
+      const padR = Math.ceil(radius) + 1
+      const minX = Math.min(x0, x1) - padR
+      const minY = Math.min(y0, y1) - padR
+      const maxX = Math.max(x0, x1) + padR
+      const maxY = Math.max(y0, y1) + padR
+      if (maxX < 0 || maxY < 0 || minX >= renderer.pixelWidth || minY >= renderer.pixelHeight) return
+    }
     growLayerToFit(x0, y0, Math.ceil(radius))
     if (x1 !== x0 || y1 !== y0) growLayerToFit(x1, y1, Math.ceil(radius))
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined

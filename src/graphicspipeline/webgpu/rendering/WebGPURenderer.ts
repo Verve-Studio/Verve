@@ -177,6 +177,104 @@ export class WebGPURenderer {
   /** Enable/disable preview mode. Call with true at drag start, false on pointer-up. */
   setPreviewMode(enabled: boolean): void {
     this.previewMode = enabled
+    // Mode change can flip skipped/visible without altering layer fingerprints.
+    this.lastPlanFp = null
+    this.hasStableTex = false
+  }
+
+  // ─── Render skip ─────────────────────────────────────────────────────────────
+  // Fingerprint of the inputs that produced the most recently rendered frame.
+  // If the next renderPlan() call has an identical fingerprint, the entire frame
+  // is skipped (no encoder, no clear, no copy, no composite, no submit). At
+  // 7000×9933 each redundant frame would otherwise burn ~278 MB clear plus
+  // ~278 MB DMA per non-base layer.
+  private lastPlanFp: string | null = null
+
+  /** Force the next renderPlan() to actually execute even if inputs look identical. */
+  invalidateRenderCache(): void {
+    this.lastPlanFp = null
+    this.hasStableTex = false
+  }
+
+  // ─── Viewport scissor ─────────────────────────────────────────────────────────
+  // When set, encodeCheckerboard and encodeBlitToView clip their fragment writes
+  // to this rect (in swapchain backing pixels). Used at zoom > 1 where the canvas
+  // backing buffer is much larger than the visible viewport: instead of writing
+  // 7000×9933 pixels per frame and letting the browser compositor clip, we only
+  // write the visible region (e.g. 1500×900 device px). The rest of the backing
+  // retains stale pixels but the browser composites them outside the viewport so
+  // they're never seen. On scroll/zoom the caller must invalidateRenderCache() so
+  // the new visible region gets redrawn.
+  private viewportScissor: { x: number; y: number; w: number; h: number } | null = null
+
+  /** Restrict checker + blit-to-screen writes to this rect in backing pixels. Pass null to disable. */
+  setViewportScissor(rect: { x: number; y: number; w: number; h: number } | null): void {
+    const a = this.viewportScissor
+    const b = rect
+    const same = (a === null && b === null) ||
+      (a !== null && b !== null && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h)
+    if (same) return
+    this.viewportScissor = rect
+    // The visible region changed — force the next renderPlan() to actually run
+    // so the new visible scissor area gets fresh pixels.
+    this.lastPlanFp = null
+  }
+
+  /**
+   * Re-blit the cached stableTex to the swapchain with no viewport scissor so
+   * the entire canvas backing buffer holds a valid composite. Used by the
+   * navigator-thumbnail mirror path: createImageBitmap reads the full backing
+   * and would otherwise see stale pixels outside the scissored viewport region.
+   * No-op when the stable cache is cold.
+   */
+  repaintScreenNoScissor(): void {
+    if (!this.hasStableTex || this.stableTex === null) return
+    const prev = this.viewportScissor
+    this.viewportScissor = null
+    try {
+      const encoder = this.device.createCommandEncoder()
+      const screenView = this.context.getCurrentTexture().createView()
+      this.encodeCheckerboard(encoder, screenView)
+      this.encodeBlitToView(encoder, this.stableTex, screenView)
+      this.device.queue.submit([encoder.finish()])
+    } finally {
+      this.viewportScissor = prev
+    }
+  }
+
+  // ─── Stable composite cache ─────────────────────────────────────────────────────────
+  // Persists the previous successfully-rendered full-canvas composite so the
+  // painting hot path can re-render only the small dirty region instead of
+  // re-compositing every layer over the entire canvas every frame.
+  private stableTex: GPUTexture | null = null
+  private hasStableTex = false
+  // Canvas-space union of regions touched since the last successful render.
+  // Populated by flushLayer; consumed (and cleared) by renderPlan.
+  // null → incremental path is unavailable for this frame (full re-composite).
+  private frameDirtyCanvasRect: { x: number; y: number; w: number; h: number } | null = null
+  // Scissor passed down to encodeCompositeLayer during the incremental path.
+  // Null in the full path. When set, encodeCompositeLayer skips copyOutsideRect
+  // and constrains the composite render pass to this rect.
+  private incrementalScissor: { x: number; y: number; w: number; h: number } | null = null
+
+  /** Union a canvas-space rect into the per-frame dirty accumulator. */
+  private unionFrameDirty(x: number, y: number, w: number, h: number): void {
+    if (w <= 0 || h <= 0) return
+    const x0 = Math.max(0, x)
+    const y0 = Math.max(0, y)
+    const x1 = Math.min(this.pixelWidth, x + w)
+    const y1 = Math.min(this.pixelHeight, y + h)
+    if (x0 >= x1 || y0 >= y1) return
+    if (this.frameDirtyCanvasRect === null) {
+      this.frameDirtyCanvasRect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+    } else {
+      const r = this.frameDirtyCanvasRect
+      const rx0 = Math.min(r.x, x0)
+      const ry0 = Math.min(r.y, y0)
+      const rx1 = Math.max(r.x + r.w, x1)
+      const ry1 = Math.max(r.y + r.h, y1)
+      r.x = rx0; r.y = ry0; r.w = rx1 - rx0; r.h = ry1 - ry0
+    }
   }
 
   readonly pixelWidth: number
@@ -430,6 +528,7 @@ export class WebGPURenderer {
     if (layer.format === 'indexed8') {
       const expanded = this.expandIndicesToRgba8(layer.data as Uint8Array, palette ?? [])
       uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, expanded)
+      this.unionFrameDirty(layer.offsetX, layer.offsetY, layer.layerWidth, layer.layerHeight)
       return
     }
 
@@ -438,8 +537,10 @@ export class WebGPURenderer {
         const { lx, ly, rx, ry } = layer.dirtyRect
         layer.dirtyRect = null
         uploadF32TexturePatch(this.device, layer.texture, layer.layerWidth, lx, ly, rx - lx, ry - ly, layer.data as Float32Array)
+        this.unionFrameDirty(layer.offsetX + lx, layer.offsetY + ly, rx - lx, ry - ly)
       } else {
         uploadF32TextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, layer.data as Float32Array)
+        this.unionFrameDirty(layer.offsetX, layer.offsetY, layer.layerWidth, layer.layerHeight)
       }
       return
     }
@@ -449,8 +550,10 @@ export class WebGPURenderer {
       const { lx, ly, rx, ry } = layer.dirtyRect
       layer.dirtyRect = null
       uploadTexturePatch(this.device, layer.texture, layer.layerWidth, lx, ly, rx - lx, ry - ly, layer.data as Uint8Array)
+      this.unionFrameDirty(layer.offsetX + lx, layer.offsetY + ly, rx - lx, ry - ly)
     } else {
       uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, layer.data as Uint8Array)
+      this.unionFrameDirty(layer.offsetX, layer.offsetY, layer.layerWidth, layer.layerHeight)
     }
   }
 
@@ -659,20 +762,192 @@ export class WebGPURenderer {
   }
 
   renderPlan(plan: RenderPlanEntry[]): void {
-    const { device } = this
+    const { device, pixelWidth: w, pixelHeight: h } = this
+
+    // Skip the entire frame when nothing observable has changed since last render.
+    const planFp = this.computePlanFingerprint(plan)
+    if (planFp === this.lastPlanFp) {
+      // Drop any dirty accumulation that came in for a no-op frame.
+      this.frameDirtyCanvasRect = null
+      return
+    }
+
+    // Decide path: incremental (small rect, plain layer plan, stable cache valid)
+    // vs. full (cold cache, complex plan with adjustments/groups, or no dirty rect).
+    const dirty = this.frameDirtyCanvasRect
+    const canIncremental =
+      this.hasStableTex &&
+      this.stableTex !== null &&
+      dirty !== null &&
+      dirty.w > 0 && dirty.h > 0 &&
+      this.planIsFlatLayersOnly(plan) &&
+      // Skip incremental when dirty area covers most of the canvas — preload
+      // DMA cost (2× full canvas) outweighs the saved per-layer composite work.
+      (dirty.w * dirty.h) < (w * h * 0.6)
+
     const encoder = device.createCommandEncoder()
 
-    this.adjGroupCacheEnabled = true
-    const finalTex = this.encodePlanToComposite(encoder, plan)
-    this.adjGroupCacheEnabled = false
+    if (canIncremental && dirty !== null && this.stableTex !== null) {
+      // Incremental path. Cost rules:
+      //  - The blit-to-swapchain is an unavoidable full-canvas write each frame.
+      //  - Therefore we keep one canonical full-canvas buffer (stableTex) and
+      //    blit *that* to the screen. We never need ping/pong to hold valid
+      //    content outside the dirty rect for display purposes.
+      //  - Inside the dirty rect we run a scissored composite into ping/pong,
+      //    then copy the result back into stableTex@dirty.
+      //
+      // Bandwidth per frame ≈ blit-to-swapchain (full) + O(dirty.w*dirty.h*N).
+      // No full-canvas preload. (Previously the 2× full preload cost ~110ms at
+      // 7000×9933.)
+      //
+      // Correctness: ping/pong have stale content outside the dirty rect, but
+      // every read inside the scissored composite is also inside the dirty rect
+      // (the scissor blocks fragment reads-of-uninitialized? No — fragment shader
+      // can sample anywhere. But each layer's dst-write is scissored, so layer K
+      // only reads pixels inside dirty that layer K-1 just wrote there via the
+      // scoped src→dst copy in encodeCompositeLayer). Outside dirty is read
+      // never (layer's quad clipped to scissor) for fragment writes, and the
+      // shader samples src at the same pixel coord it writes — both inside dirty.
 
-    // Render to screen: checkerboard + blit
-    const screenView = this.context.getCurrentTexture().createView()
-    this.encodeCheckerboard(encoder, screenView)
-    this.encodeBlitToView(encoder, finalTex, screenView)
+      // Zero-clear the dirty subrect in both ping and pong so layer 0 composites
+      // against transparent (matches the "fresh canvas" semantics of the full
+      // path, which clears pingTex and treats pongTex as empty via srcIsEmpty=true).
+      const zeroTex = this.device.createTexture({
+        size: { width: dirty.w, height: dirty.h },
+        format: this.internalFormat,
+        usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+      })
+      this.pendingDestroyTextures.push(zeroTex)
+      this.encodeClearTexture(encoder, zeroTex)
+      encoder.copyTextureToTexture(
+        { texture: zeroTex },
+        { texture: this.pingTex, origin: { x: dirty.x, y: dirty.y } },
+        { width: dirty.w, height: dirty.h },
+      )
+      encoder.copyTextureToTexture(
+        { texture: zeroTex },
+        { texture: this.pongTex, origin: { x: dirty.x, y: dirty.y } },
+        { width: dirty.w, height: dirty.h },
+      )
 
-    device.queue.submit([encoder.finish()])
-    this.flushPendingDestroys()
+      this.adjGroupCacheEnabled = true
+      this.incrementalScissor = dirty
+      this.compositeBufferIndex = 0
+      const { src: finalTex } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '', true)
+      this.incrementalScissor = null
+      this.adjGroupCacheEnabled = false
+
+      // Snapshot the dirty rect back into stableTex so it always holds the full
+      // current composite. Outside dirty, stableTex is unchanged.
+      encoder.copyTextureToTexture(
+        { texture: finalTex, origin: { x: dirty.x, y: dirty.y } },
+        { texture: this.stableTex, origin: { x: dirty.x, y: dirty.y } },
+        { width: dirty.w, height: dirty.h },
+      )
+
+      const screenView = this.context.getCurrentTexture().createView()
+      this.encodeCheckerboard(encoder, screenView)
+      this.encodeBlitToView(encoder, this.stableTex, screenView)
+
+      device.queue.submit([encoder.finish()])
+      this.flushPendingDestroys()
+    } else {
+      // Full path: today's logic. Allocate stableTex on first run, snapshot final.
+      this.adjGroupCacheEnabled = true
+      const finalTex = this.encodePlanToComposite(encoder, plan)
+      this.adjGroupCacheEnabled = false
+
+      // Ensure stableTex exists and snapshot the full final composite into it.
+      if (this.stableTex === null) {
+        this.stableTex = this.createPingPongTex(
+          w, h,
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.COPY_SRC |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+        )
+      }
+      encoder.copyTextureToTexture({ texture: finalTex }, { texture: this.stableTex }, { width: w, height: h })
+
+      const screenView = this.context.getCurrentTexture().createView()
+      this.encodeCheckerboard(encoder, screenView)
+      this.encodeBlitToView(encoder, finalTex, screenView)
+
+      device.queue.submit([encoder.finish()])
+      this.flushPendingDestroys()
+      this.hasStableTex = true
+    }
+
+    this.lastPlanFp = planFp
+    this.frameDirtyCanvasRect = null
+  }
+
+  /** True when every plan entry is a plain layer (no groups, adjustments, effects). */
+  private planIsFlatLayersOnly(plan: RenderPlanEntry[]): boolean {
+    for (const entry of plan) {
+      if (entry.kind !== 'layer') return false
+    }
+    return true
+  }
+
+
+  /**
+   * Walk the plan tree and produce a fingerprint string covering everything
+   * that affects the rendered output. Mirrors the inputFp accumulation in
+   * encodeSubPlan, plus the surrounding inputs touched by renderPlan().
+   */
+  private computePlanFingerprint(plan: RenderPlanEntry[]): string {
+    const parts: string[] = [
+      `W:${this.pixelWidth}`,
+      `H:${this.pixelHeight}`,
+      `F:${this.pixelFormat}`,
+      `P:${this.previewMode ? 1 : 0}`,
+      `EV:${displayStore.exposureEV}`,
+      `OP:${displayStore.toneMappingOperator}`,
+    ]
+    this.appendPlanFp(plan, parts)
+    return parts.join('')
+  }
+
+  private appendPlanFp(plan: RenderPlanEntry[], out: string[]): void {
+    for (const entry of plan) {
+      if (entry.kind === 'layer') {
+        if (!entry.layer.visible || entry.layer.opacity === 0) continue
+        const l = entry.layer
+        const maskPart = entry.mask ? `:M${entry.mask.contentVersion}` : ''
+        out.push(`|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`)
+      } else if (entry.kind === 'layer-group') {
+        if (!entry.visible) continue
+        if (entry.blendMode === 'pass-through') {
+          this.appendPlanFp(entry.children, out)
+          out.push(`|GRP-end:${entry.groupId}`)
+        } else {
+          out.push(`|GRP:${entry.groupId}:${entry.opacity}:${entry.blendMode}:[`)
+          this.appendPlanFp(entry.children, out)
+          out.push(`]`)
+        }
+      } else if (entry.kind === 'composite-layer') {
+        if (!entry.visible) continue
+        const adjKey = computeAdjGroupParamsKey(entry.adjustments)
+        out.push(`|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:[`)
+        this.appendPlanFp(entry.children, out)
+        out.push(`]:${adjKey}`)
+      } else if (entry.kind === 'adjustment-group') {
+        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
+        const l = entry.baseLayer
+        const baseMaskVersion = entry.baseMask ? entry.baseMask.contentVersion : -1
+        const paramsKey = computeAdjGroupParamsKey(entry.adjustments)
+        out.push(`|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`)
+      } else {
+        // AdjustmentRenderOp (standalone effect)
+        if (!entry.visible) continue
+        if (this.previewMode) {
+          out.push(`|SKIP:${entry.layerId}`)
+          continue
+        }
+        out.push(`|SO:${entry.layerId}:${serializeAdjOp(entry)}`)
+      }
+    }
   }
 
   // ─── Flatten / readback ─────────────────────────────────────────────────────
@@ -1086,6 +1361,70 @@ export class WebGPURenderer {
     pass.end()
   }
 
+  /**
+   * Copy from src to dst only the four strips OUTSIDE the rect (rx, ry, rw, rh)
+   * within the canvas (cw × ch). Used by encodeCompositeLayer so the subsequent
+   * composite render pass (which writes only the rect) ends up with correct dst
+   * content everywhere, with bandwidth cost proportional to (canvas - rect),
+   * not the full canvas.
+   *
+   * Layout (rect = R inside canvas C):
+   *   ┌─────top─────┐
+   *   ├──┬───────┬──┤
+   *   │L │   R   │ R│
+   *   ├──┴───────┴──┤
+   *   └────bottom───┘
+   */
+  private copyOutsideRect(
+    encoder: GPUCommandEncoder,
+    src: GPUTexture, dst: GPUTexture,
+    rx: number, ry: number, rw: number, rh: number,
+    cw: number, ch: number,
+  ): void {
+    // Clamp rect to canvas — defensive against out-of-canvas layer rects.
+    const x0 = Math.max(0, rx)
+    const y0 = Math.max(0, ry)
+    const x1 = Math.min(cw, rx + rw)
+    const y1 = Math.min(ch, ry + rh)
+    if (x0 >= x1 || y0 >= y1) {
+      // Rect is outside or empty — preserve everything.
+      encoder.copyTextureToTexture({ texture: src }, { texture: dst }, { width: cw, height: ch })
+      return
+    }
+    // Top strip: full width, rows [0, y0)
+    if (y0 > 0) {
+      encoder.copyTextureToTexture(
+        { texture: src, origin: { x: 0, y: 0 } },
+        { texture: dst, origin: { x: 0, y: 0 } },
+        { width: cw, height: y0 },
+      )
+    }
+    // Bottom strip: full width, rows [y1, ch)
+    if (y1 < ch) {
+      encoder.copyTextureToTexture(
+        { texture: src, origin: { x: 0, y: y1 } },
+        { texture: dst, origin: { x: 0, y: y1 } },
+        { width: cw, height: ch - y1 },
+      )
+    }
+    // Left strip: cols [0, x0), rows [y0, y1)
+    if (x0 > 0) {
+      encoder.copyTextureToTexture(
+        { texture: src, origin: { x: 0, y: y0 } },
+        { texture: dst, origin: { x: 0, y: y0 } },
+        { width: x0, height: y1 - y0 },
+      )
+    }
+    // Right strip: cols [x1, cw), rows [y0, y1)
+    if (x1 < cw) {
+      encoder.copyTextureToTexture(
+        { texture: src, origin: { x: x1, y: y0 } },
+        { texture: dst, origin: { x: x1, y: y0 } },
+        { width: cw - x1, height: y1 - y0 },
+      )
+    }
+  }
+
   private encodeCheckerboard(encoder: GPUCommandEncoder, view: GPUTextureView): void {
     // Uses pre-allocated checkerUniformBuf + checkerBindGroup (static, never change)
     const pass = encoder.beginRenderPass({
@@ -1100,6 +1439,10 @@ export class WebGPURenderer {
     pass.setBindGroup(0, this.checkerBindGroup)
     pass.setVertexBuffer(0, this.canvasQuadVertBuf)
     pass.setVertexBuffer(1, this.texCoordBuffer)
+    if (this.viewportScissor) {
+      const s = this.viewportScissor
+      pass.setScissorRect(s.x, s.y, s.w, s.h)
+    }
     pass.draw(6)
     pass.end()
   }
@@ -1144,6 +1487,10 @@ export class WebGPURenderer {
     pass.setBindGroup(0, bindGroup)
     pass.setVertexBuffer(0, this.canvasQuadVertBuf)
     pass.setVertexBuffer(1, this.texCoordBuffer)
+    if (this.viewportScissor) {
+      const s = this.viewportScissor
+      pass.setScissorRect(s.x, s.y, s.w, s.h)
+    }
     pass.draw(6)
     pass.end()
   }
@@ -1165,12 +1512,39 @@ export class WebGPURenderer {
     // Step 1: copy src → dst so regions outside the layer's sub-rect are preserved.
     // Skip when srcIsEmpty: dst is already cleared (zeros), so copying zeros onto zeros
     // would be an 84 MB GPU DMA for nothing at large canvas sizes.
-    if (!srcIsEmpty) {
-      encoder.copyTextureToTexture(
-        { texture: srcTex },
-        { texture: dstTex },
-        { width: w, height: h },
-      )
+    //
+    // Only the strips OUTSIDE the layer's quad need preservation — pixels inside
+    // the quad are about to be overwritten by Step 2's render pass. For a layer
+    // that covers the full canvas (e.g. painting on a background layer at
+    // 7000×9933) all four strips are empty, eliminating the 278 MB copy entirely.
+    //
+    // In the incremental path: ping/pong are preloaded with stableTex outside
+    // the dirty rect and zeroed inside it. We only need to propagate the
+    // previous layer's partial composite WITHIN the dirty rect — a single small
+    // copy of dirty.w × dirty.h × bpp.
+    const scissor = this.incrementalScissor
+    if (scissor !== null) {
+      // Incremental path: skip layers that don't intersect the dirty rect.
+      const sx0 = Math.max(scissor.x, ox)
+      const sy0 = Math.max(scissor.y, oy)
+      const sx1 = Math.min(scissor.x + scissor.w, ox + lw)
+      const sy1 = Math.min(scissor.y + scissor.h, oy + lh)
+      if (sx0 >= sx1 || sy0 >= sy1) {
+        // Layer doesn't touch the dirty region — dst already correct (preloaded).
+        return
+      }
+      if (!srcIsEmpty) {
+        // Propagate the previous layer's partial composite within the dirty rect.
+        // Outside the dirty rect, dst already holds stableTex content (preloaded);
+        // we never overwrite it (scissor blocks writes).
+        encoder.copyTextureToTexture(
+          { texture: srcTex, origin: { x: scissor.x, y: scissor.y } },
+          { texture: dstTex, origin: { x: scissor.x, y: scissor.y } },
+          { width: scissor.w, height: scissor.h },
+        )
+      }
+    } else if (!srcIsEmpty) {
+      this.copyOutsideRect(encoder, srcTex, dstTex, ox, oy, lw, lh, w, h)
     }
 
     // Step 2: Composite the layer's texture over its sub-rect
@@ -1246,6 +1620,15 @@ export class WebGPURenderer {
         storeOp: 'store',
       }],
     })
+    if (scissor !== null) {
+      // Constrain the composite to the canvas-space dirty rect intersected with
+      // the layer rect. Pixels outside the scissor in dstTex are preserved.
+      const sx0 = Math.max(scissor.x, ox)
+      const sy0 = Math.max(scissor.y, oy)
+      const sx1 = Math.min(scissor.x + scissor.w, ox + lw)
+      const sy1 = Math.min(scissor.y + scissor.h, oy + lh)
+      pass.setScissorRect(sx0, sy0, sx1 - sx0, sy1 - sy0)
+    }
     pass.setPipeline(this.compositePipeline)
     pass.setBindGroup(0, bindGroup)
     pass.setVertexBuffer(0, posBuffer)

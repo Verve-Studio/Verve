@@ -30,6 +30,14 @@ interface UseCanvasOptions {
    * (needed for tiled-mode wrap-around).
    */
   coordinateOffset?: { x: number; y: number }
+  /**
+   * Document pixel size. When the canvas backing buffer is smaller than the
+   * document (e.g. zoom < 1, where we shrink the swapchain to viewport size),
+   * pointer coordinates must still be reported in document space. If omitted,
+   * the canvas backing buffer is assumed to equal the document.
+   */
+  documentWidth?: number
+  documentHeight?: number
 }
 
 interface UseCanvasReturn {
@@ -48,14 +56,21 @@ export function useCanvas({
   onHover,
   onLeave,
   coordinateOffset,
+  documentWidth,
+  documentHeight,
 }: UseCanvasOptions): UseCanvasReturn {
   const isDrawing = useRef(false)
 
   const toCanvasPos = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>): CanvasPointerPosition | null => {
       const rect = e.currentTarget.getBoundingClientRect()
-      const scaleX = e.currentTarget.width / rect.width
-      const scaleY = e.currentTarget.height / rect.height
+      // Always map pointer position to document-pixel space. The backing buffer
+      // may be smaller than the document (zoom-out swapchain shrink), so we
+      // cannot use canvas.width for the conversion.
+      const docW = documentWidth  ?? e.currentTarget.width
+      const docH = documentHeight ?? e.currentTarget.height
+      const scaleX = docW / rect.width
+      const scaleY = docH / rect.height
       let x = Math.floor((e.clientX - rect.left) * scaleX)
       let y = Math.floor((e.clientY - rect.top) * scaleY)
       if (coordinateOffset) {
@@ -63,19 +78,21 @@ export function useCanvas({
         y -= coordinateOffset.y
         // Skip bounds check in tiled mode — tools need out-of-bounds coords for wrap-around
       } else {
-        if (x < 0 || y < 0 || x >= e.currentTarget.width || y >= e.currentTarget.height) return null
+        if (x < 0 || y < 0 || x >= docW || y >= docH) return null
       }
       return { x, y, pressure: e.pressure, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: e.timeStamp }
     },
-    [coordinateOffset]
+    [coordinateOffset, documentWidth, documentHeight]
   )
 
   /** Converts pointer position to canvas coords without bounds checking — used during active strokes. */
   const toRawPos = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>): CanvasPointerPosition => {
       const rect = e.currentTarget.getBoundingClientRect()
-      const scaleX = e.currentTarget.width / rect.width
-      const scaleY = e.currentTarget.height / rect.height
+      const docW = documentWidth  ?? e.currentTarget.width
+      const docH = documentHeight ?? e.currentTarget.height
+      const scaleX = docW / rect.width
+      const scaleY = docH / rect.height
       const ox = coordinateOffset?.x ?? 0
       const oy = coordinateOffset?.y ?? 0
       return {
@@ -84,7 +101,7 @@ export function useCanvas({
         pressure: e.pressure, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: e.timeStamp,
       }
     },
-    [coordinateOffset]
+    [coordinateOffset, documentWidth, documentHeight]
   )
 
   const handlePointerDown = useCallback(
@@ -120,8 +137,10 @@ export function useCanvas({
         : null
       if (coalesced && coalesced.length > 0) {
         const rect = e.currentTarget.getBoundingClientRect()
-        const sx = e.currentTarget.width / rect.width
-        const sy = e.currentTarget.height / rect.height
+        const docW = documentWidth  ?? e.currentTarget.width
+        const docH = documentHeight ?? e.currentTarget.height
+        const sx = docW / rect.width
+        const sy = docH / rect.height
         const ox = coordinateOffset?.x ?? 0
         const oy = coordinateOffset?.y ?? 0
         const positions: CanvasPointerPosition[] = []
@@ -155,7 +174,7 @@ export function useCanvas({
         if (isDrawing.current) onPointerMove?.(toRawPos(e))
       }
     },
-    [toCanvasPos, onPointerMove, onPointerMoveBatch, onPointerUp, onHover, coordinateOffset]
+    [toCanvasPos, onPointerMove, onPointerMoveBatch, onPointerUp, onHover, coordinateOffset, documentWidth, documentHeight]
   )
 
   const handlePointerUp = useCallback(

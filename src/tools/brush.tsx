@@ -82,6 +82,18 @@ function createBrushHandler(): ToolHandler {
     const srcFloat: readonly [number, number, number, number] | undefined =
       layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
     const padR = Math.ceil(Math.max(size0, size1) / 2) + 2
+    // Skip entirely off-canvas arcs: when the user drags far outside the canvas
+    // with the button held, segments may span huge OOB regions — walkQuadBezier
+    // would emit thousands of stamps that write zero pixels. Layer extent is
+    // already clamped to canvas, so off-canvas == off-layer == no visible effect.
+    // Tiled mode is exempt: OOB coords wrap into the canvas.
+    if (!ctx.tiledMode) {
+      const minX = Math.min(p0x, cpx, p1x) - padR
+      const minY = Math.min(p0y, cpy, p1y) - padR
+      const maxX = Math.max(p0x, cpx, p1x) + padR
+      const maxY = Math.max(p0y, cpy, p1y) + padR
+      if (maxX < 0 || maxY < 0 || minX >= renderer.pixelWidth || minY >= renderer.pixelHeight) return
+    }
     growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
     growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
     growLayerToFit(Math.round(p1x), Math.round(p1y), padR)

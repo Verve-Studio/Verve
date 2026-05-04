@@ -92,6 +92,26 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   activeToolRef.current = state.activeTool
   const pendingScrollRef = useRef<{ scrollLeft: number; scrollTop: number } | null>(null)
 
+  // Canvas backing-buffer (swapchain) size. The HTML canvas backing buffer drives the
+  // WebGPU swapchain texture size — every frame we write `backingW * backingH * 4` bytes
+  // to it (checker + blit). At a 7016×9933 document that's 278 MB per frame, which is
+  // the single biggest cost on the painting hot path.
+  //
+  // When zoom < 1 the document is being downscaled for display, so the on-screen pixel
+  // count is `width * zoom`. Sizing the swapchain to that count instead of the document
+  // size lets the GPU downsample once during the blit (sampling stableTex with linear
+  // UV) and write only the pixels that will actually be displayed. Cost shrinks
+  // proportionally to zoom².
+  //
+  // At zoom ≥ 1 we keep the swapchain at document resolution; the browser's compositor
+  // upscales (cheap, and we want crisp pixel-doubling at integer zooms anyway).
+  //
+  // Tiled mode reads from the canvas backing buffer with `drawImage(gc, col*width, …)`,
+  // so it requires the backing buffer at document size.
+  const displayScale = state.canvas.tiledMode ? 1 : Math.min(state.canvas.zoom, 1)
+  const backingW = Math.max(1, Math.round(width  * displayScale))
+  const backingH = Math.max(1, Math.round(height * displayScale))
+
   // Keep a ref to the current layer list so the imperative handle can access
   // up-to-date ordering and visibility without being re-created on every render.
   const layersStateRef = useRef(state.layers)
@@ -142,14 +162,60 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   // set grows faster than it drains, producing visible memory growth during sustained drags.
   const mirrorBitmapInFlightRef = useRef(false)
   const mirrorBitmapPendingRef = useRef(false)
+  const mirrorLastUpdateMsRef = useRef(0)
+  const mirrorTrailingTimeoutRef = useRef<number | null>(null)
+  const MIRROR_MIN_INTERVAL_MS = 500 // 2 fps cap on the navigator/thumbnail repaint
   const renderRafIdRef = useRef<number>(0)
   const doRenderRef = useRef<() => void>(() => {})
+  /**
+   * Compute the visible portion of the canvas backing buffer in backing-pixel coords.
+   * Returns null when the entire backing is visible (no scissor needed) or in tiled
+   * mode (we read the full backing into the tile overlay via drawImage).
+   */
+  const computeViewportScissor = (): { x: number; y: number; w: number; h: number } | null => {
+    if (state.canvas.tiledMode) return null
+    const canvas = canvasRef.current
+    const vp = viewportRef.current
+    if (!canvas || !vp) return null
+    const cRect = canvas.getBoundingClientRect()
+    const vRect = vp.getBoundingClientRect()
+    if (cRect.width <= 0 || cRect.height <= 0) return null
+    // Visible CSS rect of the canvas inside the viewport.
+    const visLeft   = Math.max(cRect.left,   vRect.left)
+    const visTop    = Math.max(cRect.top,    vRect.top)
+    const visRight  = Math.min(cRect.right,  vRect.right)
+    const visBottom = Math.min(cRect.bottom, vRect.bottom)
+    const cssVisW = visRight - visLeft
+    const cssVisH = visBottom - visTop
+    if (cssVisW <= 0 || cssVisH <= 0) return null
+    // Convert CSS visible rect to backing-pixel coords.
+    const sx = canvas.width  / cRect.width
+    const sy = canvas.height / cRect.height
+    let x = Math.floor((visLeft - cRect.left) * sx)
+    let y = Math.floor((visTop  - cRect.top ) * sy)
+    let w = Math.ceil (cssVisW * sx)
+    let h = Math.ceil (cssVisH * sy)
+    // Clamp to backing bounds.
+    x = Math.max(0, Math.min(canvas.width  - 1, x))
+    y = Math.max(0, Math.min(canvas.height - 1, y))
+    w = Math.max(1, Math.min(canvas.width  - x, w))
+    h = Math.max(1, Math.min(canvas.height - y, h))
+    // No-op scissor when the visible rect covers the entire backing.
+    if (x === 0 && y === 0 && w === canvas.width && h === canvas.height) return null
+    return { x, y, w, h }
+  }
   const doRender = (): void => {
     if (renderRafIdRef.current !== 0) return // already scheduled for this frame
     renderRafIdRef.current = requestAnimationFrame(() => {
       renderRafIdRef.current = 0
       const renderer = rendererRef.current
       if (!renderer) return
+      // Restrict the screen blit + checker pass to the actually-visible portion
+      // of the canvas backing buffer. At zoom > 1 the backing is full-document
+      // size but only a small slice is on-screen — without this scissor we'd
+      // write the entire backing every frame (e.g. 278 MB at 7000×9933) only
+      // for the browser compositor to clip most of it away.
+      renderer.setViewportScissor(computeViewportScissor())
       renderer.renderPlan(buildRenderPlan())
       // Tiled mode: blit GPU canvas 9 times into the 2D overlay canvas
       if (state.canvas.tiledMode) {
@@ -189,7 +255,29 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       mirrorBitmapPendingRef.current = true
       return
     }
+    // 2 fps cap: if the previous update was less than MIRROR_MIN_INTERVAL_MS ago,
+    // schedule a single trailing update at the rate-limit boundary instead of
+    // firing now. The full repaintScreenNoScissor + GPU readback is the most
+    // expensive part of the mirror path; capping it preserves a live thumbnail
+    // without burning bandwidth on every paint frame.
+    const now = performance.now()
+    const dueIn = MIRROR_MIN_INTERVAL_MS - (now - mirrorLastUpdateMsRef.current)
+    if (dueIn > 0) {
+      if (mirrorTrailingTimeoutRef.current === null) {
+        mirrorTrailingTimeoutRef.current = window.setTimeout(() => {
+          mirrorTrailingTimeoutRef.current = null
+          scheduleMirrorUpdate()
+        }, dueIn)
+      }
+      return
+    }
+    mirrorLastUpdateMsRef.current = now
     mirrorBitmapInFlightRef.current = true
+    // The screen blit is scissored to the visible viewport for performance, so
+    // outside that rect the canvas backing buffer holds stale pixels. Re-blit
+    // the full stableTex to the swapchain (no scissor) so createImageBitmap
+    // captures the entire canvas, not just the visible slice.
+    rendererRef.current?.repaintScreenNoScissor()
     createImageBitmap(gpuCanvas, 0, 0, gpuCanvas.width, gpuCanvas.height, {
       resizeWidth: mirrorW,
       resizeHeight: mirrorH,
@@ -684,6 +772,32 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   // Keep doRenderRef current every render so subscriptions always call the latest closure
   doRenderRef.current = doRender
+
+  // When the canvas backing buffer is resized (zoom crosses a threshold), the
+  // WebGPU swapchain texture is reallocated and contains undefined pixels.
+  // Force the next renderPlan() to actually run (not be skipped by the
+  // fingerprint cache) so the new swapchain is filled with valid content.
+  useEffect(() => {
+    if (!isActive) return
+    rendererRef.current?.invalidateRenderCache()
+    doRenderRef.current()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backingW, backingH, isActive])
+
+  // Re-render on viewport scroll: scrolling changes which slice of the canvas
+  // backing buffer is visible, and the WebGPU blit is scissored to that slice
+  // (see computeViewportScissor + renderer.setViewportScissor). Without this,
+  // newly-revealed regions of the backing would show stale pixels until the
+  // next plan-changing event.
+  useEffect(() => {
+    if (!isActive) return
+    const vp = viewportRef.current
+    if (!vp) return
+    const onScroll = (): void => { doRenderRef.current() }
+    vp.addEventListener('scroll', onScroll, { passive: true })
+    return () => vp.removeEventListener('scroll', onScroll)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive])
 
   // Re-render when HDR tone-mapping settings change (EV slider, operator)
   useEffect(() => {
@@ -1240,6 +1354,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       const ctx = buildCtx()
       if (ctx) toolHandlerRef.current.onLeave?.(ctx)
     },
+    documentWidth: width,
+    documentHeight: height,
   })
 
   // Stable offset object for the tiled canvas second useCanvas call
@@ -1377,8 +1493,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           <canvas
             ref={canvasRef}
             className={styles.canvas}
-            width={width}
-            height={height}
+            width={backingW}
+            height={backingH}
             style={{
               display: state.canvas.tiledMode ? 'none' : 'block',
               width:  width  * state.canvas.zoom / window.devicePixelRatio,
