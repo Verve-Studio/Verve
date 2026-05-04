@@ -26,32 +26,47 @@ class CursorStore {
 
   private listeners = new Set<Listener>()
 
+  // Notifications are coalesced to one per animation frame. Pointer events fire at
+  // up to ~1000 Hz (high-poll mice) and pen tablets emit ~20 coalesced events per
+  // frame; without coalescing, every event triggered React re-renders in StatusBar,
+  // InfoPanel and a ruler repaint, which compounded with WebGPU work to cause
+  // sluggish painting. Subscribers always read the latest state via the store fields.
+  private rafScheduled = false
+  private flushNotify(): void {
+    this.rafScheduled = false
+    for (const fn of this.listeners) fn()
+  }
+  private scheduleNotify(): void {
+    if (this.rafScheduled) return
+    this.rafScheduled = true
+    requestAnimationFrame(() => this.flushNotify())
+  }
+
   subscribe(fn: Listener): void   { this.listeners.add(fn) }
   unsubscribe(fn: Listener): void { this.listeners.delete(fn) }
-  private notify(): void          { for (const fn of this.listeners) fn() }
 
   setPosition(x: number, y: number): void {
     this.x = x
     this.y = y
     this.visible = true
-    this.notify()
+    this.scheduleNotify()
   }
 
   setPixelInfo(info: IndexedPixelInfo | null): void {
     this.pixelInfo = info
-    this.notify()
+    this.scheduleNotify()
   }
 
   setPixelValues(values: number[] | null, isFloat: boolean): void {
     this.pixelValues = values
     this.pixelIsFloat = isFloat
-    this.notify()
+    this.scheduleNotify()
   }
 
   hide(): void {
     if (!this.visible) return
     this.visible = false
-    this.notify()
+    this.scheduleNotify()
   }
 }
 
