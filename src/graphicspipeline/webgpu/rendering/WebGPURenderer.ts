@@ -204,7 +204,12 @@ export class WebGPURenderer {
         'WebGPU adapter could not be obtained. Your GPU driver may not support WebGPU.'
       )
     }
-    const device = await adapter.requestDevice()
+    const device = await adapter.requestDevice({
+      requiredLimits: {
+        maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+        maxBufferSize: adapter.limits.maxBufferSize,
+      },
+    })
     const ctx = canvas.getContext('webgpu') as GPUCanvasContext | null
     if (!ctx) {
       throw new WebGPUUnavailableError('Failed to obtain WebGPU canvas context.')
@@ -536,6 +541,12 @@ export class WebGPURenderer {
         newY = Math.round(cy - newH / 2)
       }
     }
+
+    // Clamp layer bounds to canvas — doubling can push bounds beyond the canvas edge
+    if (newX < 0) { newW += newX; newX = 0 }
+    if (newY < 0) { newH += newY; newY = 0 }
+    if (newX + newW > this.pixelWidth)  newW = this.pixelWidth  - newX
+    if (newY + newH > this.pixelHeight) newH = this.pixelHeight - newY
 
     const copyX = layer.offsetX - newX
     const copyY = layer.offsetY - newY

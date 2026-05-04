@@ -991,11 +991,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         // Tiled mode: wrap the coord into canvas range. blendPixelOver applies the
         // same wrap before bounds-checking against the layer rect, so the layer
         // must cover the wrapped destination, not the raw out-of-canvas input.
+        const W = renderer.pixelWidth
+        const H = renderer.pixelHeight
         if (state.canvas.tiledMode) {
-          const W = renderer.pixelWidth
-          const H = renderer.pixelHeight
           canvasX = ((canvasX % W) + W) % W
           canvasY = ((canvasY % H) + H) % H
+        } else {
+          // Clamp to canvas bounds — painting outside the canvas should not grow
+          // the layer beyond the canvas dimensions.
+          canvasX = Math.max(0, Math.min(W - 1, canvasX))
+          canvasY = Math.max(0, Math.min(H - 1, canvasY))
         }
         renderer.growLayerToFit(activeLayer!, canvasX, canvasY, extraRadius)
       },
