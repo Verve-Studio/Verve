@@ -2,6 +2,7 @@ import type { AppAction } from '@/core/store/AppContext'
 import type { ClearHistoryOptions } from '@/core/store/historyStore'
 import { historyStore } from '@/core/store/historyStore'
 import { f32TransferStore } from '@/core/store/layerDataTransfer'
+import { preferencesStore } from '@/core/store/preferencesStore'
 import type { TabRecord } from '@/core/store/tabTypes'
 import type { AppState, RGBAColor } from '@/types'
 import type { CanvasHandle } from '@/ux/main/Canvas/Canvas'
@@ -230,6 +231,16 @@ export function useHistory({
     }
     return () => { historyStore.onClear = null }
   }, [captureHistory])
+
+  // Sync history memory cap from preferences. Pushes the current value on
+  // mount and re-pushes whenever the user changes it in Preferences →
+  // Memory; the store immediately evicts oldest entries to fit.
+  useEffect(() => {
+    historyStore.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes)
+    return preferencesStore.subscribe(() => {
+      historyStore.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes)
+    })
+  }, [])
 
   // Auto-capture when layers are added or removed
   useEffect(() => {

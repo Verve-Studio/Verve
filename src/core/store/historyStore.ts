@@ -71,13 +71,19 @@ export function cloneHistoryEntries(entries: HistoryEntry[]): HistoryEntry[] {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-const MAX_HISTORY_ENTRIES = 50
-
 class HistoryStore {
   entries: HistoryEntry[] = []
   currentIndex = -1
   selectedIndex = -1
   private listeners = new Set<() => void>()
+
+  /**
+   * Maximum total bytes allowed across all history entries (after dedup of
+   * shared buffers). Set by `useHistory` from the user's `historyMemoryBytes`
+   * preference. Defaults to 4 GB so the store works before the renderer
+   * has loaded preferences.
+   */
+  private memoryCapBytes = 4 * 1024 * 1024 * 1024
 
   /**
    * Registered by App.tsx. Called when the user clicks Restore.
@@ -97,11 +103,63 @@ class HistoryStore {
    */
   onClear: ((options?: ClearHistoryOptions) => void) | null = null
 
+  /**
+   * Set the memory cap (in bytes) and immediately evict oldest entries until
+   * the total fits. Called by `useHistory` whenever the preference changes.
+   */
+  setMemoryCapBytes(bytes: number): void {
+    this.memoryCapBytes = Math.max(0, bytes)
+    this.evictUntilUnderCap()
+    this.notify()
+  }
+
+  getMemoryCapBytes(): number { return this.memoryCapBytes }
+
+  /**
+   * Total live RAM used by all entries, with shared buffer references counted
+   * exactly once. Pixel buffers are deduplicated across entries (see
+   * `useHistory.captureHistory`), so naive summing of `byteLength` per entry
+   * would double-count.
+   */
+  getCurrentBytes(): number {
+    const seen = new Set<ArrayBufferLike>()
+    let total = 0
+    for (const e of this.entries) {
+      for (const buf of e.layerPixels.values()) {
+        const ab = buf.buffer
+        if (seen.has(ab)) continue
+        seen.add(ab)
+        total += buf.byteLength
+      }
+      for (const buf of e.adjustmentMasks.values()) {
+        const ab = buf.buffer
+        if (seen.has(ab)) continue
+        seen.add(ab)
+        total += buf.byteLength
+      }
+    }
+    return total
+  }
+
   private releaseEntry(e: HistoryEntry): void {
     e.layerPixels.clear()
     e.layerGeometry.clear()
     e.adjustmentMasks.clear()
     e.layerContentVersions?.clear()
+  }
+
+  /**
+   * Drop oldest entries (and adjust currentIndex/selectedIndex) until the
+   * deduplicated total is <= cap. Always keeps at least one entry so undo
+   * always has a baseline. Caller is responsible for `notify()`.
+   */
+  private evictUntilUnderCap(): void {
+    while (this.entries.length > 1 && this.getCurrentBytes() > this.memoryCapBytes) {
+      const oldest = this.entries.shift()!
+      this.releaseEntry(oldest)
+      this.currentIndex = Math.max(0, this.currentIndex - 1)
+      this.selectedIndex = Math.max(0, this.selectedIndex - 1)
+    }
   }
 
   push(entry: HistoryEntry): void {
@@ -110,15 +168,15 @@ class HistoryStore {
     redo.forEach(e => this.releaseEntry(e))
 
     this.entries.push(entry)
-
-    // Cap history depth — release the oldest entry's buffers immediately
-    if (this.entries.length > MAX_HISTORY_ENTRIES) {
-      const oldest = this.entries.shift()!
-      this.releaseEntry(oldest)
-    }
-
     this.currentIndex = this.entries.length - 1
     this.selectedIndex = this.currentIndex
+
+    // Memory cap: evict oldest entries until under the byte budget. Replaces
+    // the old fixed entry-count cap — entry size varies wildly between docs
+    // (a 7000×9933 layer is ~278 MB; a 512×512 layer is ~1 MB), so a count
+    // cap is meaningless. Byte cap gives the user direct control over RAM.
+    this.evictUntilUnderCap()
+
     this.notify()
   }
 

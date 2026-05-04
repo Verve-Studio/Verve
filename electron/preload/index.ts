@@ -57,6 +57,12 @@ const api = {
   // ── App lifecycle ─────────────────────────────────────────────────────────────
   exitApp: (): Promise<void> => ipcRenderer.invoke('app:exit'),
 
+  // ── Preferences (persisted to userData/preferences.json) ────────────────────
+  loadPreferences: (): Promise<{ historyMemoryBytes: number }> =>
+    ipcRenderer.invoke('prefs:load'),
+  savePreferences: (prefs: { historyMemoryBytes: number }): Promise<void> =>
+    ipcRenderer.invoke('prefs:save', prefs),
+
   // ── Startup file path ─────────────────────────────────────────────────────────
   /** Poll once on mount — returns the file path passed as a CLI arg, or null. */
   getStartupFile: (): Promise<string | null> => ipcRenderer.invoke('app:getStartupFile'),

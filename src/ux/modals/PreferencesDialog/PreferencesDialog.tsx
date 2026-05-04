@@ -1,19 +1,22 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { ModalDialog } from '../ModalDialog/ModalDialog'
 import { DialogButton } from '../../widgets/DialogButton/DialogButton'
+import { preferencesStore, usePreferences } from '@/core/store/preferencesStore'
+import { historyStore } from '@/core/store/historyStore'
 import styles from './PreferencesDialog.module.scss'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 export interface PreferencesDialogProps {
   open: boolean
   onClose: () => void
 }
 
-type SectionId = 'fileAssoc'
+type SectionId = 'fileAssoc' | 'memory'
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'fileAssoc', label: 'File Associations' },
+  { id: 'memory',    label: 'Memory' },
 ]
 
 // Mirrors SUPPORTED_FILE_TYPES in fileAssociations.ts.
@@ -32,6 +35,91 @@ const ALL_FILE_TYPES = [
   { ext: 'exr',   label: 'OpenEXR Image (.exr)' },
   { ext: 'hdr',   label: 'Radiance HDR Image (.hdr)' },
 ]
+
+// ─── Memory section ──────────────────────────────────────────────────────────
+
+const GB = 1024 * 1024 * 1024
+const MIN_HISTORY_GB = 0.5
+const MAX_HISTORY_GB = 64
+const STEP_GB        = 0.5
+
+function formatBytes(bytes: number): string {
+  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
+
+function MemorySection(): React.JSX.Element {
+  const prefs = usePreferences()
+  // Subscribe to historyStore so the "currently used" readout updates live as
+  // the user paints / undoes / redoes while the dialog is open.
+  const [bytesUsed, setBytesUsed] = useState(() => historyStore.getCurrentBytes())
+  useEffect(() => {
+    const update = (): void => setBytesUsed(historyStore.getCurrentBytes())
+    update()
+    return historyStore.subscribe(update)
+  }, [])
+
+  const valueGB = prefs.historyMemoryBytes / GB
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const gb = Number(e.target.value)
+    if (!Number.isFinite(gb)) return
+    preferencesStore.set({ historyMemoryBytes: Math.round(gb * GB) })
+  }
+
+  const pctUsed = Math.min(100, (bytesUsed / prefs.historyMemoryBytes) * 100)
+
+  return (
+    <div className={styles.sectionBody}>
+      <div className={styles.field}>
+        <label className={styles.fieldLabel} htmlFor="history-memory">
+          History memory limit
+        </label>
+        <div className={styles.fieldRow}>
+          <input
+            id="history-memory"
+            type="range"
+            min={MIN_HISTORY_GB}
+            max={MAX_HISTORY_GB}
+            step={STEP_GB}
+            value={valueGB}
+            onChange={handleChange}
+            className={styles.slider}
+          />
+          <input
+            type="number"
+            min={MIN_HISTORY_GB}
+            max={MAX_HISTORY_GB}
+            step={STEP_GB}
+            value={valueGB}
+            onChange={handleChange}
+            className={styles.numberInput}
+          />
+          <span className={styles.unit}>GB</span>
+        </div>
+        <p className={styles.hint}>
+          Maximum RAM the undo / redo history is allowed to use. When this
+          limit is reached, the oldest entries are discarded to make room for
+          new ones. Lower values keep memory usage in check on large
+          documents; higher values give you more undo steps to work with.
+        </p>
+      </div>
+
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>Current usage</span>
+        <div className={styles.usageBar}>
+          <div className={styles.usageFill} style={{ width: `${pctUsed}%` }} />
+        </div>
+        <span className={styles.hint}>
+          {formatBytes(bytesUsed)} of {formatBytes(prefs.historyMemoryBytes)} used
+          {' · '}
+          {historyStore.entries.length} {historyStore.entries.length === 1 ? 'entry' : 'entries'}
+        </span>
+      </div>
+    </div>
+  )
+}
 
 // ─── File Associations section ────────────────────────────────────────────────
 
@@ -301,6 +389,7 @@ export function PreferencesDialog({ open, onClose }: PreferencesDialogProps): Re
             {SECTIONS.find(s => s.id === activeSection)?.label}
           </div>
           {activeSection === 'fileAssoc' && <FileAssocSection key={open ? 'open' : 'closed'} />}
+          {activeSection === 'memory'    && <MemorySection />}
         </div>
       </div>
 

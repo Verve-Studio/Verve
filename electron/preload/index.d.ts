@@ -38,6 +38,9 @@ declare global {
       saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle
       exitApp: () => Promise<void>
+      // Preferences
+      loadPreferences: () => Promise<{ historyMemoryBytes: number }>
+      savePreferences: (prefs: { historyMemoryBytes: number }) => Promise<void>
       // Startup file path (CLI arg)
       getStartupFile: () => Promise<string | null>
       onOpenFile: (callback: (path: string) => void) => (() => void)
