@@ -111,12 +111,30 @@ export class WebGPURenderer {
   // Temporary GPU textures for isolated group compositing; flushed after submit.
   private pendingDestroyTextures: GPUTexture[] = []
 
-  // Reusable per-composite (uniform, vertex) buffer pool. encodeCompositeLayer would
-  // otherwise allocate two GPUBuffers (64-byte uniform + 48-byte vertex quad) per layer
-  // per frame. At 60+ fps with N layers, that's hundreds of allocations/sec churning the
-  // WebGPU driver. The pool grows once to historic peak and is then reused indefinitely.
-  private compositeBufferPool: { unif: GPUBuffer; pos: GPUBuffer }[] = []
+  // Per-composite (uniform, vertex) buffer pool + per-slot bind-group cache.
+  // The BG cache avoids recreating a GPUBindGroup every frame when the three textures
+  // (layer, src ping-pong, mask) haven't changed object identity.
+  private compositeBufferPool: {
+    unif: GPUBuffer
+    pos: GPUBuffer
+    cachedBG: GPUBindGroup | null
+    cachedLayerTex: GPUTexture | null
+    cachedSrcTex: GPUTexture | null
+    cachedMaskTex: GPUTexture | null
+  }[] = []
   private compositeBufferIndex = 0
+
+  // Pre-allocated scratch objects reused each frame to avoid GC pressure.
+  // encodeCompositeLayer writes into compositeUnifAB synchronously before writeBuffer,
+  // so a single instance can be safely shared across all pool slots within one frame.
+  private readonly compositeUnifAB = new ArrayBuffer(64)
+  private readonly compositeUnifView = new DataView(this.compositeUnifAB)
+  private readonly compositeQuadF32 = new Float32Array(12)
+  // encodeBlitToView scratch (16 bytes: exposureLinear f32, isFp32 f32, operator u32, _pad f32)
+  private readonly blitUnifAB = new ArrayBuffer(16)
+  private readonly blitUnifView = new DataView(this.blitUnifAB)
+  // Per-srcTex blit bind-group cache. Only two entries ever exist (ping / pong).
+  private readonly blitBindGroupCache = new Map<GPUTexture, GPUBindGroup>()
 
   // ─── Render cache ──────────────────────────────────────────────────────────
   // Per-adjustment-group output textures: skip re-running adjustment passes when
@@ -701,15 +719,14 @@ export class WebGPURenderer {
     const { device, pixelWidth: w, pixelHeight: h } = this
     const encoder = device.createCommandEncoder()
 
-    // Clear group textures
+    // Clear dst; src (groupPongTex) needs no clearing — only written before being read
     this.encodeClearTexture(encoder, this.groupPingTex)
-    this.encodeClearTexture(encoder, this.groupPongTex)
 
     let srcTex = this.groupPongTex
     let dstTex = this.groupPingTex
 
     const baseAsSource: GpuLayer = { ...groupEntry.baseLayer, opacity: 1, blendMode: 'normal' }
-    this.encodeCompositeLayer(encoder, baseAsSource, srcTex, dstTex, groupEntry.baseMask)
+    this.encodeCompositeLayer(encoder, baseAsSource, srcTex, dstTex, groupEntry.baseMask, true)
     ;[srcTex, dstTex] = [dstTex, srcTex]
 
     for (let i = 0; i < targetIndex; i++) {
@@ -770,8 +787,9 @@ export class WebGPURenderer {
   ): GPUTexture {
     this.compositeBufferIndex = 0
     this.encodeClearTexture(encoder, this.pingTex)
-    this.encodeClearTexture(encoder, this.pongTex)
-    const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '')
+    // pongTex (initial src) needs no clearing — it is only ever read after being written
+    // as dst in a prior iteration, so pre-clearing it wastes one full-canvas clear per frame.
+    const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '', true)
     return src
   }
 
@@ -780,7 +798,7 @@ export class WebGPURenderer {
    * the pool grows on demand and the index is reset at the start of each plan encoding.
    * Avoids ~2 GPUBuffer allocations per layer per frame in encodeCompositeLayer.
    */
-  private acquireCompositeBuffers(): { unif: GPUBuffer; pos: GPUBuffer } {
+  private acquireCompositeBuffers(): { unif: GPUBuffer; pos: GPUBuffer; cachedBG: GPUBindGroup | null; cachedLayerTex: GPUTexture | null; cachedSrcTex: GPUTexture | null; cachedMaskTex: GPUTexture | null } {
     const i = this.compositeBufferIndex++
     let pair = this.compositeBufferPool[i]
     if (!pair) {
@@ -793,6 +811,10 @@ export class WebGPURenderer {
           size: 48, // 6 vertices * 2 floats * 4 bytes
           usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         }),
+        cachedBG: null,
+        cachedLayerTex: null,
+        cachedSrcTex: null,
+        cachedMaskTex: null,
       }
       this.compositeBufferPool[i] = pair
     }
@@ -805,12 +827,14 @@ export class WebGPURenderer {
     src: GPUTexture,
     dst: GPUTexture,
     inputFp: string,
-  ): { src: GPUTexture; dst: GPUTexture; inputFp: string } {
+    srcIsEmpty = false,
+  ): { src: GPUTexture; dst: GPUTexture; inputFp: string; srcIsEmpty: boolean } {
     for (const entry of plan) {
       if (entry.kind === 'layer') {
         if (!entry.layer.visible || entry.layer.opacity === 0) continue
-        this.encodeCompositeLayer(encoder, entry.layer, src, dst, entry.mask)
+        this.encodeCompositeLayer(encoder, entry.layer, src, dst, entry.mask, srcIsEmpty)
         ;[src, dst] = [dst, src]
+        srcIsEmpty = false
         const l = entry.layer
         const maskPart = entry.mask ? `:M${entry.mask.contentVersion}` : ''
         inputFp += `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`
@@ -819,19 +843,20 @@ export class WebGPURenderer {
         if (!entry.visible) continue
         if (entry.blendMode === 'pass-through') {
           // Pass-through: inline children into the parent ping-pong pair.
-          const child = this.encodeSubPlan(encoder, entry.children, src, dst, inputFp)
-          src = child.src; dst = child.dst; inputFp = child.inputFp
+          const child = this.encodeSubPlan(encoder, entry.children, src, dst, inputFp, srcIsEmpty)
+          src = child.src; dst = child.dst; inputFp = child.inputFp; srcIsEmpty = child.srcIsEmpty
           inputFp += `|GRP-end:${entry.groupId}`
         } else {
           // Isolated: allocate a fresh ping-pong pair for this group.
           const iso1 = this.allocateTempGroupTex()
           const iso2 = this.allocateTempGroupTex()
           this.encodeClearTexture(encoder, iso1)
-          this.encodeClearTexture(encoder, iso2)
-          const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '')
+          // iso2 (initial src for children) needs no clearing — only written before being read
+          const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
           // Composite the isolated result into the parent context.
-          this.encodeCompositeTexture(encoder, child.src, src, dst, entry.opacity, entry.blendMode)
+          this.encodeCompositeTexture(encoder, child.src, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
           ;[src, dst] = [dst, src]
+          srcIsEmpty = false
           inputFp += `|GRP:${entry.groupId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}`
         }
 
@@ -841,8 +866,8 @@ export class WebGPURenderer {
         const iso1 = this.allocateTempGroupTex()
         const iso2 = this.allocateTempGroupTex()
         this.encodeClearTexture(encoder, iso1)
-        this.encodeClearTexture(encoder, iso2)
-        const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '')
+        // iso2 (initial src for children) needs no clearing — only written before being read
+        const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
         const adjKey = this.adjGroupCacheEnabled
           ? computeAdjGroupParamsKey(entry.adjustments)
           : entry.adjustments.map(a => a.layerId).join(',')
@@ -855,8 +880,9 @@ export class WebGPURenderer {
           const cached = this.compositeLayerCache.get(entry.layerId)
           if (cached && cached.childFp === child.inputFp && cached.adjKey === adjKey) {
             // Hit: composite the cached texture into the parent ping-pong.
-            this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode)
+            this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
             ;[src, dst] = [dst, src]
+            srcIsEmpty = false
             inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`
             continue
           }
@@ -899,8 +925,9 @@ export class WebGPURenderer {
           this.compositeLayerCache.set(entry.layerId, { childFp: child.inputFp, adjKey, tex: cacheTex })
         }
 
-        this.encodeCompositeTexture(encoder, compositeSrc, src, dst, entry.opacity, entry.blendMode)
+        this.encodeCompositeTexture(encoder, compositeSrc, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
         ;[src, dst] = [dst, src]
+        srcIsEmpty = false
         inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`
 
       } else if (entry.kind === 'adjustment-group') {
@@ -959,8 +986,9 @@ export class WebGPURenderer {
           groupResult = this.encodeAdjustmentGroup(encoder, entry)
         }
 
-        this.encodeCompositeTexture(encoder, groupResult, src, dst, entry.baseLayer.opacity, entry.baseLayer.blendMode)
+        this.encodeCompositeTexture(encoder, groupResult, src, dst, entry.baseLayer.opacity, entry.baseLayer.blendMode, srcIsEmpty)
         ;[src, dst] = [dst, src]
+        srcIsEmpty = false
         const l = entry.baseLayer
         inputFp += `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`
 
@@ -986,12 +1014,14 @@ export class WebGPURenderer {
               { width: this.pixelWidth, height: this.pixelHeight },
             )
             ;[src, dst] = [dst, src]
+            srcIsEmpty = false
             inputFp += `|SO:${op.layerId}:${opParamsKey}`
             continue
           }
           // Cache miss: encode normally, then snapshot dst into cache.
           this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat)
           ;[src, dst] = [dst, src]
+          srcIsEmpty = false
           const texUsage =
             GPUTextureUsage.TEXTURE_BINDING |
             GPUTextureUsage.COPY_DST |
@@ -1013,11 +1043,12 @@ export class WebGPURenderer {
         } else {
           this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat)
           ;[src, dst] = [dst, src]
+          srcIsEmpty = false
           inputFp += `|SO:${op.layerId}:${opParamsKey}`
         }
       }
     }
-    return { src, dst, inputFp }
+    return { src, dst, inputFp, srcIsEmpty }
   }
 
   private allocateTempGroupTex(): GPUTexture {
@@ -1067,24 +1098,29 @@ export class WebGPURenderer {
     const exposureLinear = Math.pow(2, displayStore.exposureEV)
     const isFp32 = this.pixelFormat === 'rgba32f' ? 1.0 : 0.0
     const operatorId = OPERATOR_SHADER_ID[displayStore.toneMappingOperator] ?? 1
-    const tmData = new ArrayBuffer(16)
-    const tmView = new DataView(tmData)
+    const tmView = this.blitUnifView
     tmView.setFloat32(0, exposureLinear, true)
     tmView.setFloat32(4, isFp32, true)
     tmView.setUint32(8, operatorId, true)
     tmView.setFloat32(12, 0.0, true)
-    this.device.queue.writeBuffer(this.hdrUniformBuffer, 0, tmData)
+    this.device.queue.writeBuffer(this.hdrUniformBuffer, 0, this.blitUnifAB)
 
-    // Uses pre-allocated frameUniformBuf + canvasQuadVertBuf
-    const bindGroup = this.device.createBindGroup({
-      layout: this.hdrBlitBGL,
-      entries: [
-        { binding: 0, resource: this.sampler },
-        { binding: 1, resource: srcTex.createView() },
-        { binding: 2, resource: { buffer: this.frameUniformBuf } },
-        { binding: 3, resource: { buffer: this.hdrUniformBuffer } },
-      ],
-    })
+    // Cache the blit bind group by srcTex identity. It is only ever one of two textures
+    // (ping / pong) and the sampler + buffers never change object identity, so the BG
+    // can be reused every frame once built.
+    let bindGroup = this.blitBindGroupCache.get(srcTex)
+    if (!bindGroup) {
+      bindGroup = this.device.createBindGroup({
+        layout: this.hdrBlitBGL,
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: srcTex.createView() },
+          { binding: 2, resource: { buffer: this.frameUniformBuf } },
+          { binding: 3, resource: { buffer: this.hdrUniformBuffer } },
+        ],
+      })
+      this.blitBindGroupCache.set(srcTex, bindGroup)
+    }
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
@@ -1107,6 +1143,7 @@ export class WebGPURenderer {
     srcTex: GPUTexture,
     dstTex: GPUTexture,
     maskLayer?: GpuLayer,
+    srcIsEmpty = false,
   ): void {
     const { device, pixelWidth: w, pixelHeight: h } = this
     const ox = layer.offsetX
@@ -1114,12 +1151,16 @@ export class WebGPURenderer {
     const lw = layer.layerWidth
     const lh = layer.layerHeight
 
-    // Step 1: copy src → dst (GPU DMA — no shader, far cheaper than a render pass at 4K)
-    encoder.copyTextureToTexture(
-      { texture: srcTex },
-      { texture: dstTex },
-      { width: w, height: h },
-    )
+    // Step 1: copy src → dst so regions outside the layer's sub-rect are preserved.
+    // Skip when srcIsEmpty: dst is already cleared (zeros), so copying zeros onto zeros
+    // would be an 84 MB GPU DMA for nothing at large canvas sizes.
+    if (!srcIsEmpty) {
+      encoder.copyTextureToTexture(
+        { texture: srcTex },
+        { texture: dstTex },
+        { width: w, height: h },
+      )
+    }
 
     // Step 2: Composite the layer's texture over its sub-rect
     // WGSL CompositeUniforms layout (64 bytes):
@@ -1132,8 +1173,9 @@ export class WebGPURenderer {
     //   offset 48: _pad       : vec3u  (12 bytes)
     //   total size: 64 bytes
     // Acquire a reusable (uniform, vertex) buffer pair from the pool.
-    const { unif: unifBuf, pos: posBuffer } = this.acquireCompositeBuffers()
-    const unifView = new DataView(new ArrayBuffer(64))
+    const slot = this.acquireCompositeBuffers()
+    const { unif: unifBuf, pos: posBuffer } = slot
+    const unifView = this.compositeUnifView
     unifView.setFloat32( 0, layer.opacity, true)
     unifView.setUint32 ( 4, BLEND_MODE_INDEX[layer.blendMode] ?? 0, true)
     unifView.setFloat32(16, ox / w, true)  // dstRect.x
@@ -1143,31 +1185,48 @@ export class WebGPURenderer {
     unifView.setUint32 (32, maskLayer ? 1 : 0, true)
     // _pad at offset 48: left as zero
 
-    writeUniformBuffer(device, unifBuf, unifView.buffer)
+    writeUniformBuffer(device, unifBuf, this.compositeUnifAB)
 
     const dummyMaskTex = maskLayer?.texture ?? srcTex // use any fallback if no mask
 
-    const bindGroup = device.createBindGroup({
-      layout: this.compositeBGL,
-      entries: [
-        { binding: 0, resource: this.sampler },
-        { binding: 1, resource: layer.texture.createView() },
-        { binding: 2, resource: srcTex.createView() },
-        { binding: 3, resource: dummyMaskTex.createView() },
-        { binding: 4, resource: { buffer: unifBuf } },
-        { binding: 5, resource: { buffer: this.frameUniformBuf } },
-      ],
-    })
+    // Reuse the cached bind group when all three texture identities are unchanged.
+    // createBindGroup allocates a GPU descriptor set; at 60 fps with N layers that's
+    // N * 60 descriptor sets/sec — eliminated when the layer stack is stable.
+    let bindGroup: GPUBindGroup
+    if (
+      slot.cachedBG !== null &&
+      slot.cachedLayerTex === layer.texture &&
+      slot.cachedSrcTex === srcTex &&
+      slot.cachedMaskTex === dummyMaskTex
+    ) {
+      bindGroup = slot.cachedBG
+    } else {
+      bindGroup = device.createBindGroup({
+        layout: this.compositeBGL,
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: layer.texture.createView() },
+          { binding: 2, resource: srcTex.createView() },
+          { binding: 3, resource: dummyMaskTex.createView() },
+          { binding: 4, resource: { buffer: unifBuf } },
+          { binding: 5, resource: { buffer: this.frameUniformBuf } },
+        ],
+      })
+      slot.cachedBG = bindGroup
+      slot.cachedLayerTex = layer.texture
+      slot.cachedSrcTex = srcTex
+      slot.cachedMaskTex = dummyMaskTex
+    }
 
     // Position quad covering only the layer's canvas-space rect
-    device.queue.writeBuffer(posBuffer, 0, new Float32Array([
-      ox,      oy,
-      ox + lw, oy,
-      ox,      oy + lh,
-      ox,      oy + lh,
-      ox + lw, oy,
-      ox + lw, oy + lh,
-    ]))
+    const qv = this.compositeQuadF32
+    qv[0] = ox;       qv[1] = oy
+    qv[2] = ox + lw;  qv[3] = oy
+    qv[4] = ox;       qv[5] = oy + lh
+    qv[6] = ox;       qv[7] = oy + lh
+    qv[8] = ox + lw;  qv[9] = oy
+    qv[10] = ox + lw; qv[11] = oy + lh
+    device.queue.writeBuffer(posBuffer, 0, qv)
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
@@ -1191,6 +1250,7 @@ export class WebGPURenderer {
     dstTex: GPUTexture,
     opacity: number,
     blendMode: string,
+    srcIsEmpty = false,
   ): void {
     const pseudoLayer: GpuLayer = {
       id: '__group-composite__',
@@ -1208,7 +1268,7 @@ export class WebGPURenderer {
       dirtyRect: null,
       contentVersion: 0,
     }
-    this.encodeCompositeLayer(encoder, pseudoLayer, srcTex, dstTex)
+    this.encodeCompositeLayer(encoder, pseudoLayer, srcTex, dstTex, undefined, srcIsEmpty)
   }
 
   private encodeAdjustmentGroup(
@@ -1216,13 +1276,13 @@ export class WebGPURenderer {
     entry: Extract<RenderPlanEntry, { kind: 'adjustment-group' }>,
   ): GPUTexture {
     this.encodeClearTexture(encoder, this.groupPingTex)
-    this.encodeClearTexture(encoder, this.groupPongTex)
+    // groupPongTex (initial src) needs no clearing — only written before being read
 
     let srcTex = this.groupPongTex
     let dstTex = this.groupPingTex
 
     const baseAsSource: GpuLayer = { ...entry.baseLayer, opacity: 1, blendMode: 'normal' }
-    this.encodeCompositeLayer(encoder, baseAsSource, srcTex, dstTex, entry.baseMask)
+    this.encodeCompositeLayer(encoder, baseAsSource, srcTex, dstTex, entry.baseMask, true)
     ;[srcTex, dstTex] = [dstTex, srcTex]
 
     for (const op of entry.adjustments) {

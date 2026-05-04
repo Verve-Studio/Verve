@@ -114,13 +114,21 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   // A plain 2D canvas kept in sync with the WebGPU output so Navigator (and any
   // other panel) can read pixel content without touching the WebGPU canvas directly
   // (which can cause GPU-process crashes in Electron when cross-context read is attempted).
+  //
+  // The mirror is capped at MIRROR_MAX_DIM on its longest side. createImageBitmap is called
+  // with matching resizeWidth/resizeHeight so Chromium downscales in GPU memory before the
+  // CPU readback — turning an 84 MB readback at 7000×3000 into ~450 KB.
+  const MIRROR_MAX_DIM = 512
+  const mirrorScale = Math.min(1, MIRROR_MAX_DIM / Math.max(width, height))
+  const mirrorW = Math.max(1, Math.round(width * mirrorScale))
+  const mirrorH = Math.max(1, Math.round(height * mirrorScale))
   useEffect(() => {
     const mirror = document.createElement('canvas')
-    mirror.width = width
-    mirror.height = height
+    mirror.width = mirrorW
+    mirror.height = mirrorH
     thumbnailCanvasRef.current = mirror
     return () => { thumbnailCanvasRef.current = null }
-  }, [width, height, thumbnailCanvasRef])
+  }, [mirrorW, mirrorH, thumbnailCanvasRef])
 
   // doRender: wrapper around renderPlan that also asynchronously refreshes the mirror canvas.
   // Mirror updates are flight-controlled: at most one in-flight createImageBitmap. During a
@@ -182,7 +190,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       return
     }
     mirrorBitmapInFlightRef.current = true
-    createImageBitmap(gpuCanvas).then(bitmap => {
+    createImageBitmap(gpuCanvas, 0, 0, gpuCanvas.width, gpuCanvas.height, {
+      resizeWidth: mirrorW,
+      resizeHeight: mirrorH,
+      resizeQuality: 'medium',
+    }).then(bitmap => {
       const m = thumbnailCanvasRef.current
       if (m) {
         const ctx = m.getContext('2d')
