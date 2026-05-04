@@ -30,6 +30,7 @@ export interface UseAdjustmentsReturn {
 
 /** Returns true for layer types that can own adjustment/effect children. */
 function isEffectEligibleLayer(layer: LayerState): boolean {
+  if ('locked' in layer && (layer as { locked?: boolean }).locked) return false
   if (!('type' in layer)) return true  // PixelLayerState has no type discriminant
   return layer.type === 'text' || layer.type === 'shape' || layer.type === 'composite'
 }
@@ -86,6 +87,10 @@ export function useAdjustments({
     } else {
       return
     }
+
+    // Block adding adjustments/effects/filters to locked layers.
+    const effectiveParent = layers.find(l => l.id === effectiveParentId)
+    if (effectiveParent && 'locked' in effectiveParent && (effectiveParent as { locked?: boolean }).locked) return
 
     const entry = (ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]).find(e => e.adjustmentType === adjustmentType)
     if (!entry) return

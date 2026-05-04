@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useReducer } from 'react'
 import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, MaskLayerState, AdjustmentLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, PixelFormat, AnimationDef, AnimationFrame } from '@/types'
-import { isGroupLayer, isContainerLayer } from '@/types'
-import { getDescendantIds, getParentGroup } from '@/utils/layerTree'
+import { isGroupLayer, isContainerLayer, isCompositeLayer } from '@/types'
+import { getDescendantIds, getParentGroup, hasLockedCompositeAncestor } from '@/utils/layerTree'
 import { DEFAULT_SWATCHES } from './tabTypes'
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -233,6 +233,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
       if (state.layers.length <= 1) return state
       const target = state.layers.find(l => l.id === action.payload)
       if (!target) return state
+      // A locked Composite Layer locks its entire subtree. Block deletion of
+      // any descendant; the user must unlock the composite first.
+      if (hasLockedCompositeAncestor(state.layers, action.payload)) return state
       // Collect all IDs to remove: the target + its descendants (for groups/composites) + per-layer children.
       const toRemove = new Set<string>([action.payload])
       if (isContainerLayer(target)) {
@@ -270,6 +273,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'ADD_MASK_LAYER': {
       const parentIdx = state.layers.findIndex((l) => l.id === action.payload.parentId)
       if (parentIdx < 0) return state
+      // Block mask creation on a locked composite or any of its descendants.
+      const parent = state.layers[parentIdx]
+      if (isCompositeLayer(parent) && parent.locked) return state
+      if (hasLockedCompositeAncestor(state.layers, action.payload.parentId)) return state
       const next = [...state.layers]
       next.splice(parentIdx + 1, 0, action.payload)
       return { ...state, layers: next, activeLayerId: action.payload.id }
@@ -333,15 +340,28 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
 
-    case 'TOGGLE_LAYER_LOCK':
+    case 'TOGGLE_LAYER_LOCK': {
+      const target = state.layers.find(l => l.id === action.payload)
+      if (!target || ('type' in target && target.type === 'mask')) return state
+      // A locked Composite Layer locks its entire subtree. Block per-child
+      // unlock attempts so the user can't desynchronise the cascade.
+      if (hasLockedCompositeAncestor(state.layers, action.payload)) return state
+      const newLocked = !(target as { locked: boolean }).locked
+      // Locking a container (group / composite) cascades to every descendant
+      // so the user can't accidentally edit a layer baked into the cached
+      // composite output. Unlocking releases the cascade.
+      const affected = isContainerLayer(target)
+        ? new Set([action.payload, ...getDescendantIds(state.layers, action.payload)])
+        : new Set([action.payload])
       return {
         ...state,
-        layers: state.layers.map((l) =>
-          l.id === action.payload && !('type' in l && l.type === 'mask')
-            ? { ...l, locked: !(l as { locked: boolean }).locked }
+        layers: state.layers.map(l =>
+          affected.has(l.id) && !('type' in l && l.type === 'mask')
+            ? { ...l, locked: newLocked }
             : l
         )
       }
+    }
 
     case 'SET_LAYER_OPACITY':
       return {
@@ -367,8 +387,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
         )
       }
 
-    case 'REORDER_LAYERS':
-      return { ...state, layers: action.payload, selectedLayerIds: [] }
+    case 'REORDER_LAYERS': {
+      // A locked Composite Layer locks its entire subtree against structural
+      // changes. Reject any reorder that:
+      //   - adds new ids to a locked composite's childIds, OR
+      //   - reorders existing ids inside a locked composite, OR
+      //   - changes any descendant container's childIds (intra-group reorder
+      //     while that group is itself nested inside a locked composite).
+      const next = action.payload
+      const nextById = new Map(next.map(l => [l.id, l]))
+      for (const prev of state.layers) {
+        if (!isContainerLayer(prev)) continue
+        const updated = nextById.get(prev.id)
+        if (!updated || !isContainerLayer(updated)) continue
+        const lockedAncestor =
+          (isCompositeLayer(prev) && prev.locked) ||
+          hasLockedCompositeAncestor(state.layers, prev.id)
+        if (!lockedAncestor) continue
+        // Compare childIds arrays in order — any difference is rejected.
+        if (prev.childIds.length !== updated.childIds.length) return state
+        for (let i = 0; i < prev.childIds.length; i++) {
+          if (prev.childIds[i] !== updated.childIds[i]) return state
+        }
+      }
+      return { ...state, layers: next, selectedLayerIds: [] }
+    }
 
     case 'ADD_TEXT_LAYER':
       return {
@@ -775,6 +818,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'MOVE_LAYER_INTO_GROUP': {
       const { layerId, targetGroupId, insertIndex } = action.payload
+      // Block any structural change that touches a locked Composite Layer's
+      // subtree: moving INTO it, moving OUT of it, or reordering WITHIN it
+      // (drag-and-drop reorder routes through here as remove+reinsert).
+      const targetGroup = state.layers.find(l => l.id === targetGroupId)
+      if (targetGroup && isCompositeLayer(targetGroup) && targetGroup.locked) return state
+      if (hasLockedCompositeAncestor(state.layers, targetGroupId)) return state
+      if (hasLockedCompositeAncestor(state.layers, layerId)) return state
       // Remove from current parent's childIds (if any).
       let nextLayers = state.layers.map(l =>
         isContainerLayer(l) && l.id !== targetGroupId
@@ -794,6 +844,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'MOVE_LAYER_OUT_OF_GROUP': {
       const { layerId, targetParentGroupId, insertIndex } = action.payload
+      // Block if the layer is currently inside a locked Composite Layer
+      // subtree, or if the destination parent is.
+      if (hasLockedCompositeAncestor(state.layers, layerId)) return state
+      if (targetParentGroupId !== null) {
+        const targetParent = state.layers.find(l => l.id === targetParentGroupId)
+        if (targetParent && isCompositeLayer(targetParent) && targetParent.locked) return state
+        if (hasLockedCompositeAncestor(state.layers, targetParentGroupId)) return state
+      }
       // Remove from all containers' childIds.
       let nextLayers = state.layers.map(l =>
         isContainerLayer(l) ? { ...l, childIds: l.childIds.filter(id => id !== layerId) } : l,

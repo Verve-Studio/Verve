@@ -164,6 +164,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   const mirrorBitmapPendingRef = useRef(false)
   const mirrorLastUpdateMsRef = useRef(0)
   const mirrorTrailingTimeoutRef = useRef<number | null>(null)
+  // False after a canvas backing resize until at least one renderPlan has
+  // submitted to the new swapchain. Reading the swapchain (createImageBitmap)
+  // before then sees an uninitialized SharedImage — produces a black mirror
+  // and a Chromium GL_INVALID_OPERATION console error.
+  const mirrorReadyRef = useRef(false)
   const MIRROR_MIN_INTERVAL_MS = 500 // 2 fps cap on the navigator/thumbnail repaint
   const renderRafIdRef = useRef<number>(0)
   const doRenderRef = useRef<() => void>(() => {})
@@ -217,6 +222,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       // for the browser compositor to clip most of it away.
       renderer.setViewportScissor(computeViewportScissor())
       renderer.renderPlan(buildRenderPlan())
+      // A render has been submitted to the current swapchain; the mirror path
+      // can now safely createImageBitmap without reading uninitialized memory.
+      mirrorReadyRef.current = true
       // Tiled mode: blit GPU canvas 9 times into the 2D overlay canvas
       if (state.canvas.tiledMode) {
         const tc = tiledCanvasRef.current
@@ -250,6 +258,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const gpuCanvas = canvasRef.current
     const mirror = thumbnailCanvasRef.current
     if (!gpuCanvas || !mirror) return
+    // Backing was just resized; the swapchain SharedImage is uninitialized
+    // until the next render submits to it. Defer until then.
+    if (!mirrorReadyRef.current) {
+      mirrorBitmapPendingRef.current = true
+      return
+    }
     if (mirrorBitmapInFlightRef.current) {
       // Coalesce: a frame is already in flight; mark that we owe one more update once it resolves.
       mirrorBitmapPendingRef.current = true
@@ -278,16 +292,27 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     // the full stableTex to the swapchain (no scissor) so createImageBitmap
     // captures the entire canvas, not just the visible slice.
     rendererRef.current?.repaintScreenNoScissor()
-    createImageBitmap(gpuCanvas, 0, 0, gpuCanvas.width, gpuCanvas.height, {
+    // Snapshot the backing dimensions at submit time. If the canvas is resized
+    // before createImageBitmap resolves, the captured bitmap targets a stale
+    // size and must be discarded \u2014 a fresh mirror update will be scheduled
+    // by the post-render path.
+    const captureW = gpuCanvas.width
+    const captureH = gpuCanvas.height
+    createImageBitmap(gpuCanvas, 0, 0, captureW, captureH, {
       resizeWidth: mirrorW,
       resizeHeight: mirrorH,
       resizeQuality: 'medium',
     }).then(bitmap => {
       const m = thumbnailCanvasRef.current
-      if (m) {
+      const c = canvasRef.current
+      // Skip if the backing was resized between submit and resolve \u2014 the
+      // bitmap reflects an obsolete buffer state.
+      if (m && c && c.width === captureW && c.height === captureH) {
         const ctx = m.getContext('2d')
         ctx?.clearRect(0, 0, m.width, m.height)
         ctx?.drawImage(bitmap, 0, 0)
+      } else {
+        mirrorBitmapPendingRef.current = true
       }
       bitmap.close()
     }).catch(() => { /* not yet presented */ }).finally(() => {
@@ -779,7 +804,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   // fingerprint cache) so the new swapchain is filled with valid content.
   useEffect(() => {
     if (!isActive) return
-    rendererRef.current?.invalidateRenderCache()
+    // Block any in-flight or pending mirror update from reading the
+    // newly-allocated, uninitialized swapchain. doRender re-arms it.
+    mirrorReadyRef.current = false
+    if (mirrorTrailingTimeoutRef.current !== null) {
+      clearTimeout(mirrorTrailingTimeoutRef.current)
+      mirrorTrailingTimeoutRef.current = null
+    }
+    rendererRef.current?.markViewportDirty()
     doRenderRef.current()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backingW, backingH, isActive])

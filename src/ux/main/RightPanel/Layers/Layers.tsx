@@ -484,10 +484,12 @@ export function Layers({
   const isChildActive = activeLayer !== undefined && 'type' in activeLayer &&
     (activeLayer.type === 'mask' || activeLayer.type === 'adjustment')
 
-  const opacityValue = (!isChildActive && activeLayer) ? Math.round((activeLayer as { opacity: number }).opacity * 100) : 100
-  const blendValue: BlendMode = (!isChildActive && activeLayer) ? (activeLayer as { blendMode: BlendMode }).blendMode : 'normal'
+  // Groups are purely organisational — they don't expose blend mode or
+  // opacity. For non-trivial compositing, use a Composite Layer.
+  const opacityValue = (!isChildActive && !isActiveGroup && activeLayer) ? Math.round((activeLayer as { opacity: number }).opacity * 100) : 100
+  const blendValue: BlendMode = (!isChildActive && !isActiveGroup && activeLayer) ? (activeLayer as { blendMode: BlendMode }).blendMode : 'normal'
 
-  const activeBlendModes = isActiveContainer ? BLEND_MODES_GROUP : BLEND_MODES_BASE
+  const activeBlendModes = isActiveComposite ? BLEND_MODES_GROUP : BLEND_MODES_BASE
 
   const canAddMask = activeLayerId && !isChildActive && !isActiveContainer &&
     !layers.some(l => 'type' in l && l.type === 'mask' && (l as { parentId: string }).parentId === activeLayerId)
@@ -704,7 +706,7 @@ export function Layers({
         <select
           className={styles.blendSelect}
           value={blendValue}
-          disabled={!activeLayer || !!isChildActive}
+          disabled={!activeLayer || !!isChildActive || isActiveGroup}
           onChange={(e) => activeLayer && onLayerBlendChange(activeLayer.id, e.target.value as BlendMode)}
         >
           {activeBlendModes.map((bm) => (
@@ -720,7 +722,7 @@ export function Layers({
           step={1}
           inputWidth={34}
           suffix="%"
-          disabled={!activeLayer || !!isChildActive}
+          disabled={!activeLayer || !!isChildActive || isActiveGroup}
           onChange={(n) => activeLayer && onLayerOpacityChange(activeLayer.id, n / 100)}
         />
       </div>

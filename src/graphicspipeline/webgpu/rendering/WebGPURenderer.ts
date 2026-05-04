@@ -148,6 +148,11 @@ export class WebGPURenderer {
     paramsKey: string
     tex: GPUTexture
   }>()
+  // Permanent baked output for locked layers. Once a locked layer's adjustment
+  // group is computed once, the result is stored here and reused for every
+  // subsequent frame with zero GPU compute. Evicted when the layer is unlocked.
+  // Key = parentLayerId.
+  private bakedLockedLayers = new Map<string, GPUTexture>()
   // Per standalone AdjustmentRenderOp (group-scoped effects: bloom, halation, etc.)
   // output cache. Keyed by op.layerId. The cache hits when the accumulated input
   // (everything composited before this op in the plan) and the op params are
@@ -196,6 +201,17 @@ export class WebGPURenderer {
     this.hasStableTex = false
   }
 
+  /**
+   * Signal that the swapchain backing buffer was reallocated (e.g. zoom changed
+   * displayScale and the canvas element resized). The composited pixels in
+   * stableTex are still valid; we only need the next renderPlan() to re-blit
+   * stableTex to the new swapchain. Avoids the multi-hundred-MB cost of
+   * invalidating the entire layer composite cache for a pure viewport resize.
+   */
+  markViewportDirty(): void {
+    this.viewportDirty = true
+  }
+
   // ─── Viewport scissor ─────────────────────────────────────────────────────────
   // When set, encodeCheckerboard and encodeBlitToView clip their fragment writes
   // to this rect (in swapchain backing pixels). Used at zoom > 1 where the canvas
@@ -203,9 +219,13 @@ export class WebGPURenderer {
   // 7000×9933 pixels per frame and letting the browser compositor clip, we only
   // write the visible region (e.g. 1500×900 device px). The rest of the backing
   // retains stale pixels but the browser composites them outside the viewport so
-  // they're never seen. On scroll/zoom the caller must invalidateRenderCache() so
-  // the new visible region gets redrawn.
+  // they're never seen.
   private viewportScissor: { x: number; y: number; w: number; h: number } | null = null
+  // Set when the viewport scissor changes since the last successful render.
+  // The next renderPlan() call must re-blit stableTex to the swapchain so the
+  // newly-visible portion of the backing receives valid pixels — but it does
+  // NOT need to re-composite any layers (no pixel content has changed).
+  private viewportDirty = false
 
   /** Restrict checker + blit-to-screen writes to this rect in backing pixels. Pass null to disable. */
   setViewportScissor(rect: { x: number; y: number; w: number; h: number } | null): void {
@@ -215,9 +235,12 @@ export class WebGPURenderer {
       (a !== null && b !== null && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h)
     if (same) return
     this.viewportScissor = rect
-    // The visible region changed — force the next renderPlan() to actually run
-    // so the new visible scissor area gets fresh pixels.
-    this.lastPlanFp = null
+    // Mark viewport dirty so the next renderPlan() re-blits stableTex to the
+    // swapchain inside the new scissor. We deliberately do NOT invalidate the
+    // plan fingerprint here — pan/scroll changes the visible slice but not the
+    // composited pixels themselves, so re-running the entire layer composite
+    // would burn hundreds of MB per scroll event at large canvas sizes.
+    this.viewportDirty = true
   }
 
   /**
@@ -769,6 +792,17 @@ export class WebGPURenderer {
     if (planFp === this.lastPlanFp) {
       // Drop any dirty accumulation that came in for a no-op frame.
       this.frameDirtyCanvasRect = null
+      // Viewport-only change (pan / scroll / zoom-resize): re-blit stableTex to
+      // the swapchain so the newly-visible portion receives valid pixels. No
+      // layer compositing required — pixel content is unchanged.
+      if (this.viewportDirty && this.hasStableTex && this.stableTex !== null) {
+        const reblitEnc = device.createCommandEncoder()
+        const screenView = this.context.getCurrentTexture().createView()
+        this.encodeCheckerboard(reblitEnc, screenView)
+        this.encodeBlitToView(reblitEnc, this.stableTex, screenView)
+        device.queue.submit([reblitEnc.finish()])
+        this.viewportDirty = false
+      }
       return
     }
 
@@ -880,12 +914,57 @@ export class WebGPURenderer {
 
     this.lastPlanFp = planFp
     this.frameDirtyCanvasRect = null
+    // Both render paths above blit to the swapchain inside the current scissor,
+    // so any pending viewport-only update is satisfied.
+    this.viewportDirty = false
   }
 
-  /** True when every plan entry is a plain layer (no groups, adjustments, effects). */
+  /** True when every plan entry is a plain layer (no groups, adjustments, effects).
+   *  Locked adjustment groups with a baked output texture are also treated as
+   *  flat — they composite directly from the baked texture with no GPU compute.
+   *  Pass-through groups are transparent organizational units and recurse into
+   *  their children. Empty groups (regardless of blend mode) are no-ops in
+   *  encodeSubPlan, so they don't disable the flat path either. */
   private planIsFlatLayersOnly(plan: RenderPlanEntry[]): boolean {
     for (const entry of plan) {
-      if (entry.kind !== 'layer') return false
+      if (entry.kind === 'layer') continue
+      if (entry.kind === 'layer-group') {
+        if (!entry.visible) continue
+        if (entry.children.length === 0) continue
+        if (entry.blendMode === 'pass-through') {
+          if (!this.planIsFlatLayersOnly(entry.children)) return false
+          continue
+        }
+        return false
+      }
+      if (
+        entry.kind === 'adjustment-group' &&
+        entry.locked === true &&
+        this.bakedLockedLayers.has(entry.parentLayerId)
+      ) continue
+      if (
+        entry.kind === 'composite-layer' &&
+        entry.locked === true &&
+        this.bakedLockedLayers.has(entry.layerId)
+      ) continue
+      // Unlocked composite-layer with a guaranteed cache hit also acts as a
+      // single cached blit — same shape as the locked-baked fast-path. This
+      // is critical: when the user paints on a layer OUTSIDE the composite,
+      // none of the composite's children change, so the cache will hit. We
+      // verify by computing the would-be childFp + adjKey and matching them
+      // against the cached entry. On match, the incremental path can run and
+      // the encode side will scissored-blit the cached tex.
+      if (entry.kind === 'composite-layer' && entry.visible && !entry.locked) {
+        const cached = this.compositeLayerCache.get(entry.layerId)
+        if (!cached) return false
+        const adjKey = computeAdjGroupParamsKey(entry.adjustments)
+        if (cached.adjKey !== adjKey) return false
+        const parts: string[] = []
+        this.appendPlanFp(entry.children, parts)
+        if (cached.childFp !== parts.join('')) return false
+        continue
+      }
+      return false
     }
     return true
   }
@@ -918,6 +997,7 @@ export class WebGPURenderer {
         out.push(`|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`)
       } else if (entry.kind === 'layer-group') {
         if (!entry.visible) continue
+        if (entry.children.length === 0) continue
         if (entry.blendMode === 'pass-through') {
           this.appendPlanFp(entry.children, out)
           out.push(`|GRP-end:${entry.groupId}`)
@@ -928,6 +1008,12 @@ export class WebGPURenderer {
         }
       } else if (entry.kind === 'composite-layer') {
         if (!entry.visible) continue
+        // Locked composite with a baked output: fingerprint depends only on the
+        // layer's outer params, not its children. Mirrors the encode fast path.
+        if (entry.locked && this.bakedLockedLayers.has(entry.layerId)) {
+          out.push(`|LCL:${entry.layerId}:${entry.opacity}:${entry.blendMode}`)
+          continue
+        }
         const adjKey = computeAdjGroupParamsKey(entry.adjustments)
         out.push(`|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:[`)
         this.appendPlanFp(entry.children, out)
@@ -1073,8 +1159,7 @@ export class WebGPURenderer {
   ): GPUTexture {
     this.compositeBufferIndex = 0
     this.encodeClearTexture(encoder, this.pingTex)
-    // pongTex (initial src) needs no clearing — it is only ever read after being written
-    // as dst in a prior iteration, so pre-clearing it wastes one full-canvas clear per frame.
+    this.encodeClearTexture(encoder, this.pongTex)
     const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '', true)
     return src
   }
@@ -1127,6 +1212,10 @@ export class WebGPURenderer {
 
       } else if (entry.kind === 'layer-group') {
         if (!entry.visible) continue
+        // Empty group: nothing to composite. Skip to avoid allocating + clearing
+        // two full-canvas textures (hundreds of MB at large canvas sizes) every
+        // renderPlan call — which during a brush stroke means every pointer event.
+        if (entry.children.length === 0) continue
         if (entry.blendMode === 'pass-through') {
           // Pass-through: inline children into the parent ping-pong pair.
           const child = this.encodeSubPlan(encoder, entry.children, src, dst, inputFp, srcIsEmpty)
@@ -1137,8 +1226,9 @@ export class WebGPURenderer {
           const iso1 = this.allocateTempGroupTex()
           const iso2 = this.allocateTempGroupTex()
           this.encodeClearTexture(encoder, iso1)
-          // iso2 (initial src for children) needs no clearing — only written before being read
+          this.encodeClearTexture(encoder, iso2)
           const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
+          if (child.srcIsEmpty) continue
           // Composite the isolated result into the parent context.
           this.encodeCompositeTexture(encoder, child.src, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
           ;[src, dst] = [dst, src]
@@ -1148,33 +1238,90 @@ export class WebGPURenderer {
 
       } else if (entry.kind === 'composite-layer') {
         if (!entry.visible) continue
-        // Composite all children into an isolated texture pair.
-        const iso1 = this.allocateTempGroupTex()
-        const iso2 = this.allocateTempGroupTex()
-        this.encodeClearTexture(encoder, iso1)
-        // iso2 (initial src for children) needs no clearing — only written before being read
-        const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
+
+        // Locked composite-layer fast path: blit the baked flattened output
+        // directly into the parent ping-pong. No child recursion, no isolated
+        // texture allocation, no adjustment passes. Mirrors the locked
+        // adjustment-group fast path.
+        if (entry.locked) {
+          const bakedTex = this.bakedLockedLayers.get(entry.layerId)
+          if (bakedTex) {
+            this.encodeCompositeTexture(encoder, bakedTex, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
+            ;[src, dst] = [dst, src]
+            srcIsEmpty = false
+            inputFp += `|LCL:${entry.layerId}:${entry.opacity}:${entry.blendMode}`
+            continue
+          }
+          // No baked tex yet. If the compositeLayerCache already holds a valid
+          // output for the same children + adjustments (very likely — locking
+          // doesn't itself invalidate that cache), promote it to a baked tex
+          // without re-encoding children at all.
+          if (this.adjGroupCacheEnabled) {
+            const cached = this.compositeLayerCache.get(entry.layerId)
+            if (cached) {
+              const childFpParts: string[] = []
+              this.appendPlanFp(entry.children, childFpParts)
+              const childFp = childFpParts.join('')
+              const adjKeyForLocked = computeAdjGroupParamsKey(entry.adjustments)
+              if (cached.childFp === childFp && cached.adjKey === adjKeyForLocked) {
+                // Transfer ownership: the cached output already holds the exact
+                // pixels we'd otherwise re-render. Promote it to a baked tex
+                // and drop the composite-cache entry so we don't double-track it.
+                this.bakedLockedLayers.set(entry.layerId, cached.tex)
+                this.compositeLayerCache.delete(entry.layerId)
+                this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
+                ;[src, dst] = [dst, src]
+                srcIsEmpty = false
+                inputFp += `|LCL:${entry.layerId}:${entry.opacity}:${entry.blendMode}`
+                continue
+              }
+            }
+          }
+          // Cache miss too — fall through, encode children, bake at the bottom.
+        } else {
+          // Composite was unlocked — evict any stale baked tex.
+          const stale = this.bakedLockedLayers.get(entry.layerId)
+          if (stale) {
+            stale.destroy()
+            this.bakedLockedLayers.delete(entry.layerId)
+          }
+        }
+
         const adjKey = this.adjGroupCacheEnabled
           ? computeAdjGroupParamsKey(entry.adjustments)
           : entry.adjustments.map(a => a.layerId).join(',')
 
-        let compositeSrc: GPUTexture
-
-        // Cache check: skip re-compositing children and re-running adjustments when
-        // the child fingerprint and adjustment params haven't changed.
+        // Up-front cache check: compute the would-be child fingerprint from
+        // the plan WITHOUT encoding any children. If the cache is valid we
+        // skip child recursion + temp-texture allocation entirely. This is
+        // critical for painting performance on layers OUTSIDE the composite —
+        // their edits don't change any composite child's contentVersion, so
+        // the cached flatten remains valid for the entire stroke.
         if (this.adjGroupCacheEnabled) {
           const cached = this.compositeLayerCache.get(entry.layerId)
-          if (cached && cached.childFp === child.inputFp && cached.adjKey === adjKey) {
-            // Hit: composite the cached texture into the parent ping-pong.
-            this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
-            ;[src, dst] = [dst, src]
-            srcIsEmpty = false
-            inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`
-            continue
+          if (cached && cached.adjKey === adjKey) {
+            const childFpParts: string[] = []
+            this.appendPlanFp(entry.children, childFpParts)
+            const upfrontChildFp = childFpParts.join('')
+            if (cached.childFp === upfrontChildFp) {
+              this.encodeCompositeTexture(encoder, cached.tex, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
+              ;[src, dst] = [dst, src]
+              srcIsEmpty = false
+              inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${upfrontChildFp}:${adjKey}`
+              continue
+            }
           }
         }
 
+        // Cache miss — composite all children into an isolated texture pair.
+        const iso1 = this.allocateTempGroupTex()
+        const iso2 = this.allocateTempGroupTex()
+        this.encodeClearTexture(encoder, iso1)
+        this.encodeClearTexture(encoder, iso2)
+        const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
+
         // Apply per-composite adjustments to the flattened result.
+        let compositeSrc: GPUTexture
         compositeSrc = child.src
         if (entry.adjustments.length > 0) {
           // Borrow the shared group ping-pong textures for the adjustment passes.
@@ -1211,6 +1358,22 @@ export class WebGPURenderer {
           this.compositeLayerCache.set(entry.layerId, { childFp: child.inputFp, adjKey, tex: cacheTex })
         }
 
+        // If the composite is locked, bake the flattened+adjusted result for
+        // every future frame. Subsequent renders take the fast-path blit above.
+        if (entry.locked && !this.bakedLockedLayers.has(entry.layerId)) {
+          const bakeTex = this.device.createTexture({
+            size: { width: this.pixelWidth, height: this.pixelHeight },
+            format: this.internalFormat,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+          })
+          encoder.copyTextureToTexture(
+            { texture: compositeSrc },
+            { texture: bakeTex },
+            { width: this.pixelWidth, height: this.pixelHeight },
+          )
+          this.bakedLockedLayers.set(entry.layerId, bakeTex)
+        }
+
         this.encodeCompositeTexture(encoder, compositeSrc, src, dst, entry.opacity, entry.blendMode, srcIsEmpty)
         ;[src, dst] = [dst, src]
         srcIsEmpty = false
@@ -1218,6 +1381,28 @@ export class WebGPURenderer {
 
       } else if (entry.kind === 'adjustment-group') {
         if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
+
+        // Locked layer fast path: if we have a baked texture, composite it directly —
+        // no GPU compute, no cache lookup, just a blit.  The baked tex is canvas-sized
+        // with the layer (+ all its adjustments) already composited into it.
+        if (entry.locked) {
+          const bakedTex = this.bakedLockedLayers.get(entry.parentLayerId)
+          if (bakedTex) {
+            this.encodeCompositeTexture(encoder, bakedTex, src, dst, entry.baseLayer.opacity, entry.baseLayer.blendMode, srcIsEmpty)
+            ;[src, dst] = [dst, src]
+            srcIsEmpty = false
+            inputFp += `|LAG:${entry.parentLayerId}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}`
+            continue
+          }
+          // Baked tex not yet ready — fall through to compute it below, then bake.
+        } else {
+          // Layer was unlocked — evict any stale baked tex.
+          const stale = this.bakedLockedLayers.get(entry.parentLayerId)
+          if (stale) {
+            stale.destroy()
+            this.bakedLockedLayers.delete(entry.parentLayerId)
+          }
+        }
 
         let groupResult: GPUTexture
 
@@ -1270,6 +1455,21 @@ export class WebGPURenderer {
           }
         } else {
           groupResult = this.encodeAdjustmentGroup(encoder, entry)
+        }
+
+        // If the layer is locked, bake the result for all future frames.
+        if (entry.locked && !this.bakedLockedLayers.has(entry.parentLayerId)) {
+          const bakeTex = this.device.createTexture({
+            size: { width: this.pixelWidth, height: this.pixelHeight },
+            format: this.internalFormat,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+          })
+          encoder.copyTextureToTexture(
+            { texture: groupResult },
+            { texture: bakeTex },
+            { width: this.pixelWidth, height: this.pixelHeight },
+          )
+          this.bakedLockedLayers.set(entry.parentLayerId, bakeTex)
         }
 
         this.encodeCompositeTexture(encoder, groupResult, src, dst, entry.baseLayer.opacity, entry.baseLayer.blendMode, srcIsEmpty)
@@ -1530,7 +1730,20 @@ export class WebGPURenderer {
       const sx1 = Math.min(scissor.x + scissor.w, ox + lw)
       const sy1 = Math.min(scissor.y + scissor.h, oy + lh)
       if (sx0 >= sx1 || sy0 >= sy1) {
-        // Layer doesn't touch the dirty region — dst already correct (preloaded).
+        // Layer doesn't touch the dirty region. We still must propagate the
+        // running composite from src→dst within the dirty rect, because the
+        // caller will swap src/dst after this call. Without the copy the next
+        // layer that DOES intersect dirty would read stale (cleared) pong
+        // contents and lose every prior layer's contribution inside dirty —
+        // producing transparent holes wherever a non-intersecting layer sits
+        // between two intersecting ones.
+        if (!srcIsEmpty) {
+          encoder.copyTextureToTexture(
+            { texture: srcTex, origin: { x: scissor.x, y: scissor.y } },
+            { texture: dstTex, origin: { x: scissor.x, y: scissor.y } },
+            { width: scissor.w, height: scissor.h },
+          )
+        }
         return
       }
       if (!srcIsEmpty) {
@@ -1670,7 +1883,7 @@ export class WebGPURenderer {
     entry: Extract<RenderPlanEntry, { kind: 'adjustment-group' }>,
   ): GPUTexture {
     this.encodeClearTexture(encoder, this.groupPingTex)
-    // groupPongTex (initial src) needs no clearing — only written before being read
+    this.encodeClearTexture(encoder, this.groupPongTex)
 
     let srcTex = this.groupPongTex
     let dstTex = this.groupPingTex
@@ -1707,6 +1920,8 @@ export class WebGPURenderer {
     this.adjEncoder.destroy()
     for (const entry of this.adjGroupCache.values()) entry.tex.destroy()
     this.adjGroupCache.clear()
+    for (const tex of this.bakedLockedLayers.values()) tex.destroy()
+    this.bakedLockedLayers.clear()
     for (const entry of this.standaloneOpCache.values()) entry.tex.destroy()
     this.standaloneOpCache.clear()
     for (const entry of this.compositeLayerCache.values()) entry.tex.destroy()

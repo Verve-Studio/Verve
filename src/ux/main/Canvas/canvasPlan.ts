@@ -465,13 +465,15 @@ export function buildSubPlan(
       continue
     }
 
-    // Group layer → recurse
+    // Group layer → recurse. Groups are purely organisational: always
+    // pass-through with full opacity, no mask, no adjustments. For non-trivial
+    // compositing semantics use a Composite Layer instead.
     if (isGroupLayer(ls)) {
       plan.push({
         kind: 'layer-group',
         groupId: ls.id,
-        opacity: ls.opacity,
-        blendMode: ls.blendMode,
+        opacity: 1,
+        blendMode: 'pass-through',
         visible: ls.visible,
         children: buildSubPlan(
           ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
@@ -507,6 +509,7 @@ export function buildSubPlan(
           ls.childIds, layers, glLayers, maskMap, adjustmentMaskMap, bypassedAdjustmentIds, swatches, pixelFormat,
         ),
         adjustments: attachedAdj,
+        locked: ls.locked === true,
       })
       continue
     }
@@ -532,12 +535,14 @@ export function buildSubPlan(
     }
 
     if (adjustments.length > 0) {
+      const isLocked = 'locked' in ls && (ls as { locked: boolean }).locked === true
       plan.push({
         kind: 'adjustment-group',
         parentLayerId: ls.id,
         baseLayer,
         baseMask: maskMap.get(ls.id),
         adjustments,
+        locked: isLocked || undefined,
       })
     } else {
       plan.push({ kind: 'layer', layer: baseLayer, mask: maskMap.get(ls.id) })

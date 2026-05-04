@@ -1,5 +1,5 @@
 import type { LayerState, GroupLayerState, CompositeLayerState, MaskLayerState, AdjustmentLayerState } from '@/types'
-import { isContainerLayer } from '@/types'
+import { isContainerLayer, isCompositeLayer } from '@/types'
 
 // ─── Root layer IDs ───────────────────────────────────────────────────────────
 
@@ -71,6 +71,23 @@ export function isDescendantOf(
   }
 
   return check(ancestorId)
+}
+
+/** True if `layerId` has any locked Composite Layer ancestor (excluding itself).
+ *  Used to enforce "locked composite locks all descendants" semantics: child
+ *  unlock, child delete, mask creation, and "move into" actions are blocked
+ *  whenever this returns true. */
+export function hasLockedCompositeAncestor(
+  layers: readonly LayerState[],
+  layerId: string,
+): boolean {
+  let current = layerId
+  for (;;) {
+    const parent = getParentGroup(layers, current)
+    if (!parent) return false
+    if (isCompositeLayer(parent) && parent.locked) return true
+    current = parent.id
+  }
 }
 
 // ─── Depth ────────────────────────────────────────────────────────────────────

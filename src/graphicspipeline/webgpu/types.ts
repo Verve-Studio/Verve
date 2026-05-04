@@ -279,6 +279,10 @@ export type RenderPlanEntry =
       baseLayer: GpuLayer
       baseMask?: GpuLayer
       adjustments: AdjustmentRenderOp[]
+      /** When true the parent pixel layer is locked — the renderer will bake
+       *  the composited output once and reuse it on every subsequent frame,
+       *  and `planIsFlatLayersOnly` treats it as equivalent to a plain layer. */
+      locked?: boolean
     }
   | {
       kind: 'layer-group'
@@ -298,6 +302,10 @@ export type RenderPlanEntry =
       visible:     boolean
       children:    RenderPlanEntry[]
       adjustments: AdjustmentRenderOp[]
+      /** When true the composite is locked — the renderer bakes its flattened
+       *  output once and reuses it on every subsequent frame, and
+       *  `planIsFlatLayersOnly` treats it as equivalent to a plain layer. */
+      locked?:     boolean
     }
   | AdjustmentRenderOp
 

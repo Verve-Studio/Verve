@@ -100,6 +100,13 @@ function toolTitle(layer: AdjustmentLayerState): string {
   }
 }
 
+const LockClosedIconSvg = (): React.JSX.Element => (
+  <svg viewBox="0 0 12 14" fill="currentColor" width="10" height="11" aria-hidden="true">
+    <rect x="2" y="6" width="8" height="7" rx="1" />
+    <path d="M4 6V4.5a2 2 0 114 0V6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+  </svg>
+)
+
 const BrightnessContrastHeaderIcon = (): React.JSX.Element => (
   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
     <circle cx="6" cy="6" r="2" />
@@ -317,6 +324,7 @@ export function AdjustmentPanel({ onClose, canvasHandleRef }: ToolWindowProps): 
   const adjLayer = layer as AdjustmentLayerState
   const parentLayer = layers.find(l => l.id === adjLayer.parentId)
   const parentLayerName = parentLayer?.name ?? 'Layer'
+  const parentLocked = (parentLayer as { locked?: boolean } | undefined)?.locked === true
 
   const panelWidth = adjLayer.adjustmentType === 'curves' ? 306
     : adjLayer.adjustmentType === 'color-grading' ? 504
@@ -329,7 +337,13 @@ export function AdjustmentPanel({ onClose, canvasHandleRef }: ToolWindowProps): 
       onClose={onClose}
       width={panelWidth}
     >
-      <div className={styles.body}>
+      {parentLocked && (
+        <div className={styles.lockedBanner}>
+          <LockClosedIconSvg />
+          Layer is locked — editing disabled
+        </div>
+      )}
+      <div className={`${styles.body}${parentLocked ? ` ${styles.bodyLocked}` : ''}`}>
         {adjLayer.adjustmentType === 'brightness-contrast' && (
           <BrightnessContrastPanel layer={adjLayer as BrightnessContrastAdjustmentLayer} parentLayerName={parentLayerName} />
         )}
