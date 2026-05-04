@@ -8,6 +8,13 @@ export interface HistoryEntry {
   timestamp: number
   /** Raw pixel data snapshot per layer, keyed by layer ID. Uint8Array for rgba8/indexed8, Float32Array for rgba32f. */
   layerPixels: Map<string, Uint8Array | Float32Array>
+  /**
+   * Per-layer contentVersion at the time of the snapshot. Used by
+   * `useHistory.captureHistory` to share pixel buffer references across
+   * entries when a layer hasn't changed — dramatically reduces per-entry
+   * RAM (one paint stroke on a 10-layer doc clones 1 buffer, not 10).
+   */
+  layerContentVersions?: Map<string, number>
   /** Per-layer dimensions and canvas-space offset at the time of the snapshot. */
   layerGeometry: Map<string, { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }>
   /** Baked adjustment mask pixels keyed by adjustment layer ID. */
@@ -53,6 +60,7 @@ export function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
     layerGeometry: cloneLayerGeometry(entry.layerGeometry),
     adjustmentMasks: cloneAdjustmentMasks(entry.adjustmentMasks),
     layerState: structuredClone(entry.layerState),
+    layerContentVersions: entry.layerContentVersions ? new Map(entry.layerContentVersions) : undefined,
     swatches: entry.swatches ? [...entry.swatches] : undefined,
   }
 }
@@ -93,6 +101,7 @@ class HistoryStore {
     e.layerPixels.clear()
     e.layerGeometry.clear()
     e.adjustmentMasks.clear()
+    e.layerContentVersions?.clear()
   }
 
   push(entry: HistoryEntry): void {

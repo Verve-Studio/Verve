@@ -49,10 +49,42 @@ export function useHistory({
       suppressReadyCaptureRef.current = false
       return
     }
-    const layerPixels = canvasHandleRef.current?.captureAllLayerPixels()
-    if (!layerPixels || layerPixels.size === 0) return
-    const layerGeometry = canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map()
-    const adjustmentMasks = canvasHandleRef.current?.captureAllAdjustmentMasks() ?? new Map()
+    const handle = canvasHandleRef.current
+    if (!handle) return
+    // Borrow live buffer references (no copy yet) + capture identity sidecars.
+    // We slice ONLY layers whose contentVersion or geometry actually changed
+    // since the previous entry — sharing buffer references for the rest.
+    // Without this dedup a 10-layer 7000×9933 doc allocates ~2.8 GB per
+    // history entry and OOMs the JS heap on the very first paint stroke.
+    const liveBufs = handle.borrowAllLayerPixels()
+    if (liveBufs.size === 0) return
+    const layerGeometry = handle.captureAllLayerGeometry()
+    const adjustmentMasks = handle.captureAllAdjustmentMasks()
+    const contentVersions = handle.captureAllLayerContentVersions()
+
+    const prev = historyStore.entries[historyStore.currentIndex]
+    const layerPixels = new Map<string, Uint8Array | Float32Array>()
+    for (const [id, liveBuf] of liveBufs) {
+      const prevVer = prev?.layerContentVersions?.get(id)
+      const currVer = contentVersions.get(id)
+      const prevBuf = prev?.layerPixels.get(id)
+      const prevGeo = prev?.layerGeometry.get(id)
+      const currGeo = layerGeometry.get(id)
+      const sameVer = prevVer !== undefined && currVer !== undefined && prevVer === currVer
+      const sameGeo = !!prevGeo && !!currGeo &&
+        prevGeo.layerWidth === currGeo.layerWidth &&
+        prevGeo.layerHeight === currGeo.layerHeight &&
+        prevGeo.offsetX === currGeo.offsetX &&
+        prevGeo.offsetY === currGeo.offsetY
+      if (prevBuf && sameVer && sameGeo && prevBuf.length === liveBuf.length) {
+        layerPixels.set(id, prevBuf)
+      } else {
+        // Layer changed (or first capture) — must clone the live buffer; the
+        // live `layer.data` reference is mutated by subsequent paints.
+        layerPixels.set(id, liveBuf.slice() as Uint8Array | Float32Array)
+      }
+    }
+
     const s = stateRef.current
     historyStore.push({
       id: `hist-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -61,6 +93,7 @@ export function useHistory({
       layerPixels,
       layerGeometry,
       adjustmentMasks,
+      layerContentVersions: contentVersions,
       layerState: s.layers,
       activeLayerId: s.activeLayerId,
       canvasWidth: s.canvas.width,
@@ -69,7 +102,11 @@ export function useHistory({
     })
   }, [canvasHandleRef, stateRef])
 
-  // Preview: temporarily show a history entry without committing state
+  // Preview: temporarily show a history entry without moving currentIndex.
+  // Restores the same things the jump-to path does (pixels + adjustment masks
+  // + layer state) — otherwise the render plan keeps using live state.layers
+  // and the preview only partially reflects the snapshot (visibility, blend
+  // mode, layer add/delete, adjustment params all stay on current values).
   useEffect(() => {
     historyStore.onPreview = (index: number): void => {
       const entry = historyStore.entries[index]
@@ -78,11 +115,20 @@ export function useHistory({
         entry.canvasWidth  !== stateRef.current.canvas.width ||
         entry.canvasHeight !== stateRef.current.canvas.height
       ) return
+      isRestoringRef.current = true
       canvasHandleRef.current?.restoreAllLayerPixels(entry.layerPixels, entry.layerGeometry, entry.layerState)
       canvasHandleRef.current?.restoreAllAdjustmentMasks(entry.adjustmentMasks)
+      dispatch({
+        type: 'RESTORE_LAYERS',
+        payload: { layers: entry.layerState, activeLayerId: entry.activeLayerId },
+      })
+      if (entry.swatches) {
+        dispatch({ type: 'SET_SWATCHES', payload: entry.swatches })
+      }
+      setTimeout(() => { isRestoringRef.current = false }, 200)
     }
     return () => { historyStore.onPreview = null }
-  }, [canvasHandleRef, stateRef])
+  }, [canvasHandleRef, stateRef, dispatch])
 
   // Jump-to: full restore — may trigger canvas remount for dimension changes
   useEffect(() => {

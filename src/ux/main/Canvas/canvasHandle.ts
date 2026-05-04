@@ -37,6 +37,12 @@ export interface CanvasHandle {
   /** Snapshot all current layers' raw pixel data + geometry for history. */
   captureAllLayerPixels: () => Map<string, Uint8Array | Float32Array>
   /**
+   * Snapshot per-layer contentVersion. Used by history capture to deduplicate
+   * unchanged layers across entries (sharing buffer references) so a 10-layer
+   * doc doesn't allocate 10× the per-entry RAM when only one layer changed.
+   */
+  captureAllLayerContentVersions: () => Map<string, number>
+  /**
    * Return direct references to layer data buffers — no copy.
    * Only safe when the Canvas is about to unmount (tab switch / file open).
    * Do NOT use for history capture.
@@ -371,6 +377,15 @@ export function useCanvasHandle({
       for (const ls of layersStateRef.current) {
         const layer = glLayersRef.current.get(ls.id)
         if (layer) result.set(ls.id, layer.data.slice())
+      }
+      return result
+    },
+
+    captureAllLayerContentVersions: () => {
+      const result = new Map<string, number>()
+      for (const ls of layersStateRef.current) {
+        const layer = glLayersRef.current.get(ls.id)
+        if (layer) result.set(ls.id, layer.contentVersion)
       }
       return result
     },
