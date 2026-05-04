@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AppProvider, useAppContext } from '@/core/store/AppContext'
 import { CanvasProvider } from '@/core/store/CanvasContext'
 import { historyStore } from '@/core/store/historyStore'
+import { MemoryLimitError } from '@/core/store/memoryStore'
+import { notificationStore, useNotification } from '@/core/store/notificationStore'
 import { useTabs } from '@/core/services/useTabs'
 import { useHistory } from '@/core/services/useHistory'
 import { useFileOps } from '@/core/services/useFileOps'
@@ -91,6 +93,34 @@ function AppContent(): React.JSX.Element {
       if (contentAwareFillErrorTimerRef.current !== null) clearTimeout(contentAwareFillErrorTimerRef.current)
     }
   }, [])
+
+  // ── Global memory-limit error capture ────────────────────────────
+  // Memory-cap violations can bubble up from anywhere (layer creation,
+  // brush growLayerToFit, history restore, GPU texture allocation, etc).
+  // Listen at the window level so we never miss one, regardless of which
+  // call site threw it.
+  useEffect(() => {
+    const onError = (e: ErrorEvent): void => {
+      if (e.error instanceof MemoryLimitError) {
+        notificationStore.error(e.error.message)
+        e.preventDefault()
+      }
+    }
+    const onRejection = (e: PromiseRejectionEvent): void => {
+      if (e.reason instanceof MemoryLimitError) {
+        notificationStore.error(e.reason.message)
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
+    }
+  }, [])
+
+  const memoryNotification = useNotification()
 
   // ── Selection state for menu enabled sync ────────────────────────
   useEffect(() => {
@@ -535,6 +565,7 @@ function AppContent(): React.JSX.Element {
       contentAwareFillLabel={contentAwareFillLabel}
       cloneStampNotification={cloneStampNotification}
       contentAwareFillError={contentAwareFillError}
+      memoryNotification={memoryNotification}
       handleExportConfirm={handleExportConfirm}
       pendingLdrExport={pendingLdrExport}
       clearPendingLdrExport={clearPendingLdrExport}

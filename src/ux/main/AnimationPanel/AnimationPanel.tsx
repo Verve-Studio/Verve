@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { useAppContext } from '@/core/store/AppContext'
 import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
-import type { AnimationDef, AnimationFrame, AnimationPlaybackMode } from '@/types'
+import type { AnimationPlaybackMode } from '@/types'
 import styles from './AnimationPanel.module.scss'
 
 // ─── Constants ────────────────────────────────────────────────────────────────

@@ -99,6 +99,7 @@ export interface MainWindowProps {
   contentAwareFillLabel: string
   cloneStampNotification: string | null
   contentAwareFillError: string | null
+  memoryNotification: string | null
 
   // Export
   handleExportConfirm: (settings: ExportSettings) => Promise<void>
@@ -241,7 +242,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     captureHistory, pendingLayerLabelRef, dispatch,
     hasActiveDocument, effectiveSelectedIds, isRasterizeLayerEnabled, isMergeSelectedEnabled, isFreeTransformEnabled,
     adjustments, filters, colorMode,
-    isContentAwareFilling, contentAwareFillLabel, cloneStampNotification, contentAwareFillError,
+    isContentAwareFilling, contentAwareFillLabel, cloneStampNotification, contentAwareFillError, memoryNotification,
     handleExportConfirm, pendingLdrExport, clearPendingLdrExport, confirmLdrExport,
     showNewImageDialog, setShowNewImageDialog,
     showExportDialog, setShowExportDialog,
@@ -564,6 +565,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
 
       {contentAwareFillError && (
         <div className={styles.notification}>{contentAwareFillError}</div>
+      )}
+
+      {memoryNotification && (
+        <div className={styles.notification}>{memoryNotification}</div>
       )}
 
       <ModalDialog

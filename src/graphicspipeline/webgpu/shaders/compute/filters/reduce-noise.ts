@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_REDUCE_NOISE_COMPUTE from './wgsl/filter-reduce-noise.wgsl?raw'
 export { FILTER_REDUCE_NOISE_COMPUTE }
@@ -17,7 +18,7 @@ export async function runReduceNoise(
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
-  const srcTex = device.createTexture({
+  const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -29,7 +30,7 @@ export async function runReduceNoise(
     { width: w, height: h },
   )
 
-  const outTex = device.createTexture({
+  const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -70,8 +71,8 @@ export async function runReduceNoise(
   let result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  srcTex.destroy()
-  outTex.destroy()
+  destroyTrackedTexture(srcTex)
+  destroyTrackedTexture(outTex)
   paramsBuf.destroy()
   readbuf.destroy()
 

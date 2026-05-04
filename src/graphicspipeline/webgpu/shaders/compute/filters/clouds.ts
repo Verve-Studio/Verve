@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_CLOUDS_COMPUTE from './wgsl/filter-clouds.wgsl?raw'
 export { FILTER_CLOUDS_COMPUTE }
@@ -37,7 +38,7 @@ export async function runClouds(
   })
   device.queue.writeBuffer(permBuf, 0, perm)
 
-  const srcTex = device.createTexture({
+  const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -51,7 +52,7 @@ export async function runClouds(
 
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
-  const outTex = device.createTexture({
+  const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -95,8 +96,8 @@ export async function runClouds(
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  srcTex.destroy()
-  outTex.destroy()
+  destroyTrackedTexture(srcTex)
+  destroyTrackedTexture(outTex)
   paramsBuf.destroy()
   permBuf.destroy()
   readbuf.destroy()

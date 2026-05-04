@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_FILM_GRAIN_NOISE_COMPUTE from './wgsl/filter-film-grain-noise.wgsl?raw'
 export { FILTER_FILM_GRAIN_NOISE_COMPUTE }
@@ -23,7 +24,7 @@ export async function runFilmGrain(
   const blurRadius = grainSize > 1 ? Math.min(5, Math.floor(grainSize / 10)) : 0
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
-  const srcTex = device.createTexture({
+  const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -35,7 +36,7 @@ export async function runFilmGrain(
     { width: w, height: h },
   )
 
-  const noiseTexA = device.createTexture({
+  const noiseTexA = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -60,12 +61,12 @@ export async function runFilmGrain(
   let intermediateTex: GPUTexture | null = null
 
   if (blurRadius > 0) {
-    noiseTexB = device.createTexture({
+    noiseTexB = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     })
-    intermediateTex = device.createTexture({
+    intermediateTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -81,7 +82,7 @@ export async function runFilmGrain(
     finalNoiseTex = noiseTexA
   }
 
-  const outTex = device.createTexture({
+  const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -111,11 +112,11 @@ export async function runFilmGrain(
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  srcTex.destroy()
-  noiseTexA.destroy()
+  destroyTrackedTexture(srcTex)
+  destroyTrackedTexture(noiseTexA)
   noiseTexB?.destroy()
   intermediateTex?.destroy()
-  outTex.destroy()
+  destroyTrackedTexture(outTex)
   noiseParamsBuf.destroy()
   boxParamsBuf?.destroy()
   combineParamsBuf.destroy()

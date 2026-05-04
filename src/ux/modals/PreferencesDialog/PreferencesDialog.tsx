@@ -3,6 +3,7 @@ import { ModalDialog } from '../ModalDialog/ModalDialog'
 import { DialogButton } from '../../widgets/DialogButton/DialogButton'
 import { preferencesStore, usePreferences } from '@/core/store/preferencesStore'
 import { historyStore } from '@/core/store/historyStore'
+import { useTrackedMemory } from '@/core/store/memoryStore'
 import styles from './PreferencesDialog.module.scss'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -70,6 +71,35 @@ function MemorySection(): React.JSX.Element {
 
   const pctUsed = Math.min(100, (bytesUsed / prefs.historyMemoryBytes) * 100)
 
+  // ── Buffer-memory cap (layer data + GPU textures + caches) ─────────
+  const [systemRamBytes, setSystemRamBytes] = useState<number | null>(null)
+  useEffect(() => {
+    void window.api.getSystemTotalMemoryBytes().then(setSystemRamBytes)
+  }, [])
+  const { cpu: cpuBytesUsed, gpu: gpuBytesUsed } = useTrackedMemory()
+  // Capped total: cpu+gpu when unified, else cpu only.
+  const cappedBytesUsed = prefs.unifiedMemory ? cpuBytesUsed + gpuBytesUsed : cpuBytesUsed
+  const bufferValueGB = prefs.bufferMemoryBytes / GB
+  // Cap the slider at installed system RAM (rounded down to the nearest
+  // 0.5 GB step) so the user can't set a value that physically can't fit.
+  const bufferMaxGB = systemRamBytes != null
+    ? Math.max(MIN_HISTORY_GB, Math.floor((systemRamBytes / GB) * 2) / 2)
+    : 64
+  const handleBufferChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const gb = Number(e.target.value)
+    if (!Number.isFinite(gb)) return
+    preferencesStore.set({ bufferMemoryBytes: Math.round(gb * GB) })
+  }
+  const handleBufferMaxOutChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    preferencesStore.set({ bufferMemoryMaxOut: e.target.checked })
+  }
+  const handleUnifiedChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    preferencesStore.set({ unifiedMemory: e.target.checked })
+  }
+  const bufferPctUsed = prefs.bufferMemoryMaxOut
+    ? 0
+    : Math.min(100, (cappedBytesUsed / prefs.bufferMemoryBytes) * 100)
+
   return (
     <div className={styles.sectionBody}>
       <div className={styles.field}>
@@ -115,6 +145,150 @@ function MemorySection(): React.JSX.Element {
           {formatBytes(bytesUsed)} of {formatBytes(prefs.historyMemoryBytes)} used
           {' · '}
           {historyStore.entries.length} {historyStore.entries.length === 1 ? 'entry' : 'entries'}
+        </span>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.fieldLabel} htmlFor="buffer-memory">
+          Buffer memory limit
+        </label>
+        <div className={styles.fieldRow}>
+          <input
+            id="buffer-memory"
+            type="range"
+            min={MIN_HISTORY_GB}
+            max={bufferMaxGB}
+            step={STEP_GB}
+            value={Math.min(bufferValueGB, bufferMaxGB)}
+            onChange={handleBufferChange}
+            disabled={prefs.bufferMemoryMaxOut}
+            className={styles.slider}
+          />
+          <input
+            type="number"
+            min={MIN_HISTORY_GB}
+            max={bufferMaxGB}
+            step={STEP_GB}
+            value={bufferValueGB}
+            onChange={handleBufferChange}
+            disabled={prefs.bufferMemoryMaxOut}
+            className={styles.numberInput}
+          />
+          <span className={styles.unit}>GB</span>
+          <label className={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={prefs.bufferMemoryMaxOut}
+              onChange={handleBufferMaxOutChange}
+            />
+            Max Out
+          </label>
+        </div>
+        <p className={styles.hint}>
+          Soft cap on memory used by all open documents — layer pixel data,
+          GPU textures, and compositing buffers. Operations that would push
+          usage past this limit are aborted with an error so the app stays
+          responsive instead of crashing the OS. Enable
+          <strong> Max Out</strong> to disable the cap and let allocations
+          run until the operating system itself fails (
+          {systemRamBytes != null ? `installed RAM: ${formatBytes(systemRamBytes)}` : 'detecting installed RAM…'}).
+          {' '}
+          {prefs.unifiedMemory
+            ? 'On this system the cap covers CPU buffers and GPU textures combined (unified memory).'
+            : 'On this system the cap covers CPU buffers only — GPU textures live in dedicated VRAM and are tracked but not capped.'}
+        </p>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.checkboxLabel} style={{ marginLeft: 0 }}>
+          <input
+            type="checkbox"
+            checked={prefs.unifiedMemory}
+            onChange={handleUnifiedChange}
+          />
+          Treat GPU memory as part of system RAM (unified memory)
+        </label>
+        <p className={styles.hint}>
+          Auto-detected from your platform on first launch — leave this on
+          for Apple Silicon and other systems with integrated graphics, off
+          for machines with a dedicated GPU and separate VRAM.
+        </p>
+      </div>
+
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>
+          CPU memory usage
+          {!prefs.bufferMemoryMaxOut && (
+            <> — {formatBytes(cpuBytesUsed)} of {formatBytes(prefs.bufferMemoryBytes)}</>
+          )}
+          {prefs.bufferMemoryMaxOut && <> — {formatBytes(cpuBytesUsed)} (uncapped)</>}
+        </span>
+        <div className={styles.usageBar}>
+          <div
+            className={styles.usageFill}
+            style={{
+              width: `${prefs.bufferMemoryMaxOut ? 0 : Math.min(100, (cpuBytesUsed / prefs.bufferMemoryBytes) * 100)}%`,
+            }}
+          />
+        </div>
+        <span className={styles.hint}>
+          Layer pixel data, history snapshots, and other JS-heap buffers we
+          allocate via <code>allocUint8</code> / <code>allocFloat32</code>.
+        </span>
+      </div>
+
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>
+          GPU memory usage
+          {prefs.unifiedMemory && !prefs.bufferMemoryMaxOut && (
+            <> — {formatBytes(gpuBytesUsed)} of {formatBytes(prefs.bufferMemoryBytes)}</>
+          )}
+          {(!prefs.unifiedMemory || prefs.bufferMemoryMaxOut) && (
+            <> — {formatBytes(gpuBytesUsed)} {prefs.unifiedMemory ? '(uncapped)' : '(VRAM, uncapped)'}</>
+          )}
+        </span>
+        <div className={styles.usageBar}>
+          <div
+            className={styles.usageFill}
+            style={{
+              width: `${
+                prefs.bufferMemoryMaxOut
+                  ? 0
+                  : prefs.unifiedMemory
+                    ? Math.min(100, (gpuBytesUsed / prefs.bufferMemoryBytes) * 100)
+                    // Discrete: scale against the largest GPU footprint we've
+                    // ever observed so the bar still moves visibly.
+                    : Math.min(100, (gpuBytesUsed / Math.max(gpuBytesUsed, prefs.bufferMemoryBytes)) * 100)
+              }%`,
+            }}
+          />
+        </div>
+        <span className={styles.hint}>
+          GPU textures owned by our renderer (layer textures, ping-pong,
+          adjustment / filter caches). On dedicated-VRAM systems these
+          live in VRAM and aren't capped by the buffer-memory limit.
+        </span>
+      </div>
+
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>
+          Total tracked memory — {formatBytes(cpuBytesUsed + gpuBytesUsed)}
+          {!prefs.bufferMemoryMaxOut && prefs.unifiedMemory && (
+            <> of {formatBytes(prefs.bufferMemoryBytes)} ({Math.round(bufferPctUsed)}% of cap)</>
+          )}
+        </span>
+        <div className={styles.usageBar}>
+          <div
+            className={styles.usageFill}
+            style={{ width: `${bufferPctUsed}%` }}
+          />
+        </div>
+        <span className={styles.hint}>
+          CPU ({formatBytes(cpuBytesUsed)}) + GPU ({formatBytes(gpuBytesUsed)}).
+          {' '}
+          {prefs.unifiedMemory
+            ? 'Both buckets count against the cap on this system.'
+            : 'Only CPU counts against the cap on this system.'}
         </span>
       </div>
     </div>

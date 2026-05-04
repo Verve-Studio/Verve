@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_LENS_FLARE_COMPUTE from './wgsl/filter-lens-flare.wgsl?raw'
 export { FILTER_LENS_FLARE_COMPUTE }
@@ -17,7 +18,7 @@ export async function runRenderLensFlare(
   streakWidth: number,
   streakRotation: number,
 ): Promise<Uint8Array> {
-  const outTex = device.createTexture({
+  const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -56,7 +57,7 @@ export async function runRenderLensFlare(
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  outTex.destroy()
+  destroyTrackedTexture(outTex)
   paramsBuf.destroy()
   readbuf.destroy()
 

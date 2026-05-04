@@ -1,6 +1,7 @@
 import { FILTER_GRABCUT_NLINKS_COMPUTE } from '../shaders/compute/grabcut/nlinks'
 import { FILTER_GRABCUT_DATATERMS_COMPUTE } from '../shaders/compute/grabcut/dataterms'
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer } from '../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 const K = 5
 const GAMMA = 75.0  // must match grabcut.cpp
@@ -32,7 +33,7 @@ class GrabCutComputeEngine {
   ): Promise<{ hW: Float32Array; vW: Float32Array }> {
     const device = this.device
 
-    const srcTex = device.createTexture({
+    const srcTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -103,7 +104,7 @@ class GrabCutComputeEngine {
     hReadbuf.unmap()
     vReadbuf.unmap()
 
-    srcTex.destroy()
+    destroyTrackedTexture(srcTex)
     hBuf.destroy()
     vBuf.destroy()
     paramsBuf.destroy()
@@ -119,7 +120,7 @@ class GrabCutComputeEngine {
     const device = this.device
     const n = w * h
 
-    const srcTex = device.createTexture({
+    const srcTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -131,7 +132,7 @@ class GrabCutComputeEngine {
       { width: w, height: h },
     )
 
-    const trimapTex = device.createTexture({
+    const trimapTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'r8uint',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -197,8 +198,8 @@ class GrabCutComputeEngine {
     capSReadbuf.unmap()
     capTReadbuf.unmap()
 
-    srcTex.destroy()
-    trimapTex.destroy()
+    destroyTrackedTexture(srcTex)
+    destroyTrackedTexture(trimapTex)
     dimsBuf.destroy()
     gmmBuf.destroy()
     capSBuf.destroy()

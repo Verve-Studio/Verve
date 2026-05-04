@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_MEDIAN_COMPUTE from './wgsl/filter-median.wgsl?raw'
 export { FILTER_MEDIAN_COMPUTE }
@@ -13,7 +14,7 @@ export async function runMedian(
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
-  const srcTex = device.createTexture({
+  const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -25,7 +26,7 @@ export async function runMedian(
     { width: w, height: h },
   )
 
-  const outTex = device.createTexture({
+  const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -66,8 +67,8 @@ export async function runMedian(
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  srcTex.destroy()
-  outTex.destroy()
+  destroyTrackedTexture(srcTex)
+  destroyTrackedTexture(outTex)
   paramsBuf.destroy()
   readbuf.destroy()
 

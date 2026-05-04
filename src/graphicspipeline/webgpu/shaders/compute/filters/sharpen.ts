@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_SHARPEN_COMPUTE from './wgsl/filter-sharpen.wgsl?raw'
 export { FILTER_SHARPEN_COMPUTE }
@@ -18,9 +19,9 @@ export async function runSharpen(
   _format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
-  const srcTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+  const srcTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
   device.queue.writeTexture({ texture: srcTex }, pixels as Uint8Array<ArrayBuffer>, { bytesPerRow: w * 4, rowsPerImage: h }, { width: w, height: h })
-  const outTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
+  const outTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
   const encoder = device.createCommandEncoder()
   const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: srcTex.createView() }, { binding: 1, resource: smp }] })
   const pass = encoder.beginRenderPass({ colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
@@ -32,7 +33,7 @@ export async function runSharpen(
   await readbuf.mapAsync(GPUMapMode.READ)
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
-  srcTex.destroy(); outTex.destroy(); readbuf.destroy()
+  destroyTrackedTexture(srcTex); destroyTrackedTexture(outTex); readbuf.destroy()
   return result
 }
 
@@ -45,9 +46,9 @@ export async function runSharpenMore(
   _format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
-  const srcTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+  const srcTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
   device.queue.writeTexture({ texture: srcTex }, pixels as Uint8Array<ArrayBuffer>, { bytesPerRow: w * 4, rowsPerImage: h }, { width: w, height: h })
-  const outTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
+  const outTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
   const encoder = device.createCommandEncoder()
   const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: srcTex.createView() }, { binding: 1, resource: smp }] })
   const pass = encoder.beginRenderPass({ colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
@@ -59,7 +60,7 @@ export async function runSharpenMore(
   await readbuf.mapAsync(GPUMapMode.READ)
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
-  srcTex.destroy(); outTex.destroy(); readbuf.destroy()
+  destroyTrackedTexture(srcTex); destroyTrackedTexture(outTex); readbuf.destroy()
   return result
 }
 
@@ -77,11 +78,11 @@ export async function runUnsharpMask(
   format: GPUTextureFormat = 'rgba8unorm',
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
-  const srcTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+  const srcTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
   device.queue.writeTexture({ texture: srcTex }, pixels as Uint8Array<ArrayBuffer>, { bytesPerRow: w * 4, rowsPerImage: h }, { width: w, height: h })
-  const intermediateTex = device.createTexture({ size: { width: w, height: h }, format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-  const blurredTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-  const outTex = device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
+  const intermediateTex = createTrackedTexture(device, { size: { width: w, height: h }, format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+  const blurredTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+  const outTex = createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
   const gaussParamsBuf = createUniformBuffer(device, 16)
   writeUniformBuffer(device, gaussParamsBuf, new Uint32Array([radius, 0, 0, 0]))
   const combineParamsBuf = createUniformBuffer(device, 16)
@@ -102,6 +103,6 @@ export async function runUnsharpMask(
   await readbuf.mapAsync(GPUMapMode.READ)
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
-  srcTex.destroy(); intermediateTex.destroy(); blurredTex.destroy(); outTex.destroy(); gaussParamsBuf.destroy(); combineParamsBuf.destroy(); readbuf.destroy()
+  destroyTrackedTexture(srcTex); destroyTrackedTexture(intermediateTex); destroyTrackedTexture(blurredTex); destroyTrackedTexture(outTex); gaussParamsBuf.destroy(); combineParamsBuf.destroy(); readbuf.destroy()
   return result
 }

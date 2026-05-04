@@ -4,6 +4,7 @@ import {
   createStorageBuffer,
   uploadR8TextureData,
 } from './utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 import {
   BC_COMPUTE,
   HS_COMPUTE,
@@ -252,6 +253,19 @@ export class AdjustmentEncoder {
   // Curves LUT cache
   private readonly curvesLutTextures = new Map<string, { rgb: GPUTexture; red: GPUTexture; green: GPUTexture; blue: GPUTexture }>()
   private readonly curvesLutSignatures = new Map<string, string>()
+
+  // Per-frame "this cache was touched" flags. `endFrame()` releases any
+  // cache that wasn't touched, which is how we recover the GPU memory
+  // held by an effect after its layer is deleted (the encoder itself
+  // never sees the deletion — it just stops being asked to render that
+  // op, so an unused cache stays resident forever otherwise).
+  private bloomUsedThisFrame       = false
+  private halationUsedThisFrame    = false
+  private shadowUsedThisFrame      = false
+  private outlineUsedThisFrame     = false
+  private bevelUsedThisFrame       = false
+  private innerShadowUsedThisFrame = false
+  private readonly curvesUsedThisFrame = new Set<string>()
 
   // Temporary GPU buffers accumulated during command encoding; flushed after submit.
   private pendingDestroyBuffers: GPUBuffer[] = []
@@ -616,33 +630,108 @@ export class AdjustmentEncoder {
     flushFilterComputeDestroys()
   }
 
+  /**
+   * Release any per-effect texture caches that weren't touched during the
+   * frame just submitted. This is how we recover GPU memory after the user
+   * removes (or hides) the layer that was using a given effect — the
+   * encoder doesn't observe layer deletions directly, it only sees which
+   * ops the render plan dispatched, so any cache that goes a whole frame
+   * un-touched is dead. Call once per frame, after `flushPendingDestroys`.
+   */
+  endFrame(): void {
+    if (!this.bloomUsedThisFrame && this.bloomTexCache) {
+      destroyTrackedTexture(this.bloomTexCache.extractTex)
+      destroyTrackedTexture(this.bloomTexCache.blurATex)
+      destroyTrackedTexture(this.bloomTexCache.blurBTex)
+      this.bloomTexCache = null
+    }
+    if (!this.halationUsedThisFrame && this.halationTexCache) {
+      destroyTrackedTexture(this.halationTexCache.glowATex)
+      destroyTrackedTexture(this.halationTexCache.glowBTex)
+      this.halationTexCache = null
+    }
+    if (!this.shadowUsedThisFrame && this.shadowTexCache) {
+      destroyTrackedTexture(this.shadowTexCache.tempA)
+      destroyTrackedTexture(this.shadowTexCache.tempB)
+      this.shadowTexCache = null
+    }
+    if (!this.outlineUsedThisFrame && this.outlineTexCache) {
+      destroyTrackedTexture(this.outlineTexCache.tempA)
+      destroyTrackedTexture(this.outlineTexCache.tempB)
+      destroyTrackedTexture(this.outlineTexCache.tempC)
+      this.outlineTexCache = null
+    }
+    if (!this.bevelUsedThisFrame && this.bevelTexCache) {
+      destroyTrackedTexture(this.bevelTexCache.tempA)
+      destroyTrackedTexture(this.bevelTexCache.tempB)
+      this.bevelTexCache = null
+    }
+    if (!this.innerShadowUsedThisFrame && this.innerShadowTexCache) {
+      destroyTrackedTexture(this.innerShadowTexCache.tempA)
+      destroyTrackedTexture(this.innerShadowTexCache.tempB)
+      this.innerShadowTexCache = null
+    }
+
+    // Curves LUTs are keyed per layer-id — drop entries for any layers
+    // whose curves op didn't run this frame (layer deleted, hidden, etc).
+    for (const [layerId, luts] of this.curvesLutTextures) {
+      if (this.curvesUsedThisFrame.has(layerId)) continue
+      destroyTrackedTexture(luts.rgb)
+      destroyTrackedTexture(luts.red)
+      destroyTrackedTexture(luts.green)
+      destroyTrackedTexture(luts.blue)
+      this.curvesLutTextures.delete(layerId)
+      this.curvesLutSignatures.delete(layerId)
+    }
+
+    this.bloomUsedThisFrame       = false
+    this.halationUsedThisFrame    = false
+    this.shadowUsedThisFrame      = false
+    this.outlineUsedThisFrame     = false
+    this.bevelUsedThisFrame       = false
+    this.innerShadowUsedThisFrame = false
+    this.curvesUsedThisFrame.clear()
+  }
+
   /** Destroy all persistent GPU resources (pipelines, texture caches, LUT textures). */
   destroy(): void {
     for (const luts of this.curvesLutTextures.values()) {
-      luts.rgb.destroy()
-      luts.red.destroy()
-      luts.green.destroy()
-      luts.blue.destroy()
+      destroyTrackedTexture(luts.rgb)
+      destroyTrackedTexture(luts.red)
+      destroyTrackedTexture(luts.green)
+      destroyTrackedTexture(luts.blue)
     }
-    this.bloomTexCache?.extractTex.destroy()
-    this.bloomTexCache?.blurATex.destroy()
-    this.bloomTexCache?.blurBTex.destroy()
+    if (this.bloomTexCache) {
+      destroyTrackedTexture(this.bloomTexCache.extractTex)
+      destroyTrackedTexture(this.bloomTexCache.blurATex)
+      destroyTrackedTexture(this.bloomTexCache.blurBTex)
+    }
     this.bloomTexCache = null
-    this.halationTexCache?.glowATex.destroy()
-    this.halationTexCache?.glowBTex.destroy()
+    if (this.halationTexCache) {
+      destroyTrackedTexture(this.halationTexCache.glowATex)
+      destroyTrackedTexture(this.halationTexCache.glowBTex)
+    }
     this.halationTexCache = null
-    this.shadowTexCache?.tempA.destroy()
-    this.shadowTexCache?.tempB.destroy()
+    if (this.shadowTexCache) {
+      destroyTrackedTexture(this.shadowTexCache.tempA)
+      destroyTrackedTexture(this.shadowTexCache.tempB)
+    }
     this.shadowTexCache = null
-    this.outlineTexCache?.tempA.destroy()
-    this.outlineTexCache?.tempB.destroy()
-    this.outlineTexCache?.tempC.destroy()
+    if (this.outlineTexCache) {
+      destroyTrackedTexture(this.outlineTexCache.tempA)
+      destroyTrackedTexture(this.outlineTexCache.tempB)
+      destroyTrackedTexture(this.outlineTexCache.tempC)
+    }
     this.outlineTexCache = null
-    this.bevelTexCache?.tempA.destroy()
-    this.bevelTexCache?.tempB.destroy()
+    if (this.bevelTexCache) {
+      destroyTrackedTexture(this.bevelTexCache.tempA)
+      destroyTrackedTexture(this.bevelTexCache.tempB)
+    }
     this.bevelTexCache = null
-    this.innerShadowTexCache?.tempA.destroy()
-    this.innerShadowTexCache?.tempB.destroy()
+    if (this.innerShadowTexCache) {
+      destroyTrackedTexture(this.innerShadowTexCache.tempA)
+      destroyTrackedTexture(this.innerShadowTexCache.tempB)
+    }
     this.innerShadowTexCache = null
   }
 
@@ -791,13 +880,14 @@ export class AdjustmentEncoder {
     layerId: string,
     luts: CurvesLuts,
   ): { rgb: GPUTexture; red: GPUTexture; green: GPUTexture; blue: GPUTexture } {
+    this.curvesUsedThisFrame.add(layerId)
     const signature = `${Array.from(luts.rgb).join('.')}-${Array.from(luts.red).join('.')}-${Array.from(luts.green).join('.')}-${Array.from(luts.blue).join('.')}`
     const existing = this.curvesLutTextures.get(layerId)
     const prevSig = this.curvesLutSignatures.get(layerId)
     if (existing && prevSig === signature) return existing
 
     const writeLut = (data: Uint8Array): GPUTexture => {
-      const tex = this.device.createTexture({
+      const tex = createTrackedTexture(this.device, {
         size: { width: 256, height: 1 },
         format: 'r8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -807,10 +897,10 @@ export class AdjustmentEncoder {
     }
 
     if (existing) {
-      existing.rgb.destroy()
-      existing.red.destroy()
-      existing.green.destroy()
-      existing.blue.destroy()
+      destroyTrackedTexture(existing.rgb)
+      destroyTrackedTexture(existing.red)
+      destroyTrackedTexture(existing.green)
+      destroyTrackedTexture(existing.blue)
     }
 
     const next = {
@@ -976,12 +1066,15 @@ export class AdjustmentEncoder {
     blurATex:   GPUTexture
     blurBTex:   GPUTexture
   } {
+    this.bloomUsedThisFrame = true
     if (this.bloomTexCache && this.bloomTexCache.quality === quality) {
       return this.bloomTexCache
     }
-    this.bloomTexCache?.extractTex.destroy()
-    this.bloomTexCache?.blurATex.destroy()
-    this.bloomTexCache?.blurBTex.destroy()
+    if (this.bloomTexCache) {
+      destroyTrackedTexture(this.bloomTexCache.extractTex)
+      destroyTrackedTexture(this.bloomTexCache.blurATex)
+      destroyTrackedTexture(this.bloomTexCache.blurBTex)
+    }
 
     const { device, pixelWidth: w, pixelHeight: h } = this
     const scaleFactor = quality === 'full' ? 1 : quality === 'half' ? 2 : 4
@@ -995,7 +1088,7 @@ export class AdjustmentEncoder {
       GPUTextureUsage.COPY_SRC
 
     const make = (tw: number, th: number): GPUTexture =>
-      device.createTexture({ size: { width: tw, height: th }, format: 'rgba8unorm', usage })
+      createTrackedTexture(device, { size: { width: tw, height: th }, format: 'rgba8unorm', usage })
 
     this.bloomTexCache = {
       quality,
@@ -1096,6 +1189,7 @@ export class AdjustmentEncoder {
   }
 
   private ensureHalationTextures(): { glowATex: GPUTexture; glowBTex: GPUTexture } {
+    this.halationUsedThisFrame = true
     if (this.halationTexCache) return this.halationTexCache
     const { device, pixelWidth: w, pixelHeight: h } = this
     const usage =
@@ -1103,7 +1197,7 @@ export class AdjustmentEncoder {
       GPUTextureUsage.RENDER_ATTACHMENT |
       GPUTextureUsage.COPY_DST
     const make = (): GPUTexture =>
-      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+      createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage })
     this.halationTexCache = { glowATex: make(), glowBTex: make() }
     return this.halationTexCache
   }
@@ -1180,6 +1274,7 @@ export class AdjustmentEncoder {
   }
 
   private ensureShadowTextures(): { tempA: GPUTexture; tempB: GPUTexture } {
+    this.shadowUsedThisFrame = true
     if (this.shadowTexCache) return this.shadowTexCache
     const { device, pixelWidth: w, pixelHeight: h } = this
     const usage =
@@ -1188,7 +1283,7 @@ export class AdjustmentEncoder {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC
     const make = (): GPUTexture =>
-      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+      createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage })
     this.shadowTexCache = { tempA: make(), tempB: make() }
     return this.shadowTexCache
   }
@@ -1341,6 +1436,7 @@ export class AdjustmentEncoder {
   }
 
   private ensureOutlineTextures(): { tempA: GPUTexture; tempB: GPUTexture; tempC: GPUTexture } {
+    this.outlineUsedThisFrame = true
     if (this.outlineTexCache) return this.outlineTexCache
     const { device, pixelWidth: w, pixelHeight: h } = this
     const usage =
@@ -1349,7 +1445,7 @@ export class AdjustmentEncoder {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC
     const make = (): GPUTexture =>
-      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+      createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage })
     this.outlineTexCache = { tempA: make(), tempB: make(), tempC: make() }
     return this.outlineTexCache
   }
@@ -1499,6 +1595,7 @@ export class AdjustmentEncoder {
   private bevelTexCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null
 
   private ensureBevelTextures(): { tempA: GPUTexture; tempB: GPUTexture } {
+    this.bevelUsedThisFrame = true
     if (this.bevelTexCache) return this.bevelTexCache
     const { device, pixelWidth: w, pixelHeight: h } = this
     const usage =
@@ -1507,7 +1604,7 @@ export class AdjustmentEncoder {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC
     const make = (): GPUTexture =>
-      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+      createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage })
     this.bevelTexCache = { tempA: make(), tempB: make() }
     return this.bevelTexCache
   }
@@ -1685,6 +1782,7 @@ export class AdjustmentEncoder {
   private innerShadowTexCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null
 
   private ensureInnerShadowTextures(): { tempA: GPUTexture; tempB: GPUTexture } {
+    this.innerShadowUsedThisFrame = true
     if (this.innerShadowTexCache) return this.innerShadowTexCache
     const { device, pixelWidth: w, pixelHeight: h } = this
     const usage =
@@ -1693,7 +1791,7 @@ export class AdjustmentEncoder {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.COPY_SRC
     const make = (): GPUTexture =>
-      device.createTexture({ size: { width: w, height: h }, format: 'rgba8unorm', usage })
+      createTrackedTexture(device, { size: { width: w, height: h }, format: 'rgba8unorm', usage })
     this.innerShadowTexCache = { tempA: make(), tempB: make() }
     return this.innerShadowTexCache
   }

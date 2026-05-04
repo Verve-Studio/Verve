@@ -1,5 +1,7 @@
 // ─── Texture helpers ──────────────────────────────────────────────────────────
 
+import { createTrackedTexture } from '@/core/store/memoryStore'
+
 export function createGpuTexture(
   device: GPUDevice,
   width: number,
@@ -13,7 +15,9 @@ export function createGpuTexture(
     GPUTextureUsage.STORAGE_BINDING |
     GPUTextureUsage.RENDER_ATTACHMENT,
 ): GPUTexture {
-  const texture = device.createTexture({
+  // All renderer textures route through the tracked allocator so the global
+  // buffer-memory cap (Preferences → Memory) is enforced uniformly.
+  const texture = createTrackedTexture(device, {
     size: { width, height },
     format,
     usage,

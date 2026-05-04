@@ -18,6 +18,12 @@ import { AdjustmentEncoder } from '../AdjustmentEncoder'
 import { initFilterCompute } from '../compute/filterCompute'
 import { initGrabCutCompute } from '../compute/grabcutCompute'
 import { displayStore, OPERATOR_SHADER_ID } from '@/core/store/displayStore'
+import {
+  allocFloat32,
+  allocUint8,
+  createTrackedTexture,
+  destroyTrackedTexture,
+} from '@/core/store/memoryStore'
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
@@ -445,7 +451,7 @@ export class WebGPURenderer {
   // ─── Pipeline factories ─────────────────────────────────────────────────────
 
   private createPingPongTex(w: number, h: number, usage: GPUTextureUsageFlags): GPUTexture {
-    return this.device.createTexture({
+    return createTrackedTexture(this.device, {
       size: { width: w, height: h },
       format: this.internalFormat,
       usage,
@@ -534,10 +540,10 @@ export class WebGPURenderer {
   ): GpuLayer {
     const data: Uint8Array | Float32Array =
       format === 'rgba32f'
-        ? new Float32Array(lw * lh * 4)
+        ? allocFloat32(lw * lh * 4)
         : format === 'indexed8'
-          ? new Uint8Array(lw * lh)
-          : new Uint8Array(lw * lh * 4)
+          ? allocUint8(lw * lh)
+          : allocUint8(lw * lh * 4)
     const textureFormat: GPUTextureFormat =
       format === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
     const texture = createGpuTexture(this.device, lw, lh, null, textureFormat)
@@ -602,7 +608,7 @@ export class WebGPURenderer {
     newFormat: PixelFormat,
     palette?: RGBAColor[],
   ): void {
-    layer.texture.destroy()
+    destroyTrackedTexture(layer.texture)
     const textureFormat: GPUTextureFormat =
       newFormat === 'rgba32f' ? 'rgba32float' : 'rgba8unorm'
     layer.texture = createGpuTexture(this.device, layer.layerWidth, layer.layerHeight, null, textureFormat)
@@ -613,20 +619,20 @@ export class WebGPURenderer {
   }
 
   destroyLayer(layer: GpuLayer): void {
-    layer.texture.destroy()
+    destroyTrackedTexture(layer.texture)
     const cached = this.adjGroupCache.get(layer.id)
     if (cached) {
-      cached.tex.destroy()
+      destroyTrackedTexture(cached.tex)
       this.adjGroupCache.delete(layer.id)
     }
     const cachedSO = this.standaloneOpCache.get(layer.id)
     if (cachedSO) {
-      cachedSO.tex.destroy()
+      destroyTrackedTexture(cachedSO.tex)
       this.standaloneOpCache.delete(layer.id)
     }
     const cachedCL = this.compositeLayerCache.get(layer.id)
     if (cachedCL) {
-      cachedCL.tex.destroy()
+      destroyTrackedTexture(cachedCL.tex)
       this.compositeLayerCache.delete(layer.id)
     }
   }
@@ -680,7 +686,7 @@ export class WebGPURenderer {
 
     let newData: Uint8Array | Float32Array
     if (layer.format === 'rgba32f') {
-      newData = new Float32Array(newW * newH * 4)
+      newData = allocFloat32(newW * newH * 4)
       const stride = layer.layerWidth * 4
       for (let row = 0; row < layer.layerHeight; row++) {
         const srcOff = row * stride
@@ -692,7 +698,7 @@ export class WebGPURenderer {
       }
     } else if (layer.format === 'indexed8') {
       // indexed8: 1 byte per pixel; 255 = transparent sentinel
-      newData = new Uint8Array(newW * newH)
+      newData = allocUint8(newW * newH)
       ;(newData as Uint8Array).fill(255)
       const stride = layer.layerWidth
       for (let row = 0; row < layer.layerHeight; row++) {
@@ -704,7 +710,7 @@ export class WebGPURenderer {
         )
       }
     } else {
-      newData = new Uint8Array(newW * newH * 4)
+      newData = allocUint8(newW * newH * 4)
       const stride = layer.layerWidth * 4
       for (let row = 0; row < layer.layerHeight; row++) {
         const srcOff = row * stride
@@ -724,7 +730,7 @@ export class WebGPURenderer {
       uploadTextureData(this.device, newTex, newW, newH, newData as Uint8Array)
     }
 
-    layer.texture.destroy()
+    destroyTrackedTexture(layer.texture)
     layer.texture    = newTex
     layer.data       = newData
     layer.layerWidth  = newW
@@ -846,7 +852,7 @@ export class WebGPURenderer {
       // Zero-clear the dirty subrect in both ping and pong so layer 0 composites
       // against transparent (matches the "fresh canvas" semantics of the full
       // path, which clears pingTex and treats pongTex as empty via srcIsEmpty=true).
-      const zeroTex = this.device.createTexture({
+      const zeroTex = createTrackedTexture(this.device, {
         size: { width: dirty.w, height: dirty.h },
         format: this.internalFormat,
         usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -1286,7 +1292,7 @@ export class WebGPURenderer {
           // Composite was unlocked — evict any stale baked tex.
           const stale = this.bakedLockedLayers.get(entry.layerId)
           if (stale) {
-            stale.destroy()
+            destroyTrackedTexture(stale)
             this.bakedLockedLayers.delete(entry.layerId)
           }
         }
@@ -1338,7 +1344,7 @@ export class WebGPURenderer {
             // composites against transparent inside the dirty rect (matches the
             // 'srcIsEmpty=true' contract). Outside the dirty rect both textures
             // hold garbage — we never read or snapshot from there.
-            const zeroTex = this.device.createTexture({
+            const zeroTex = createTrackedTexture(this.device, {
               size: { width: dirty.w, height: dirty.h },
               format: this.internalFormat,
               usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -1406,7 +1412,7 @@ export class WebGPURenderer {
         // Store result in cache.
         if (this.adjGroupCacheEnabled) {
           const existing = this.compositeLayerCache.get(entry.layerId)
-          const cacheTex = existing?.tex ?? this.device.createTexture({
+          const cacheTex = existing?.tex ?? createTrackedTexture(this.device, {
             size: { width: this.pixelWidth, height: this.pixelHeight },
             format: this.internalFormat,
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -1422,7 +1428,7 @@ export class WebGPURenderer {
         // If the composite is locked, bake the flattened+adjusted result for
         // every future frame. Subsequent renders take the fast-path blit above.
         if (entry.locked && !this.bakedLockedLayers.has(entry.layerId)) {
-          const bakeTex = this.device.createTexture({
+          const bakeTex = createTrackedTexture(this.device, {
             size: { width: this.pixelWidth, height: this.pixelHeight },
             format: this.internalFormat,
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -1460,7 +1466,7 @@ export class WebGPURenderer {
           // Layer was unlocked — evict any stale baked tex.
           const stale = this.bakedLockedLayers.get(entry.parentLayerId)
           if (stale) {
-            stale.destroy()
+            destroyTrackedTexture(stale)
             this.bakedLockedLayers.delete(entry.parentLayerId)
           }
         }
@@ -1493,7 +1499,7 @@ export class WebGPURenderer {
               GPUTextureUsage.COPY_DST |
               GPUTextureUsage.COPY_SRC |
               GPUTextureUsage.RENDER_ATTACHMENT
-            const cacheTex = cached?.tex ?? this.device.createTexture({
+            const cacheTex = cached?.tex ?? createTrackedTexture(this.device, {
               size: { width: this.pixelWidth, height: this.pixelHeight },
               format: this.internalFormat,
               usage: texUsage,
@@ -1520,7 +1526,7 @@ export class WebGPURenderer {
 
         // If the layer is locked, bake the result for all future frames.
         if (entry.locked && !this.bakedLockedLayers.has(entry.parentLayerId)) {
-          const bakeTex = this.device.createTexture({
+          const bakeTex = createTrackedTexture(this.device, {
             size: { width: this.pixelWidth, height: this.pixelHeight },
             format: this.internalFormat,
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -1574,7 +1580,7 @@ export class WebGPURenderer {
             GPUTextureUsage.COPY_DST |
             GPUTextureUsage.COPY_SRC |
             GPUTextureUsage.RENDER_ATTACHMENT
-          const cacheTex = cached?.tex ?? this.device.createTexture({
+          const cacheTex = cached?.tex ?? createTrackedTexture(this.device, {
             size: { width: this.pixelWidth, height: this.pixelHeight },
             format: this.internalFormat,
             usage: texUsage,
@@ -1965,27 +1971,30 @@ export class WebGPURenderer {
   private flushPendingDestroys(): void {
     for (const buf of this.pendingDestroyBuffers) buf.destroy()
     this.pendingDestroyBuffers = []
-    for (const tex of this.pendingDestroyTextures) tex.destroy()
+    for (const tex of this.pendingDestroyTextures) destroyTrackedTexture(tex)
     this.pendingDestroyTextures = []
     this.adjEncoder.flushPendingDestroys()
+    // Drop per-effect texture caches whose layer wasn't rendered this
+    // frame (e.g. user just removed the bloom adjustment layer).
+    this.adjEncoder.endFrame()
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   destroy(): void {
-    this.pingTex.destroy()
-    this.pongTex.destroy()
-    this.groupPingTex.destroy()
-    this.groupPongTex.destroy()
+    destroyTrackedTexture(this.pingTex)
+    destroyTrackedTexture(this.pongTex)
+    destroyTrackedTexture(this.groupPingTex)
+    destroyTrackedTexture(this.groupPongTex)
     this.texCoordBuffer.destroy()
     this.adjEncoder.destroy()
-    for (const entry of this.adjGroupCache.values()) entry.tex.destroy()
+    for (const entry of this.adjGroupCache.values()) destroyTrackedTexture(entry.tex)
     this.adjGroupCache.clear()
-    for (const tex of this.bakedLockedLayers.values()) tex.destroy()
+    for (const tex of this.bakedLockedLayers.values()) destroyTrackedTexture(tex)
     this.bakedLockedLayers.clear()
-    for (const entry of this.standaloneOpCache.values()) entry.tex.destroy()
+    for (const entry of this.standaloneOpCache.values()) destroyTrackedTexture(entry.tex)
     this.standaloneOpCache.clear()
-    for (const entry of this.compositeLayerCache.values()) entry.tex.destroy()
+    for (const entry of this.compositeLayerCache.values()) destroyTrackedTexture(entry.tex)
     this.compositeLayerCache.clear()
     for (const pair of this.compositeBufferPool) {
       pair.unif.destroy()

@@ -13,10 +13,36 @@ import { useSyncExternalStore } from 'react'
 export interface AppPreferences {
   /** Maximum total bytes the in-memory undo history is allowed to use. */
   historyMemoryBytes: number
+  /**
+   * Soft cap (bytes) on total tracked buffer + texture memory across the
+   * whole app. Allocations exceeding it are rejected with an error.
+   * Ignored when `bufferMemoryMaxOut` is true.
+   */
+  bufferMemoryBytes: number
+  /** When true, the buffer-memory cap is ignored — allocate until the OS fails. */
+  bufferMemoryMaxOut: boolean
+  /**
+   * Whether the system has unified memory (integrated GPU / Apple Silicon).
+   * When true, GPU texture allocations count against the same cap as CPU
+   * buffer allocations — they share physical RAM. When false, GPU
+   * allocations are tracked for diagnostics but are not capped (they live
+   * in dedicated VRAM).
+   *
+   * Defaults from `process.platform` at first launch (`darwin` → true).
+   * Users can flip it manually in Preferences if the auto-detect is wrong
+   * (e.g. a Mac with an external GPU, or a Windows laptop with only
+   * integrated Intel/AMD graphics).
+   */
+  unifiedMemory: boolean
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
   historyMemoryBytes: 4 * 1024 * 1024 * 1024,  // 4 GB
+  bufferMemoryBytes: 8 * 1024 * 1024 * 1024,   // 8 GB
+  bufferMemoryMaxOut: false,
+  // Auto-detected on first launch in `load()`; this is just the conservative
+  // fallback used before that runs (treat as discrete to avoid over-capping).
+  unifiedMemory: false,
 }
 
 class PreferencesStore {
@@ -37,9 +63,19 @@ class PreferencesStore {
   async load(): Promise<void> {
     try {
       const fromDisk = await window.api.loadPreferences()
-      this.value = { ...DEFAULT_PREFERENCES, ...fromDisk }
+      // If `unifiedMemory` was never persisted (first launch / older config),
+      // seed it from the host platform — macOS = unified, everything else
+      // assumed discrete. The user can override this in Preferences.
+      const defaults = { ...DEFAULT_PREFERENCES }
+      if (fromDisk.unifiedMemory === undefined) {
+        defaults.unifiedMemory = window.api.platform === 'darwin'
+      }
+      this.value = { ...defaults, ...fromDisk }
     } catch {
-      this.value = { ...DEFAULT_PREFERENCES }
+      this.value = {
+        ...DEFAULT_PREFERENCES,
+        unifiedMemory: window.api.platform === 'darwin',
+      }
     }
     this.loaded = true
     this.notify()

@@ -57,11 +57,21 @@ const api = {
   // ── App lifecycle ─────────────────────────────────────────────────────────────
   exitApp: (): Promise<void> => ipcRenderer.invoke('app:exit'),
 
-  // ── Preferences (persisted to userData/preferences.json) ────────────────────
-  loadPreferences: (): Promise<{ historyMemoryBytes: number }> =>
-    ipcRenderer.invoke('prefs:load'),
-  savePreferences: (prefs: { historyMemoryBytes: number }): Promise<void> =>
-    ipcRenderer.invoke('prefs:save', prefs),
+  // ── Preferences (persisted to userData/preferences.json) ────────────────
+  loadPreferences: (): Promise<{
+    historyMemoryBytes: number
+    bufferMemoryBytes: number
+    bufferMemoryMaxOut: boolean
+    unifiedMemory?: boolean
+  }> => ipcRenderer.invoke('prefs:load'),
+  savePreferences: (prefs: {
+    historyMemoryBytes: number
+    bufferMemoryBytes: number
+    bufferMemoryMaxOut: boolean
+    unifiedMemory: boolean
+  }): Promise<void> => ipcRenderer.invoke('prefs:save', prefs),
+  getSystemTotalMemoryBytes: (): Promise<number> =>
+    ipcRenderer.invoke('system:totalMemoryBytes'),
 
   // ── Startup file path ─────────────────────────────────────────────────────────
   /** Poll once on mount — returns the file path passed as a CLI arg, or null. */

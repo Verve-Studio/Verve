@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_GAUSSIAN_H_COMPUTE from './wgsl/filter-gaussian-h.wgsl?raw'
 export { FILTER_GAUSSIAN_H_COMPUTE }
@@ -18,7 +19,7 @@ export async function runGaussianBlur(
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
-  const srcTex = device.createTexture({
+  const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -30,13 +31,13 @@ export async function runGaussianBlur(
     { width: w, height: h },
   )
 
-  const intermediateTex = device.createTexture({
+  const intermediateTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format,
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   })
 
-  const outTex = device.createTexture({
+  const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -94,9 +95,9 @@ export async function runGaussianBlur(
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  srcTex.destroy()
-  intermediateTex.destroy()
-  outTex.destroy()
+  destroyTrackedTexture(srcTex)
+  destroyTrackedTexture(intermediateTex)
+  destroyTrackedTexture(outTex)
   paramsBuf.destroy()
   readbuf.destroy()
 

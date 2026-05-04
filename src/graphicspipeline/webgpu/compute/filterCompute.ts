@@ -15,6 +15,7 @@ import { FILTER_LENS_FLARE_COMPUTE, runRenderLensFlare } from '../shaders/comput
 import { FILTER_PIXELATE_COMPUTE, runPixelate } from '../shaders/compute/filters/pixelate'
 import { FILTER_SEAMLESS_BREAK_COMPUTE, FILTER_SEAMLESS_BORDER_COMPUTE } from '../shaders/compute/filters/seamless-texture'
 import { createUniformBuffer, writeUniformBuffer } from '../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 import { FILTER_RMB_PSF_COMPUTE, FILTER_RMB_RATIO_COMPUTE, FILTER_RMB_UPDATE_COMPUTE, FILTER_RMB_FINAL_COMPUTE } from '../shaders/compute/filters/remove-motion-blur'
 
 // ─── Pipeline pair type ───────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ class FilterComputeEngine {
 
   private constructor(device: GPUDevice, width: number, height: number, format: GPUTextureFormat) {
     this.device = device
-    this.intermediate0 = device.createTexture({
+    this.intermediate0 = createTrackedTexture(device, {
       size: { width, height },
       format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -132,7 +133,7 @@ class FilterComputeEngine {
   }
 
   destroy(): void {
-    this.intermediate0.destroy()
+    destroyTrackedTexture(this.intermediate0)
     this.cachedKernelBuf?.destroy()
     this.cachedKernelBuf = null
   }
@@ -229,12 +230,12 @@ class FilterComputeEngine {
   flushPendingDestroys(): void {
     for (const buf of this.pendingDestroyBuffers) buf.destroy()
     this.pendingDestroyBuffers = []
-    for (const tex of this.pendingDestroyTextures) tex.destroy()
+    for (const tex of this.pendingDestroyTextures) destroyTrackedTexture(tex)
     this.pendingDestroyTextures = []
   }
 
   private makeRgba16FloatTex(w: number, h: number): GPUTexture {
-    const tex = this.device.createTexture({
+    const tex = createTrackedTexture(this.device, {
       size: { width: w, height: h },
       format: 'rgba16float',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -244,7 +245,7 @@ class FilterComputeEngine {
   }
 
   private makeRgba8Tex(w: number, h: number): GPUTexture {
-    const tex = this.device.createTexture({
+    const tex = createTrackedTexture(this.device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,

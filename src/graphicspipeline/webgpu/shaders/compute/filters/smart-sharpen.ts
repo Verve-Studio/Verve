@@ -1,4 +1,5 @@
 import { createUniformBuffer, writeUniformBuffer, createReadbackBuffer, unpackRows } from '../../../utils'
+import { createTrackedTexture, destroyTrackedTexture } from '@/core/store/memoryStore'
 
 import FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE from './wgsl/filter-smart-sharpen-gauss-combine.wgsl?raw'
 export { FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE }
@@ -28,7 +29,7 @@ export async function runSmartSharpen(
 ): Promise<Uint8Array> {
   const smp = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
 
-  const srcTex = device.createTexture({
+  const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -40,13 +41,13 @@ export async function runSmartSharpen(
     { width: w, height: h },
   )
 
-  const sharpenedTex = device.createTexture({
+  const sharpenedTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
   })
 
-  const intermediateTex = device.createTexture({
+  const intermediateTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -69,7 +70,7 @@ export async function runSmartSharpen(
     writeUniformBuffer(device, gaussParamsBuf, new Uint32Array([radius, 0, 0, 0]))
     _gaussParamsBuf = gaussParamsBuf
 
-    const blurredTex = device.createTexture({
+    const blurredTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -112,7 +113,7 @@ export async function runSmartSharpen(
     writeUniformBuffer(device, boxParamsBuf, new Uint32Array([1, 0, 0, 0]))
     _boxParamsBuf = boxParamsBuf
 
-    const smoothedTex = device.createTexture({
+    const smoothedTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -126,7 +127,7 @@ export async function runSmartSharpen(
     writeUniformBuffer(device, noiseParamsBuf, new Uint32Array([reduceNoise, 0, 0, 0]))
     _noiseParamsBuf = noiseParamsBuf
 
-    const outTex = device.createTexture({
+    const outTex = createTrackedTexture(device, {
       size: { width: w, height: h },
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -159,9 +160,9 @@ export async function runSmartSharpen(
   const result = unpackRows(new Uint8Array(readbuf.getMappedRange()), w, h, alignedBpr)
   readbuf.unmap()
 
-  srcTex.destroy()
-  sharpenedTex.destroy()
-  intermediateTex.destroy()
+  destroyTrackedTexture(srcTex)
+  destroyTrackedTexture(sharpenedTex)
+  destroyTrackedTexture(intermediateTex)
   _blurredTex?.destroy()
   _gaussParamsBuf?.destroy()
   _combineParamsBuf?.destroy()

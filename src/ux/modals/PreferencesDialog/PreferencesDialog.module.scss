@@ -4,7 +4,8 @@
 
 .layout {
   display: flex;
-  height: 420px;
+  height: 560px;
+  max-height: calc(100vh - 160px);
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -69,7 +70,8 @@
   display: flex;
   flex-direction: column;
   gap: vars.$spacing-3;
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 // ─── Transfer list ────────────────────────────────────────────────────────────
@@ -217,6 +219,17 @@
   font-size: vars.$font-size-sm;
   color: vars.$color-text-muted;
   width: 22px;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: vars.$spacing-1;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: vars.$spacing-2;
 }
 
 .usageBar {

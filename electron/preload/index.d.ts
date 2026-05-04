@@ -39,8 +39,19 @@ declare global {
       // App lifecycle
       exitApp: () => Promise<void>
       // Preferences
-      loadPreferences: () => Promise<{ historyMemoryBytes: number }>
-      savePreferences: (prefs: { historyMemoryBytes: number }) => Promise<void>
+      loadPreferences: () => Promise<{
+        historyMemoryBytes: number
+        bufferMemoryBytes: number
+        bufferMemoryMaxOut: boolean
+        unifiedMemory?: boolean
+      }>
+      savePreferences: (prefs: {
+        historyMemoryBytes: number
+        bufferMemoryBytes: number
+        bufferMemoryMaxOut: boolean
+        unifiedMemory: boolean
+      }) => Promise<void>
+      getSystemTotalMemoryBytes: () => Promise<number>
       // Startup file path (CLI arg)
       getStartupFile: () => Promise<string | null>
       onOpenFile: (callback: (path: string) => void) => (() => void)
