@@ -397,14 +397,15 @@ function createPencilHandler(): ToolHandler {
   // ── 1px helpers ────────────────────────────────────────────────────────────
 
   function paintOnePixel(px: number, py: number, ctx: ToolContext): void {
-    const { renderer, layer, primaryColor, selectionMask, growLayerToFit } = ctx
+    const { renderer, layer, primaryColor, selectionMask } = ctx
     const r = Math.round(Math.min(primaryColor.r, 1) * 255)
     const g = Math.round(Math.min(primaryColor.g, 1) * 255)
     const b = Math.round(Math.min(primaryColor.b, 1) * 255)
     const a = Math.round(primaryColor.a * 255)
     const srcFloat: [number, number, number, number] | undefined =
       layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
-    growLayerToFit(px, py, 2)
+    // growLayerToFit is NOT called here — callers must pre-grow before entering
+    // the per-pixel loop so we don't pay the bounds check on every Bresenham pixel.
     const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
     const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
     const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
@@ -446,17 +447,48 @@ function createPencilHandler(): ToolHandler {
     const x1 = Math.round(tx), y1 = Math.round(ty)
     if (lastPx.x === x1 && lastPx.y === y1) return
 
-    const pixels: Point[] = []
-    bresenham(lastPx.x, lastPx.y, x1, y1, (x, y) => pixels.push({ x, y }))
+    // Pre-grow at both endpoints — Bresenham stays within their bounding box, so
+    // all intermediate pixels are covered without per-pixel growLayerToFit calls.
+    ctx.growLayerToFit(lastPx.x, lastPx.y, 2)
+    ctx.growLayerToFit(x1, y1, 2)
 
-    // Skip pixel[0] — it equals lastPx and was already painted
-    for (let i = 1; i < pixels.length; i++) {
-      if (pencilOptions.pixelPerfect) {
+    const { layer } = ctx
+
+    if (pencilOptions.pixelPerfect) {
+      // Pixel-perfect needs a 3-point window — collect into array for L-corner detection.
+      const pixels: Point[] = []
+      bresenham(lastPx.x, lastPx.y, x1, y1, (x, y) => pixels.push({ x, y }))
+      // Skip pixel[0] — it equals lastPx and was already painted
+      for (let i = 1; i < pixels.length; i++) {
         addPPPixel(pixels[i], ctx)
-      } else {
-        paintOnePixel(pixels[i].x, pixels[i].y, ctx)
       }
+    } else {
+      // Direct callback — no intermediate array allocation
+      let first = true
+      bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
+        if (first) { first = false; return } // skip pixel[0] = lastPx, already painted
+        paintOnePixel(px, py, ctx)
+      })
     }
+
+    // Track dirty rect so flushLayer only uploads the painted patch, not the full layer.
+    if (!ctx.tiledMode) {
+      const lx = Math.max(0, Math.min(lastPx.x, x1) - layer.offsetX - 1)
+      const ly = Math.max(0, Math.min(lastPx.y, y1) - layer.offsetY - 1)
+      const rx = Math.min(layer.layerWidth,  Math.max(lastPx.x, x1) - layer.offsetX + 2)
+      const ry = Math.min(layer.layerHeight, Math.max(lastPx.y, y1) - layer.offsetY + 2)
+      if (layer.dirtyRect === null) {
+        layer.dirtyRect = { lx, ly, rx, ry }
+      } else {
+        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
+        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
+        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
+        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      }
+    } else {
+      layer.dirtyRect = null
+    }
+
     lastPx = { x: x1, y: y1 }
   }
 
@@ -585,6 +617,12 @@ function createPencilHandler(): ToolHandler {
           const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
           const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
           blendPixelOver(renderer, layer, px, py, r, g, b, a, pencilOptions.opacity, touched, sel, tiledW, tiledH)
+          // Single-pixel dot: dirtyRect is a 1×1 patch in layer-local coords.
+          if (!ctx.tiledMode) {
+            const lx = Math.max(0, px - layer.offsetX)
+            const ly = Math.max(0, py - layer.offsetY)
+            layer.dirtyRect = { lx, ly, rx: lx + 1, ry: ly + 1 }
+          }
         }
         lastPx    = { x: px, y: py }
         ppPrev    = { x: px, y: py }
