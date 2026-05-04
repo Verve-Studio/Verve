@@ -457,6 +457,9 @@ export function buildSubPlan(
       if (parent && isCompositeLayer(parent)) continue
       // Group-scoped adjustment: treat as standalone
       if (bypassedAdjustmentIds.has(ls.id)) continue
+      // Invisible adjustments are no-ops — omit from plan so planIsFlatLayersOnly
+      // stays true and the incremental paint path remains available.
+      if (!adjLs.visible) continue
       const entry = buildAdjustmentEntry(adjLs, adjustmentMaskMap.get(ls.id), swatches)
       if (entry) plan.push(entry)
       continue
@@ -485,6 +488,7 @@ export function buildSubPlan(
           if (
             'type' in adj &&
             adj.type === 'adjustment' &&
+            adj.visible !== false &&
             (adj as AdjustmentLayerState).parentId === ls.id &&
             !bypassedAdjustmentIds.has(adj.id)
           ) {
@@ -517,6 +521,7 @@ export function buildSubPlan(
       if (
         'type' in adj &&
         adj.type === 'adjustment' &&
+        adj.visible !== false &&
         (adj as AdjustmentLayerState).parentId === ls.id &&
         !bypassedAdjustmentIds.has(adj.id)
       ) {
