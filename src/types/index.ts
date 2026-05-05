@@ -8,6 +8,17 @@ export type ShapeType =
   | "diamond"
   | "star";
 
+export type FrameType = "rectangle" | "ellipse";
+
+/**
+ * How content is fitted within a frame's bounding box.
+ * - 'fill'     — cover: scale uniformly so the content fully covers the frame; crop overflow.
+ * - 'fit'      — contain: scale uniformly so the content fits inside the frame; letterbox.
+ * - 'stretch'  — non-uniform scale to exactly match frame dimensions.
+ * - 'center'   — no scaling; content is centred at native size and clipped.
+ */
+export type FrameContentFit = "fill" | "fit" | "stretch" | "center";
+
 export type Tool =
   | "move"
   | "select"
@@ -198,6 +209,54 @@ export interface ShapeLayerState {
   /** Corner radius in canvas pixels. Applies to rectangle. */
   cornerRadius: number;
   antiAlias: boolean;
+}
+
+/**
+ * Frame layer — a parametric clipping container, like Photoshop's Frame Tool.
+ * The frame defines a rectangular or elliptical region into which an image
+ * (or future content) is fitted and clipped. When `content` is null the frame
+ * renders an empty placeholder and acts as a target for image drops.
+ */
+export interface FrameLayerState {
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "frame";
+  frameType: FrameType;
+  /** Bounding box centre X (canvas pixels). */
+  cx: number;
+  /** Bounding box centre Y (canvas pixels). */
+  cy: number;
+  /** Bounding box width (canvas pixels). */
+  w: number;
+  /** Bounding box height (canvas pixels). */
+  h: number;
+  /** Rotation in degrees, clockwise. */
+  rotation: number;
+  /**
+   * Content image, or null for an empty frame.
+   * `rgba` is base64-encoded raw RGBA bytes (length = width × height × 4).
+   */
+  content: {
+    rgba: string;
+    width: number;
+    height: number;
+  } | null;
+  /** How content is fitted into the frame bounds. */
+  fit: FrameContentFit;
+  /** Manual horizontal offset of content relative to the fitted position, in canvas pixels. */
+  contentOffsetX: number;
+  /** Manual vertical offset of content relative to the fitted position, in canvas pixels. */
+  contentOffsetY: number;
+  /** Manual scale multiplier on top of the fitted size. 1.0 = use fit-mode default. */
+  contentScale: number;
+  /** Frame stroke colour, or null for no stroke. */
+  strokeColor: RGBAColor | null;
+  /** Stroke width in canvas pixels. */
+  strokeWidth: number;
 }
 
 /**
@@ -935,10 +994,15 @@ export type LayerState =
   | PixelLayerState
   | TextLayerState
   | ShapeLayerState
+  | FrameLayerState
   | MaskLayerState
   | AdjustmentLayerState
   | GroupLayerState
   | CompositeLayerState;
+
+export function isFrameLayer(l: LayerState): l is FrameLayerState {
+  return "type" in l && l.type === "frame";
+}
 
 export function isGroupLayer(l: LayerState): l is GroupLayerState {
   return "type" in l && l.type === "group";

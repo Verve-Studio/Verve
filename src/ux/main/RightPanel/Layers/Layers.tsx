@@ -699,7 +699,9 @@ export function Layers({
     !isChildLayer(activeLayer) &&
     !isActiveContainer &&
     (("type" in activeLayer &&
-      (activeLayer.type === "text" || activeLayer.type === "shape")) ||
+      (activeLayer.type === "text" ||
+        activeLayer.type === "shape" ||
+        activeLayer.type === "frame")) ||
       (!("type" in activeLayer) &&
         layers.some(
           (l) =>

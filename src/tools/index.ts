@@ -20,6 +20,7 @@ import { shapeTool } from "./shape";
 import { noopTool } from "./noop";
 import { transformTool } from "./transform";
 import { cloneStampTool } from "./cloneStamp";
+import { frameTool } from "./frame";
 
 export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   pencil: pencilTool,
@@ -37,7 +38,7 @@ export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   // ── Not yet implemented ────────────────────────────────────────────────────
   move: moveTool,
   crop: cropTool,
-  frame: noopTool,
+  frame: frameTool,
   gradient: gradientTool,
   dodge: dodgeTool,
   burn: burnTool,

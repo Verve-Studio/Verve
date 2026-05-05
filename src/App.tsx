@@ -703,7 +703,10 @@ function AppContent(): React.JSX.Element {
   const effectiveSelectedIds = new Set(state.selectedLayerIds);
   if (state.activeLayerId) effectiveSelectedIds.add(state.activeLayerId);
   const isPixelRootLayer = (l: LayerState): boolean =>
-    !("type" in l) || l.type === "text" || l.type === "shape";
+    !("type" in l) ||
+    l.type === "text" ||
+    l.type === "shape" ||
+    l.type === "frame";
   const isMergeSelectedEnabled =
     [...effectiveSelectedIds].filter((id) => {
       const l = state.layers.find((x) => x.id === id);

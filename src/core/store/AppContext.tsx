@@ -7,6 +7,7 @@ import type {
   LayerState,
   TextLayerState,
   ShapeLayerState,
+  FrameLayerState,
   MaskLayerState,
   AdjustmentLayerState,
   GroupLayerState,
@@ -55,6 +56,8 @@ export type AppAction =
   | { type: "UPDATE_TEXT_LAYER"; payload: TextLayerState }
   | { type: "ADD_SHAPE_LAYER"; payload: ShapeLayerState }
   | { type: "UPDATE_SHAPE_LAYER"; payload: ShapeLayerState }
+  | { type: "ADD_FRAME_LAYER"; payload: FrameLayerState }
+  | { type: "UPDATE_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "ADD_MASK_LAYER"; payload: MaskLayerState }
   | { type: "ADD_ADJUSTMENT_LAYER"; payload: AdjustmentLayerState }
   | { type: "UPDATE_ADJUSTMENT_LAYER"; payload: AdjustmentLayerState }
@@ -627,6 +630,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case "UPDATE_SHAPE_LAYER":
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.payload.id ? action.payload : l,
+        ),
+      };
+
+    case "ADD_FRAME_LAYER":
+      return {
+        ...state,
+        layers: [...state.layers, action.payload],
+        activeLayerId: action.payload.id,
+      };
+
+    case "UPDATE_FRAME_LAYER":
       return {
         ...state,
         layers: state.layers.map((l) =>

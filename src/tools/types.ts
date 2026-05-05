@@ -7,6 +7,7 @@ import type {
   RGBAColor,
   TextLayerState,
   ShapeLayerState,
+  FrameLayerState,
   PixelFormat,
   Guide,
 } from "@/types";
@@ -75,6 +76,19 @@ export interface ToolContext {
   shapeLayers: ShapeLayerState[];
   /** The active shape layer, if the currently active layer is a shape type. */
   activeShapeLayer: ShapeLayerState | null;
+  /** Create a new frame layer, rasterize it (placeholder), add to state and set as active. */
+  addFrameLayer: (layer: FrameLayerState) => void;
+  /** Dispatch UPDATE_FRAME_LAYER — sync effect re-rasterizes from the new state. */
+  updateFrameLayer: (layer: FrameLayerState) => void;
+  /**
+   * Re-rasterize a frame layer at arbitrary parameters WITHOUT dispatching to
+   * state. Used for live edit previews during drag.
+   */
+  previewFrameLayer: (layer: FrameLayerState) => void;
+  /** All current frame layers — frame tool uses this to find the active frame. */
+  frameLayers: FrameLayerState[];
+  /** The active frame layer, if the currently active layer is a frame type. */
+  activeFrameLayer: FrameLayerState | null;
   /** Current canvas zoom level — used to compute screen-space handle sizes in overlay drawings. */
   zoom: number;
   /** Whether tiled mode is active — used by wrap-capable tools to enable coordinate wrapping. */

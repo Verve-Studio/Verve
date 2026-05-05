@@ -44,6 +44,7 @@ function isEffectEligibleLayer(layer: LayerState): boolean {
   return (
     layer.type === "text" ||
     layer.type === "shape" ||
+    layer.type === "frame" ||
     layer.type === "composite"
   );
 }

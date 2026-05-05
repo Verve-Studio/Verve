@@ -14,7 +14,12 @@ import type {
   GpuLayer,
   RenderPlanEntry,
 } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import type { TextLayerState, ShapeLayerState, MaskLayerState } from "@/types";
+import type {
+  TextLayerState,
+  ShapeLayerState,
+  FrameLayerState,
+  MaskLayerState,
+} from "@/types";
 import { TOOL_REGISTRY } from "@/tools";
 import type { ToolContext, ToolHandler } from "@/tools";
 import { brushOptions } from "@/tools/brush";
@@ -37,6 +42,10 @@ import { drawTransformOverlay } from "@/tools/transform";
 import { TextLayerEditor } from "./TextLayerEditor";
 import { rasterizeTextToLayer } from "./textRasterizer";
 import { rasterizeShapeToLayer } from "./shapeRasterizer";
+import {
+  rasterizeFrameToLayer,
+  ensureContentDecoded,
+} from "./frameRasterizer";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 import { decodePng } from "./pngHelpers";
 import { useCanvasHandle } from "./canvasHandle";
@@ -943,6 +952,25 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           rasterizeShapeToLayer(ls, gl, cw, ch);
           renderer.flushLayer(gl);
           map.set(ls.id, gl);
+        } else if ("type" in ls && ls.type === "frame") {
+          // Frame layers created imperatively via addFrameLayer; recreate if missing.
+          const cw = renderer.pixelWidth;
+          const ch = renderer.pixelHeight;
+          const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
+          rasterizeFrameToLayer(ls, gl, cw, ch);
+          renderer.flushLayer(gl);
+          map.set(ls.id, gl);
+          if (ls.content) {
+            const content = ls.content;
+            ensureContentDecoded(content, () => {
+              // Re-rasterize once the bitmap is decoded.
+              const cur = map.get(ls.id);
+              if (!cur) return;
+              rasterizeFrameToLayer(ls, cur, cw, ch);
+              renderer.flushLayer(cur);
+              doRender();
+            });
+          }
         } else if ("type" in ls && ls.type === "mask") {
           // Newly added mask layer — full-canvas white (default: fully reveal parent)
           const cw = renderer.pixelWidth;
@@ -1015,6 +1043,23 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         const ch = renderer.pixelHeight;
         rasterizeShapeToLayer(ls, gl, cw, ch);
         renderer.flushLayer(gl);
+      } else if ("type" in ls && ls.type === "frame") {
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        gl.offsetX = 0;
+        gl.offsetY = 0;
+        rasterizeFrameToLayer(ls, gl, cw, ch);
+        renderer.flushLayer(gl);
+        if (ls.content) {
+          const content = ls.content;
+          ensureContentDecoded(content, () => {
+            const cur = map.get(ls.id);
+            if (!cur) return;
+            rasterizeFrameToLayer(ls, cur, cw, ch);
+            renderer.flushLayer(cur);
+            doRender();
+          });
+        }
       }
     }
 
@@ -1367,11 +1412,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const activeId = state.activeLayerId;
     let activeLayer = activeId ? glLayersRef.current.get(activeId) : undefined;
 
-    // Text/shape tools don't need an existing pixel layer — they create their own
+    // Text/shape/frame tools don't need an existing pixel layer — they create their own
     if (
       !activeLayer &&
       state.activeTool !== "text" &&
-      state.activeTool !== "shape"
+      state.activeTool !== "shape" &&
+      state.activeTool !== "frame"
     )
       return null;
     // Block pixel-modifying tools on locked layers and on non-pixel layers (text, shape, group, adjustment).
@@ -1500,6 +1546,35 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       activeShapeLayer: (() => {
         const l = state.layers.find((l) => l.id === activeId);
         return l && "type" in l && l.type === "shape" ? l : null;
+      })(),
+      addFrameLayer: (ls) => {
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
+        rasterizeFrameToLayer(ls, gl, cw, ch);
+        renderer.flushLayer(gl);
+        glLayersRef.current.set(ls.id, gl);
+        doRender();
+        dispatch({ type: "ADD_FRAME_LAYER", payload: ls });
+      },
+      updateFrameLayer: (ls) => {
+        dispatch({ type: "UPDATE_FRAME_LAYER", payload: ls });
+      },
+      previewFrameLayer: (ls) => {
+        const gl = glLayersRef.current.get(ls.id);
+        if (!gl) return;
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        rasterizeFrameToLayer(ls, gl, cw, ch);
+        renderer.flushLayer(gl);
+        doRender();
+      },
+      frameLayers: state.layers.filter(
+        (l): l is FrameLayerState => "type" in l && l.type === "frame",
+      ),
+      activeFrameLayer: (() => {
+        const l = state.layers.find((l) => l.id === activeId);
+        return l && "type" in l && l.type === "frame" ? l : null;
       })(),
       zoom: state.canvas.zoom,
       tiledMode: state.canvas.tiledMode,
