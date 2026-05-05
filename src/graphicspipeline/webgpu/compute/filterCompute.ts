@@ -30,8 +30,8 @@ function createFilterRenderPipelinePair(
   const makePipeline = (format: GPUTextureFormat): GPURenderPipeline =>
     device.createRenderPipeline({
       layout: 'auto',
-      vertex:    { module: shaderModule, entryPoint: 'vs_adj' },
-      fragment:  { module: shaderModule, entryPoint: fragmentEntryPoint, targets: [{ format }] },
+      vertex: { module: shaderModule, entryPoint: 'vs_adj' },
+      fragment: { module: shaderModule, entryPoint: fragmentEntryPoint, targets: [{ format }] },
       primitive: { topology: 'triangle-list' },
     })
   return { s8: makePipeline('rgba8unorm'), f32: makePipeline('rgba32float') }
@@ -46,8 +46,8 @@ function createFilterRenderPipeline(
   const module = device.createShaderModule({ code: wgsl })
   return device.createRenderPipeline({
     layout: 'auto',
-    vertex:    { module, entryPoint: 'vs_adj' },
-    fragment:  { module, entryPoint: fragmentEntryPoint, targets: [{ format }] },
+    vertex: { module, entryPoint: 'vs_adj' },
+    fragment: { module, entryPoint: fragmentEntryPoint, targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
   })
 }
@@ -98,34 +98,34 @@ class FilterComputeEngine {
       format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     })
-    this.gaussianHPipeline               = this.makePair(FILTER_GAUSSIAN_H_COMPUTE, 'fs_gaussian_h')
-    this.gaussianVPipeline               = this.makePair(FILTER_GAUSSIAN_V_COMPUTE, 'fs_gaussian_v')
-    this.boxHPipeline                    = this.makePair(FILTER_BOX_H_COMPUTE, 'fs_box_h')
-    this.boxVPipeline                    = this.makePair(FILTER_BOX_V_COMPUTE, 'fs_box_v')
-    this.radialBlurPipeline              = this.makePair(FILTER_RADIAL_BLUR_COMPUTE, 'fs_radial_blur')
-    this.motionBlurPipeline              = this.makePair(FILTER_MOTION_BLUR_COMPUTE, 'fs_motion_blur')
-    this.lensBlurPipeline                = this.makePair(FILTER_LENS_BLUR_COMPUTE, 'fs_lens_blur')
-    this.sharpenPipeline                 = this.makePair(FILTER_SHARPEN_COMPUTE, 'fs_sharpen')
-    this.sharpenMorePipeline             = this.makePair(FILTER_SHARPEN_MORE_COMPUTE, 'fs_sharpen_more')
-    this.unsharpCombinePipeline          = this.makePair(FILTER_UNSHARP_COMBINE_COMPUTE, 'fs_unsharp_combine')
+    this.gaussianHPipeline = this.makePair(FILTER_GAUSSIAN_H_COMPUTE, 'fs_gaussian_h')
+    this.gaussianVPipeline = this.makePair(FILTER_GAUSSIAN_V_COMPUTE, 'fs_gaussian_v')
+    this.boxHPipeline = this.makePair(FILTER_BOX_H_COMPUTE, 'fs_box_h')
+    this.boxVPipeline = this.makePair(FILTER_BOX_V_COMPUTE, 'fs_box_v')
+    this.radialBlurPipeline = this.makePair(FILTER_RADIAL_BLUR_COMPUTE, 'fs_radial_blur')
+    this.motionBlurPipeline = this.makePair(FILTER_MOTION_BLUR_COMPUTE, 'fs_motion_blur')
+    this.lensBlurPipeline = this.makePair(FILTER_LENS_BLUR_COMPUTE, 'fs_lens_blur')
+    this.sharpenPipeline = this.makePair(FILTER_SHARPEN_COMPUTE, 'fs_sharpen')
+    this.sharpenMorePipeline = this.makePair(FILTER_SHARPEN_MORE_COMPUTE, 'fs_sharpen_more')
+    this.unsharpCombinePipeline = this.makePair(FILTER_UNSHARP_COMBINE_COMPUTE, 'fs_unsharp_combine')
     this.smartSharpenGaussCombinePipeline = this.makePair(FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE, 'fs_smart_sharpen_gauss')
-    this.smartSharpenLensPipeline        = this.makePair(FILTER_SMART_SHARPEN_LENS_COMPUTE, 'fs_smart_sharpen_lens')
-    this.smartSharpenBlendPipeline       = this.makePair(FILTER_SMART_SHARPEN_BLEND_COMPUTE, 'fs_smart_sharpen_blend')
-    this.addNoisePipeline                = this.makePair(FILTER_ADD_NOISE_COMPUTE, 'fs_add_noise')
-    this.filmGrainNoisePipeline          = createFilterRenderPipeline(device, FILTER_FILM_GRAIN_NOISE_COMPUTE, 'fs_film_grain_noise', 'rgba8unorm')
-    this.filmGrainCombinePipeline        = this.makePair(FILTER_FILM_GRAIN_COMBINE_COMPUTE, 'fs_film_grain_combine')
-    this.cloudsPipeline                  = this.makePair(FILTER_CLOUDS_COMPUTE, 'fs_clouds')
-    this.medianPipeline                  = this.makePair(FILTER_MEDIAN_COMPUTE, 'fs_median')
-    this.bilateralPipeline               = this.makePair(FILTER_BILATERAL_COMPUTE, 'fs_bilateral')
-    this.reduceNoisePipeline             = this.makePair(FILTER_REDUCE_NOISE_COMPUTE, 'fs_reduce_noise')
-    this.lensFlareRenderPipeline         = createFilterRenderPipeline(device, FILTER_LENS_FLARE_COMPUTE, 'fs_lens_flare', 'rgba8unorm')
-    this.pixelatePipeline                = this.makePair(FILTER_PIXELATE_COMPUTE, 'fs_pixelate')
-    this.seamlessBreakPipeline           = this.makePair(FILTER_SEAMLESS_BREAK_COMPUTE,  'fs_seamless_break')
-    this.seamlessBorderPipeline          = this.makePair(FILTER_SEAMLESS_BORDER_COMPUTE, 'fs_seamless_border')
-    this.rmbPsfPipeline                  = createFilterRenderPipeline(device, FILTER_RMB_PSF_COMPUTE, 'fs_rmb_psf', 'rgba16float')
-    this.rmbRatioPipeline                = createFilterRenderPipeline(device, FILTER_RMB_RATIO_COMPUTE, 'fs_rmb_ratio', 'rgba16float')
-    this.rmbUpdatePipeline               = createFilterRenderPipeline(device, FILTER_RMB_UPDATE_COMPUTE, 'fs_rmb_update', 'rgba16float')
-    this.rmbFinalPipeline                = this.makePair(FILTER_RMB_FINAL_COMPUTE, 'fs_rmb_final')
+    this.smartSharpenLensPipeline = this.makePair(FILTER_SMART_SHARPEN_LENS_COMPUTE, 'fs_smart_sharpen_lens')
+    this.smartSharpenBlendPipeline = this.makePair(FILTER_SMART_SHARPEN_BLEND_COMPUTE, 'fs_smart_sharpen_blend')
+    this.addNoisePipeline = this.makePair(FILTER_ADD_NOISE_COMPUTE, 'fs_add_noise')
+    this.filmGrainNoisePipeline = createFilterRenderPipeline(device, FILTER_FILM_GRAIN_NOISE_COMPUTE, 'fs_film_grain_noise', 'rgba8unorm')
+    this.filmGrainCombinePipeline = this.makePair(FILTER_FILM_GRAIN_COMBINE_COMPUTE, 'fs_film_grain_combine')
+    this.cloudsPipeline = this.makePair(FILTER_CLOUDS_COMPUTE, 'fs_clouds')
+    this.medianPipeline = this.makePair(FILTER_MEDIAN_COMPUTE, 'fs_median')
+    this.bilateralPipeline = this.makePair(FILTER_BILATERAL_COMPUTE, 'fs_bilateral')
+    this.reduceNoisePipeline = this.makePair(FILTER_REDUCE_NOISE_COMPUTE, 'fs_reduce_noise')
+    this.lensFlareRenderPipeline = createFilterRenderPipeline(device, FILTER_LENS_FLARE_COMPUTE, 'fs_lens_flare', 'rgba8unorm')
+    this.pixelatePipeline = this.makePair(FILTER_PIXELATE_COMPUTE, 'fs_pixelate')
+    this.seamlessBreakPipeline = this.makePair(FILTER_SEAMLESS_BREAK_COMPUTE, 'fs_seamless_break')
+    this.seamlessBorderPipeline = this.makePair(FILTER_SEAMLESS_BORDER_COMPUTE, 'fs_seamless_border')
+    this.rmbPsfPipeline = createFilterRenderPipeline(device, FILTER_RMB_PSF_COMPUTE, 'fs_rmb_psf', 'rgba16float')
+    this.rmbRatioPipeline = createFilterRenderPipeline(device, FILTER_RMB_RATIO_COMPUTE, 'fs_rmb_ratio', 'rgba16float')
+    this.rmbUpdatePipeline = createFilterRenderPipeline(device, FILTER_RMB_UPDATE_COMPUTE, 'fs_rmb_update', 'rgba16float')
+    this.rmbFinalPipeline = this.makePair(FILTER_RMB_FINAL_COMPUTE, 'fs_rmb_final')
   }
 
   static create(device: GPUDevice, width: number, height: number, format: GPUTextureFormat = 'rgba8unorm'): FilterComputeEngine {
@@ -263,7 +263,7 @@ class FilterComputeEngine {
   }
 
   private encodeRenderPass(encoder: GPUCommandEncoder, pipeline: GPURenderPipeline, entries: GPUBindGroupEntry[], dstTex: GPUTexture): void {
-    const bg   = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries })
+    const bg = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries })
     const pass = encoder.beginRenderPass({
       colorAttachments: [{ view: dstTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
     })
@@ -323,11 +323,11 @@ class FilterComputeEngine {
   encodeRemoveMotionBlur(encoder: GPUCommandEncoder, srcTex: GPUTexture, dstTex: GPUTexture, w: number, h: number, angle: number, distance: number, noiseReduction: number): void {
     // 8–15 iterations: noiseReduction=0 → 15, noiseReduction=100 → 8
     const iterations = 8 + Math.round((100 - noiseReduction) / 14)
-    const blendBack  = (noiseReduction / 100) * 0.35
+    const blendBack = (noiseReduction / 100) * 0.35
 
     // PSF params reused for all forward and back-projection passes.
     const buf = new ArrayBuffer(16)
-    const dv  = new DataView(buf)
+    const dv = new DataView(buf)
     dv.setFloat32(0, angle, true); dv.setUint32(4, distance, true)
     dv.setUint32(8, 0, true); dv.setUint32(12, 0, true)
     const psfParamsBuf = this.makeParamsBuf(buf)
@@ -339,9 +339,9 @@ class FilterComputeEngine {
     const finalParamsBuf = this.makeParamsBuf(finalBuf)
 
     // Intermediate rgba16float textures for RL ping-pong.
-    const estA  = this.makeRgba16FloatTex(w, h) // even-iteration estimate output
-    const estB  = this.makeRgba16FloatTex(w, h) // odd-iteration estimate output
-    const temp  = this.makeRgba16FloatTex(w, h) // PSF scratch (reused for fwd + back)
+    const estA = this.makeRgba16FloatTex(w, h) // even-iteration estimate output
+    const estB = this.makeRgba16FloatTex(w, h) // odd-iteration estimate output
+    const temp = this.makeRgba16FloatTex(w, h) // PSF scratch (reused for fwd + back)
     const ratio = this.makeRgba16FloatTex(w, h) // ratio = input / PSF(est)
 
     // For iteration 0 the estimate starts as srcTex. Subsequent iterations use estA / estB.
@@ -633,17 +633,17 @@ class FilterComputeEngine {
   }
 
   encodeSeamlessTexture(
-    encoder:         GPUCommandEncoder,
-    srcTex:          GPUTexture,
-    dstTex:          GPUTexture,
-    w:               number,
-    h:               number,
+    encoder: GPUCommandEncoder,
+    srcTex: GPUTexture,
+    dstTex: GPUTexture,
+    w: number,
+    h: number,
     breakRepetition: boolean,
-    cellSize:        number,
-    blendRadius:     number,
+    cellSize: number,
+    blendRadius: number,
     seamlessBorders: boolean,
-    borderRadius:    number,
-    seed:            number,
+    borderRadius: number,
+    seed: number,
   ): void {
     // When both passes are disabled, copy src → dst unchanged
     if (!breakRepetition && !seamlessBorders) {
