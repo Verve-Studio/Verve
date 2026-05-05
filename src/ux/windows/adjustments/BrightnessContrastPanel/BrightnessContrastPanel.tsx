@@ -1,23 +1,27 @@
-import React from 'react'
-import { useAppContext } from '@/core/store/AppContext'
-import type { BrightnessContrastAdjustmentLayer } from '@/types'
-import { ParentConnectorIcon } from '@/ux/windows/ToolWindowIcons'
-import styles from './BrightnessContrastPanel.module.scss'
+import React from "react";
+import { useAppContext } from "@/core/store/AppContext";
+import type { BrightnessContrastAdjustmentLayer } from "@/types";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
+import styles from "./BrightnessContrastPanel.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface BrightnessContrastPanelProps {
-  layer: BrightnessContrastAdjustmentLayer
-  parentLayerName: string
+  layer: BrightnessContrastAdjustmentLayer;
+  parentLayerName: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BrightnessContrastPanel({ layer, parentLayerName }: BrightnessContrastPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext()
-  const { brightness, contrast } = layer.params
+export function BrightnessContrastPanel({
+  layer,
+  parentLayerName,
+}: BrightnessContrastPanelProps): React.JSX.Element {
+  const { dispatch } = useAppContext();
+  const { brightness, contrast } = layer.params;
 
-  const pct = (v: number, min: number, max: number): string => String((v - min) / (max - min))
+  const pct = (v: number, min: number, max: number): string =>
+    String((v - min) / (max - min));
 
   return (
     <div className={styles.content}>
@@ -27,22 +31,47 @@ export function BrightnessContrastPanel({ layer, parentLayerName }: BrightnessCo
           <input
             type="range"
             className={styles.track}
-            min={-100} max={100} step={1}
+            min={-100}
+            max={100}
+            step={1}
             value={brightness}
-            style={{ '--pct': pct(brightness, -100, 100) } as React.CSSProperties}
+            style={
+              { "--pct": pct(brightness, -100, 100) } as React.CSSProperties
+            }
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, brightness: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    brightness: Number(e.target.value),
+                  },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-100} max={100} step={1}
+          min={-100}
+          max={100}
+          step={1}
           value={brightness}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, brightness: Math.min(100, Math.max(-100, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    brightness: Math.min(100, Math.max(-100, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -52,22 +81,42 @@ export function BrightnessContrastPanel({ layer, parentLayerName }: BrightnessCo
           <input
             type="range"
             className={styles.track}
-            min={-100} max={100} step={1}
+            min={-100}
+            max={100}
+            step={1}
             value={contrast}
-            style={{ '--pct': pct(contrast, -100, 100) } as React.CSSProperties}
+            style={{ "--pct": pct(contrast, -100, 100) } as React.CSSProperties}
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, contrast: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: { ...layer.params, contrast: Number(e.target.value) },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-100} max={100} step={1}
+          min={-100}
+          max={100}
+          step={1}
           value={contrast}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, contrast: Math.min(100, Math.max(-100, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    contrast: Math.min(100, Math.max(-100, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -79,7 +128,10 @@ export function BrightnessContrastPanel({ layer, parentLayerName }: BrightnessCo
         <button
           className={styles.resetBtn}
           onClick={() =>
-            dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { brightness: 0, contrast: 0 } } })
+            dispatch({
+              type: "UPDATE_ADJUSTMENT_LAYER",
+              payload: { ...layer, params: { brightness: 0, contrast: 0 } },
+            })
           }
           title="Reset to defaults"
         >
@@ -87,5 +139,5 @@ export function BrightnessContrastPanel({ layer, parentLayerName }: BrightnessCo
         </button>
       </div>
     </div>
-  )
+  );
 }

@@ -1,39 +1,40 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import styles from './MenuBar.module.scss'
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import styles from "./MenuBar.module.scss";
 
 export interface MenuItemDef {
-  label: string
-  shortcut?: string
-  action?: () => void
-  separator?: boolean
-  disabled?: boolean
-  checked?: boolean
-  submenu?: MenuItemDef[]
+  label: string;
+  shortcut?: string;
+  action?: () => void;
+  separator?: boolean;
+  disabled?: boolean;
+  checked?: boolean;
+  submenu?: MenuItemDef[];
 }
 
 export interface MenuDef {
-  label: string
-  items: MenuItemDef[]
+  label: string;
+  items: MenuItemDef[];
 }
 
-
 interface MenuBarProps {
-  menus?: MenuDef[]
+  menus?: MenuDef[];
 }
 
 // ─── SubmenuItem ──────────────────────────────────────────────────────────────
 
 interface SubmenuItemProps {
-  item: MenuItemDef
-  onClose: () => void
+  item: MenuItemDef;
+  onClose: () => void;
 }
 
 function SubmenuItem({ item, onClose }: SubmenuItemProps): React.JSX.Element {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(false);
 
   if (item.submenu) {
     return (
-      <li role="none" className={styles.submenuEntry}
+      <li
+        role="none"
+        className={styles.submenuEntry}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
       >
@@ -49,79 +50,96 @@ function SubmenuItem({ item, onClose }: SubmenuItemProps): React.JSX.Element {
           <span className={styles.submenuArrow}>›</span>
         </button>
         {open && (
-          <ul className={`${styles.dropdown} ${styles.submenuDropdown}`} role="menu">
+          <ul
+            className={`${styles.dropdown} ${styles.submenuDropdown}`}
+            role="menu"
+          >
             {item.submenu.map((sub, i) =>
               sub.separator ? (
                 <li key={i} role="separator" className={styles.separator} />
               ) : (
                 <SubmenuItem key={sub.label + i} item={sub} onClose={onClose} />
-              )
+              ),
             )}
           </ul>
         )}
       </li>
-    )
+    );
   }
 
   return (
     <li role="none">
       <button
         className={styles.menuItem}
-        onClick={() => { if (!item.disabled && !item.separator) { item.action?.(); onClose() } }}
+        onClick={() => {
+          if (!item.disabled && !item.separator) {
+            item.action?.();
+            onClose();
+          }
+        }}
         role="menuitem"
         disabled={item.disabled}
       >
-        <span className={styles.checkMark}>{item.checked ? '✓' : ''}</span>
+        <span className={styles.checkMark}>{item.checked ? "✓" : ""}</span>
         <span className={styles.itemLabel}>{item.label}</span>
-        {item.shortcut && <span className={styles.shortcut}>{item.shortcut}</span>}
+        {item.shortcut && (
+          <span className={styles.shortcut}>{item.shortcut}</span>
+        )}
       </button>
     </li>
-  )
+  );
 }
 
 // ─── MenuBar ──────────────────────────────────────────────────────────────────
 
 export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const navRef = useRef<HTMLElement>(null)
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const navRef = useRef<HTMLElement>(null);
 
-  const close = useCallback(() => setOpenMenu(null), [])
+  const close = useCallback(() => setOpenMenu(null), []);
 
   useEffect(() => {
     const onMouseDown = (e: MouseEvent): void => {
       if (navRef.current && !navRef.current.contains(e.target as Node)) {
-        close()
+        close();
       }
-    }
+    };
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') close()
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    document.addEventListener('keydown', onKeyDown)
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener('mousedown', onMouseDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [close])
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [close]);
 
   const handleTrigger = (label: string): void => {
-    setOpenMenu((prev) => (prev === label ? null : label))
-  }
+    setOpenMenu((prev) => (prev === label ? null : label));
+  };
 
   const handleMouseEnter = (label: string): void => {
     if (openMenu !== null && openMenu !== label) {
-      setOpenMenu(label)
+      setOpenMenu(label);
     }
-  }
+  };
 
-  if(menus === undefined) return <nav ref={navRef} className={styles.menuBar} aria-label="Application menu" />
+  if (menus === undefined)
+    return (
+      <nav
+        ref={navRef}
+        className={styles.menuBar}
+        aria-label="Application menu"
+      />
+    );
 
   return (
     <nav ref={navRef} className={styles.menuBar} aria-label="Application menu">
       {menus.map((menu) => (
         <div key={menu.label} className={styles.entry}>
           <button
-            className={`${styles.trigger} ${openMenu === menu.label ? styles.open : ''}`}
+            className={`${styles.trigger} ${openMenu === menu.label ? styles.open : ""}`}
             onClick={() => handleTrigger(menu.label)}
             onMouseEnter={() => handleMouseEnter(menu.label)}
             aria-haspopup="menu"
@@ -136,13 +154,17 @@ export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
                 item.separator ? (
                   <li key={i} role="separator" className={styles.separator} />
                 ) : (
-                  <SubmenuItem key={item.label + i} item={item} onClose={close} />
-                )
+                  <SubmenuItem
+                    key={item.label + i}
+                    item={item}
+                    onClose={close}
+                  />
+                ),
               )}
             </ul>
           )}
         </div>
       ))}
     </nav>
-  )
+  );
 }

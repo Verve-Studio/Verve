@@ -1,63 +1,77 @@
-import type { AppAction } from '@/core/store/AppContext'
-import type { RGBAColor } from '@/types'
-import { parsePaletteFile, serializePalette } from '@/utils/paletteFormat'
-import type { Dispatch } from 'react'
-import { useCallback, useRef, useState } from 'react'
+import type { AppAction } from "@/core/store/AppContext";
+import type { RGBAColor } from "@/types";
+import { parsePaletteFile, serializePalette } from "@/utils/paletteFormat";
+import type { Dispatch } from "react";
+import { useCallback, useRef, useState } from "react";
 
 interface UsePaletteFileOpsOptions {
-  swatches: RGBAColor[]
-  dispatch: Dispatch<AppAction>
+  swatches: RGBAColor[];
+  dispatch: Dispatch<AppAction>;
 }
 
 export interface UsePaletteFileOpsReturn {
-  handleSavePalette:   () => Promise<void>
-  handleSavePaletteAs: () => Promise<void>
-  handleOpenPalette:   () => Promise<void>
-  paletteError:        string | null
-  clearPaletteError:   () => void
+  handleSavePalette: () => Promise<void>;
+  handleSavePaletteAs: () => Promise<void>;
+  handleOpenPalette: () => Promise<void>;
+  paletteError: string | null;
+  clearPaletteError: () => void;
 }
 
-export function usePaletteFileOps({ swatches, dispatch }: UsePaletteFileOpsOptions): UsePaletteFileOpsReturn {
-  const lastUsedPathRef = useRef<string | null>(null)
-  const [paletteError, setPaletteError] = useState<string | null>(null)
+export function usePaletteFileOps({
+  swatches,
+  dispatch,
+}: UsePaletteFileOpsOptions): UsePaletteFileOpsReturn {
+  const lastUsedPathRef = useRef<string | null>(null);
+  const [paletteError, setPaletteError] = useState<string | null>(null);
 
-  const clearPaletteError = useCallback(() => setPaletteError(null), [])
+  const clearPaletteError = useCallback(() => setPaletteError(null), []);
 
   const handleSavePaletteAs = useCallback(async () => {
-    const path = await window.api.savePaletteAsDialog(lastUsedPathRef.current ?? undefined)
-    if (path === null) return
+    const path = await window.api.savePaletteAsDialog(
+      lastUsedPathRef.current ?? undefined,
+    );
+    if (path === null) return;
     try {
-      await window.api.writePaletteFile(path, serializePalette(swatches))
-      lastUsedPathRef.current = path
+      await window.api.writePaletteFile(path, serializePalette(swatches));
+      lastUsedPathRef.current = path;
     } catch (e) {
-      setPaletteError((e as Error).message)
+      setPaletteError((e as Error).message);
     }
-  }, [swatches])
+  }, [swatches]);
 
   const handleSavePalette = useCallback(async () => {
     if (lastUsedPathRef.current !== null) {
       try {
-        await window.api.writePaletteFile(lastUsedPathRef.current, serializePalette(swatches))
+        await window.api.writePaletteFile(
+          lastUsedPathRef.current,
+          serializePalette(swatches),
+        );
       } catch (e) {
-        setPaletteError((e as Error).message)
+        setPaletteError((e as Error).message);
       }
     } else {
-      await handleSavePaletteAs()
+      await handleSavePaletteAs();
     }
-  }, [swatches, handleSavePaletteAs])
+  }, [swatches, handleSavePaletteAs]);
 
   const handleOpenPalette = useCallback(async () => {
-    const path = await window.api.openPaletteDialog()
-    if (path === null) return
+    const path = await window.api.openPaletteDialog();
+    if (path === null) return;
     try {
-      const json = await window.api.readPaletteFile(path)
-      const parsed = parsePaletteFile(json)
-      dispatch({ type: 'SET_SWATCHES', payload: parsed })
-      lastUsedPathRef.current = path
+      const json = await window.api.readPaletteFile(path);
+      const parsed = parsePaletteFile(json);
+      dispatch({ type: "SET_SWATCHES", payload: parsed });
+      lastUsedPathRef.current = path;
     } catch (e) {
-      setPaletteError((e as Error).message)
+      setPaletteError((e as Error).message);
     }
-  }, [dispatch])
+  }, [dispatch]);
 
-  return { handleSavePalette, handleSavePaletteAs, handleOpenPalette, paletteError, clearPaletteError }
+  return {
+    handleSavePalette,
+    handleSavePaletteAs,
+    handleOpenPalette,
+    paletteError,
+    clearPaletteError,
+  };
 }

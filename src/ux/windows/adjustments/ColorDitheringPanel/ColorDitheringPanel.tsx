@@ -1,32 +1,50 @@
-import React from 'react'
-import { useAppContext } from '@/core/store/AppContext'
-import type { ColorDitheringAdjustmentLayer } from '@/types'
-import { ParentConnectorIcon } from '@/ux/windows/ToolWindowIcons'
-import styles from './ColorDitheringPanel.module.scss'
+import React from "react";
+import { useAppContext } from "@/core/store/AppContext";
+import type { ColorDitheringAdjustmentLayer } from "@/types";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
+import styles from "./ColorDitheringPanel.module.scss";
 
 interface ColorDitheringPanelProps {
-  layer: ColorDitheringAdjustmentLayer
-  parentLayerName: string
+  layer: ColorDitheringAdjustmentLayer;
+  parentLayerName: string;
 }
 
 const STYLE_OPTIONS = [
-  { value: 'bayer4',         label: 'Bayer 4×4' },
-  { value: 'bayer8',         label: 'Bayer 8×8' },
-] as const
+  { value: "bayer4", label: "Bayer 4×4" },
+  { value: "bayer8", label: "Bayer 8×8" },
+] as const;
 
-export function ColorDitheringPanel({ layer, parentLayerName }: ColorDitheringPanelProps): React.JSX.Element {
-  const { state: { swatches }, dispatch } = useAppContext()
-  const { style, opacity } = layer.params
+export function ColorDitheringPanel({
+  layer,
+  parentLayerName,
+}: ColorDitheringPanelProps): React.JSX.Element {
+  const {
+    state: { swatches },
+    dispatch,
+  } = useAppContext();
+  const { style, opacity } = layer.params;
 
-  const paletteEmpty = swatches.length === 0
+  const paletteEmpty = swatches.length === 0;
 
   const setStyle = (newStyle: typeof style): void => {
-    dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, style: newStyle } } })
-  }
+    dispatch({
+      type: "UPDATE_ADJUSTMENT_LAYER",
+      payload: { ...layer, params: { ...layer.params, style: newStyle } },
+    });
+  };
 
   const setOpacity = (val: number): void => {
-    dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, opacity: Math.min(100, Math.max(0, Math.round(val))) } } })
-  }
+    dispatch({
+      type: "UPDATE_ADJUSTMENT_LAYER",
+      payload: {
+        ...layer,
+        params: {
+          ...layer.params,
+          opacity: Math.min(100, Math.max(0, Math.round(val))),
+        },
+      },
+    });
+  };
 
   return (
     <div className={styles.content}>
@@ -37,7 +55,9 @@ export function ColorDitheringPanel({ layer, parentLayerName }: ColorDitheringPa
             {STYLE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
-                className={style === opt.value ? styles.segBtnActive : styles.segBtn}
+                className={
+                  style === opt.value ? styles.segBtnActive : styles.segBtn
+                }
                 onClick={() => setStyle(opt.value)}
               >
                 {opt.label}
@@ -52,20 +72,28 @@ export function ColorDitheringPanel({ layer, parentLayerName }: ColorDitheringPa
             <input
               type="range"
               className={styles.track}
-              min={0} max={100} step={1}
+              min={0}
+              max={100}
+              step={1}
               value={opacity ?? 100}
-              style={{ '--pct': String((opacity ?? 100) / 100) } as React.CSSProperties}
+              style={
+                {
+                  "--pct": String((opacity ?? 100) / 100),
+                } as React.CSSProperties
+              }
               onChange={(e) => setOpacity(Number(e.target.value))}
             />
           </div>
           <input
             type="number"
             className={styles.numInput}
-            min={0} max={100} step={1}
+            min={0}
+            max={100}
+            step={1}
             value={opacity ?? 100}
             onChange={(e) => {
-              const v = e.target.valueAsNumber
-              if (!isNaN(v)) setOpacity(v)
+              const v = e.target.valueAsNumber;
+              if (!isNaN(v)) setOpacity(v);
             }}
           />
         </div>
@@ -77,7 +105,8 @@ export function ColorDitheringPanel({ layer, parentLayerName }: ColorDitheringPa
         </p>
       ) : (
         <p className={styles.note}>
-          This effect dithers to the document palette. Update the palette in the Swatches panel to change the target colors.
+          This effect dithers to the document palette. Update the palette in the
+          Swatches panel to change the target colors.
         </p>
       )}
 
@@ -88,5 +117,5 @@ export function ColorDitheringPanel({ layer, parentLayerName }: ColorDitheringPa
         </span>
       </div>
     </div>
-  )
+  );
 }

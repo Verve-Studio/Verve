@@ -1,18 +1,22 @@
-import React from 'react'
-import type { ColorInvertAdjustmentLayer } from '@/types'
-import { ParentConnectorIcon } from '@/ux/windows/ToolWindowIcons'
-import styles from './InvertPanel.module.scss'
+import React from "react";
+import type { ColorInvertAdjustmentLayer } from "@/types";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
+import styles from "./InvertPanel.module.scss";
 
 interface InvertPanelProps {
-  layer: ColorInvertAdjustmentLayer
-  parentLayerName: string
+  layer: ColorInvertAdjustmentLayer;
+  parentLayerName: string;
 }
 
-export function InvertPanel({ layer: _layer, parentLayerName }: InvertPanelProps): React.JSX.Element {
+export function InvertPanel({
+  layer: _layer,
+  parentLayerName,
+}: InvertPanelProps): React.JSX.Element {
   return (
     <div className={styles.content}>
       <p className={styles.description}>
-        Inverts all <strong>RGB</strong> channel values.<br />
+        Inverts all <strong>RGB</strong> channel values.
+        <br />
         Toggle layer visibility to enable/disable.
       </p>
       <div className={styles.footer}>
@@ -22,5 +26,5 @@ export function InvertPanel({ layer: _layer, parentLayerName }: InvertPanelProps
         </span>
       </div>
     </div>
-  )
+  );
 }

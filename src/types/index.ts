@@ -1,55 +1,61 @@
 // ─── Tools ────────────────────────────────────────────────────────────────────
 
-export type ShapeType = 'rectangle' | 'ellipse' | 'triangle' | 'line' | 'diamond' | 'star'
+export type ShapeType =
+  | "rectangle"
+  | "ellipse"
+  | "triangle"
+  | "line"
+  | "diamond"
+  | "star";
 
 export type Tool =
-  | 'move'
-  | 'select'
-  | 'lasso'
-  | 'polygonal-selection'
-  | 'object-selection'
-  | 'magic-wand'
-  | 'crop'
-  | 'frame'
-  | 'eyedropper'
-  | 'pencil'
-  | 'brush'
-  | 'eraser'
-  | 'clone-stamp'
-  | 'fill'
-  | 'gradient'
-  | 'dodge'
-  | 'burn'
-  | 'text'
-  | 'shape'
-  | 'hand'
-  | 'zoom'
-  | 'transform'
+  | "move"
+  | "select"
+  | "lasso"
+  | "polygonal-selection"
+  | "object-selection"
+  | "magic-wand"
+  | "crop"
+  | "frame"
+  | "eyedropper"
+  | "pencil"
+  | "brush"
+  | "eraser"
+  | "clone-stamp"
+  | "fill"
+  | "gradient"
+  | "dodge"
+  | "burn"
+  | "text"
+  | "shape"
+  | "hand"
+  | "zoom"
+  | "transform";
 
 // ─── Free Transform ───────────────────────────────────────────────────────────
 
-export type TransformInterpolation = 'nearest' | 'bilinear' | 'bicubic'
-export type TransformHandleMode   = 'scale' | 'perspective' | 'shear'
+export type TransformInterpolation = "nearest" | "bilinear" | "bicubic";
+export type TransformHandleMode = "scale" | "perspective" | "shear";
 
 export interface TransformParams {
-  x: number
-  y: number
-  w: number
-  h: number
-  rotation: number
-  pivotX: number
-  pivotY: number
-  shearX: number
-  shearY: number
-  perspectiveCorners: [Point, Point, Point, Point] | null
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotation: number;
+  pivotX: number;
+  pivotY: number;
+  shearX: number;
+  shearY: number;
+  perspectiveCorners: [Point, Point, Point, Point] | null;
 }
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
 export interface RGBColor {
-  r: number
-  g: number
-  b: number
+  r: number;
+  g: number;
+  b: number;
 }
 
 /**
@@ -58,25 +64,25 @@ export interface RGBColor {
  * - Swatches, text/shape/adjustment colors: r/g/b/a are integers in [0,255].
  */
 export interface RGBAColor extends RGBColor {
-  a: number
+  a: number;
 }
 
 export interface SwatchGroup {
-  id: string
-  name: string
-  swatchIndices: number[]
+  id: string;
+  name: string;
+  swatchIndices: number[];
 }
 
 // ─── Geometry ─────────────────────────────────────────────────────────────────
 
 export interface Point {
-  x: number
-  y: number
+  x: number;
+  y: number;
 }
 
 export interface Size {
-  width: number
-  height: number
+  width: number;
+  height: number;
 }
 
 export interface Rect extends Point, Size {}
@@ -84,72 +90,72 @@ export interface Rect extends Point, Size {}
 // ─── SAM / Object Selection ───────────────────────────────────────────────────
 
 export interface PromptPoint {
-  x: number
-  y: number
-  positive: boolean
+  x: number;
+  y: number;
+  positive: boolean;
 }
 
 export interface SAMBoundingBox {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
 export type BlendMode =
-  | 'normal'
-  | 'multiply'
-  | 'screen'
-  | 'overlay'
-  | 'soft-light'
-  | 'hard-light'
-  | 'darken'
-  | 'lighten'
-  | 'difference'
-  | 'exclusion'
-  | 'color-dodge'
-  | 'color-burn'
-  | 'pass-through'
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "soft-light"
+  | "hard-light"
+  | "darken"
+  | "lighten"
+  | "difference"
+  | "exclusion"
+  | "color-dodge"
+  | "color-burn"
+  | "pass-through";
 
 export interface PixelLayerState {
-  id: string
-  name: string
-  visible: boolean
-  opacity: number
-  locked: boolean
-  blendMode: BlendMode
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
 }
 
-export type TextAlign = 'left' | 'center' | 'right' | 'justify'
+export type TextAlign = "left" | "center" | "right" | "justify";
 
 export interface TextLayerState {
-  id: string
-  name: string
-  visible: boolean
-  opacity: number
-  locked: boolean
-  blendMode: BlendMode
-  type: 'text'
-  text: string
-  x: number
-  y: number
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "text";
+  text: string;
+  x: number;
+  y: number;
   /** Width of the text bounding box in canvas pixels. 0 = unconstrained. */
-  boxWidth: number
+  boxWidth: number;
   /** Height of the text bounding box in canvas pixels. 0 = unconstrained. */
-  boxHeight: number
-  fontFamily: string
-  fontSize: number
-  bold: boolean
-  italic: boolean
-  underline: boolean
-  strikethrough: boolean
-  align: TextAlign
-  letterSpacing: number  // canvas pixels; 0 = no extra tracking
-  lineHeight: number     // em multiplier; default 1.2
-  kerning: 'auto' | 'none'
-  color: RGBAColor
+  boxHeight: number;
+  fontFamily: string;
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikethrough: boolean;
+  align: TextAlign;
+  letterSpacing: number; // canvas pixels; 0 = no extra tracking
+  lineHeight: number; // em multiplier; default 1.2
+  kerning: "auto" | "none";
+  color: RGBAColor;
 }
 
 /**
@@ -158,40 +164,40 @@ export interface TextLayerState {
  * 'line' uses x1/y1/x2/y2 endpoints.
  */
 export interface ShapeLayerState {
-  id: string
-  name: string
-  visible: boolean
-  opacity: number
-  locked: boolean
-  blendMode: BlendMode
-  type: 'shape'
-  shapeType: ShapeType
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "shape";
+  shapeType: ShapeType;
   /** Center X in canvas pixels (non-line shapes). */
-  cx: number
+  cx: number;
   /** Center Y in canvas pixels (non-line shapes). */
-  cy: number
+  cy: number;
   /** Bounding-box width in canvas pixels (non-line shapes). */
-  w: number
+  w: number;
   /** Bounding-box height in canvas pixels (non-line shapes). */
-  h: number
+  h: number;
   /** Rotation in degrees, clockwise (non-line shapes). */
-  rotation: number
+  rotation: number;
   /** Line start X (line shape only). */
-  x1: number
+  x1: number;
   /** Line start Y (line shape only). */
-  y1: number
+  y1: number;
   /** Line end X (line shape only). */
-  x2: number
+  x2: number;
   /** Line end Y (line shape only). */
-  y2: number
+  y2: number;
   /** null = no stroke */
-  strokeColor: RGBAColor | null
+  strokeColor: RGBAColor | null;
   /** null = no fill */
-  fillColor: RGBAColor | null
-  strokeWidth: number
+  fillColor: RGBAColor | null;
+  strokeWidth: number;
   /** Corner radius in canvas pixels. Applies to rectangle. */
-  cornerRadius: number
-  antiAlias: boolean
+  cornerRadius: number;
+  antiAlias: boolean;
 }
 
 /**
@@ -201,633 +207,655 @@ export interface ShapeLayerState {
  * in the layers array and is excluded from independent compositing.
  */
 export interface MaskLayerState {
-  id: string
-  name: string
-  visible: boolean
-  type: 'mask'
+  id: string;
+  name: string;
+  visible: boolean;
+  type: "mask";
   /** ID of the parent layer this mask belongs to. */
-  parentId: string
+  parentId: string;
 }
 
 // ─── Adjustment layers ────────────────────────────────────────────────────────
 
 export type AdjustmentType =
-  | 'brightness-contrast'
-  | 'hue-saturation'
-  | 'color-vibrance'
-  | 'color-balance'
-  | 'black-and-white'
-  | 'color-temperature'
-  | 'color-invert'
-  | 'selective-color'
-  | 'curves'
-  | 'color-grading'
-  | 'reduce-colors'
-  | 'color-dithering'
-  | 'bloom'
-  | 'chromatic-aberration'
-  | 'halation'
-  | 'color-key'
-  | 'drop-shadow'
-  | 'glow'
-  | 'outline'
-  | 'halftone'
-  | 'gaussian-blur'
-  | 'box-blur'
-  | 'radial-blur'
-  | 'motion-blur'
-  | 'remove-motion-blur'
-  | 'lens-blur'
-  | 'sharpen'
-  | 'sharpen-more'
-  | 'unsharp-mask'
-  | 'smart-sharpen'
-  | 'add-noise'
-  | 'film-grain'
-  | 'median-filter'
-  | 'bilateral-filter'
-  | 'reduce-noise'
-  | 'clouds'
-  | 'pixelate'
-  | 'bevel'
-  | 'inner-shadow'
-  | 'inner-glow'
-  | 'seamless-texture'
+  | "brightness-contrast"
+  | "hue-saturation"
+  | "color-vibrance"
+  | "color-balance"
+  | "black-and-white"
+  | "color-temperature"
+  | "color-invert"
+  | "selective-color"
+  | "curves"
+  | "color-grading"
+  | "reduce-colors"
+  | "color-dithering"
+  | "bloom"
+  | "chromatic-aberration"
+  | "halation"
+  | "color-key"
+  | "drop-shadow"
+  | "glow"
+  | "outline"
+  | "halftone"
+  | "gaussian-blur"
+  | "box-blur"
+  | "radial-blur"
+  | "motion-blur"
+  | "remove-motion-blur"
+  | "lens-blur"
+  | "sharpen"
+  | "sharpen-more"
+  | "unsharp-mask"
+  | "smart-sharpen"
+  | "add-noise"
+  | "film-grain"
+  | "median-filter"
+  | "bilateral-filter"
+  | "reduce-noise"
+  | "clouds"
+  | "pixelate"
+  | "bevel"
+  | "inner-shadow"
+  | "inner-glow"
+  | "seamless-texture";
 
 export type FilterKey =
-  | 'gaussian-blur'
-  | 'box-blur'
-  | 'radial-blur'
-  | 'motion-blur'
-  | 'remove-motion-blur'
-  | 'sharpen'
-  | 'sharpen-more'
-  | 'unsharp-mask'
-  | 'smart-sharpen'
-  | 'add-noise'
-  | 'film-grain'
-  | 'lens-blur'
-  | 'clouds'
-  | 'median-filter'
-  | 'bilateral-filter'
-  | 'reduce-noise'
-  | 'render-lens-flare'
-  | 'pixelate'
-  | 'seamless-texture'
+  | "gaussian-blur"
+  | "box-blur"
+  | "radial-blur"
+  | "motion-blur"
+  | "remove-motion-blur"
+  | "sharpen"
+  | "sharpen-more"
+  | "unsharp-mask"
+  | "smart-sharpen"
+  | "add-noise"
+  | "film-grain"
+  | "lens-blur"
+  | "clouds"
+  | "median-filter"
+  | "bilateral-filter"
+  | "reduce-noise"
+  | "render-lens-flare"
+  | "pixelate"
+  | "seamless-texture";
 
-export type CurvesChannel = 'rgb' | 'red' | 'green' | 'blue'
+export type CurvesChannel = "rgb" | "red" | "green" | "blue";
 
 export interface CurvesControlPoint {
-  id: string
-  x: number
-  y: number
+  id: string;
+  x: number;
+  y: number;
 }
 
 export interface CurvesChannelCurve {
-  points: CurvesControlPoint[]
+  points: CurvesControlPoint[];
 }
 
 export interface CurvesVisualAids {
-  gridDensity: '4x4' | '8x8'
-  showClippingIndicators: boolean
-  showReadout: boolean
+  gridDensity: "4x4" | "8x8";
+  showClippingIndicators: boolean;
+  showReadout: boolean;
 }
 
 export interface CurvesPresetRef {
-  source: 'builtin' | 'custom'
-  id: string
-  name: string
-  dirty: boolean
+  source: "builtin" | "custom";
+  id: string;
+  name: string;
+  dirty: boolean;
 }
 
 export interface CurvesPreset {
-  id: string
-  name: string
-  channels: Record<CurvesChannel, CurvesChannelCurve>
+  id: string;
+  name: string;
+  channels: Record<CurvesChannel, CurvesChannelCurve>;
 }
 
 export interface AdjustmentParamsMap {
-  'brightness-contrast': { brightness: number; contrast: number }
-  'hue-saturation':      { hue: number; saturation: number; lightness: number }
-  'color-vibrance':      { vibrance: number; saturation: number }
-  'color-balance': {
-    shadows:    { cr: number; mg: number; yb: number }
-    midtones:   { cr: number; mg: number; yb: number }
-    highlights: { cr: number; mg: number; yb: number }
-    preserveLuminosity: boolean
-  }
-  'black-and-white': {
-    reds:     number
-    yellows:  number
-    greens:   number
-    cyans:    number
-    blues:    number
-    magentas: number
-  }
-  'color-temperature': {
-    temperature: number
-    tint:        number
-  }
-  'color-invert': Record<never, never>
-  'selective-color': {
-    reds:     { cyan: number; magenta: number; yellow: number; black: number }
-    yellows:  { cyan: number; magenta: number; yellow: number; black: number }
-    greens:   { cyan: number; magenta: number; yellow: number; black: number }
-    cyans:    { cyan: number; magenta: number; yellow: number; black: number }
-    blues:    { cyan: number; magenta: number; yellow: number; black: number }
-    magentas: { cyan: number; magenta: number; yellow: number; black: number }
-    whites:   { cyan: number; magenta: number; yellow: number; black: number }
-    neutrals: { cyan: number; magenta: number; yellow: number; black: number }
-    blacks:   { cyan: number; magenta: number; yellow: number; black: number }
-    mode:     'relative' | 'absolute'
-  }
-  'curves': {
-    version: 1
-    channels: Record<CurvesChannel, CurvesChannelCurve>
+  "brightness-contrast": { brightness: number; contrast: number };
+  "hue-saturation": { hue: number; saturation: number; lightness: number };
+  "color-vibrance": { vibrance: number; saturation: number };
+  "color-balance": {
+    shadows: { cr: number; mg: number; yb: number };
+    midtones: { cr: number; mg: number; yb: number };
+    highlights: { cr: number; mg: number; yb: number };
+    preserveLuminosity: boolean;
+  };
+  "black-and-white": {
+    reds: number;
+    yellows: number;
+    greens: number;
+    cyans: number;
+    blues: number;
+    magentas: number;
+  };
+  "color-temperature": {
+    temperature: number;
+    tint: number;
+  };
+  "color-invert": Record<never, never>;
+  "selective-color": {
+    reds: { cyan: number; magenta: number; yellow: number; black: number };
+    yellows: { cyan: number; magenta: number; yellow: number; black: number };
+    greens: { cyan: number; magenta: number; yellow: number; black: number };
+    cyans: { cyan: number; magenta: number; yellow: number; black: number };
+    blues: { cyan: number; magenta: number; yellow: number; black: number };
+    magentas: { cyan: number; magenta: number; yellow: number; black: number };
+    whites: { cyan: number; magenta: number; yellow: number; black: number };
+    neutrals: { cyan: number; magenta: number; yellow: number; black: number };
+    blacks: { cyan: number; magenta: number; yellow: number; black: number };
+    mode: "relative" | "absolute";
+  };
+  curves: {
+    version: 1;
+    channels: Record<CurvesChannel, CurvesChannelCurve>;
     ui: {
-      selectedChannel: CurvesChannel
-      visualAids: CurvesVisualAids
-      presetRef: CurvesPresetRef | null
-    }
-  }
-  'color-grading': {
-    lift:   ColorGradingWheelParams
-    gamma:  ColorGradingWheelParams
-    gain:   ColorGradingWheelParams
-    offset: ColorGradingWheelParams
-    temp:      number
-    tint:      number
-    contrast:  number
-    pivot:     number
-    midDetail: number
-    colorBoost:  number
-    shadows:     number
-    highlights:  number
-    saturation:  number
-    hue:         number
-    lumMix:      number
-  }
-  'reduce-colors': {
-    mode: 'reduce' | 'palette'
-    colorCount: number
-    derivedPalette: RGBAColor[] | null
-  }
-  'color-dithering': {
-    style: 'bayer4' | 'bayer8'
-    opacity: number
-  }
-  'bloom': {
-    threshold: number
-    strength:  number
-    spread:    number
-    quality:   'full' | 'half' | 'quarter'
-  }
-  'chromatic-aberration': {
-    type:     'radial' | 'directional'
-    distance: number   // 0–50 px
-    angle:    number   // 0–360 degrees (used only when type === 'directional')
-  }
-  'halation': {
-    threshold: number  // 0–1: luminance level above which halation activates
-    spread:    number  // 0–100 px: blur radius
-    blur:      number  // 1–5: number of H+V blur iterations (more = softer)
-    strength:  number  // 0–1: composite intensity
-  }
-  'color-key': {
+      selectedChannel: CurvesChannel;
+      visualAids: CurvesVisualAids;
+      presetRef: CurvesPresetRef | null;
+    };
+  };
+  "color-grading": {
+    lift: ColorGradingWheelParams;
+    gamma: ColorGradingWheelParams;
+    gain: ColorGradingWheelParams;
+    offset: ColorGradingWheelParams;
+    temp: number;
+    tint: number;
+    contrast: number;
+    pivot: number;
+    midDetail: number;
+    colorBoost: number;
+    shadows: number;
+    highlights: number;
+    saturation: number;
+    hue: number;
+    lumMix: number;
+  };
+  "reduce-colors": {
+    mode: "reduce" | "palette";
+    colorCount: number;
+    derivedPalette: RGBAColor[] | null;
+  };
+  "color-dithering": {
+    style: "bayer4" | "bayer8";
+    opacity: number;
+  };
+  bloom: {
+    threshold: number;
+    strength: number;
+    spread: number;
+    quality: "full" | "half" | "quarter";
+  };
+  "chromatic-aberration": {
+    type: "radial" | "directional";
+    distance: number; // 0–50 px
+    angle: number; // 0–360 degrees (used only when type === 'directional')
+  };
+  halation: {
+    threshold: number; // 0–1: luminance level above which halation activates
+    spread: number; // 0–100 px: blur radius
+    blur: number; // 1–5: number of H+V blur iterations (more = softer)
+    strength: number; // 0–1: composite intensity
+  };
+  "color-key": {
     /** Key color as sRGB bytes (0–255). */
-    keyColor:  { r: number; g: number; b: number }
+    keyColor: { r: number; g: number; b: number };
     /** Pixels with HSV distance ≤ tolerance are fully transparent. Range 0–100. */
-    tolerance: number
+    tolerance: number;
     /** Width of the soft-edge transition zone beyond the tolerance boundary. Range 0–100. */
-    softness:  number
+    softness: number;
     /** Expand the keyed-out region by this many pixels. Range 0–20. */
-    dilation:  number
-  }
-  'drop-shadow': {
+    dilation: number;
+  };
+  "drop-shadow": {
     /** Shadow color including alpha channel. r/g/b/a are 0–255. Default: { r:0, g:0, b:0, a:255 } */
-    color:     RGBAColor
+    color: RGBAColor;
     /** Overall shadow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
-    opacity:   number
+    opacity: number;
     /** Horizontal offset in canvas pixels, −200 to +200. Default: 5 */
-    offsetX:   number
+    offsetX: number;
     /** Vertical offset in canvas pixels, −200 to +200. Default: 5 */
-    offsetY:   number
+    offsetY: number;
     /** Morphological dilation radius in pixels, 0–100. Default: 0 */
-    spread:    number
+    spread: number;
     /** Gaussian blur radius in pixels, 0–100. Default: 10 */
-    softness:  number
+    softness: number;
     /** How the shadow composites with layers beneath it. Default: 'multiply' */
-    blendMode: 'normal' | 'multiply' | 'screen'
+    blendMode: "normal" | "multiply" | "screen";
     /** When true, the shadow is masked by the inverse of the source alpha. Default: true */
-    knockout:  boolean
-  }
-  'glow': {
+    knockout: boolean;
+  };
+  glow: {
     /** Glow color including alpha channel. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
-    color:     RGBAColor
+    color: RGBAColor;
     /** Overall glow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
-    opacity:   number
+    opacity: number;
     /** Morphological dilation radius in pixels, 0–100. Default: 0 */
-    spread:    number
+    spread: number;
     /** Gaussian blur radius in pixels, 0–100. Default: 15 */
-    softness:  number
+    softness: number;
     /** How the glow composites with layers beneath it. Default: 'normal' */
-    blendMode: 'normal' | 'multiply' | 'screen'
+    blendMode: "normal" | "multiply" | "screen";
     /** When true, the glow is masked by the inverse of the source alpha (outer glow only). Default: true */
-    knockout:  boolean
-  }
-  'outline': {
+    knockout: boolean;
+  };
+  outline: {
     /** Stroke color including alpha. r/g/b/a are 0–255. Default: { r:255, g:0, b:0, a:255 } */
-    color:     RGBAColor
+    color: RGBAColor;
     /** Overall stroke opacity, 0–100 (%). Applied on top of color.a. Default: 100 */
-    opacity:   number
+    opacity: number;
     /** Stroke width in pixels, 1–100. Integer values only. Default: 3 */
-    thickness: number
+    thickness: number;
     /** Controls which side of the silhouette boundary the stroke occupies. Default: 'outside' */
-    position:  'outside' | 'inside' | 'center'
+    position: "outside" | "inside" | "center";
     /** Gaussian-approximation blur radius for the stroke mask, 0–50 px. Default: 0 */
-    softness:  number
-  }
-  'halftone': {
-    mode:      'color' | 'bw'
-    frequency: number
-    offsetC:   number
-    offsetM:   number
-    offsetY:   number
-    offsetK:   number
-  }
-  'gaussian-blur':      { radius: number }
-  'box-blur':           { radius: number }
-  'radial-blur': {
-    mode:    0 | 1
-    amount:  number
-    centerX: number
-    centerY: number
-    quality: 0 | 1 | 2
-  }
-  'motion-blur': { angle: number; distance: number }
-  'remove-motion-blur': { angle: number; distance: number; noiseReduction: number }
-  'lens-blur': { radius: number; bladeCount: number; bladeCurvature: number; rotation: number }
-  'sharpen':      Record<string, never>
-  'sharpen-more': Record<string, never>
-  'unsharp-mask': { amount: number; radius: number; threshold: number }
-  'smart-sharpen': {
-    amount:      number
-    radius:      number
-    reduceNoise: number
-    remove:      'gaussian' | 'lens-blur'
-  }
-  'add-noise': {
-    amount:         number
-    distribution:   'uniform' | 'gaussian'
-    monochromatic:  boolean
-    seed:           number
-  }
-  'film-grain': { grainSize: number; intensity: number; roughness: number; seed: number }
-  'median-filter':    { radius: number }
-  'bilateral-filter': { radius: number; sigmaSpatial: number; sigmaColor: number }
-  'reduce-noise': {
-    strength:           number
-    preserveDetails:    number
-    reduceColorNoise:   number
-    sharpenDetails:     number
-  }
-  'clouds': {
-    scale:     number
-    opacity:   number
-    colorMode: 'grayscale' | 'color'
-    fgR: number; fgG: number; fgB: number
-    bgR: number; bgG: number; bgB: number
-    seed: number
-  }
-  'pixelate': { blockSize: number }
-  'seamless-texture': {
+    softness: number;
+  };
+  halftone: {
+    mode: "color" | "bw";
+    frequency: number;
+    offsetC: number;
+    offsetM: number;
+    offsetY: number;
+    offsetK: number;
+  };
+  "gaussian-blur": { radius: number };
+  "box-blur": { radius: number };
+  "radial-blur": {
+    mode: 0 | 1;
+    amount: number;
+    centerX: number;
+    centerY: number;
+    quality: 0 | 1 | 2;
+  };
+  "motion-blur": { angle: number; distance: number };
+  "remove-motion-blur": {
+    angle: number;
+    distance: number;
+    noiseReduction: number;
+  };
+  "lens-blur": {
+    radius: number;
+    bladeCount: number;
+    bladeCurvature: number;
+    rotation: number;
+  };
+  sharpen: Record<string, never>;
+  "sharpen-more": Record<string, never>;
+  "unsharp-mask": { amount: number; radius: number; threshold: number };
+  "smart-sharpen": {
+    amount: number;
+    radius: number;
+    reduceNoise: number;
+    remove: "gaussian" | "lens-blur";
+  };
+  "add-noise": {
+    amount: number;
+    distribution: "uniform" | "gaussian";
+    monochromatic: boolean;
+    seed: number;
+  };
+  "film-grain": {
+    grainSize: number;
+    intensity: number;
+    roughness: number;
+    seed: number;
+  };
+  "median-filter": { radius: number };
+  "bilateral-filter": {
+    radius: number;
+    sigmaSpatial: number;
+    sigmaColor: number;
+  };
+  "reduce-noise": {
+    strength: number;
+    preserveDetails: number;
+    reduceColorNoise: number;
+    sharpenDetails: number;
+  };
+  clouds: {
+    scale: number;
+    opacity: number;
+    colorMode: "grayscale" | "color";
+    fgR: number;
+    fgG: number;
+    fgB: number;
+    bgR: number;
+    bgG: number;
+    bgB: number;
+    seed: number;
+  };
+  pixelate: { blockSize: number };
+  "seamless-texture": {
     /** Enable the Voronoi island break-repetition pass. Default: true */
-    breakRepetition: boolean
+    breakRepetition: boolean;
     /** Cell/island size in pixels (1–512). Default: 128 */
-    cellSize:        number
+    cellSize: number;
     /** Blend/feather radius in pixels at island borders (0–128). Default: 16 */
-    blendRadius:     number
+    blendRadius: number;
     /** Enable the seamless border blending pass. Default: true */
-    seamlessBorders: boolean
+    seamlessBorders: boolean;
     /** Border blend radius in pixels (1–256). Default: 32 */
-    borderRadius:    number
+    borderRadius: number;
     /** Random seed. */
-    seed:            number
-  }
-  'bevel': {
+    seed: number;
+  };
+  bevel: {
     /** Dilation radius in pixels (1–50). Controls bevel width. */
-    width:    number
+    width: number;
     /** Blur radius in pixels (0–50). Controls softness of bevel edges. */
-    softness: number
+    softness: number;
     /** Light direction in degrees (0–360). 0° = right, 90° = down. */
-    angle:    number
+    angle: number;
     /** Bevel intensity, 0–100 (%). */
-    strength: number
-  }
-  'inner-shadow': {
+    strength: number;
+  };
+  "inner-shadow": {
     /** Shadow color including alpha. r/g/b/a are 0–255. */
-    color:    RGBAColor
+    color: RGBAColor;
     /** Overall shadow opacity, 0–100 (%). */
-    opacity:  number
+    opacity: number;
     /** Horizontal offset in pixels, −200 to +200. */
-    offsetX:  number
+    offsetX: number;
     /** Vertical offset in pixels, −200 to +200. */
-    offsetY:  number
+    offsetY: number;
     /** Erosion radius in pixels, 0–100. Controls spread of shadow inside shape. */
-    spread:   number
+    spread: number;
     /** Blur radius in pixels, 0–100. Controls softness of shadow edges. */
-    softness: number
-  }
-  'inner-glow': {
+    softness: number;
+  };
+  "inner-glow": {
     /** Glow color including alpha. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
-    color:    RGBAColor
+    color: RGBAColor;
     /** Overall glow opacity, 0–100 (%). Default: 75 */
-    opacity:  number
+    opacity: number;
     /** Erosion radius in pixels, 0–100. Controls how far the glow spreads inward. Default: 0 */
-    spread:   number
+    spread: number;
     /** Blur radius in pixels, 0–100. Controls softness of glow edges. Default: 15 */
-    softness: number
-  }
+    softness: number;
+  };
 }
 
-export type OutlineParams = AdjustmentParamsMap['outline']
+export type OutlineParams = AdjustmentParamsMap["outline"];
 
 export interface ColorGradingWheelParams {
-  r:      number
-  g:      number
-  b:      number
-  master: number
+  r: number;
+  g: number;
+  b: number;
+  master: number;
 }
 
 interface AdjustmentLayerBase {
-  id:       string
-  name:     string
-  visible:  boolean
-  type:     'adjustment'
-  parentId: string
+  id: string;
+  name: string;
+  visible: boolean;
+  type: "adjustment";
+  parentId: string;
 }
 
 export interface BrightnessContrastAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'brightness-contrast'
-  params: AdjustmentParamsMap['brightness-contrast']
+  adjustmentType: "brightness-contrast";
+  params: AdjustmentParamsMap["brightness-contrast"];
   /** True when a selection was active at creation time; baked mask pixels live in Canvas adjustmentMaskMap. */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface HueSaturationAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'hue-saturation'
-  params: AdjustmentParamsMap['hue-saturation']
+  adjustmentType: "hue-saturation";
+  params: AdjustmentParamsMap["hue-saturation"];
   /** True when a selection was active at creation time; baked mask pixels live in Canvas adjustmentMaskMap. */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface ColorVibranceAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-vibrance'
-  params: AdjustmentParamsMap['color-vibrance']
+  adjustmentType: "color-vibrance";
+  params: AdjustmentParamsMap["color-vibrance"];
   /** True when a selection was active at creation time; baked mask pixels live in Canvas adjustmentMaskMap. */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface ColorBalanceAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-balance'
-  params: AdjustmentParamsMap['color-balance']
+  adjustmentType: "color-balance";
+  params: AdjustmentParamsMap["color-balance"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface BlackAndWhiteAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'black-and-white'
-  params: AdjustmentParamsMap['black-and-white']
+  adjustmentType: "black-and-white";
+  params: AdjustmentParamsMap["black-and-white"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface ColorTemperatureAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-temperature'
-  params: AdjustmentParamsMap['color-temperature']
+  adjustmentType: "color-temperature";
+  params: AdjustmentParamsMap["color-temperature"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface ColorInvertAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-invert'
-  params: AdjustmentParamsMap['color-invert']
+  adjustmentType: "color-invert";
+  params: AdjustmentParamsMap["color-invert"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface SelectiveColorAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'selective-color'
-  params: AdjustmentParamsMap['selective-color']
+  adjustmentType: "selective-color";
+  params: AdjustmentParamsMap["selective-color"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface CurvesAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'curves'
-  params: AdjustmentParamsMap['curves']
+  adjustmentType: "curves";
+  params: AdjustmentParamsMap["curves"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface ColorGradingAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-grading'
-  params: AdjustmentParamsMap['color-grading']
+  adjustmentType: "color-grading";
+  params: AdjustmentParamsMap["color-grading"];
   /** True when a selection was active at creation time; baked mask pixels live
    *  in Canvas adjustmentMaskMap, not in React state. */
-  hasMask: boolean
+  hasMask: boolean;
 }
 
 export interface ReduceColorsAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'reduce-colors'
-  params: AdjustmentParamsMap['reduce-colors']
-  hasMask: boolean
+  adjustmentType: "reduce-colors";
+  params: AdjustmentParamsMap["reduce-colors"];
+  hasMask: boolean;
 }
 
 export interface ColorDitheringAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-dithering'
-  params: AdjustmentParamsMap['color-dithering']
-  hasMask: boolean
+  adjustmentType: "color-dithering";
+  params: AdjustmentParamsMap["color-dithering"];
+  hasMask: boolean;
 }
 
 export interface BloomAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'bloom'
-  params: AdjustmentParamsMap['bloom']
-  hasMask: boolean
+  adjustmentType: "bloom";
+  params: AdjustmentParamsMap["bloom"];
+  hasMask: boolean;
 }
 
 export interface ChromaticAberrationAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'chromatic-aberration'
-  params: AdjustmentParamsMap['chromatic-aberration']
-  hasMask: boolean
+  adjustmentType: "chromatic-aberration";
+  params: AdjustmentParamsMap["chromatic-aberration"];
+  hasMask: boolean;
 }
 
 export interface HalationAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'halation'
-  params: AdjustmentParamsMap['halation']
-  hasMask: boolean
+  adjustmentType: "halation";
+  params: AdjustmentParamsMap["halation"];
+  hasMask: boolean;
 }
 
 export interface ColorKeyAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'color-key'
-  params: AdjustmentParamsMap['color-key']
-  hasMask: boolean
+  adjustmentType: "color-key";
+  params: AdjustmentParamsMap["color-key"];
+  hasMask: boolean;
 }
 
 export interface DropShadowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'drop-shadow'
-  params: AdjustmentParamsMap['drop-shadow']
-  hasMask: boolean
+  adjustmentType: "drop-shadow";
+  params: AdjustmentParamsMap["drop-shadow"];
+  hasMask: boolean;
 }
 
 export interface GlowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'glow'
-  params: AdjustmentParamsMap['glow']
-  hasMask: boolean
+  adjustmentType: "glow";
+  params: AdjustmentParamsMap["glow"];
+  hasMask: boolean;
 }
 
 export interface OutlineAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'outline'
-  params: AdjustmentParamsMap['outline']
-  hasMask: boolean
+  adjustmentType: "outline";
+  params: AdjustmentParamsMap["outline"];
+  hasMask: boolean;
 }
 
 export interface HalftoneAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'halftone'
-  params: AdjustmentParamsMap['halftone']
-  hasMask: boolean
+  adjustmentType: "halftone";
+  params: AdjustmentParamsMap["halftone"];
+  hasMask: boolean;
 }
 
 export interface GaussianBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'gaussian-blur'
-  params: AdjustmentParamsMap['gaussian-blur']
-  hasMask: boolean
+  adjustmentType: "gaussian-blur";
+  params: AdjustmentParamsMap["gaussian-blur"];
+  hasMask: boolean;
 }
 
 export interface BoxBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'box-blur'
-  params: AdjustmentParamsMap['box-blur']
-  hasMask: boolean
+  adjustmentType: "box-blur";
+  params: AdjustmentParamsMap["box-blur"];
+  hasMask: boolean;
 }
 
 export interface RadialBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'radial-blur'
-  params: AdjustmentParamsMap['radial-blur']
-  hasMask: boolean
+  adjustmentType: "radial-blur";
+  params: AdjustmentParamsMap["radial-blur"];
+  hasMask: boolean;
 }
 
 export interface MotionBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'motion-blur'
-  params: AdjustmentParamsMap['motion-blur']
-  hasMask: boolean
+  adjustmentType: "motion-blur";
+  params: AdjustmentParamsMap["motion-blur"];
+  hasMask: boolean;
 }
 
 export interface RemoveMotionBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'remove-motion-blur'
-  params: AdjustmentParamsMap['remove-motion-blur']
-  hasMask: boolean
+  adjustmentType: "remove-motion-blur";
+  params: AdjustmentParamsMap["remove-motion-blur"];
+  hasMask: boolean;
 }
 
 export interface LensBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'lens-blur'
-  params: AdjustmentParamsMap['lens-blur']
-  hasMask: boolean
+  adjustmentType: "lens-blur";
+  params: AdjustmentParamsMap["lens-blur"];
+  hasMask: boolean;
 }
 
 export interface SharpenAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'sharpen'
-  params: AdjustmentParamsMap['sharpen']
-  hasMask: boolean
+  adjustmentType: "sharpen";
+  params: AdjustmentParamsMap["sharpen"];
+  hasMask: boolean;
 }
 
 export interface SharpenMoreAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'sharpen-more'
-  params: AdjustmentParamsMap['sharpen-more']
-  hasMask: boolean
+  adjustmentType: "sharpen-more";
+  params: AdjustmentParamsMap["sharpen-more"];
+  hasMask: boolean;
 }
 
 export interface UnsharpMaskAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'unsharp-mask'
-  params: AdjustmentParamsMap['unsharp-mask']
-  hasMask: boolean
+  adjustmentType: "unsharp-mask";
+  params: AdjustmentParamsMap["unsharp-mask"];
+  hasMask: boolean;
 }
 
 export interface SmartSharpenAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'smart-sharpen'
-  params: AdjustmentParamsMap['smart-sharpen']
-  hasMask: boolean
+  adjustmentType: "smart-sharpen";
+  params: AdjustmentParamsMap["smart-sharpen"];
+  hasMask: boolean;
 }
 
 export interface AddNoiseAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'add-noise'
-  params: AdjustmentParamsMap['add-noise']
-  hasMask: boolean
+  adjustmentType: "add-noise";
+  params: AdjustmentParamsMap["add-noise"];
+  hasMask: boolean;
 }
 
 export interface FilmGrainAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'film-grain'
-  params: AdjustmentParamsMap['film-grain']
-  hasMask: boolean
+  adjustmentType: "film-grain";
+  params: AdjustmentParamsMap["film-grain"];
+  hasMask: boolean;
 }
 
 export interface MedianFilterAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'median-filter'
-  params: AdjustmentParamsMap['median-filter']
-  hasMask: boolean
+  adjustmentType: "median-filter";
+  params: AdjustmentParamsMap["median-filter"];
+  hasMask: boolean;
 }
 
 export interface BilateralFilterAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'bilateral-filter'
-  params: AdjustmentParamsMap['bilateral-filter']
-  hasMask: boolean
+  adjustmentType: "bilateral-filter";
+  params: AdjustmentParamsMap["bilateral-filter"];
+  hasMask: boolean;
 }
 
 export interface ReduceNoiseAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'reduce-noise'
-  params: AdjustmentParamsMap['reduce-noise']
-  hasMask: boolean
+  adjustmentType: "reduce-noise";
+  params: AdjustmentParamsMap["reduce-noise"];
+  hasMask: boolean;
 }
 
 export interface CloudsAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'clouds'
-  params: AdjustmentParamsMap['clouds']
-  hasMask: boolean
+  adjustmentType: "clouds";
+  params: AdjustmentParamsMap["clouds"];
+  hasMask: boolean;
 }
 
 export interface PixelateAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'pixelate'
-  params: AdjustmentParamsMap['pixelate']
-  hasMask: boolean
+  adjustmentType: "pixelate";
+  params: AdjustmentParamsMap["pixelate"];
+  hasMask: boolean;
 }
 
 export interface BevelAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'bevel'
-  params: AdjustmentParamsMap['bevel']
-  hasMask: boolean
+  adjustmentType: "bevel";
+  params: AdjustmentParamsMap["bevel"];
+  hasMask: boolean;
 }
 
 export interface InnerShadowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'inner-shadow'
-  params: AdjustmentParamsMap['inner-shadow']
-  hasMask: boolean
+  adjustmentType: "inner-shadow";
+  params: AdjustmentParamsMap["inner-shadow"];
+  hasMask: boolean;
 }
 
 export interface InnerGlowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'inner-glow'
-  params: AdjustmentParamsMap['inner-glow']
-  hasMask: boolean
+  adjustmentType: "inner-glow";
+  params: AdjustmentParamsMap["inner-glow"];
+  hasMask: boolean;
 }
 
 export interface SeamlessTextureAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: 'seamless-texture'
-  params: AdjustmentParamsMap['seamless-texture']
-  hasMask: boolean
+  adjustmentType: "seamless-texture";
+  params: AdjustmentParamsMap["seamless-texture"];
+  hasMask: boolean;
 }
 
 export type AdjustmentLayerState =
@@ -871,18 +899,18 @@ export type AdjustmentLayerState =
   | BevelAdjustmentLayer
   | InnerShadowAdjustmentLayer
   | InnerGlowAdjustmentLayer
-  | SeamlessTextureAdjustmentLayer
+  | SeamlessTextureAdjustmentLayer;
 
 export interface GroupLayerState {
-  id:        string
-  name:      string
-  visible:   boolean
-  opacity:   number
-  locked:    boolean
-  blendMode: BlendMode
-  type:      'group'
-  collapsed: boolean
-  childIds:  string[]
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "group";
+  collapsed: boolean;
+  childIds: string[];
 }
 
 /**
@@ -892,64 +920,73 @@ export interface GroupLayerState {
  * it is composited into the rest of the document.
  */
 export interface CompositeLayerState {
-  id:        string
-  name:      string
-  visible:   boolean
-  opacity:   number
-  locked:    boolean
-  blendMode: BlendMode
-  type:      'composite'
-  collapsed: boolean
-  childIds:  string[]
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "composite";
+  collapsed: boolean;
+  childIds: string[];
 }
 
-export type LayerState = PixelLayerState | TextLayerState | ShapeLayerState | MaskLayerState | AdjustmentLayerState | GroupLayerState | CompositeLayerState
+export type LayerState =
+  | PixelLayerState
+  | TextLayerState
+  | ShapeLayerState
+  | MaskLayerState
+  | AdjustmentLayerState
+  | GroupLayerState
+  | CompositeLayerState;
 
 export function isGroupLayer(l: LayerState): l is GroupLayerState {
-  return 'type' in l && l.type === 'group'
+  return "type" in l && l.type === "group";
 }
 
 export function isCompositeLayer(l: LayerState): l is CompositeLayerState {
-  return 'type' in l && l.type === 'composite'
+  return "type" in l && l.type === "composite";
 }
 
 /** True for any layer type that owns child layers (group or composite). */
-export function isContainerLayer(l: LayerState): l is GroupLayerState | CompositeLayerState {
-  return 'type' in l && (l.type === 'group' || l.type === 'composite')
+export function isContainerLayer(
+  l: LayerState,
+): l is GroupLayerState | CompositeLayerState {
+  return "type" in l && (l.type === "group" || l.type === "composite");
 }
 
 export function isPixelLayer(l: LayerState): l is PixelLayerState {
-  return !('type' in l)
+  return !("type" in l);
 }
 
-export type BackgroundFill = 'white' | 'black' | 'transparent'
+export type BackgroundFill = "white" | "black" | "transparent";
 
-export type GridType = 'normal' | 'thirds' | 'safe-zone'
+export type GridType = "normal" | "thirds" | "safe-zone";
 
 export interface Guide {
-  id: string
-  axis: 'h' | 'v'
+  id: string;
+  axis: "h" | "v";
   /** Document-pixel coordinate (Y for 'h', X for 'v') */
-  position: number
+  position: number;
 }
 
 export interface CanvasState {
-  width: number
-  height: number
-  zoom: number
-  panX: number
-  panY: number
-  showGrid: boolean
-  gridSize: number
-  gridColor: string
-  gridType: GridType
-  backgroundFill: BackgroundFill
-  key: number
-  tiledMode: boolean
-  showTileGrid: boolean
-  showRulers: boolean
-  showGuides: boolean
-  guides: Guide[]
+  width: number;
+  height: number;
+  zoom: number;
+  panX: number;
+  panY: number;
+  showGrid: boolean;
+  gridSize: number;
+  gridColor: string;
+  gridType: GridType;
+  backgroundFill: BackgroundFill;
+  key: number;
+  tiledMode: boolean;
+  showTileGrid: boolean;
+  showRulers: boolean;
+  showGuides: boolean;
+  guides: Guide[];
 }
 
 // ─── Pixel Brushes ─────────────────────────────────────────────────────────────
@@ -960,78 +997,78 @@ export interface CanvasState {
  * Transparent pixels in the brush mask (a === 0) are skipped when stamping.
  */
 export interface PixelBrush {
-  id: string
-  name: string
-  width: number
-  height: number
+  id: string;
+  name: string;
+  width: number;
+  height: number;
   /** Raw RGBA bytes, width × height × 4, base64-encoded. */
-  rgba: string
-  createdAt: number
+  rgba: string;
+  createdAt: number;
 }
 
-export type PixelFormat = 'rgba8' | 'rgba32f' | 'indexed8'
+export type PixelFormat = "rgba8" | "rgba32f" | "indexed8";
 
-export type ToneMappingOperator = 'reinhard' | 'clamp'
+export type ToneMappingOperator = "reinhard" | "clamp";
 
 // ─── Spritesheet / Animation ──────────────────────────────────────────────────
 
 export interface AnimationFrame {
-  id: string
+  id: string;
   /** How many playback ticks this frame persists (1 = single tick at the animation fps). */
-  duration: number
+  duration: number;
 }
 
-export type AnimationPlaybackMode = 'one-shot' | 'loop' | 'ping-pong'
+export type AnimationPlaybackMode = "one-shot" | "loop" | "ping-pong";
 
 export interface AnimationDef {
-  id: string
-  name: string
-  fps: number
-  playbackMode: AnimationPlaybackMode
-  frames: AnimationFrame[]
+  id: string;
+  name: string;
+  fps: number;
+  playbackMode: AnimationPlaybackMode;
+  frames: AnimationFrame[];
 }
 
 export interface SpritesheetState {
   /** Whether spritesheet mode is active (cells are enabled). */
-  enabled: boolean
+  enabled: boolean;
   /** Width of each sprite cell in pixels. */
-  cellWidth: number
+  cellWidth: number;
   /** Height of each sprite cell in pixels. */
-  cellHeight: number
+  cellHeight: number;
   /** Whether onion-skin overlay is active. */
-  onionSkin: boolean
+  onionSkin: boolean;
   /** Number of frames to preview forward and backward in onion skin (1–3). */
-  onionFrames: number
-  animations: AnimationDef[]
-  selectedAnimationId: string | null
-  selectedFrameId: string | null
+  onionFrames: number;
+  animations: AnimationDef[];
+  selectedAnimationId: string | null;
+  selectedFrameId: string | null;
 }
 
 export interface AppState {
-  activeTool: Tool
-  activeShape: ShapeType
-  primaryColor: RGBAColor
-  secondaryColor: RGBAColor
-  swatches: RGBAColor[]
-  swatchGroups: SwatchGroup[]
+  activeTool: Tool;
+  activeShape: ShapeType;
+  primaryColor: RGBAColor;
+  secondaryColor: RGBAColor;
+  swatches: RGBAColor[];
+  swatchGroups: SwatchGroup[];
   /** Pixel brushes stored with this document (travel with the .verve file). */
-  pixelBrushes: PixelBrush[]
-  layers: LayerState[]
-  activeLayerId: string | null
+  pixelBrushes: PixelBrush[];
+  layers: LayerState[];
+  activeLayerId: string | null;
   /** Layer IDs ctrl/cmd-clicked in the Layers panel for multi-selection operations. */
-  selectedLayerIds: string[]
-  canvas: CanvasState
+  selectedLayerIds: string[];
+  canvas: CanvasState;
   history: {
-    canUndo: boolean
-    canRedo: boolean
-  }
-  openAdjustmentLayerId: string | null
-  pixelFormat: PixelFormat
+    canUndo: boolean;
+    canRedo: boolean;
+  };
+  openAdjustmentLayerId: string | null;
+  pixelFormat: PixelFormat;
   /** Index of the currently selected palette entry in indexed8 mode; -1 when none. */
-  activePaletteIndex: number
+  activePaletteIndex: number;
   /** The index of the most recently removed swatch (for layer pixel remap); null otherwise. */
-  lastRemovedSwatchIndex: number | null
+  lastRemovedSwatchIndex: number | null;
   /** When true, the playback bar is visible and the app is in spritesheet animation mode. */
-  animationMode: boolean
-  spritesheet: SpritesheetState
+  animationMode: boolean;
+  spritesheet: SpritesheetState;
 }

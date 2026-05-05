@@ -1,52 +1,83 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { transformStore } from '@/core/store/transformStore'
-import type { TransformParams, Point, TransformHandleMode, TransformInterpolation } from '@/types'
-import styles from './transform.module.scss'
-import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+import React, { useEffect, useState, useCallback } from "react";
+import { transformStore } from "@/core/store/transformStore";
+import type {
+  TransformParams,
+  Point,
+  TransformHandleMode,
+  TransformInterpolation,
+} from "@/types";
+import styles from "./transform.module.scss";
+import type {
+  ToolDefinition,
+  ToolHandler,
+  ToolPointerPos,
+  ToolContext,
+  ToolOptionsStyles,
+} from "./types";
 
 // ─── Matrix helpers ───────────────────────────────────────────────────────────
 
 type M3 = readonly [
-  number, number, number,
-  number, number, number,
-  number, number, number,
-]
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
 
 function m3mul(A: M3, B: M3): M3 {
   return [
-    A[0]*B[0] + A[1]*B[3] + A[2]*B[6], A[0]*B[1] + A[1]*B[4] + A[2]*B[7], A[0]*B[2] + A[1]*B[5] + A[2]*B[8],
-    A[3]*B[0] + A[4]*B[3] + A[5]*B[6], A[3]*B[1] + A[4]*B[4] + A[5]*B[7], A[3]*B[2] + A[4]*B[5] + A[5]*B[8],
-    A[6]*B[0] + A[7]*B[3] + A[8]*B[6], A[6]*B[1] + A[7]*B[4] + A[8]*B[7], A[6]*B[2] + A[7]*B[5] + A[8]*B[8],
-  ] as unknown as M3
+    A[0] * B[0] + A[1] * B[3] + A[2] * B[6],
+    A[0] * B[1] + A[1] * B[4] + A[2] * B[7],
+    A[0] * B[2] + A[1] * B[5] + A[2] * B[8],
+    A[3] * B[0] + A[4] * B[3] + A[5] * B[6],
+    A[3] * B[1] + A[4] * B[4] + A[5] * B[7],
+    A[3] * B[2] + A[4] * B[5] + A[5] * B[8],
+    A[6] * B[0] + A[7] * B[3] + A[8] * B[6],
+    A[6] * B[1] + A[7] * B[4] + A[8] * B[7],
+    A[6] * B[2] + A[7] * B[5] + A[8] * B[8],
+  ] as unknown as M3;
 }
 
 function t3(tx: number, ty: number): M3 {
-  return [1, 0, tx, 0, 1, ty, 0, 0, 1] as unknown as M3
+  return [1, 0, tx, 0, 1, ty, 0, 0, 1] as unknown as M3;
 }
 
 function s3(sx: number, sy: number): M3 {
-  return [sx, 0, 0, 0, sy, 0, 0, 0, 1] as unknown as M3
+  return [sx, 0, 0, 0, sy, 0, 0, 0, 1] as unknown as M3;
 }
 
 function r3(rad: number): M3 {
-  const cos = Math.cos(rad), sin = Math.sin(rad)
-  return [cos, -sin, 0, sin, cos, 0, 0, 0, 1] as unknown as M3
+  const cos = Math.cos(rad),
+    sin = Math.sin(rad);
+  return [cos, -sin, 0, sin, cos, 0, 0, 0, 1] as unknown as M3;
 }
 
 function sh3(shX: number, shY: number): M3 {
-  return [1, shX, 0, shY, 1, 0, 0, 0, 1] as unknown as M3
+  return [1, shX, 0, shY, 1, 0, 0, 0, 1] as unknown as M3;
 }
 
 function invertM3(m: M3): M3 {
-  const [a, b, c, d, e, f, g, h, k] = m
-  const det = a*(e*k - f*h) - b*(d*k - f*g) + c*(d*h - e*g)
-  if (Math.abs(det) < 1e-10) return [1,0,0, 0,1,0, 0,0,1] as unknown as M3
-  const inv = 1 / det
+  const [a, b, c, d, e, f, g, h, k] = m;
+  const det = a * (e * k - f * h) - b * (d * k - f * g) + c * (d * h - e * g);
+  if (Math.abs(det) < 1e-10)
+    return [1, 0, 0, 0, 1, 0, 0, 0, 1] as unknown as M3;
+  const inv = 1 / det;
   return [
-    (e*k - f*h)*inv, (c*h - b*k)*inv, (b*f - c*e)*inv,
-    (f*g - d*k)*inv, (a*k - c*g)*inv, (c*d - a*f)*inv,
-    (d*h - e*g)*inv, (b*g - a*h)*inv, (a*e - b*d)*inv,
-  ] as unknown as M3
+    (e * k - f * h) * inv,
+    (c * h - b * k) * inv,
+    (b * f - c * e) * inv,
+    (f * g - d * k) * inv,
+    (a * k - c * g) * inv,
+    (c * d - a * f) * inv,
+    (d * h - e * g) * inv,
+    (b * g - a * h) * inv,
+    (a * e - b * d) * inv,
+  ] as unknown as M3;
 }
 
 /**
@@ -58,19 +89,28 @@ function invertM3(m: M3): M3 {
  *
  * Returns row-major [M00, M01, M02, M10, M11, M12, M20, M21, M22].
  */
-export function computeForwardMatrix(params: TransformParams, origW: number, origH: number): M3 {
-  const rad = (params.rotation * Math.PI) / 180
-  const sx = origW > 0 ? params.w / origW : 1
-  const sy = origH > 0 ? params.h / origH : 1
-  const shX = Math.tan((params.shearX * Math.PI) / 180)
-  const shY = Math.tan((params.shearY * Math.PI) / 180)
+export function computeForwardMatrix(
+  params: TransformParams,
+  origW: number,
+  origH: number,
+): M3 {
+  const rad = (params.rotation * Math.PI) / 180;
+  const sx = origW > 0 ? params.w / origW : 1;
+  const sy = origH > 0 ? params.h / origH : 1;
+  const shX = Math.tan((params.shearX * Math.PI) / 180);
+  const shY = Math.tan((params.shearY * Math.PI) / 180);
   // T(pivot) · R · T(box_tl - pivot) · S · Sh
   // Maps content pixel (u,v) → rotateAround(x + u*sx, y + v*sy, pivotX, pivotY, rad)
-  return m3mul(t3(params.pivotX, params.pivotY),
-         m3mul(r3(rad),
-         m3mul(t3(params.x - params.pivotX, params.y - params.pivotY),
-         m3mul(s3(sx, sy),
-         sh3(shX, shY)))))
+  return m3mul(
+    t3(params.pivotX, params.pivotY),
+    m3mul(
+      r3(rad),
+      m3mul(
+        t3(params.x - params.pivotX, params.y - params.pivotY),
+        m3mul(s3(sx, sy), sh3(shX, shY)),
+      ),
+    ),
+  );
 }
 
 /**
@@ -79,10 +119,14 @@ export function computeForwardMatrix(params: TransformParams, origW: number, ori
  *   srcX = a*dstX + b*dstY + tx
  *   srcY = c*dstX + d*dstY + ty
  */
-export function computeInverseAffine(params: TransformParams, origW: number, origH: number): Float32Array {
-  const fwd = computeForwardMatrix(params, origW, origH)
-  const inv = invertM3(fwd)
-  return new Float32Array([inv[0], inv[1], inv[2], inv[3], inv[4], inv[5]])
+export function computeInverseAffine(
+  params: TransformParams,
+  origW: number,
+  origH: number,
+): Float32Array {
+  const fwd = computeForwardMatrix(params, origW, origH);
+  const inv = invertM3(fwd);
+  return new Float32Array([inv[0], inv[1], inv[2], inv[3], inv[4], inv[5]]);
 }
 
 /**
@@ -92,57 +136,69 @@ export function computeInverseAffine(params: TransformParams, origW: number, ori
  */
 export function computeInverseHomography(
   srcQuad: [Point, Point, Point, Point],
-  dstQuad: [Point, Point, Point, Point]
+  dstQuad: [Point, Point, Point, Point],
 ): Float32Array {
-  const H = computeHomographyDLT(srcQuad, dstQuad)
-  const inv = invertM3(H)
-  return new Float32Array(inv as unknown as number[])
+  const H = computeHomographyDLT(srcQuad, dstQuad);
+  const inv = invertM3(H);
+  return new Float32Array(inv as unknown as number[]);
 }
 
 function computeHomographyDLT(
   src: [Point, Point, Point, Point],
   dst: [Point, Point, Point, Point],
 ): M3 {
-  const A: number[][] = []
+  const A: number[][] = [];
   for (let i = 0; i < 4; i++) {
-    const sx = src[i].x, sy = src[i].y
-    const dx = dst[i].x, dy = dst[i].y
-    A.push([-sx, -sy, -1, 0, 0, 0, dx*sx, dx*sy, dx])
-    A.push([0, 0, 0, -sx, -sy, -1, dy*sx, dy*sy, dy])
+    const sx = src[i].x,
+      sy = src[i].y;
+    const dx = dst[i].x,
+      dy = dst[i].y;
+    A.push([-sx, -sy, -1, 0, 0, 0, dx * sx, dx * sy, dx]);
+    A.push([0, 0, 0, -sx, -sy, -1, dy * sx, dy * sy, dy]);
   }
-  const b = A.map(row => -row[8])
-  const M8 = A.map(row => row.slice(0, 8))
-  const h8 = gaussianElim8(M8, b)
-  return [h8[0], h8[1], h8[2], h8[3], h8[4], h8[5], h8[6], h8[7], 1] as unknown as M3
+  const b = A.map((row) => -row[8]);
+  const M8 = A.map((row) => row.slice(0, 8));
+  const h8 = gaussianElim8(M8, b);
+  return [
+    h8[0],
+    h8[1],
+    h8[2],
+    h8[3],
+    h8[4],
+    h8[5],
+    h8[6],
+    h8[7],
+    1,
+  ] as unknown as M3;
 }
 
 function gaussianElim8(A: number[][], b: number[]): number[] {
-  const n = 8
-  const aug: number[][] = A.map((row, i) => [...row, b[i]])
+  const n = 8;
+  const aug: number[][] = A.map((row, i) => [...row, b[i]]);
   for (let col = 0; col < n; col++) {
-    let maxRow = col
+    let maxRow = col;
     for (let row = col + 1; row < n; row++) {
-      if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row
+      if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
     }
-    ;[aug[col], aug[maxRow]] = [aug[maxRow], aug[col]]
-    if (Math.abs(aug[col][col]) < 1e-10) continue
+    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+    if (Math.abs(aug[col][col]) < 1e-10) continue;
     for (let row = col + 1; row < n; row++) {
-      const factor = aug[row][col] / aug[col][col]
-      for (let k = col; k <= n; k++) aug[row][k] -= factor * aug[col][k]
+      const factor = aug[row][col] / aug[col][col];
+      for (let k = col; k <= n; k++) aug[row][k] -= factor * aug[col][k];
     }
   }
-  const x = new Array<number>(n).fill(0)
+  const x = new Array<number>(n).fill(0);
   for (let i = n - 1; i >= 0; i--) {
-    x[i] = aug[i][n]
-    for (let j = i + 1; j < n; j++) x[i] -= aug[i][j] * x[j]
-    x[i] /= aug[i][i]
+    x[i] = aug[i][n];
+    for (let j = i + 1; j < n; j++) x[i] -= aug[i][j] * x[j];
+    x[i] /= aug[i][i];
   }
-  return x
+  return x;
 }
 
 // ─── Handle geometry ──────────────────────────────────────────────────────────
 
-const ROTATION_OFFSET = 34
+const ROTATION_OFFSET = 34;
 
 /**
  * Handle indices:
@@ -153,58 +209,77 @@ const ROTATION_OFFSET = 34
  *   9 pivot
  *  10 perspective TL, 11 TR, 12 BR, 13 BL
  */
-export const HANDLE_TRANSLATE = 99
+export const HANDLE_TRANSLATE = 99;
 
-function rotateAround(px: number, py: number, cx: number, cy: number, rad: number): Point {
-  const dx = px - cx, dy = py - cy
-  const cos = Math.cos(rad), sin = Math.sin(rad)
-  return { x: cx + dx*cos - dy*sin, y: cy + dx*sin + dy*cos }
+function rotateAround(
+  px: number,
+  py: number,
+  cx: number,
+  cy: number,
+  rad: number,
+): Point {
+  const dx = px - cx,
+    dy = py - cy;
+  const cos = Math.cos(rad),
+    sin = Math.sin(rad);
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
 }
 
 export function getHandleWorldPositions(params: TransformParams): Point[] {
-  const { x, y, w, h, rotation, pivotX, pivotY } = params
-  const rad = (rotation * Math.PI) / 180
-  const rot = (px: number, py: number): Point => rotateAround(px, py, pivotX, pivotY, rad)
+  const { x, y, w, h, rotation, pivotX, pivotY } = params;
+  const rad = (rotation * Math.PI) / 180;
+  const rot = (px: number, py: number): Point =>
+    rotateAround(px, py, pivotX, pivotY, rad);
 
   const handles: Point[] = [
-    rot(x,         y),          // 0 TL
-    rot(x + w/2,   y),          // 1 TC
-    rot(x + w,     y),          // 2 TR
-    rot(x,         y + h/2),    // 3 ML
-    rot(x + w,     y + h/2),    // 4 MR
-    rot(x,         y + h),      // 5 BL
-    rot(x + w/2,   y + h),      // 6 BC
-    rot(x + w,     y + h),      // 7 BR
-    rot(x + w/2,   y - ROTATION_OFFSET),  // 8 rotation
-    { x: pivotX, y: pivotY },   // 9 pivot
-  ]
+    rot(x, y), // 0 TL
+    rot(x + w / 2, y), // 1 TC
+    rot(x + w, y), // 2 TR
+    rot(x, y + h / 2), // 3 ML
+    rot(x + w, y + h / 2), // 4 MR
+    rot(x, y + h), // 5 BL
+    rot(x + w / 2, y + h), // 6 BC
+    rot(x + w, y + h), // 7 BR
+    rot(x + w / 2, y - ROTATION_OFFSET), // 8 rotation
+    { x: pivotX, y: pivotY }, // 9 pivot
+  ];
 
   if (params.perspectiveCorners) {
-    handles.push(...params.perspectiveCorners) // 10-13
+    handles.push(...params.perspectiveCorners); // 10-13
   }
 
-  return handles
+  return handles;
 }
 
-function hitTestHandle(handles: Point[], px: number, py: number, zoom: number): number | null {
-  const dpr = window.devicePixelRatio
-  const r = Math.max(5, 6 * dpr / zoom)
+function hitTestHandle(
+  handles: Point[],
+  px: number,
+  py: number,
+  zoom: number,
+): number | null {
+  const dpr = window.devicePixelRatio;
+  const r = Math.max(5, (6 * dpr) / zoom);
   for (let i = 0; i < handles.length; i++) {
-    if ((px - handles[i].x)**2 + (py - handles[i].y)**2 <= r*r) return i
+    if ((px - handles[i].x) ** 2 + (py - handles[i].y) ** 2 <= r * r) return i;
   }
-  return null
+  return null;
 }
 
 function isInsideBox(params: TransformParams, px: number, py: number): boolean {
-  const { x, y, w, h, rotation, pivotX, pivotY } = params
-  const rad = -(rotation * Math.PI) / 180
-  const local = rotateAround(px, py, pivotX, pivotY, rad)
-  return local.x >= x - 2 && local.x <= x + w + 2 && local.y >= y - 2 && local.y <= y + h + 2
+  const { x, y, w, h, rotation, pivotX, pivotY } = params;
+  const rad = -(rotation * Math.PI) / 180;
+  const local = rotateAround(px, py, pivotX, pivotY, rad);
+  return (
+    local.x >= x - 2 &&
+    local.x <= x + w + 2 &&
+    local.y >= y - 2 &&
+    local.y <= y + h + 2
+  );
 }
 
 // ─── Drag math helpers ────────────────────────────────────────────────────────
 
-const OPPOSITE = [7, 6, 5, 4, 3, 2, 1, 0]
+const OPPOSITE = [7, 6, 5, 4, 3, 2, 1, 0];
 
 function applyScaleDrag(
   params: TransformParams,
@@ -213,55 +288,74 @@ function applyScaleDrag(
   startParams: TransformParams,
   shiftKey: boolean,
 ): TransformParams {
-  const { x, y, w, h, rotation, pivotX, pivotY } = startParams
-  const rad = (rotation * Math.PI) / 180
+  const { x, y, w, h, rotation, pivotX, pivotY } = startParams;
+  const rad = (rotation * Math.PI) / 180;
   // Unrotate drag point into box-local space
-  const localCurrent = rotateAround(currentPos.x, currentPos.y, pivotX, pivotY, -rad)
+  const localCurrent = rotateAround(
+    currentPos.x,
+    currentPos.y,
+    pivotX,
+    pivotY,
+    -rad,
+  );
 
   const boxLocalHandles: Point[] = [
-    { x, y },           // 0 TL
-    { x: x+w/2, y },    // 1 TC
-    { x: x+w, y },      // 2 TR
-    { x, y: y+h/2 },    // 3 ML
-    { x: x+w, y: y+h/2 }, // 4 MR
-    { x, y: y+h },      // 5 BL
-    { x: x+w/2, y: y+h }, // 6 BC
-    { x: x+w, y: y+h }, // 7 BR
-  ]
+    { x, y }, // 0 TL
+    { x: x + w / 2, y }, // 1 TC
+    { x: x + w, y }, // 2 TR
+    { x, y: y + h / 2 }, // 3 ML
+    { x: x + w, y: y + h / 2 }, // 4 MR
+    { x, y: y + h }, // 5 BL
+    { x: x + w / 2, y: y + h }, // 6 BC
+    { x: x + w, y: y + h }, // 7 BR
+  ];
 
-  const anchor = boxLocalHandles[OPPOSITE[handleIdx]]
-  const drag = localCurrent
+  const anchor = boxLocalHandles[OPPOSITE[handleIdx]];
+  const drag = localCurrent;
 
-  let xMin: number, xMax: number, yMin: number, yMax: number
+  let xMin: number, xMax: number, yMin: number, yMax: number;
 
   if (handleIdx === 1 || handleIdx === 6) {
-    xMin = anchor.x - w/2; xMax = anchor.x + w/2
-    yMin = Math.min(anchor.y, drag.y); yMax = Math.max(anchor.y, drag.y)
+    xMin = anchor.x - w / 2;
+    xMax = anchor.x + w / 2;
+    yMin = Math.min(anchor.y, drag.y);
+    yMax = Math.max(anchor.y, drag.y);
   } else if (handleIdx === 3 || handleIdx === 4) {
-    yMin = anchor.y - h/2; yMax = anchor.y + h/2
-    xMin = Math.min(anchor.x, drag.x); xMax = Math.max(anchor.x, drag.x)
+    yMin = anchor.y - h / 2;
+    yMax = anchor.y + h / 2;
+    xMin = Math.min(anchor.x, drag.x);
+    xMax = Math.max(anchor.x, drag.x);
   } else {
-    xMin = Math.min(anchor.x, drag.x); xMax = Math.max(anchor.x, drag.x)
-    yMin = Math.min(anchor.y, drag.y); yMax = Math.max(anchor.y, drag.y)
+    xMin = Math.min(anchor.x, drag.x);
+    xMax = Math.max(anchor.x, drag.x);
+    yMin = Math.min(anchor.y, drag.y);
+    yMax = Math.max(anchor.y, drag.y);
   }
 
-  let newW = Math.max(1, xMax - xMin)
-  let newH = Math.max(1, yMax - yMin)
+  let newW = Math.max(1, xMax - xMin);
+  let newH = Math.max(1, yMax - yMin);
 
-  const isCorner = handleIdx === 0 || handleIdx === 2 || handleIdx === 5 || handleIdx === 7
+  const isCorner =
+    handleIdx === 0 || handleIdx === 2 || handleIdx === 5 || handleIdx === 7;
   if ((shiftKey || transformStore.aspectLocked) && isCorner) {
-    const origAspect = startParams.w / startParams.h
-    const constrainBy = Math.max(newW / origAspect, newH) > newH ? 'w' : 'h'
-    if (constrainBy === 'w') newH = newW / origAspect
-    else newW = newH * origAspect
+    const origAspect = startParams.w / startParams.h;
+    const constrainBy = Math.max(newW / origAspect, newH) > newH ? "w" : "h";
+    if (constrainBy === "w") newH = newW / origAspect;
+    else newW = newH * origAspect;
   }
 
   // Maintain pivot's proportional position within the bounding box.
   // fx/fy is the pivot's fractional position in the old box (model space).
   // Rotate the new model-space pivot back to canvas space using the old rotation center.
-  const fx = w > 0 ? (pivotX - x) / w : 0.5
-  const fy = h > 0 ? (pivotY - y) / h : 0.5
-  const newPivotCanvas = rotateAround(xMin + fx * newW, yMin + fy * newH, pivotX, pivotY, rad)
+  const fx = w > 0 ? (pivotX - x) / w : 0.5;
+  const fy = h > 0 ? (pivotY - y) / h : 0.5;
+  const newPivotCanvas = rotateAround(
+    xMin + fx * newW,
+    yMin + fy * newH,
+    pivotX,
+    pivotY,
+    rad,
+  );
 
   return {
     ...params,
@@ -272,7 +366,7 @@ function applyScaleDrag(
     h: newH,
     pivotX: newPivotCanvas.x,
     pivotY: newPivotCanvas.y,
-  }
+  };
 }
 
 function applyRotateDrag(
@@ -282,16 +376,19 @@ function applyRotateDrag(
   startParams: TransformParams,
   shiftKey: boolean,
 ): TransformParams {
-  const { pivotX, pivotY } = startParams
-  const startAngle = Math.atan2(dragStartPos.y - pivotY, dragStartPos.x - pivotX)
-  const currentAngle = Math.atan2(currentPos.y - pivotY, currentPos.x - pivotX)
-  let delta = (currentAngle - startAngle) * (180 / Math.PI)
-  if (shiftKey) delta = Math.round(delta / 15) * 15
-  let rotation = startParams.rotation + delta
-  rotation = rotation % 360
-  if (rotation > 180) rotation -= 360
-  if (rotation < -180) rotation += 360
-  return { ...params, ...startParams, rotation }
+  const { pivotX, pivotY } = startParams;
+  const startAngle = Math.atan2(
+    dragStartPos.y - pivotY,
+    dragStartPos.x - pivotX,
+  );
+  const currentAngle = Math.atan2(currentPos.y - pivotY, currentPos.x - pivotX);
+  let delta = (currentAngle - startAngle) * (180 / Math.PI);
+  if (shiftKey) delta = Math.round(delta / 15) * 15;
+  let rotation = startParams.rotation + delta;
+  rotation = rotation % 360;
+  if (rotation > 180) rotation -= 360;
+  if (rotation < -180) rotation += 360;
+  return { ...params, ...startParams, rotation };
 }
 
 function applyTranslateDrag(
@@ -299,7 +396,14 @@ function applyTranslateDrag(
   delta: Point,
   startParams: TransformParams,
 ): TransformParams {
-  return { ...params, ...startParams, x: startParams.x + delta.x, y: startParams.y + delta.y, pivotX: startParams.pivotX + delta.x, pivotY: startParams.pivotY + delta.y }
+  return {
+    ...params,
+    ...startParams,
+    x: startParams.x + delta.x,
+    y: startParams.y + delta.y,
+    pivotX: startParams.pivotX + delta.x,
+    pivotY: startParams.pivotY + delta.y,
+  };
 }
 
 function applyPivotDrag(
@@ -307,160 +411,198 @@ function applyPivotDrag(
   currentPos: Point,
   _startParams: TransformParams,
 ): TransformParams {
-  return { ...params, pivotX: currentPos.x, pivotY: currentPos.y }
+  return { ...params, pivotX: currentPos.x, pivotY: currentPos.y };
 }
 
 function applyPerspectiveDrag(
   params: TransformParams,
-  cornerIdx: number,  // 0-3 within perspectiveCorners
+  cornerIdx: number, // 0-3 within perspectiveCorners
   currentPos: Point,
   shiftKey: boolean,
   startParams: TransformParams,
 ): TransformParams {
-  if (!startParams.perspectiveCorners) return params
-  const corners = [...startParams.perspectiveCorners] as [Point, Point, Point, Point]
-  const start = corners[cornerIdx]
-  let nx = currentPos.x, ny = currentPos.y
+  if (!startParams.perspectiveCorners) return params;
+  const corners = [...startParams.perspectiveCorners] as [
+    Point,
+    Point,
+    Point,
+    Point,
+  ];
+  const start = corners[cornerIdx];
+  let nx = currentPos.x,
+    ny = currentPos.y;
   if (shiftKey) {
-    const dx = Math.abs(nx - start.x), dy = Math.abs(ny - start.y)
-    if (dx > dy) ny = start.y; else nx = start.x
+    const dx = Math.abs(nx - start.x),
+      dy = Math.abs(ny - start.y);
+    if (dx > dy) ny = start.y;
+    else nx = start.x;
   }
-  corners[cornerIdx] = { x: nx, y: ny }
-  return { ...params, perspectiveCorners: corners }
+  corners[cornerIdx] = { x: nx, y: ny };
+  return { ...params, perspectiveCorners: corners };
 }
 
 function applyShearDrag(
   params: TransformParams,
-  edgeIdx: number,  // 1=TC, 3=ML, 4=MR, 6=BC
+  edgeIdx: number, // 1=TC, 3=ML, 4=MR, 6=BC
   currentPos: Point,
   dragStartPos: Point,
   startParams: TransformParams,
 ): TransformParams {
-  const dx = currentPos.x - dragStartPos.x
-  const dy = currentPos.y - dragStartPos.y
-  const rad = (startParams.rotation * Math.PI) / 180
-  const cos = Math.cos(rad), sin = Math.sin(rad)
+  const dx = currentPos.x - dragStartPos.x;
+  const dy = currentPos.y - dragStartPos.y;
+  const rad = (startParams.rotation * Math.PI) / 180;
+  const cos = Math.cos(rad),
+    sin = Math.sin(rad);
   // Transform delta into unrotated box space
-  const localDx = dx * cos + dy * sin
-  const localDy = -dx * sin + dy * cos
+  const localDx = dx * cos + dy * sin;
+  const localDy = -dx * sin + dy * cos;
 
-  let shearX = startParams.shearX
-  let shearY = startParams.shearY
+  let shearX = startParams.shearX;
+  let shearY = startParams.shearY;
   if (edgeIdx === 1 || edgeIdx === 6) {
-    const shearPx = localDx / Math.max(1, startParams.h)
-    shearX = Math.max(-85, Math.min(85, startParams.shearX + shearPx * (180 / Math.PI)))
+    const shearPx = localDx / Math.max(1, startParams.h);
+    shearX = Math.max(
+      -85,
+      Math.min(85, startParams.shearX + shearPx * (180 / Math.PI)),
+    );
   } else if (edgeIdx === 3 || edgeIdx === 4) {
-    const shearPy = localDy / Math.max(1, startParams.w)
-    shearY = Math.max(-85, Math.min(85, startParams.shearY + shearPy * (180 / Math.PI)))
+    const shearPy = localDy / Math.max(1, startParams.w);
+    shearY = Math.max(
+      -85,
+      Math.min(85, startParams.shearY + shearPy * (180 / Math.PI)),
+    );
   }
-  return { ...params, ...startParams, shearX, shearY }
+  return { ...params, ...startParams, shearX, shearY };
 }
 
 // ─── Overlay drawing ──────────────────────────────────────────────────────────
 
-const HANDLE_SIZE = 5
-const DASHED_BOX_COLOR = '#0699fb'
-const PERSPECTIVE_CORNER_COLOR = '#ff8c00'
-const SHEAR_EDGE_COLOR = 'rgba(120,220,80,0.9)'
+const HANDLE_SIZE = 5;
+const DASHED_BOX_COLOR = "#0699fb";
+const PERSPECTIVE_CORNER_COLOR = "#ff8c00";
+const SHEAR_EDGE_COLOR = "rgba(120,220,80,0.9)";
 
 export function drawTransformOverlay(
   overlayCanvas: HTMLCanvasElement,
   store: typeof transformStore,
   zoom: number,
 ): void {
-  const ctx = overlayCanvas.getContext('2d')
-  if (!ctx) return
-  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
-  if (!store.isActive) return
+  const ctx = overlayCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  if (!store.isActive) return;
 
-  const { params, handleMode, floatCanvas, originalW, originalH } = store
-  const dpr = window.devicePixelRatio
-  const lw = Math.max(0.5, dpr / zoom)
+  const { params, handleMode, floatCanvas, originalW, originalH } = store;
+  const dpr = window.devicePixelRatio;
+  const lw = Math.max(0.5, dpr / zoom);
 
   // 1. Draw live preview
   if (floatCanvas && params.perspectiveCorners === null) {
     // Affine modes: use canvas setTransform (fast, exact)
-    const fwd = computeForwardMatrix(params, originalW, originalH)
-    ctx.save()
-    ctx.imageSmoothingEnabled = false
-    ctx.setTransform(fwd[0], fwd[3], fwd[1], fwd[4], fwd[2], fwd[5])
-    ctx.drawImage(floatCanvas, 0, 0)
-    ctx.restore()
+    const fwd = computeForwardMatrix(params, originalW, originalH);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(fwd[0], fwd[3], fwd[1], fwd[4], fwd[2], fwd[5]);
+    ctx.drawImage(floatCanvas, 0, 0);
+    ctx.restore();
   } else if (floatCanvas && params.perspectiveCorners !== null) {
     // Perspective mode: mesh-based subdivision preview
-    drawPerspectivePreview(ctx, floatCanvas, originalW, originalH, params.perspectiveCorners)
+    drawPerspectivePreview(
+      ctx,
+      floatCanvas,
+      originalW,
+      originalH,
+      params.perspectiveCorners,
+    );
   }
 
-  const handles = getHandleWorldPositions(params)
+  const handles = getHandleWorldPositions(params);
 
-  if (handleMode === 'perspective' && params.perspectiveCorners) {
+  if (handleMode === "perspective" && params.perspectiveCorners) {
     // Draw quad outline
-    const corners = params.perspectiveCorners
-    ctx.save()
-    ctx.strokeStyle = PERSPECTIVE_CORNER_COLOR
-    ctx.lineWidth = lw
-    ctx.setLineDash([4 / zoom, 4 / zoom])
-    ctx.beginPath()
-    ctx.moveTo(corners[0].x, corners[0].y)
-    ctx.lineTo(corners[1].x, corners[1].y)
-    ctx.lineTo(corners[2].x, corners[2].y)
-    ctx.lineTo(corners[3].x, corners[3].y)
-    ctx.closePath()
-    ctx.stroke()
-    ctx.restore()
+    const corners = params.perspectiveCorners;
+    ctx.save();
+    ctx.strokeStyle = PERSPECTIVE_CORNER_COLOR;
+    ctx.lineWidth = lw;
+    ctx.setLineDash([4 / zoom, 4 / zoom]);
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x, corners[0].y);
+    ctx.lineTo(corners[1].x, corners[1].y);
+    ctx.lineTo(corners[2].x, corners[2].y);
+    ctx.lineTo(corners[3].x, corners[3].y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
 
     // Draw 4 corner handles (10-13)
     for (let i = 10; i <= 13; i++) {
-      drawSquareHandle(ctx, handles[i], HANDLE_SIZE, zoom, PERSPECTIVE_CORNER_COLOR)
+      drawSquareHandle(
+        ctx,
+        handles[i],
+        HANDLE_SIZE,
+        zoom,
+        PERSPECTIVE_CORNER_COLOR,
+      );
     }
-  } else if (handleMode === 'shear') {
+  } else if (handleMode === "shear") {
     // Draw dashed bounding box
-    drawDashedBoundingBox(ctx, params, lw, zoom)
+    drawDashedBoundingBox(ctx, params, lw, zoom);
     // Edge handles only (1, 3, 4, 6) — elongated bars oriented to their axis
-    const shearEdges: Array<[number, boolean]> = [[1, true], [3, false], [4, false], [6, true]]
+    const shearEdges: Array<[number, boolean]> = [
+      [1, true],
+      [3, false],
+      [4, false],
+      [6, true],
+    ];
     for (const [idx, isHoriz] of shearEdges) {
-      drawShearHandle(ctx, handles[idx], zoom, SHEAR_EDGE_COLOR, isHoriz)
+      drawShearHandle(ctx, handles[idx], zoom, SHEAR_EDGE_COLOR, isHoriz);
     }
     // Pivot
-    drawPivotCrosshair(ctx, params.pivotX, params.pivotY, zoom)
+    drawPivotCrosshair(ctx, params.pivotX, params.pivotY, zoom);
   } else {
     // Scale mode
-    drawDashedBoundingBox(ctx, params, lw, zoom)
+    drawDashedBoundingBox(ctx, params, lw, zoom);
     // Draw corner + edge handles (0-7)
     for (let i = 0; i <= 7; i++) {
-      drawSquareHandle(ctx, handles[i], HANDLE_SIZE, zoom, '#ffffff')
+      drawSquareHandle(ctx, handles[i], HANDLE_SIZE, zoom, "#ffffff");
     }
     // Rotation handle (8)
-    const rotH = handles[8]
-    const tc = handles[1]
-    ctx.save()
-    ctx.strokeStyle = DASHED_BOX_COLOR
-    ctx.lineWidth = lw
-    ctx.beginPath()
-    ctx.moveTo(tc.x, tc.y)
-    ctx.lineTo(rotH.x, rotH.y)
-    ctx.stroke()
-    ctx.restore()
-    drawCircleHandle(ctx, rotH, HANDLE_SIZE, zoom, DASHED_BOX_COLOR)
+    const rotH = handles[8];
+    const tc = handles[1];
+    ctx.save();
+    ctx.strokeStyle = DASHED_BOX_COLOR;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.moveTo(tc.x, tc.y);
+    ctx.lineTo(rotH.x, rotH.y);
+    ctx.stroke();
+    ctx.restore();
+    drawCircleHandle(ctx, rotH, HANDLE_SIZE, zoom, DASHED_BOX_COLOR);
     // Pivot
-    drawPivotCrosshair(ctx, params.pivotX, params.pivotY, zoom)
+    drawPivotCrosshair(ctx, params.pivotX, params.pivotY, zoom);
   }
 }
 
-function drawDashedBoundingBox(ctx: CanvasRenderingContext2D, params: TransformParams, lw: number, zoom: number): void {
-  const handles = getHandleWorldPositions(params)
-  const corners = [handles[0], handles[2], handles[7], handles[5]]
-  ctx.save()
-  ctx.strokeStyle = DASHED_BOX_COLOR
-  ctx.lineWidth = lw
-  ctx.setLineDash([4 / zoom, 4 / zoom])
-  ctx.beginPath()
-  ctx.moveTo(corners[0].x, corners[0].y)
-  for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y)
-  ctx.closePath()
-  ctx.stroke()
-  ctx.setLineDash([])
-  ctx.restore()
+function drawDashedBoundingBox(
+  ctx: CanvasRenderingContext2D,
+  params: TransformParams,
+  lw: number,
+  zoom: number,
+): void {
+  const handles = getHandleWorldPositions(params);
+  const corners = [handles[0], handles[2], handles[7], handles[5]];
+  ctx.save();
+  ctx.strokeStyle = DASHED_BOX_COLOR;
+  ctx.lineWidth = lw;
+  ctx.setLineDash([4 / zoom, 4 / zoom]);
+  ctx.beginPath();
+  ctx.moveTo(corners[0].x, corners[0].y);
+  for (let i = 1; i < corners.length; i++)
+    ctx.lineTo(corners[i].x, corners[i].y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 // ─── Perspective mesh preview helpers ─────────────────────────────────────────
@@ -473,42 +615,51 @@ function drawDashedBoundingBox(ctx: CanvasRenderingContext2D, params: TransformP
 function drawTexturedTri(
   ctx: CanvasRenderingContext2D,
   img: OffscreenCanvas,
-  su0: number, sv0: number,
-  su1: number, sv1: number,
-  su2: number, sv2: number,
-  dp0: Point, dp1: Point, dp2: Point,
+  su0: number,
+  sv0: number,
+  su1: number,
+  sv1: number,
+  su2: number,
+  sv2: number,
+  dp0: Point,
+  dp1: Point,
+  dp2: Point,
 ): void {
-  const dx1 = su1 - su0, dy1 = sv1 - sv0
-  const dx2 = su2 - su0, dy2 = sv2 - sv0
-  const det = dx1 * dy2 - dx2 * dy1
-  if (Math.abs(det) < 1e-6) return
-  const invDet = 1 / det
+  const dx1 = su1 - su0,
+    dy1 = sv1 - sv0;
+  const dx2 = su2 - su0,
+    dy2 = sv2 - sv0;
+  const det = dx1 * dy2 - dx2 * dy1;
+  if (Math.abs(det) < 1e-6) return;
+  const invDet = 1 / det;
 
-  const ddx1 = dp1.x - dp0.x, ddy1 = dp1.y - dp0.y
-  const ddx2 = dp2.x - dp0.x, ddy2 = dp2.y - dp0.y
+  const ddx1 = dp1.x - dp0.x,
+    ddy1 = dp1.y - dp0.y;
+  const ddx2 = dp2.x - dp0.x,
+    ddy2 = dp2.y - dp0.y;
 
   // Affine matrix M: src → canvas
   //   x_canvas = a*su + b*sv + tx
   //   y_canvas = c*su + d*sv + ty
-  const a  = (ddx1 * dy2 - ddx2 * dy1) * invDet
-  const b  = (ddx2 * dx1 - ddx1 * dx2) * invDet
-  const c  = (ddy1 * dy2 - ddy2 * dy1) * invDet
-  const d  = (ddy2 * dx1 - ddy1 * dx2) * invDet
-  const tx = dp0.x - a * su0 - b * sv0
-  const ty = dp0.y - c * su0 - d * sv0
+  const a = (ddx1 * dy2 - ddx2 * dy1) * invDet;
+  const b = (ddx2 * dx1 - ddx1 * dx2) * invDet;
+  const c = (ddy1 * dy2 - ddy2 * dy1) * invDet;
+  const d = (ddy2 * dx1 - ddy1 * dx2) * invDet;
+  const tx = dp0.x - a * su0 - b * sv0;
+  const ty = dp0.y - c * su0 - d * sv0;
 
-  ctx.save()
-  ctx.beginPath()
-  ctx.moveTo(dp0.x, dp0.y)
-  ctx.lineTo(dp1.x, dp1.y)
-  ctx.lineTo(dp2.x, dp2.y)
-  ctx.closePath()
-  ctx.clip()
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(dp0.x, dp0.y);
+  ctx.lineTo(dp1.x, dp1.y);
+  ctx.lineTo(dp2.x, dp2.y);
+  ctx.closePath();
+  ctx.clip();
   // canvas setTransform(a_c, b_c, c_c, d_c, e, f):
   //   x' = a_c*x + c_c*y + e,  y' = b_c*x + d_c*y + f
-  ctx.setTransform(a, c, b, d, tx, ty)
-  ctx.drawImage(img, 0, 0)
-  ctx.restore()
+  ctx.setTransform(a, c, b, d, tx, ty);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
 }
 
 /**
@@ -524,62 +675,88 @@ function drawPerspectivePreview(
   corners: [Point, Point, Point, Point], // TL, TR, BR, BL in canvas coords
 ): void {
   const srcQuad: [Point, Point, Point, Point] = [
-    { x: 0, y: 0 }, { x: origW, y: 0 }, { x: origW, y: origH }, { x: 0, y: origH },
-  ]
-  let H: M3
-  try { H = computeHomographyDLT(srcQuad, corners) } catch { return }
+    { x: 0, y: 0 },
+    { x: origW, y: 0 },
+    { x: origW, y: origH },
+    { x: 0, y: origH },
+  ];
+  let H: M3;
+  try {
+    H = computeHomographyDLT(srcQuad, corners);
+  } catch {
+    return;
+  }
 
   const project = (u: number, v: number): Point => {
-    const w = H[6] * u + H[7] * v + H[8]
-    if (Math.abs(w) < 1e-9) return { x: 0, y: 0 }
-    return { x: (H[0] * u + H[1] * v + H[2]) / w, y: (H[3] * u + H[4] * v + H[5]) / w }
-  }
+    const w = H[6] * u + H[7] * v + H[8];
+    if (Math.abs(w) < 1e-9) return { x: 0, y: 0 };
+    return {
+      x: (H[0] * u + H[1] * v + H[2]) / w,
+      y: (H[3] * u + H[4] * v + H[5]) / w,
+    };
+  };
 
-  const DIVS = 16
-  const cellW = origW / DIVS
-  const cellH = origH / DIVS
+  const DIVS = 16;
+  const cellW = origW / DIVS;
+  const cellH = origH / DIVS;
 
-  ctx.save()
-  ctx.imageSmoothingEnabled = false
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
   for (let j = 0; j < DIVS; j++) {
     for (let i = 0; i < DIVS; i++) {
-      const u0 = i * cellW, v0 = j * cellH
-      const u1 = u0 + cellW, v1 = v0 + cellH
-      const p00 = project(u0, v0), p10 = project(u1, v0)
-      const p11 = project(u1, v1), p01 = project(u0, v1)
-      drawTexturedTri(ctx, floatCanvas, u0, v0, u1, v0, u1, v1, p00, p10, p11)
-      drawTexturedTri(ctx, floatCanvas, u0, v0, u1, v1, u0, v1, p00, p11, p01)
+      const u0 = i * cellW,
+        v0 = j * cellH;
+      const u1 = u0 + cellW,
+        v1 = v0 + cellH;
+      const p00 = project(u0, v0),
+        p10 = project(u1, v0);
+      const p11 = project(u1, v1),
+        p01 = project(u0, v1);
+      drawTexturedTri(ctx, floatCanvas, u0, v0, u1, v0, u1, v1, p00, p10, p11);
+      drawTexturedTri(ctx, floatCanvas, u0, v0, u1, v1, u0, v1, p00, p11, p01);
     }
   }
-  ctx.restore()
+  ctx.restore();
 }
 
-function drawSquareHandle(ctx: CanvasRenderingContext2D, pos: Point, size: number, zoom: number, fillColor: string): void {
-  const dpr = window.devicePixelRatio
-  const half = Math.max(3, size * dpr / zoom)
-  ctx.save()
-  ctx.fillStyle = fillColor
-  ctx.strokeStyle = DASHED_BOX_COLOR
-  ctx.lineWidth = Math.max(0.5, window.devicePixelRatio / zoom)
-  ctx.beginPath()
-  ctx.rect(pos.x - half, pos.y - half, half * 2, half * 2)
-  ctx.fill()
-  ctx.stroke()
-  ctx.restore()
+function drawSquareHandle(
+  ctx: CanvasRenderingContext2D,
+  pos: Point,
+  size: number,
+  zoom: number,
+  fillColor: string,
+): void {
+  const dpr = window.devicePixelRatio;
+  const half = Math.max(3, (size * dpr) / zoom);
+  ctx.save();
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = DASHED_BOX_COLOR;
+  ctx.lineWidth = Math.max(0.5, window.devicePixelRatio / zoom);
+  ctx.beginPath();
+  ctx.rect(pos.x - half, pos.y - half, half * 2, half * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
-function drawCircleHandle(ctx: CanvasRenderingContext2D, pos: Point, size: number, zoom: number, color: string): void {
-  const dpr = window.devicePixelRatio
-  const r = Math.max(3, size * dpr / zoom)
-  ctx.save()
-  ctx.fillStyle = '#ffffff'
-  ctx.strokeStyle = color
-  ctx.lineWidth = Math.max(0.5, dpr / zoom)
-  ctx.beginPath()
-  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-  ctx.restore()
+function drawCircleHandle(
+  ctx: CanvasRenderingContext2D,
+  pos: Point,
+  size: number,
+  zoom: number,
+  color: string,
+): void {
+  const dpr = window.devicePixelRatio;
+  const r = Math.max(3, (size * dpr) / zoom);
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(0.5, dpr / zoom);
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawShearHandle(
@@ -589,129 +766,180 @@ function drawShearHandle(
   color: string,
   isHorizontal: boolean,
 ): void {
-  const dpr = window.devicePixelRatio
-  const baseSize = Math.max(3, 5 * dpr / zoom)
-  const longSide  = baseSize * 3.2
-  const shortSide = baseSize * 1.0
-  const w = isHorizontal ? longSide : shortSide
-  const h = isHorizontal ? shortSide : longSide
-  ctx.save()
-  ctx.fillStyle = '#ffffff'
-  ctx.strokeStyle = color
-  ctx.lineWidth = Math.max(0.8, 1.5 * dpr / zoom)
-  ctx.fillRect(pos.x - w / 2, pos.y - h / 2, w, h)
-  ctx.strokeRect(pos.x - w / 2, pos.y - h / 2, w, h)
-  ctx.restore()
+  const dpr = window.devicePixelRatio;
+  const baseSize = Math.max(3, (5 * dpr) / zoom);
+  const longSide = baseSize * 3.2;
+  const shortSide = baseSize * 1.0;
+  const w = isHorizontal ? longSide : shortSide;
+  const h = isHorizontal ? shortSide : longSide;
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(0.8, (1.5 * dpr) / zoom);
+  ctx.fillRect(pos.x - w / 2, pos.y - h / 2, w, h);
+  ctx.strokeRect(pos.x - w / 2, pos.y - h / 2, w, h);
+  ctx.restore();
 }
 
-function drawPivotCrosshair(ctx: CanvasRenderingContext2D, x: number, y: number, zoom: number): void {
-  const dpr = window.devicePixelRatio
-  const r = Math.max(5, 7 * dpr / zoom)
-  const lw = Math.max(0.5, dpr / zoom)
-  ctx.save()
-  ctx.strokeStyle = '#ffffff'
-  ctx.lineWidth = lw * 2
-  ctx.beginPath()
-  ctx.moveTo(x - r, y); ctx.lineTo(x + r, y)
-  ctx.moveTo(x, y - r); ctx.lineTo(x, y + r)
-  ctx.stroke()
-  ctx.strokeStyle = DASHED_BOX_COLOR
-  ctx.lineWidth = lw
-  ctx.beginPath()
-  ctx.moveTo(x - r, y); ctx.lineTo(x + r, y)
-  ctx.moveTo(x, y - r); ctx.lineTo(x, y + r)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(x, y, r * 0.4, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.restore()
+function drawPivotCrosshair(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  zoom: number,
+): void {
+  const dpr = window.devicePixelRatio;
+  const r = Math.max(5, (7 * dpr) / zoom);
+  const lw = Math.max(0.5, dpr / zoom);
+  ctx.save();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = lw * 2;
+  ctx.beginPath();
+  ctx.moveTo(x - r, y);
+  ctx.lineTo(x + r, y);
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x, y + r);
+  ctx.stroke();
+  ctx.strokeStyle = DASHED_BOX_COLOR;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  ctx.moveTo(x - r, y);
+  ctx.lineTo(x + r, y);
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x, y + r);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ─── Handler factory ──────────────────────────────────────────────────────────
 
 export function createTransformHandler(): ToolHandler {
-  let activeHandle: number | null = null
-  let dragStartPos: Point = { x: 0, y: 0 }
-  let paramsAtDragStart: TransformParams | null = null
+  let activeHandle: number | null = null;
+  let dragStartPos: Point = { x: 0, y: 0 };
+  let paramsAtDragStart: TransformParams | null = null;
 
   return {
     onPointerDown(pos: ToolPointerPos, ctx: ToolContext): void {
-      if (!transformStore.isActive) return
-      if ('button' in (pos as unknown as PointerEvent) && (pos as unknown as PointerEvent).button !== 0) return
+      if (!transformStore.isActive) return;
+      if (
+        "button" in (pos as unknown as PointerEvent) &&
+        (pos as unknown as PointerEvent).button !== 0
+      )
+        return;
 
-      const handles = getHandleWorldPositions(transformStore.params)
-      const hit = hitTestHandle(handles, pos.x, pos.y, ctx.zoom)
+      const handles = getHandleWorldPositions(transformStore.params);
+      const hit = hitTestHandle(handles, pos.x, pos.y, ctx.zoom);
 
       if (hit !== null) {
-        activeHandle = hit
+        activeHandle = hit;
       } else if (isInsideBox(transformStore.params, pos.x, pos.y)) {
-        activeHandle = HANDLE_TRANSLATE
+        activeHandle = HANDLE_TRANSLATE;
       } else {
-        activeHandle = null
-        return
+        activeHandle = null;
+        return;
       }
 
-      dragStartPos = { x: pos.x, y: pos.y }
-      paramsAtDragStart = { ...transformStore.params }
+      dragStartPos = { x: pos.x, y: pos.y };
+      paramsAtDragStart = { ...transformStore.params };
       if (paramsAtDragStart.perspectiveCorners) {
         paramsAtDragStart = {
           ...paramsAtDragStart,
-          perspectiveCorners: [...paramsAtDragStart.perspectiveCorners] as [Point, Point, Point, Point],
-        }
+          perspectiveCorners: [...paramsAtDragStart.perspectiveCorners] as [
+            Point,
+            Point,
+            Point,
+            Point,
+          ],
+        };
       }
     },
 
     onPointerMove(pos: ToolPointerPos, ctx: ToolContext): void {
-      if (!transformStore.isActive || activeHandle === null || !paramsAtDragStart) return
+      if (
+        !transformStore.isActive ||
+        activeHandle === null ||
+        !paramsAtDragStart
+      )
+        return;
 
-      const p = paramsAtDragStart
-      const { handleMode } = transformStore
-      let newParams: TransformParams
+      const p = paramsAtDragStart;
+      const { handleMode } = transformStore;
+      let newParams: TransformParams;
 
       if (activeHandle === HANDLE_TRANSLATE) {
-        newParams = applyTranslateDrag(transformStore.params, { x: pos.x - dragStartPos.x, y: pos.y - dragStartPos.y }, p)
+        newParams = applyTranslateDrag(
+          transformStore.params,
+          { x: pos.x - dragStartPos.x, y: pos.y - dragStartPos.y },
+          p,
+        );
       } else if (activeHandle === 8) {
-        newParams = applyRotateDrag(transformStore.params, pos, dragStartPos, p, pos.shiftKey)
+        newParams = applyRotateDrag(
+          transformStore.params,
+          pos,
+          dragStartPos,
+          p,
+          pos.shiftKey,
+        );
       } else if (activeHandle === 9) {
-        newParams = applyPivotDrag(transformStore.params, pos, p)
+        newParams = applyPivotDrag(transformStore.params, pos, p);
       } else if (activeHandle >= 10 && activeHandle <= 13) {
-        newParams = applyPerspectiveDrag(transformStore.params, activeHandle - 10, pos, pos.shiftKey, p)
-      } else if (handleMode === 'shear') {
-        newParams = applyShearDrag(transformStore.params, activeHandle, pos, dragStartPos, p)
+        newParams = applyPerspectiveDrag(
+          transformStore.params,
+          activeHandle - 10,
+          pos,
+          pos.shiftKey,
+          p,
+        );
+      } else if (handleMode === "shear") {
+        newParams = applyShearDrag(
+          transformStore.params,
+          activeHandle,
+          pos,
+          dragStartPos,
+          p,
+        );
       } else {
-        newParams = applyScaleDrag(transformStore.params, activeHandle, pos, p, pos.shiftKey)
+        newParams = applyScaleDrag(
+          transformStore.params,
+          activeHandle,
+          pos,
+          p,
+          pos.shiftKey,
+        );
       }
 
-      void ctx
-      transformStore.updateParams(newParams)
+      void ctx;
+      transformStore.updateParams(newParams);
     },
 
     onPointerUp(_pos: ToolPointerPos, _ctx: ToolContext): void {
-      activeHandle = null
-      paramsAtDragStart = null
+      activeHandle = null;
+      paramsAtDragStart = null;
     },
 
     onHover(pos: ToolPointerPos, ctx: ToolContext): void {
-      if (!transformStore.isActive || !ctx.overlayCanvas) return
-      const handles = getHandleWorldPositions(transformStore.params)
-      const hit = hitTestHandle(handles, pos.x, pos.y, ctx.zoom)
-      const inside = isInsideBox(transformStore.params, pos.x, pos.y)
-      let cursor = 'default'
+      if (!transformStore.isActive || !ctx.overlayCanvas) return;
+      const handles = getHandleWorldPositions(transformStore.params);
+      const hit = hitTestHandle(handles, pos.x, pos.y, ctx.zoom);
+      const inside = isInsideBox(transformStore.params, pos.x, pos.y);
+      let cursor = "default";
       if (hit !== null) {
-        if (hit === 8) cursor = 'grab'
-        else if (hit === 9) cursor = 'move'
-        else if (hit >= 10) cursor = 'move'
-        else cursor = 'nwse-resize'
+        if (hit === 8) cursor = "grab";
+        else if (hit === 9) cursor = "move";
+        else if (hit >= 10) cursor = "move";
+        else cursor = "nwse-resize";
       } else if (inside) {
-        cursor = 'move'
+        cursor = "move";
       }
-      ctx.overlayCanvas.style.cursor = cursor
+      ctx.overlayCanvas.style.cursor = cursor;
     },
 
     onLeave(ctx: ToolContext): void {
-      if (ctx.overlayCanvas) ctx.overlayCanvas.style.cursor = 'default'
+      if (ctx.overlayCanvas) ctx.overlayCanvas.style.cursor = "default";
     },
-  }
+  };
 }
 
 // ─── Lock icon SVG ────────────────────────────────────────────────────────────
@@ -719,94 +947,118 @@ export function createTransformHandler(): ToolHandler {
 function LockIcon({ locked }: { locked: boolean }): React.JSX.Element {
   return locked ? (
     // Closed chain link
-    <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+    <svg
+      viewBox="0 0 14 14"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+    >
       <rect x="1" y="5" width="4" height="4" rx="1.2" />
       <rect x="9" y="5" width="4" height="4" rx="1.2" />
       <line x1="5" y1="7" x2="9" y2="7" />
     </svg>
   ) : (
     // Broken chain link
-    <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+    <svg
+      viewBox="0 0 14 14"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+    >
       <rect x="1" y="5" width="4" height="4" rx="1.2" />
       <rect x="9" y="5" width="4" height="4" rx="1.2" />
       <line x1="5" y1="7" x2="6.2" y2="7" />
       <line x1="7.8" y1="7" x2="9" y2="7" />
     </svg>
-  )
+  );
 }
 
 // ─── Toolbar component ────────────────────────────────────────────────────────
 
 export function TransformToolbar(): React.JSX.Element {
-  const [params, setParams] = useState(() => transformStore.params)
-  const [aspectLocked, setAspectLocked] = useState(false)
-  const [handleMode, setHandleMode] = useState<TransformHandleMode>('scale')
-  const [interpolation, setInterpolation] = useState<TransformInterpolation>('bilinear')
+  const [params, setParams] = useState(() => transformStore.params);
+  const [aspectLocked, setAspectLocked] = useState(false);
+  const [handleMode, setHandleMode] = useState<TransformHandleMode>("scale");
+  const [interpolation, setInterpolation] =
+    useState<TransformInterpolation>("bilinear");
 
   useEffect(() => {
     const sync = (): void => {
-      setParams({ ...transformStore.params })
-      setAspectLocked(transformStore.aspectLocked)
-      setHandleMode(transformStore.handleMode)
-      setInterpolation(transformStore.interpolation)
-    }
-    transformStore.subscribe(sync)
-    sync()
-    return () => transformStore.unsubscribe(sync)
-  }, [])
+      setParams({ ...transformStore.params });
+      setAspectLocked(transformStore.aspectLocked);
+      setHandleMode(transformStore.handleMode);
+      setInterpolation(transformStore.interpolation);
+    };
+    transformStore.subscribe(sync);
+    sync();
+    return () => transformStore.unsubscribe(sync);
+  }, []);
 
-  const origAspect = transformStore.originalH > 0
-    ? transformStore.originalW / transformStore.originalH
-    : 1
+  const origAspect =
+    transformStore.originalH > 0
+      ? transformStore.originalW / transformStore.originalH
+      : 1;
 
   const commitX = useCallback((raw: string): void => {
-    const v = parseFloat(raw)
-    if (!isNaN(v)) transformStore.updateParams({ x: v })
-  }, [])
+    const v = parseFloat(raw);
+    if (!isNaN(v)) transformStore.updateParams({ x: v });
+  }, []);
 
   const commitY = useCallback((raw: string): void => {
-    const v = parseFloat(raw)
-    if (!isNaN(v)) transformStore.updateParams({ y: v })
-  }, [])
+    const v = parseFloat(raw);
+    if (!isNaN(v)) transformStore.updateParams({ y: v });
+  }, []);
 
-  const commitW = useCallback((raw: string): void => {
-    const v = Math.max(1, parseFloat(raw) || 1)
-    if (transformStore.aspectLocked) {
-      transformStore.updateParams({ w: v, h: Math.round(v / origAspect) })
-    } else {
-      transformStore.updateParams({ w: v })
-    }
-  }, [origAspect])
+  const commitW = useCallback(
+    (raw: string): void => {
+      const v = Math.max(1, parseFloat(raw) || 1);
+      if (transformStore.aspectLocked) {
+        transformStore.updateParams({ w: v, h: Math.round(v / origAspect) });
+      } else {
+        transformStore.updateParams({ w: v });
+      }
+    },
+    [origAspect],
+  );
 
-  const commitH = useCallback((raw: string): void => {
-    const v = Math.max(1, parseFloat(raw) || 1)
-    if (transformStore.aspectLocked) {
-      transformStore.updateParams({ h: v, w: Math.round(v * origAspect) })
-    } else {
-      transformStore.updateParams({ h: v })
-    }
-  }, [origAspect])
+  const commitH = useCallback(
+    (raw: string): void => {
+      const v = Math.max(1, parseFloat(raw) || 1);
+      if (transformStore.aspectLocked) {
+        transformStore.updateParams({ h: v, w: Math.round(v * origAspect) });
+      } else {
+        transformStore.updateParams({ h: v });
+      }
+    },
+    [origAspect],
+  );
 
   const commitRotation = useCallback((raw: string): void => {
-    const v = parseFloat(raw)
+    const v = parseFloat(raw);
     if (!isNaN(v)) {
-      let r = v % 360
-      if (r > 180) r -= 360
-      if (r < -180) r += 360
-      transformStore.updateParams({ rotation: r })
+      let r = v % 360;
+      if (r > 180) r -= 360;
+      if (r < -180) r += 360;
+      transformStore.updateParams({ rotation: r });
     }
-  }, [])
+  }, []);
 
   const toggleLock = useCallback((): void => {
-    transformStore.aspectLocked = !transformStore.aspectLocked
-    transformStore.notify()
-  }, [])
+    transformStore.aspectLocked = !transformStore.aspectLocked;
+    transformStore.notify();
+  }, []);
 
   const setMode = useCallback((mode: TransformHandleMode): void => {
-    const prev = transformStore.handleMode
-    transformStore.handleMode = mode
-    if (mode === 'perspective' && prev !== 'perspective') {
-      const p = transformStore.params
+    const prev = transformStore.handleMode;
+    transformStore.handleMode = mode;
+    if (mode === "perspective" && prev !== "perspective") {
+      const p = transformStore.params;
       transformStore.params = {
         ...p,
         perspectiveCorners: [
@@ -815,19 +1067,22 @@ export function TransformToolbar(): React.JSX.Element {
           { x: p.x + p.w, y: p.y + p.h },
           { x: p.x, y: p.y + p.h },
         ],
-      }
-    } else if (mode !== 'perspective' && prev === 'perspective') {
-      transformStore.params = { ...transformStore.params, perspectiveCorners: null }
+      };
+    } else if (mode !== "perspective" && prev === "perspective") {
+      transformStore.params = {
+        ...transformStore.params,
+        perspectiveCorners: null,
+      };
     }
-    transformStore.notify()
-  }, [])
+    transformStore.notify();
+  }, []);
 
   const setInterp = useCallback((interp: TransformInterpolation): void => {
-    transformStore.interpolation = interp
-    transformStore.notify()
-  }, [])
+    transformStore.interpolation = interp;
+    transformStore.notify();
+  }, []);
 
-  const isPerspective = handleMode === 'perspective'
+  const isPerspective = handleMode === "perspective";
 
   return (
     <div className={styles.toolbar}>
@@ -838,8 +1093,10 @@ export function TransformToolbar(): React.JSX.Element {
           type="number"
           className={styles.numInputNarrow}
           value={Math.round(params.x)}
-          onChange={e => commitX(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          onChange={(e) => commitX(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
         />
       </div>
       <div className={styles.group}>
@@ -848,8 +1105,10 @@ export function TransformToolbar(): React.JSX.Element {
           type="number"
           className={styles.numInputNarrow}
           value={Math.round(params.y)}
-          onChange={e => commitY(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          onChange={(e) => commitY(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
         />
       </div>
 
@@ -862,14 +1121,16 @@ export function TransformToolbar(): React.JSX.Element {
           type="number"
           className={styles.numInput}
           value={Math.round(params.w)}
-          onChange={e => commitW(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          onChange={(e) => commitW(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
           min={1}
         />
         <button
           className={aspectLocked ? styles.lockBtnLocked : styles.lockBtn}
           onClick={toggleLock}
-          title={aspectLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+          title={aspectLocked ? "Unlock aspect ratio" : "Lock aspect ratio"}
           type="button"
         >
           <LockIcon locked={aspectLocked} />
@@ -879,8 +1140,10 @@ export function TransformToolbar(): React.JSX.Element {
           type="number"
           className={styles.numInput}
           value={Math.round(params.h)}
-          onChange={e => commitH(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          onChange={(e) => commitH(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
           min={1}
         />
       </div>
@@ -889,7 +1152,16 @@ export function TransformToolbar(): React.JSX.Element {
 
       {/* Rotation */}
       <div className={styles.group}>
-        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" style={{ opacity: isPerspective ? 0.35 : 1 }}>
+        <svg
+          viewBox="0 0 12 12"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          style={{ opacity: isPerspective ? 0.35 : 1 }}
+        >
           <path d="M9.5 2.5A5 5 0 1 0 11 6" />
           <polyline points="11,2 11,6 7,6" />
         </svg>
@@ -897,8 +1169,10 @@ export function TransformToolbar(): React.JSX.Element {
           type="number"
           className={styles.numInputNarrow}
           value={parseFloat(params.rotation.toFixed(1))}
-          onChange={e => commitRotation(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          onChange={(e) => commitRotation(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
           disabled={isPerspective}
           step={0.1}
           min={-180}
@@ -914,7 +1188,7 @@ export function TransformToolbar(): React.JSX.Element {
       <select
         className={styles.selectInput}
         value={interpolation}
-        onChange={e => setInterp(e.target.value as TransformInterpolation)}
+        onChange={(e) => setInterp(e.target.value as TransformInterpolation)}
       >
         <option value="bilinear">Bilinear</option>
         <option value="nearest">Nearest Neighbour</option>
@@ -926,42 +1200,64 @@ export function TransformToolbar(): React.JSX.Element {
       {/* Mode toggles */}
       <div className={styles.modeGroup}>
         <button
-          className={handleMode === 'scale' ? styles.modeBtnActive : styles.modeBtn}
-          onClick={() => setMode('scale')}
+          className={
+            handleMode === "scale" ? styles.modeBtnActive : styles.modeBtn
+          }
+          onClick={() => setMode("scale")}
           type="button"
-        >Scale</button>
+        >
+          Scale
+        </button>
         <button
-          className={handleMode === 'perspective' ? styles.modeBtnActive : styles.modeBtn}
-          onClick={() => setMode('perspective')}
+          className={
+            handleMode === "perspective" ? styles.modeBtnActive : styles.modeBtn
+          }
+          onClick={() => setMode("perspective")}
           type="button"
-        >Perspective</button>
+        >
+          Perspective
+        </button>
         <button
-          className={handleMode === 'shear' ? styles.modeBtnActive : styles.modeBtn}
-          onClick={() => setMode('shear')}
+          className={
+            handleMode === "shear" ? styles.modeBtnActive : styles.modeBtn
+          }
+          onClick={() => setMode("shear")}
           type="button"
-        >Shear</button>
+        >
+          Shear
+        </button>
       </div>
 
       <div className={styles.spacer} />
 
       {/* Cancel / Apply */}
-      <button className={styles.cancelBtn} onClick={() => transformStore.triggerCancel()} type="button">
+      <button
+        className={styles.cancelBtn}
+        onClick={() => transformStore.triggerCancel()}
+        type="button"
+      >
         Cancel
       </button>
-      <button className={styles.applyBtn} onClick={() => transformStore.triggerApply()} type="button">
+      <button
+        className={styles.applyBtn}
+        onClick={() => transformStore.triggerApply()}
+        type="button"
+      >
         Apply
       </button>
     </div>
-  )
+  );
 }
 
 // ─── Options wrapper ──────────────────────────────────────────────────────────
 
-function TransformOptions(_props: { styles: ToolOptionsStyles }): React.JSX.Element {
-  return <TransformToolbar />
+function TransformOptions(_props: {
+  styles: ToolOptionsStyles;
+}): React.JSX.Element {
+  return <TransformToolbar />;
 }
 
 export const transformTool: ToolDefinition = {
   createHandler: createTransformHandler,
   Options: TransformOptions,
-}
+};

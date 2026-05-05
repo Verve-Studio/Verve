@@ -1,23 +1,27 @@
-import React from 'react'
-import { useAppContext } from '@/core/store/AppContext'
-import type { ColorVibranceAdjustmentLayer } from '@/types'
-import { ParentConnectorIcon } from '@/ux/windows/ToolWindowIcons'
-import styles from './ColorVibrancePanel.module.scss'
+import React from "react";
+import { useAppContext } from "@/core/store/AppContext";
+import type { ColorVibranceAdjustmentLayer } from "@/types";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
+import styles from "./ColorVibrancePanel.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ColorVibrancePanelProps {
-  layer: ColorVibranceAdjustmentLayer
-  parentLayerName: string
+  layer: ColorVibranceAdjustmentLayer;
+  parentLayerName: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ColorVibrancePanel({ layer, parentLayerName }: ColorVibrancePanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext()
-  const { vibrance, saturation } = layer.params
+export function ColorVibrancePanel({
+  layer,
+  parentLayerName,
+}: ColorVibrancePanelProps): React.JSX.Element {
+  const { dispatch } = useAppContext();
+  const { vibrance, saturation } = layer.params;
 
-  const pct = (v: number, min: number, max: number): string => String((v - min) / (max - min))
+  const pct = (v: number, min: number, max: number): string =>
+    String((v - min) / (max - min));
 
   return (
     <div className={styles.content}>
@@ -27,22 +31,42 @@ export function ColorVibrancePanel({ layer, parentLayerName }: ColorVibrancePane
           <input
             type="range"
             className={styles.track}
-            min={-100} max={100} step={1}
+            min={-100}
+            max={100}
+            step={1}
             value={vibrance}
-            style={{ '--pct': pct(vibrance, -100, 100) } as React.CSSProperties}
+            style={{ "--pct": pct(vibrance, -100, 100) } as React.CSSProperties}
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, vibrance: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: { ...layer.params, vibrance: Number(e.target.value) },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-100} max={100} step={1}
+          min={-100}
+          max={100}
+          step={1}
           value={vibrance}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, vibrance: Math.min(100, Math.max(-100, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    vibrance: Math.min(100, Math.max(-100, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -52,22 +76,47 @@ export function ColorVibrancePanel({ layer, parentLayerName }: ColorVibrancePane
           <input
             type="range"
             className={styles.track}
-            min={-100} max={100} step={1}
+            min={-100}
+            max={100}
+            step={1}
             value={saturation}
-            style={{ '--pct': pct(saturation, -100, 100) } as React.CSSProperties}
+            style={
+              { "--pct": pct(saturation, -100, 100) } as React.CSSProperties
+            }
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, saturation: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    saturation: Number(e.target.value),
+                  },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-100} max={100} step={1}
+          min={-100}
+          max={100}
+          step={1}
           value={saturation}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, saturation: Math.min(100, Math.max(-100, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    saturation: Math.min(100, Math.max(-100, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -79,7 +128,10 @@ export function ColorVibrancePanel({ layer, parentLayerName }: ColorVibrancePane
         <button
           className={styles.resetBtn}
           onClick={() =>
-            dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { vibrance: 0, saturation: 0 } } })
+            dispatch({
+              type: "UPDATE_ADJUSTMENT_LAYER",
+              payload: { ...layer, params: { vibrance: 0, saturation: 0 } },
+            })
           }
           title="Reset to defaults"
         >
@@ -87,5 +139,5 @@ export function ColorVibrancePanel({ layer, parentLayerName }: ColorVibrancePane
         </button>
       </div>
     </div>
-  )
+  );
 }

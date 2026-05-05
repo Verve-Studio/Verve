@@ -8,19 +8,19 @@
  * (see `electron/main/preferences.ts`). `set()` writes through asynchronously;
  * we don't await — the in-memory value is the source of truth at runtime.
  */
-import { useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from "react";
 
 export interface AppPreferences {
   /** Maximum total bytes the in-memory undo history is allowed to use. */
-  historyMemoryBytes: number
+  historyMemoryBytes: number;
   /**
    * Soft cap (bytes) on total tracked buffer + texture memory across the
    * whole app. Allocations exceeding it are rejected with an error.
    * Ignored when `bufferMemoryMaxOut` is true.
    */
-  bufferMemoryBytes: number
+  bufferMemoryBytes: number;
   /** When true, the buffer-memory cap is ignored — allocate until the OS fails. */
-  bufferMemoryMaxOut: boolean
+  bufferMemoryMaxOut: boolean;
   /**
    * Whether the system has unified memory (integrated GPU / Apple Silicon).
    * When true, GPU texture allocations count against the same cap as CPU
@@ -33,26 +33,26 @@ export interface AppPreferences {
    * (e.g. a Mac with an external GPU, or a Windows laptop with only
    * integrated Intel/AMD graphics).
    */
-  unifiedMemory: boolean
+  unifiedMemory: boolean;
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
-  historyMemoryBytes: 4 * 1024 * 1024 * 1024,  // 4 GB
-  bufferMemoryBytes: 8 * 1024 * 1024 * 1024,   // 8 GB
+  historyMemoryBytes: 4 * 1024 * 1024 * 1024, // 4 GB
+  bufferMemoryBytes: 8 * 1024 * 1024 * 1024, // 8 GB
   bufferMemoryMaxOut: false,
   // Auto-detected on first launch in `load()`; this is just the conservative
   // fallback used before that runs (treat as discrete to avoid over-capping).
   unifiedMemory: false,
-}
+};
 
 class PreferencesStore {
-  private value: AppPreferences = { ...DEFAULT_PREFERENCES }
-  private listeners = new Set<() => void>()
-  private loaded = false
+  private value: AppPreferences = { ...DEFAULT_PREFERENCES };
+  private listeners = new Set<() => void>();
+  private loaded = false;
 
   /** Snapshot of current preferences. Stable identity until a `set()`/`load()`. */
   get(): AppPreferences {
-    return this.value
+    return this.value;
   }
 
   /**
@@ -62,27 +62,27 @@ class PreferencesStore {
    */
   async load(): Promise<void> {
     try {
-      const fromDisk = await window.api.loadPreferences()
+      const fromDisk = await window.api.loadPreferences();
       // If `unifiedMemory` was never persisted (first launch / older config),
       // seed it from the host platform — macOS = unified, everything else
       // assumed discrete. The user can override this in Preferences.
-      const defaults = { ...DEFAULT_PREFERENCES }
+      const defaults = { ...DEFAULT_PREFERENCES };
       if (fromDisk.unifiedMemory === undefined) {
-        defaults.unifiedMemory = window.api.platform === 'darwin'
+        defaults.unifiedMemory = window.api.platform === "darwin";
       }
-      this.value = { ...defaults, ...fromDisk }
+      this.value = { ...defaults, ...fromDisk };
     } catch {
       this.value = {
         ...DEFAULT_PREFERENCES,
-        unifiedMemory: window.api.platform === 'darwin',
-      }
+        unifiedMemory: window.api.platform === "darwin",
+      };
     }
-    this.loaded = true
-    this.notify()
+    this.loaded = true;
+    this.notify();
   }
 
   isLoaded(): boolean {
-    return this.loaded
+    return this.loaded;
   }
 
   /**
@@ -91,27 +91,27 @@ class PreferencesStore {
    * Disk write failures are intentionally swallowed — the app stays usable.
    */
   set(patch: Partial<AppPreferences>): void {
-    this.value = { ...this.value, ...patch }
-    this.notify()
-    void window.api.savePreferences(this.value).catch(() => {})
+    this.value = { ...this.value, ...patch };
+    this.notify();
+    void window.api.savePreferences(this.value).catch(() => {});
   }
 
   subscribe(cb: () => void): () => void {
-    this.listeners.add(cb)
-    return () => this.listeners.delete(cb)
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
   }
 
   private notify(): void {
-    this.listeners.forEach(cb => cb())
+    this.listeners.forEach((cb) => cb());
   }
 }
 
-export const preferencesStore = new PreferencesStore()
+export const preferencesStore = new PreferencesStore();
 
 /** React hook: subscribe to the preferences store and re-render on change. */
 export function usePreferences(): AppPreferences {
   return useSyncExternalStore(
-    cb => preferencesStore.subscribe(cb),
+    (cb) => preferencesStore.subscribe(cb),
     () => preferencesStore.get(),
-  )
+  );
 }

@@ -1,56 +1,65 @@
-import React from 'react'
-import { useAppContext } from '@/core/store/AppContext'
-import type { OutlineAdjustmentLayer } from '@/types'
-import { ColorSwatch } from '@/ux/widgets/ColorSwatch/ColorSwatch'
-import { ParentConnectorIcon } from '@/ux/windows/ToolWindowIcons'
-import styles from './OutlineOptions.module.scss'
+import React from "react";
+import { useAppContext } from "@/core/store/AppContext";
+import type { OutlineAdjustmentLayer } from "@/types";
+import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
+import styles from "./OutlineOptions.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface OutlineOptionsProps {
-  layer:           OutlineAdjustmentLayer
-  parentLayerName: string
+  layer: OutlineAdjustmentLayer;
+  parentLayerName: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function rgbToHex(r: number, g: number, b: number): string {
-  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+  return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex)
-  if (!m) return null
-  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) }
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return null;
+  return {
+    r: parseInt(m[1], 16),
+    g: parseInt(m[2], 16),
+    b: parseInt(m[3], 16),
+  };
 }
 
 function pct(v: number, lo: number, hi: number): string {
-  return String((v - lo) / (hi - lo))
+  return String((v - lo) / (hi - lo));
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext()
-  const p = layer.params
+export function OutlineOptions({
+  layer,
+  parentLayerName,
+}: OutlineOptionsProps): React.JSX.Element {
+  const { dispatch } = useAppContext();
+  const p = layer.params;
 
   const update = (patch: Partial<typeof p>): void => {
-    dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...p, ...patch } } })
-  }
+    dispatch({
+      type: "UPDATE_ADJUSTMENT_LAYER",
+      payload: { ...layer, params: { ...p, ...patch } },
+    });
+  };
 
-  const hexValue = rgbToHex(p.color.r, p.color.g, p.color.b)
+  const hexValue = rgbToHex(p.color.r, p.color.g, p.color.b);
 
   return (
     <div className={styles.content}>
-
       {/* Color row */}
       <div className={styles.row}>
         <span className={styles.label}>Color</span>
         <ColorSwatch
           value={hexValue}
           onChange={(hex) => {
-            const rgb = hexToRgb(hex)
-            if (rgb) update({ color: { ...rgb, a: p.color.a } })
+            const rgb = hexToRgb(hex);
+            if (rgb) update({ color: { ...rgb, a: p.color.a } });
           }}
           title="Outline color"
         />
@@ -59,8 +68,8 @@ export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps):
           className={styles.hexInput}
           value={hexValue.toUpperCase()}
           onChange={(e) => {
-            const rgb = hexToRgb(e.target.value)
-            if (rgb) update({ color: { ...rgb, a: p.color.a } })
+            const rgb = hexToRgb(e.target.value);
+            if (rgb) update({ color: { ...rgb, a: p.color.a } });
           }}
           maxLength={7}
           spellCheck={false}
@@ -75,20 +84,24 @@ export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps):
           <input
             type="range"
             className={styles.track}
-            min={0} max={100} step={1}
+            min={0}
+            max={100}
+            step={1}
             value={p.opacity}
-            style={{ '--pct': pct(p.opacity, 0, 100) } as React.CSSProperties}
+            style={{ "--pct": pct(p.opacity, 0, 100) } as React.CSSProperties}
             onChange={(e) => update({ opacity: Number(e.target.value) })}
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={0} max={100} step={1}
+          min={0}
+          max={100}
+          step={1}
           value={p.opacity}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) update({ opacity: Math.min(100, Math.max(0, v)) })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v)) update({ opacity: Math.min(100, Math.max(0, v)) });
           }}
         />
         <span className={styles.unitLabel}>%</span>
@@ -101,20 +114,25 @@ export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps):
           <input
             type="range"
             className={styles.track}
-            min={1} max={100} step={1}
+            min={1}
+            max={100}
+            step={1}
             value={p.thickness}
-            style={{ '--pct': pct(p.thickness, 1, 100) } as React.CSSProperties}
+            style={{ "--pct": pct(p.thickness, 1, 100) } as React.CSSProperties}
             onChange={(e) => update({ thickness: Number(e.target.value) })}
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={1} max={100} step={1}
+          min={1}
+          max={100}
+          step={1}
           value={p.thickness}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) update({ thickness: Math.min(100, Math.max(1, Math.round(v))) })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              update({ thickness: Math.min(100, Math.max(1, Math.round(v))) });
           }}
         />
         <span className={styles.unitLabel}>px</span>
@@ -126,7 +144,11 @@ export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps):
         <select
           className={styles.positionSelect}
           value={p.position}
-          onChange={(e) => update({ position: e.target.value as 'outside' | 'inside' | 'center' })}
+          onChange={(e) =>
+            update({
+              position: e.target.value as "outside" | "inside" | "center",
+            })
+          }
         >
           <option value="outside">Outside</option>
           <option value="inside">Inside</option>
@@ -142,20 +164,24 @@ export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps):
           <input
             type="range"
             className={styles.track}
-            min={0} max={50} step={1}
+            min={0}
+            max={50}
+            step={1}
             value={p.softness}
-            style={{ '--pct': pct(p.softness, 0, 50) } as React.CSSProperties}
+            style={{ "--pct": pct(p.softness, 0, 50) } as React.CSSProperties}
             onChange={(e) => update({ softness: Number(e.target.value) })}
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={0} max={50} step={1}
+          min={0}
+          max={50}
+          step={1}
           value={p.softness}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) update({ softness: Math.min(50, Math.max(0, v)) })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v)) update({ softness: Math.min(50, Math.max(0, v)) });
           }}
         />
         <span className={styles.unitLabel}>px</span>
@@ -171,18 +197,20 @@ export function OutlineOptions({ layer, parentLayerName }: OutlineOptionsProps):
         </span>
         <button
           className={styles.resetBtn}
-          onClick={() => update({
-            color:     { r: 255, g: 0, b: 0, a: 255 },
-            opacity:   100,
-            thickness: 3,
-            position:  'outside',
-            softness:  0,
-          })}
+          onClick={() =>
+            update({
+              color: { r: 255, g: 0, b: 0, a: 255 },
+              opacity: 100,
+              thickness: 3,
+              position: "outside",
+              softness: 0,
+            })
+          }
           title="Reset to defaults"
         >
           Reset
         </button>
       </div>
     </div>
-  )
+  );
 }

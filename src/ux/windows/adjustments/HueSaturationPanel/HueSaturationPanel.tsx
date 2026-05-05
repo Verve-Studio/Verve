@@ -1,23 +1,27 @@
-import React from 'react'
-import { useAppContext } from '@/core/store/AppContext'
-import type { HueSaturationAdjustmentLayer } from '@/types'
-import { ParentConnectorIcon } from '@/ux/windows/ToolWindowIcons'
-import styles from './HueSaturationPanel.module.scss'
+import React from "react";
+import { useAppContext } from "@/core/store/AppContext";
+import type { HueSaturationAdjustmentLayer } from "@/types";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
+import styles from "./HueSaturationPanel.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface HueSaturationPanelProps {
-  layer: HueSaturationAdjustmentLayer
-  parentLayerName: string
+  layer: HueSaturationAdjustmentLayer;
+  parentLayerName: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function HueSaturationPanel({ layer, parentLayerName }: HueSaturationPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext()
-  const { hue, saturation, lightness } = layer.params
+export function HueSaturationPanel({
+  layer,
+  parentLayerName,
+}: HueSaturationPanelProps): React.JSX.Element {
+  const { dispatch } = useAppContext();
+  const { hue, saturation, lightness } = layer.params;
 
-  const pct = (v: number, min: number, max: number): string => String((v - min) / (max - min))
+  const pct = (v: number, min: number, max: number): string =>
+    String((v - min) / (max - min));
 
   return (
     <div className={styles.content}>
@@ -27,21 +31,41 @@ export function HueSaturationPanel({ layer, parentLayerName }: HueSaturationPane
           <input
             type="range"
             className={`${styles.track} ${styles.hueTrack}`}
-            min={-180} max={180} step={1}
+            min={-180}
+            max={180}
+            step={1}
             value={hue}
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, hue: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: { ...layer.params, hue: Number(e.target.value) },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-180} max={180} step={1}
+          min={-180}
+          max={180}
+          step={1}
           value={hue}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, hue: Math.min(180, Math.max(-180, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    hue: Math.min(180, Math.max(-180, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -51,22 +75,47 @@ export function HueSaturationPanel({ layer, parentLayerName }: HueSaturationPane
           <input
             type="range"
             className={styles.track}
-            min={-100} max={100} step={1}
+            min={-100}
+            max={100}
+            step={1}
             value={saturation}
-            style={{ '--pct': pct(saturation, -100, 100) } as React.CSSProperties}
+            style={
+              { "--pct": pct(saturation, -100, 100) } as React.CSSProperties
+            }
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, saturation: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    saturation: Number(e.target.value),
+                  },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-100} max={100} step={1}
+          min={-100}
+          max={100}
+          step={1}
           value={saturation}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, saturation: Math.min(100, Math.max(-100, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    saturation: Math.min(100, Math.max(-100, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -76,22 +125,47 @@ export function HueSaturationPanel({ layer, parentLayerName }: HueSaturationPane
           <input
             type="range"
             className={styles.track}
-            min={-100} max={100} step={1}
+            min={-100}
+            max={100}
+            step={1}
             value={lightness}
-            style={{ '--pct': pct(lightness, -100, 100) } as React.CSSProperties}
+            style={
+              { "--pct": pct(lightness, -100, 100) } as React.CSSProperties
+            }
             onChange={(e) =>
-              dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, lightness: Number(e.target.value) } } })
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    lightness: Number(e.target.value),
+                  },
+                },
+              })
             }
           />
         </div>
         <input
           type="number"
           className={styles.numInput}
-          min={-100} max={100} step={1}
+          min={-100}
+          max={100}
+          step={1}
           value={lightness}
           onChange={(e) => {
-            const v = e.target.valueAsNumber
-            if (!isNaN(v)) dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { ...layer.params, lightness: Math.min(100, Math.max(-100, Math.round(v))) } } })
+            const v = e.target.valueAsNumber;
+            if (!isNaN(v))
+              dispatch({
+                type: "UPDATE_ADJUSTMENT_LAYER",
+                payload: {
+                  ...layer,
+                  params: {
+                    ...layer.params,
+                    lightness: Math.min(100, Math.max(-100, Math.round(v))),
+                  },
+                },
+              });
           }}
         />
       </div>
@@ -103,7 +177,13 @@ export function HueSaturationPanel({ layer, parentLayerName }: HueSaturationPane
         <button
           className={styles.resetBtn}
           onClick={() =>
-            dispatch({ type: 'UPDATE_ADJUSTMENT_LAYER', payload: { ...layer, params: { hue: 0, saturation: 0, lightness: 0 } } })
+            dispatch({
+              type: "UPDATE_ADJUSTMENT_LAYER",
+              payload: {
+                ...layer,
+                params: { hue: 0, saturation: 0, lightness: 0 },
+              },
+            })
           }
           title="Reset to defaults"
         >
@@ -111,5 +191,5 @@ export function HueSaturationPanel({ layer, parentLayerName }: HueSaturationPane
         </button>
       </div>
     </div>
-  )
+  );
 }

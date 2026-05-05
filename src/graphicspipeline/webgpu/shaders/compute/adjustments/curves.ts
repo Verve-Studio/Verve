@@ -1,2 +1,2 @@
-import CURVES_COMPUTE from './wgsl/curves.wgsl?raw'
-export { CURVES_COMPUTE }
+import CURVES_COMPUTE from "./wgsl/curves.wgsl?raw";
+export { CURVES_COMPUTE };

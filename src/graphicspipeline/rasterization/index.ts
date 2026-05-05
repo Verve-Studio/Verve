@@ -1,11 +1,11 @@
-export { rasterizeDocument } from './UnifiedRasterPipeline'
+export { rasterizeDocument } from "./UnifiedRasterPipeline";
 export type {
   RasterBackend,
   RasterReason,
   RasterizeDocumentRequest,
   RasterizeDocumentResult,
-} from './types'
+} from "./types";
 export {
   RasterizationExecutionError,
   RasterizationUnavailableError,
-} from './types'
+} from "./types";

@@ -20,16 +20,20 @@ export function exportPng(
   pixels: Uint8Array,
   width: number,
   height: number,
-  _options: PngExportOptions = {}
+  _options: PngExportOptions = {},
 ): string {
-  const tmp = document.createElement('canvas')
-  tmp.width = width
-  tmp.height = height
-  const ctx = tmp.getContext('2d')!
+  const tmp = document.createElement("canvas");
+  tmp.width = width;
+  tmp.height = height;
+  const ctx = tmp.getContext("2d")!;
   ctx.putImageData(
-    new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), width, height),
+    new ImageData(
+      new Uint8ClampedArray(pixels.buffer as ArrayBuffer),
+      width,
+      height,
+    ),
     0,
-    0
-  )
-  return tmp.toDataURL('image/png')
+    0,
+  );
+  return tmp.toDataURL("image/png");
 }

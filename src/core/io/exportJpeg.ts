@@ -9,12 +9,12 @@ export interface JpegExportOptions {
    * Encode quality in the 0–100 range (maps to 0.0–1.0 internally).
    * Default: 92.
    */
-  quality: number
+  quality: number;
   /**
    * CSS colour used as the background for transparent/semi-transparent pixels.
    * Default: '#ffffff'.
    */
-  background: string
+  background: string;
 }
 
 /**
@@ -33,29 +33,33 @@ export function exportJpeg(
   pixels: Uint8Array,
   width: number,
   height: number,
-  options: JpegExportOptions = { quality: 92, background: '#ffffff' }
+  options: JpegExportOptions = { quality: 92, background: "#ffffff" },
 ): string {
   // Draw RGBA pixels onto an intermediate canvas so that semi-transparent
   // areas are preserved before compositing.
-  const src = document.createElement('canvas')
-  src.width = width
-  src.height = height
-  const srcCtx = src.getContext('2d')!
+  const src = document.createElement("canvas");
+  src.width = width;
+  src.height = height;
+  const srcCtx = src.getContext("2d")!;
   srcCtx.putImageData(
-    new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), width, height),
+    new ImageData(
+      new Uint8ClampedArray(pixels.buffer as ArrayBuffer),
+      width,
+      height,
+    ),
     0,
-    0
-  )
+    0,
+  );
 
   // Composite over the chosen background using standard alpha blending.
-  const dst = document.createElement('canvas')
-  dst.width = width
-  dst.height = height
-  const dstCtx = dst.getContext('2d')!
-  dstCtx.fillStyle = options.background
-  dstCtx.fillRect(0, 0, width, height)
-  dstCtx.drawImage(src, 0, 0)
+  const dst = document.createElement("canvas");
+  dst.width = width;
+  dst.height = height;
+  const dstCtx = dst.getContext("2d")!;
+  dstCtx.fillStyle = options.background;
+  dstCtx.fillRect(0, 0, width, height);
+  dstCtx.drawImage(src, 0, 0);
 
-  const quality = Math.max(0, Math.min(100, options.quality)) / 100
-  return dst.toDataURL('image/jpeg', quality)
+  const quality = Math.max(0, Math.min(100, options.quality)) / 100;
+  return dst.toDataURL("image/jpeg", quality);
 }
