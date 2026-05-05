@@ -9,11 +9,6 @@ import {
   createVertexBuffer,
   writeUniformBuffer,
 } from '../utils'
-import {
-  COMPOSITE_SHADER,
-  CHECKER_SHADER,
-  HDR_BLIT_SHADER,
-} from '../shaders/shaders'
 import { AdjustmentEncoder } from '../AdjustmentEncoder'
 import { initFilterCompute } from '../compute/filterCompute'
 import { initGrabCutCompute } from '../compute/grabcutCompute'
@@ -24,6 +19,16 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from '@/core/store/memoryStore'
+import { serializeAdjOp, computeAdjGroupParamsKey } from './cacheKeys'
+import { QUAD_POSITIONS, QUAD_UVS } from './quadGeometry'
+import {
+  createCompositePipeline,
+  createCheckerPipeline,
+  createHdrBlitPipeline,
+} from './pipelineFactories'
+import { unpackRows, unpackF32Rows } from './readbackUnpack'
+import { expandIndicesToRgba8 } from './indexedColorExpand'
+import { encodeClearTexture, copyOutsideRect } from './copyEncoders'
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
@@ -42,42 +47,6 @@ export { BLEND_MODE_INDEX, WebGPUUnavailableError } from '../types'
 import type { GpuLayer, RenderPlanEntry, AdjustmentRenderOp } from '../types'
 import { BLEND_MODE_INDEX, WebGPUUnavailableError } from '../types'
 import type { PixelFormat, RGBAColor } from '@/types'
-
-// ─── Render cache helpers ─────────────────────────────────────────────────────
-
-/**
- * Produces a stable string key for a single AdjustmentRenderOp, excluding GPU
- * objects (`selMaskLayer`, `luts`) and substituting content-tracked surrogates.
- * Used to detect params changes for the adj-group output cache.
- */
-function serializeAdjOp(op: AdjustmentRenderOp): string {
-  const parts: string[] = [`${op.kind}|${op.layerId}|${op.visible ? 1 : 0}`]
-  if (op.selMaskLayer) parts.push(`selV:${op.selMaskLayer.contentVersion}`)
-  const record = op as Record<string, unknown>
-  for (const [k, v] of Object.entries(record)) {
-    if (k === 'kind' || k === 'layerId' || k === 'visible' || k === 'selMaskLayer' || k === 'luts') continue
-    if (v instanceof Float32Array) {
-      parts.push(`${k}:${Array.from(v).join(',')}`)
-    } else if (typeof v === 'object' && v !== null) {
-      try { parts.push(`${k}:${JSON.stringify(v)}`) } catch { parts.push(`${k}:[object]`) }
-    } else {
-      parts.push(`${k}:${v}`)
-    }
-  }
-  return parts.join('~')
-}
-
-/** Stable key for a list of adjustment ops — used as the params portion of the group cache key. */
-function computeAdjGroupParamsKey(adjustments: AdjustmentRenderOp[]): string {
-  return adjustments.map(serializeAdjOp).join('§')
-}
-
-// ─── Full-canvas quad (two triangles) ─────────────────────────────────────────
-
-const QUAD_POSITIONS = (w: number, h: number): Float32Array =>
-  new Float32Array([0, 0, w, 0, 0, h, 0, h, w, 0, w, h])
-
-const QUAD_UVS = new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1])
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
@@ -524,9 +493,9 @@ export class WebGPURenderer {
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       ],
     })
-    this.compositePipeline = this.createCompositePipeline(this.internalFormat, this.compositeBGL)
-    this.checkerPipeline   = this.createCheckerPipeline(canvasFormat)
-    this.hdrBlitPipeline   = this.createHdrBlitPipeline(canvasFormat, this.hdrBlitBGL)
+    this.compositePipeline = createCompositePipeline(device, this.internalFormat, this.compositeBGL)
+    this.checkerPipeline   = createCheckerPipeline(device, canvasFormat)
+    this.hdrBlitPipeline   = createHdrBlitPipeline(device, canvasFormat, this.hdrBlitBGL)
     this.hdrUniformBuffer  = createUniformBuffer(device, 16)
     // Initialize: exposureLinear=1.0, isFp32=0.0, operator=1 (Reinhard), _pad=0
     const initData = new ArrayBuffer(16)
@@ -550,82 +519,13 @@ export class WebGPURenderer {
 
   get internalTextureFormat(): GPUTextureFormat { return this.internalFormat }
 
-  // ─── Pipeline factories ─────────────────────────────────────────────────────
+  // ─── Texture factory ────────────────────────────────────────────────────────
 
   private createPingPongTex(w: number, h: number, usage: GPUTextureUsageFlags): GPUTexture {
     return createTrackedTexture(this.device, {
       size: { width: w, height: h },
       format: this.internalFormat,
       usage,
-    })
-  }
-
-  private createCompositePipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
-    const module = this.device.createShaderModule({ code: COMPOSITE_SHADER })
-    return this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
-      vertex: {
-        module,
-        entryPoint: 'vs_composite',
-        buffers: [
-          { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
-        ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fs_composite',
-        targets: [{ format }],
-      },
-      primitive: { topology: 'triangle-list' },
-    })
-  }
-
-  private createCheckerPipeline(format: GPUTextureFormat): GPURenderPipeline {
-    const module = this.device.createShaderModule({ code: CHECKER_SHADER })
-    return this.device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module,
-        entryPoint: 'vs_checker',
-        buffers: [
-          { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
-        ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fs_checker',
-        targets: [{ format }],
-      },
-      primitive: { topology: 'triangle-list' },
-    })
-  }
-
-  private createHdrBlitPipeline(format: GPUTextureFormat, bgl: GPUBindGroupLayout): GPURenderPipeline {
-    const module = this.device.createShaderModule({ code: HDR_BLIT_SHADER })
-    return this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
-      vertex: {
-        module,
-        entryPoint: 'vs_blit',
-        buffers: [
-          { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
-        ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fs_blit',
-        targets: [{
-          format,
-          blend: {
-            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          },
-        }],
-      },
-      primitive: { topology: 'triangle-list' },
     })
   }
 
@@ -657,7 +557,7 @@ export class WebGPURenderer {
     layer.contentVersion++
 
     if (layer.format === 'indexed8') {
-      const expanded = this.expandIndicesToRgba8(layer.data as Uint8Array, palette ?? [])
+      const expanded = expandIndicesToRgba8(layer.data as Uint8Array, palette ?? [])
       uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, expanded)
       this.unionFrameDirty(layer.offsetX, layer.offsetY, layer.layerWidth, layer.layerHeight)
       return
@@ -686,22 +586,6 @@ export class WebGPURenderer {
       uploadTextureData(this.device, layer.texture, layer.layerWidth, layer.layerHeight, layer.data as Uint8Array)
       this.unionFrameDirty(layer.offsetX, layer.offsetY, layer.layerWidth, layer.layerHeight)
     }
-  }
-
-  private expandIndicesToRgba8(indices: Uint8Array, palette: readonly RGBAColor[]): Uint8Array {
-    const out = new Uint8Array(indices.length * 4)
-    for (let i = 0; i < indices.length; i++) {
-      const idx = indices[i]
-      if (idx < palette.length) {
-        const c = palette[idx]
-        out[i * 4]     = c.r
-        out[i * 4 + 1] = c.g
-        out[i * 4 + 2] = c.b
-        out[i * 4 + 3] = c.a
-      }
-      // else: idx >= palette.length → [0,0,0,0] (already zero from new Uint8Array)
-    }
-    return out
   }
 
   replaceLayerData(
@@ -976,7 +860,7 @@ export class WebGPURenderer {
         usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
       })
       this.pendingDestroyTextures.push(zeroTex)
-      this.encodeClearTexture(encoder, zeroTex)
+      encodeClearTexture(encoder, zeroTex)
       encoder.copyTextureToTexture(
         { texture: zeroTex },
         { texture: this.pingTex, origin: { x: dirty.x, y: dirty.y } },
@@ -1224,8 +1108,8 @@ export class WebGPURenderer {
     await readbuf.mapAsync(GPUMapMode.READ)
     const raw = readbuf.getMappedRange()
     const result = this.internalFormat === 'rgba32float'
-      ? this.unpackF32Rows(new Float32Array(raw), w, h, alignedBpr / 4)
-      : this.unpackRows(new Uint8Array(raw), w, h, alignedBpr)
+      ? unpackF32Rows(new Float32Array(raw), w, h, alignedBpr / 4)
+      : unpackRows(new Uint8Array(raw), w, h, alignedBpr)
     readbuf.unmap()
     readbuf.destroy()
     return result
@@ -1246,7 +1130,7 @@ export class WebGPURenderer {
     const encoder = device.createCommandEncoder()
 
     // Clear dst; src (groupPongTex) needs no clearing — only written before being read
-    this.encodeClearTexture(encoder, this.groupPingTex)
+    encodeClearTexture(encoder, this.groupPingTex)
 
     let srcTex = this.groupPongTex
     let dstTex = this.groupPingTex
@@ -1276,8 +1160,8 @@ export class WebGPURenderer {
     await readbuf.mapAsync(GPUMapMode.READ)
     const raw = readbuf.getMappedRange()
     const result: Uint8Array | Float32Array = this.internalFormat === 'rgba32float'
-      ? this.unpackF32Rows(new Float32Array(raw), w, h, alignedBpr / 4)
-      : this.unpackRows(new Uint8Array(raw), w, h, alignedBpr)
+      ? unpackF32Rows(new Float32Array(raw), w, h, alignedBpr / 4)
+      : unpackRows(new Uint8Array(raw), w, h, alignedBpr)
     readbuf.unmap()
     readbuf.destroy()
     return result
@@ -1285,35 +1169,13 @@ export class WebGPURenderer {
 
   // ─── Plan execution ─────────────────────────────────────────────────────────
 
-  /** Remove per-row GPU alignment padding and return a tightly-packed RGBA buffer. */
-  private unpackRows(src: Uint8Array, w: number, h: number, alignedBpr: number): Uint8Array {
-    const packedBpr = w * 4
-    if (alignedBpr === packedBpr) return src.slice()
-    const out = new Uint8Array(packedBpr * h)
-    for (let row = 0; row < h; row++) {
-      out.set(src.subarray(row * alignedBpr, row * alignedBpr + packedBpr), row * packedBpr)
-    }
-    return out
-  }
-
-  /** Remove per-row GPU alignment padding for float32 readback and return a tightly-packed RGBA float buffer. */
-  private unpackF32Rows(src: Float32Array, w: number, h: number, alignedStride: number): Float32Array {
-    const packedStride = w * 4
-    if (alignedStride === packedStride) return src.slice()
-    const out = new Float32Array(packedStride * h)
-    for (let row = 0; row < h; row++) {
-      out.set(src.subarray(row * alignedStride, row * alignedStride + packedStride), row * packedStride)
-    }
-    return out
-  }
-
   private encodePlanToComposite(
     encoder: GPUCommandEncoder,
     plan: RenderPlanEntry[],
   ): GPUTexture {
     this.compositeBufferIndex = 0
-    this.encodeClearTexture(encoder, this.pingTex)
-    this.encodeClearTexture(encoder, this.pongTex)
+    encodeClearTexture(encoder, this.pingTex)
+    encodeClearTexture(encoder, this.pongTex)
     const { src } = this.encodeSubPlan(encoder, plan, this.pongTex, this.pingTex, '', true)
     return src
   }
@@ -1379,8 +1241,8 @@ export class WebGPURenderer {
           // Isolated: allocate a fresh ping-pong pair for this group.
           const iso1 = this.allocateTempGroupTex()
           const iso2 = this.allocateTempGroupTex()
-          this.encodeClearTexture(encoder, iso1)
-          this.encodeClearTexture(encoder, iso2)
+          encodeClearTexture(encoder, iso1)
+          encodeClearTexture(encoder, iso2)
           const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
           if (child.srcIsEmpty) continue
           // Composite the isolated result into the parent context.
@@ -1494,7 +1356,7 @@ export class WebGPURenderer {
               usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
             })
             this.pendingDestroyTextures.push(zeroTex)
-            this.encodeClearTexture(encoder, zeroTex)
+            encodeClearTexture(encoder, zeroTex)
             encoder.copyTextureToTexture(
               { texture: zeroTex },
               { texture: isoA, origin: { x: dirty.x, y: dirty.y } },
@@ -1527,8 +1389,8 @@ export class WebGPURenderer {
         // Cache miss — composite all children into an isolated texture pair.
         const iso1 = this.allocateTempGroupTex()
         const iso2 = this.allocateTempGroupTex()
-        this.encodeClearTexture(encoder, iso1)
-        this.encodeClearTexture(encoder, iso2)
+        encodeClearTexture(encoder, iso1)
+        encodeClearTexture(encoder, iso2)
         const child = this.encodeSubPlan(encoder, entry.children, iso2, iso1, '', true)
 
         // Apply per-composite adjustments to the flattened result.
@@ -1536,8 +1398,8 @@ export class WebGPURenderer {
         compositeSrc = child.src
         if (entry.adjustments.length > 0) {
           // Borrow the shared group ping-pong textures for the adjustment passes.
-          this.encodeClearTexture(encoder, this.groupPingTex)
-          this.encodeClearTexture(encoder, this.groupPongTex)
+          encodeClearTexture(encoder, this.groupPingTex)
+          encodeClearTexture(encoder, this.groupPongTex)
           encoder.copyTextureToTexture(
             { texture: compositeSrc },
             { texture: this.groupPongTex },
@@ -1815,82 +1677,6 @@ export class WebGPURenderer {
     return tex
   }
 
-  private encodeClearTexture(encoder: GPUCommandEncoder, texture: GPUTexture): void {
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: texture.createView(),
-        loadOp: 'clear',
-        clearValue: { r: 0, g: 0, b: 0, a: 0 },
-        storeOp: 'store',
-      }],
-    })
-    pass.end()
-  }
-
-  /**
-   * Copy from src to dst only the four strips OUTSIDE the rect (rx, ry, rw, rh)
-   * within the canvas (cw × ch). Used by encodeCompositeLayer so the subsequent
-   * composite render pass (which writes only the rect) ends up with correct dst
-   * content everywhere, with bandwidth cost proportional to (canvas - rect),
-   * not the full canvas.
-   *
-   * Layout (rect = R inside canvas C):
-   *   ┌─────top─────┐
-   *   ├──┬───────┬──┤
-   *   │L │   R   │ R│
-   *   ├──┴───────┴──┤
-   *   └────bottom───┘
-   */
-  private copyOutsideRect(
-    encoder: GPUCommandEncoder,
-    src: GPUTexture, dst: GPUTexture,
-    rx: number, ry: number, rw: number, rh: number,
-    cw: number, ch: number,
-  ): void {
-    // Clamp rect to canvas — defensive against out-of-canvas layer rects.
-    const x0 = Math.max(0, rx)
-    const y0 = Math.max(0, ry)
-    const x1 = Math.min(cw, rx + rw)
-    const y1 = Math.min(ch, ry + rh)
-    if (x0 >= x1 || y0 >= y1) {
-      // Rect is outside or empty — preserve everything.
-      encoder.copyTextureToTexture({ texture: src }, { texture: dst }, { width: cw, height: ch })
-      return
-    }
-    // Top strip: full width, rows [0, y0)
-    if (y0 > 0) {
-      encoder.copyTextureToTexture(
-        { texture: src, origin: { x: 0, y: 0 } },
-        { texture: dst, origin: { x: 0, y: 0 } },
-        { width: cw, height: y0 },
-      )
-    }
-    // Bottom strip: full width, rows [y1, ch)
-    if (y1 < ch) {
-      encoder.copyTextureToTexture(
-        { texture: src, origin: { x: 0, y: y1 } },
-        { texture: dst, origin: { x: 0, y: y1 } },
-        { width: cw, height: ch - y1 },
-      )
-    }
-    // Left strip: cols [0, x0), rows [y0, y1)
-    if (x0 > 0) {
-      encoder.copyTextureToTexture(
-        { texture: src, origin: { x: 0, y: y0 } },
-        { texture: dst, origin: { x: 0, y: y0 } },
-        { width: x0, height: y1 - y0 },
-      )
-    }
-    // Right strip: cols [x1, cw), rows [y0, y1)
-    if (x1 < cw) {
-      encoder.copyTextureToTexture(
-        { texture: src, origin: { x: x1, y: y0 } },
-        { texture: dst, origin: { x: x1, y: y0 } },
-        { width: cw - x1, height: y1 - y0 },
-      )
-    }
-  }
-
   private encodeCheckerboard(encoder: GPUCommandEncoder, view: GPUTextureView): void {
     // Uses pre-allocated checkerUniformBuf + checkerBindGroup (static, never change)
     const pass = encoder.beginRenderPass({
@@ -2023,7 +1809,7 @@ export class WebGPURenderer {
         )
       }
     } else if (!srcIsEmpty) {
-      this.copyOutsideRect(encoder, srcTex, dstTex, ox, oy, lw, lh, w, h)
+      copyOutsideRect(encoder, srcTex, dstTex, ox, oy, lw, lh, w, h)
     }
 
     // Step 2: Composite the layer's texture over its sub-rect
@@ -2150,8 +1936,8 @@ export class WebGPURenderer {
     encoder: GPUCommandEncoder,
     entry: Extract<RenderPlanEntry, { kind: 'adjustment-group' }>,
   ): GPUTexture {
-    this.encodeClearTexture(encoder, this.groupPingTex)
-    this.encodeClearTexture(encoder, this.groupPongTex)
+    encodeClearTexture(encoder, this.groupPingTex)
+    encodeClearTexture(encoder, this.groupPongTex)
 
     let srcTex = this.groupPongTex
     let dstTex = this.groupPingTex
