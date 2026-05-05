@@ -51,6 +51,24 @@ function createDodgeBurnHandler(opts: typeof dodgeOptions, sign: 1 | -1): () => 
         sel,
         origData ?? undefined,
       )
+
+      // Restrict the GPU upload to the just-touched region — without this
+      // the whole layer texture is DMA'd on every pointer event.
+      // (Tiled mode isn't supported by this tool, so no wrap edge case.)
+      const padR = Math.ceil(radius) + 2
+      const lx = Math.max(0, Math.floor(Math.min(x0, x1) - layer.offsetX) - padR)
+      const ly = Math.max(0, Math.floor(Math.min(y0, y1) - layer.offsetY) - padR)
+      const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(x0, x1) - layer.offsetX) + padR + 1)
+      const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(y0, y1) - layer.offsetY) + padR + 1)
+      if (layer.dirtyRect === null) {
+        layer.dirtyRect = { lx, ly, rx, ry }
+      } else {
+        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
+        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
+        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
+        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
+      }
+
       renderer.flushLayer(layer)
       render(layers)
     }
