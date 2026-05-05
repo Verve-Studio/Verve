@@ -160,6 +160,7 @@ function createBrushHandler(): ToolHandler {
 
   return {
     onPointerDown({ x, y, pressure, timeStamp }: ToolPointerPos, ctx: ToolContext) {
+      ctx.renderer.strokeStart()
       touched        = new Map()
       smoothSpeed    = 0
       smoothPressure = pressure  // seed EMA at actual pen-down pressure — no initial lag
@@ -238,6 +239,7 @@ function createBrushHandler(): ToolHandler {
       smoothSpeed  = 0
       prevSize     = brushOptions.size
       prevOpacity  = brushOptions.opacity
+      ctx.renderer.strokeEnd()
     },
   }
 }

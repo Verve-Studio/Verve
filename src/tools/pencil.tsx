@@ -573,6 +573,7 @@ function createPencilHandler(): ToolHandler {
 
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
+      ctx.renderer.strokeStart()
       _renderer = ctx.renderer
       _layer    = ctx.layer
       touched = new Map()
@@ -766,6 +767,7 @@ function createPencilHandler(): ToolHandler {
         strokeIndex = null
         indexedTouched = null
         lastPx = null; ppPrev = null; ppPending = null
+        ctx.renderer.strokeEnd()
         return
       }
       if (pencilOptions.size === 1 || pencilOptions.pixelBrush) {
@@ -783,6 +785,7 @@ function createPencilHandler(): ToolHandler {
       lastRendered = null; lastCtrl = null
       lastPx = null; ppPrev = null; ppPending = null
       touched = null
+      ctx.renderer.strokeEnd()
     },
   }
 }

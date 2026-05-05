@@ -136,6 +136,7 @@ function createEraserHandler(): ToolHandler {
 
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
+      ctx.renderer.strokeStart()
       touched      = new Map()
       stabX = x; stabY = y
       lastRendered = { x, y }
@@ -187,6 +188,7 @@ function createEraserHandler(): ToolHandler {
       lastRendered = null
       lastCtrl     = null
       touched      = null
+      ctx.renderer.strokeEnd()
     },
   }
 }

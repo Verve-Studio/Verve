@@ -107,7 +107,11 @@ export const ADJUSTMENT_REGISTRY = [
       highlights:  0,
       saturation:  50,
       hue:         50,
-      lumMix:      100,
+      // 0 = corrected luminance flows through (mid-detail/contrast/shadows/
+      // highlights actually visible). 100 = preserve original luminance,
+      // i.e. colour-only grading. Default to 0 so the luminance sliders
+      // aren't no-ops out of the box.
+      lumMix:      0,
     },
     group: 'color-adjustments',
   },

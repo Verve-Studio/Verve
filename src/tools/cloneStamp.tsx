@@ -104,6 +104,8 @@ function createCloneStampHandler(): ToolHandler {
 
       if (!cloneStampStore.source) return
 
+      ctx.renderer.strokeStart()
+
       const source = cloneStampStore.source
 
       if (cloneStampOptions.aligned) {
@@ -170,6 +172,7 @@ function createCloneStampHandler(): ToolHandler {
       sourceBuffer = null
       sourceBounds = null
       isStrokeReady = false
+      ctx.renderer.strokeEnd()
     },
 
     onHover() {

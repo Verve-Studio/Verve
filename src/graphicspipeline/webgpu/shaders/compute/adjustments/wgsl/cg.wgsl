@@ -22,6 +22,26 @@ struct MaskFlags {
 }
 
 
+// Apply a luminance change while keeping the result well-behaved at all input
+// luminances. The naïve approach `rgb * (newLum / oldLum)` preserves hue
+// exactly but explodes near black: a tiny denominator turns into a huge
+// multiplier and amplifies whatever noise is in the shadows. Pure additive
+// shift is the opposite: stable everywhere but desaturates colourful pixels.
+//
+// Smoothly mix between the two based on the input luminance so the ratio
+// rescale dominates in mids/highs (where it's hue-preserving and well-defined)
+// and the additive shift takes over in deep shadows (where ratio would
+// amplify noise). The transition window 2%..10% is below the threshold where
+// most images have meaningful hue information, so the desaturation in the
+// additive region is barely visible.
+fn applyLumShift(rgb: vec3f, oldLum: f32, newLum: f32) -> vec3f {
+  let delta    = newLum - oldLum;
+  let added    = rgb + vec3f(delta);
+  let scaled   = rgb * (newLum / max(oldLum, 0.001));
+  let ratioW   = smoothstep(0.02, 0.1, oldLum);
+  return clamp(mix(added, scaled, ratioW), vec3f(0.0), vec3f(1.0));
+}
+
 fn rgb2hsl(c: vec3f) -> vec3f {
   let maxC  = max(c.r, max(c.g, c.b));
   let minC  = min(c.r, min(c.g, c.b));
@@ -119,31 +139,48 @@ fn fs_color_grading(in: AdjVertOut) -> @location(0) vec4<f32> {
   rgb += offRGB;
   rgb = clamp(rgb, vec3f(0.0), vec3f(1.0));
 
+  // Pivot defines the tonal mid-point used by every luminance-region stage
+  // (Contrast, Mid/Detail, Shadows/Highlights) — not just Contrast. Setting
+  // pivot to e.g. 0.435 (standard log mid-grey) makes them all centre on
+  // that point, so the grading is consistent for log/scene-referred footage.
+  // Guarded against pivot=0 or 1 to avoid divide-by-zero in the Mid/Detail
+  // remap below; the guard is also applied to Contrast for consistency.
+  let pivot   = clamp(params.pivot, 0.001, 0.999);
+
   // Stage 3: Contrast (luma-based to preserve hue/saturation)
-  // Apply contrast as a luminance scale around the pivot point, then ratio-scale
-  // RGB channels to match — prevents per-channel clipping from shifting hue.
-  let lumC = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-  let lumCNew = clamp((lumC - params.pivot) * params.contrast + params.pivot, 0.0, 1.0);
-  if (lumC > 0.0001) { rgb = clamp(rgb * (lumCNew / lumC), vec3f(0.0), vec3f(1.0)); }
+  // Apply contrast as a luminance scale around the pivot point, then shift
+  // RGB to match — applyLumShift prevents the ratio rescale from amplifying
+  // noise in deep shadows when contrast pushes blacks below the pivot.
+  let lumC    = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+  let lumCNew = clamp((lumC - pivot) * params.contrast + pivot, 0.0, 1.0);
+  rgb = applyLumShift(rgb, lumC, lumCNew);
 
-  // Stage 4: Mid/Detail — uniformly lifts or lowers the midtone range without
-  // affecting pure black or white. wMid1 peaks at 1.0 when lum=0.5 and falls
-  // smoothly to 0 at lum=0 and lum=1, so the adjustment is centred on grey.
-  let lum1     = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-  let wMid1    = 4.0 * lum1 * (1.0 - lum1);
-  let lum1New  = clamp(lum1 + (params.midDetail / 100.0) * wMid1, 0.0, 1.0);
-  if (lum1 > 0.0001) { rgb = clamp(rgb * (lum1New / lum1), vec3f(0.0), vec3f(1.0)); }
-  else { rgb = vec3f(lum1New); }
+  // Stage 4: Mid/Detail — symmetric bump that peaks at lum=pivot and falls to
+  // zero at both lum=0 and lum=1. Built from a piecewise-linear remap of
+  // luminance into [0,1] with pivot mapped to 0.5, then a parabola
+  // 4·t·(1−t). The 0.5 scale bounds the additive shift to ±0.5 so the
+  // applyLumShift ratio rescale doesn't blow mids to white at the extremes.
+  let lum1    = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+  let t1      = select(
+    lum1 * 0.5 / pivot,
+    0.5 + (lum1 - pivot) * 0.5 / (1.0 - pivot),
+    lum1 >= pivot,
+  );
+  let wMid1   = 4.0 * t1 * (1.0 - t1);
+  let lum1New = clamp(lum1 + (params.midDetail / 100.0) * wMid1 * 0.5, 0.0, 1.0);
+  rgb = applyLumShift(rgb, lum1, lum1New);
 
-  // Stage 5: Shadows / Highlights (luma-based to preserve hue)
-  // Compute target luminance from the additive delta, then ratio-scale RGB channels
-  // to reach it — prevents per-channel clipping from shifting hue into pure primaries.
+  // Stage 5: Shadows / Highlights — additive lum shifts weighted by tone
+  // region. Region split happens at pivot rather than a fixed 0.5 so the
+  // boundary follows the user's chosen mid-tone. applyLumShift translates
+  // the new luminance back into RGB without ratio amplification at deep
+  // blacks (which would otherwise turn shadow noise into a stippled mess
+  // at extreme slider values).
   let lum2    = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-  let wSh     = 1.0 - smoothstep(0.0, 0.5, lum2);
-  let wHl     = smoothstep(0.5, 1.0, lum2);
+  let wSh     = 1.0 - smoothstep(0.0, pivot, lum2);
+  let wHl     = smoothstep(pivot, 1.0, lum2);
   let lum2New = clamp(lum2 + (params.shadows / 100.0) * 0.5 * wSh + (params.highlights / 100.0) * 0.5 * wHl, 0.0, 1.0);
-  if (lum2 > 0.0001) { rgb = clamp(rgb * (lum2New / lum2), vec3f(0.0), vec3f(1.0)); }
-  else { rgb = vec3f(lum2New); }
+  rgb = applyLumShift(rgb, lum2, lum2New);
 
   // Stage 6-7: Saturation + Hue
   var hsl = rgb2hsl(rgb);
@@ -154,15 +191,24 @@ fn fs_color_grading(in: AdjVertOut) -> @location(0) vec4<f32> {
   rgb = hsl2rgb(hsl);
 
   // Stage 8: Color Boost (vibrance)
+  // Skip on essentially-grey pixels: rgb2hsl returns hue=0 (red) when
+  // saturation is zero, so boosting a fully grey pixel would convert it to
+  // red rather than leaving it grey.
   var hsl2 = rgb2hsl(rgb);
-  let boost = (params.colorBoost / 100.0) * (1.0 - hsl2.y);
-  hsl2.y = clamp(hsl2.y + boost, 0.0, 1.0);
-  rgb = hsl2rgb(hsl2);
+  if (hsl2.y > 0.001) {
+    let boost = (params.colorBoost / 100.0) * (1.0 - hsl2.y);
+    hsl2.y = clamp(hsl2.y + boost, 0.0, 1.0);
+    rgb = hsl2rgb(hsl2);
+  }
 
-  // Stage 9: Lum Mix
+  // Stage 9: Lum Mix — at lumMix=100 the output's luminance is forced back
+  // to the original input's, turning the whole grade into a colour-only
+  // operation. Routing through applyLumShift prevents the same near-black
+  // ratio explosion fixed in Stages 3-5: when a stage pushed the corrected
+  // luminance toward zero but origLum was larger, a naive ratio rescale
+  // would amplify the near-zero RGB into a blown-out pixel.
   let corrLum     = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-  var lumPreserved = rgb;
-  if (corrLum > 0.0001) { lumPreserved = rgb * (origLum / corrLum); }
+  let lumPreserved = applyLumShift(rgb, corrLum, origLum);
   rgb = clamp(mix(rgb, lumPreserved, params.lumMix / 100.0), vec3f(0.0), vec3f(1.0));
 
   var mask = 1.0f;

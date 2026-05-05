@@ -17,24 +17,24 @@ type SectionId = 'fileAssoc' | 'memory'
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'fileAssoc', label: 'File Associations' },
-  { id: 'memory',    label: 'Memory' },
+  { id: 'memory', label: 'Memory' },
 ]
 
 // Mirrors SUPPORTED_FILE_TYPES in fileAssociations.ts.
 // Kept in sync manually — the IPC call is the source of truth for the registered list.
 const ALL_FILE_TYPES = [
   { ext: 'verve', label: 'Verve Document (.verve)' },
-  { ext: 'png',   label: 'PNG Image (.png)' },
-  { ext: 'jpg',   label: 'JPEG Image (.jpg)' },
-  { ext: 'jpeg',  label: 'JPEG Image (.jpeg)' },
-  { ext: 'webp',  label: 'WebP Image (.webp)' },
-  { ext: 'gif',   label: 'GIF Image (.gif)' },
-  { ext: 'bmp',   label: 'BMP Image (.bmp)' },
-  { ext: 'tga',   label: 'TGA Image (.tga)' },
-  { ext: 'tif',   label: 'TIFF Image (.tif)' },
-  { ext: 'tiff',  label: 'TIFF Image (.tiff)' },
-  { ext: 'exr',   label: 'OpenEXR Image (.exr)' },
-  { ext: 'hdr',   label: 'Radiance HDR Image (.hdr)' },
+  { ext: 'png', label: 'PNG Image (.png)' },
+  { ext: 'jpg', label: 'JPEG Image (.jpg)' },
+  { ext: 'jpeg', label: 'JPEG Image (.jpeg)' },
+  { ext: 'webp', label: 'WebP Image (.webp)' },
+  { ext: 'gif', label: 'GIF Image (.gif)' },
+  { ext: 'bmp', label: 'BMP Image (.bmp)' },
+  { ext: 'tga', label: 'TGA Image (.tga)' },
+  { ext: 'tif', label: 'TIFF Image (.tif)' },
+  { ext: 'tiff', label: 'TIFF Image (.tiff)' },
+  { ext: 'exr', label: 'OpenEXR Image (.exr)' },
+  { ext: 'hdr', label: 'Radiance HDR Image (.hdr)' },
 ]
 
 // ─── Memory section ──────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ const ALL_FILE_TYPES = [
 const GB = 1024 * 1024 * 1024
 const MIN_HISTORY_GB = 0.5
 const MAX_HISTORY_GB = 64
-const STEP_GB        = 0.5
+const STEP_GB = 0.5
 
 function formatBytes(bytes: number): string {
   if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`
@@ -251,15 +251,14 @@ function MemorySection(): React.JSX.Element {
           <div
             className={styles.usageFill}
             style={{
-              width: `${
-                prefs.bufferMemoryMaxOut
+              width: `${prefs.bufferMemoryMaxOut
                   ? 0
                   : prefs.unifiedMemory
                     ? Math.min(100, (gpuBytesUsed / prefs.bufferMemoryBytes) * 100)
                     // Discrete: scale against the largest GPU footprint we've
                     // ever observed so the bar still moves visibly.
                     : Math.min(100, (gpuBytesUsed / Math.max(gpuBytesUsed, prefs.bufferMemoryBytes)) * 100)
-              }%`,
+                }%`,
             }}
           />
         </div>
@@ -299,13 +298,13 @@ function MemorySection(): React.JSX.Element {
 
 function FileAssocSection(): React.JSX.Element {
   // available = supported types NOT currently registered
-  const [available, setAvailable]     = useState<string[]>([])
-  const [registered, setRegistered]   = useState<string[]>([])
-  const [selLeft, setSelLeft]         = useState<Set<string>>(new Set())
-  const [selRight, setSelRight]       = useState<Set<string>>(new Set())
-  const [applying, setApplying]       = useState(false)
-  const [status, setStatus]           = useState<{ ok: boolean; msg: string } | null>(null)
-  const [platform, setPlatform]       = useState('')
+  const [available, setAvailable] = useState<string[]>([])
+  const [registered, setRegistered] = useState<string[]>([])
+  const [selLeft, setSelLeft] = useState<Set<string>>(new Set())
+  const [selRight, setSelRight] = useState<Set<string>>(new Set())
+  const [applying, setApplying] = useState(false)
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [platform, setPlatform] = useState('')
 
   // Load current state whenever the section mounts / re-mounts
   useEffect(() => {
@@ -432,7 +431,7 @@ function FileAssocSection(): React.JSX.Element {
   const isMac = platform === 'darwin'
   const platformHint = isMac
     ? 'On macOS, Verve registers all supported types at once via Launch Services. ' +
-      'To set Verve as the default for a type, right-click a file in Finder → Get Info → Open With → Change All.'
+    'To set Verve as the default for a type, right-click a file in Finder → Get Info → Open With → Change All.'
     : null
 
   return (
@@ -563,7 +562,7 @@ export function PreferencesDialog({ open, onClose }: PreferencesDialogProps): Re
             {SECTIONS.find(s => s.id === activeSection)?.label}
           </div>
           {activeSection === 'fileAssoc' && <FileAssocSection key={open ? 'open' : 'closed'} />}
-          {activeSection === 'memory'    && <MemorySection />}
+          {activeSection === 'memory' && <MemorySection />}
         </div>
       </div>
 

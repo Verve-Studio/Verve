@@ -153,6 +153,7 @@ export class WebGPURenderer {
     baseMaskVersion: number  // -1 when there is no base mask
     paramsKey: string
     tex: GPUTexture
+    lastEncodeTime: number   // performance.now() of the last real recompute
   }>()
   // Permanent baked output for locked layers. Once a locked layer's adjustment
   // group is computed once, the result is stored here and reused for every
@@ -168,6 +169,7 @@ export class WebGPURenderer {
     inputFp: string
     paramsKey: string
     tex: GPUTexture
+    lastEncodeTime: number
   }>()
   // Per-composite-layer output cache. Keyed by layerId. Stores the final flattened+
   // adjusted result texture. The cache hits when all child contentVersions, offsets,
@@ -179,6 +181,49 @@ export class WebGPURenderer {
   }>()
   // True while encoding a screen-preview renderPlan() — enables the adj-group cache.
   private adjGroupCacheEnabled = false
+
+  // Offsets and bounds of every layer/adjustment-group as of the last successful
+  // renderPlan(). Compared against the current frame's offsets to detect a
+  // drag-only delta and synthesize a dirty rect — the move tool changes
+  // layer.offsetX/Y in place and never calls flushLayer, so without this the
+  // incremental path would never fire during a drag and every frame would do
+  // N full-canvas composites.
+  private lastRenderedOffsets = new Map<string, { x: number; y: number; w: number; h: number }>()
+
+  // ─── Stroke gating ────────────────────────────────────────────────────────
+  // Continuous painting tools (brush, eraser, pencil, dodge, clone-stamp) call
+  // strokeStart() on pointer-down and strokeEnd() on pointer-up. While a
+  // stroke is active, attached effects/adjustments are NOT recomputed — the
+  // throttle path composites the layer's raw pixels for real-time feedback.
+  // strokeEnd() triggers the next render, where the cache miss path re-runs
+  // the full effect chain. Without this, the user would see either: stale
+  // effect output (if we kept the cache), or nothing (if we re-encoded per
+  // paint event — way too slow for multi-pass effects like halation/bloom).
+  private refreshCallback: (() => void) | null = null
+  private strokeActive = false
+
+  /** Wire the render trigger used by strokeEnd. */
+  setRefreshCallback(cb: (() => void) | null): void {
+    this.refreshCallback = cb
+  }
+
+  /** Mark the start of a continuous painting stroke. While active, attached
+   *  effects/adjustments are bypassed in favour of compositing the layer's
+   *  raw pixels each frame. */
+  strokeStart(): void {
+    this.strokeActive = true
+  }
+
+  /** Mark the end of a continuous painting stroke. Triggers a single render
+   *  whose throttle gate is open, so the effect chain re-runs once on the
+   *  final layer state. */
+  strokeEnd(): void {
+    if (!this.strokeActive) return
+    this.strokeActive = false
+    // Force the planFp short-circuit to miss so the cache miss path runs.
+    this.lastPlanFp = null
+    this.refreshCallback?.()
+  }
   // When true (e.g. during a whole-layer drag), standalone AdjustmentRenderOps
   // (bloom, halation, glow, drop-shadow, etc.) are skipped so the compositor
   // only re-runs them once on pointer-up. Layers with per-layer color adjustments
@@ -187,6 +232,11 @@ export class WebGPURenderer {
 
   /** Enable/disable preview mode. Call with true at drag start, false on pointer-up. */
   setPreviewMode(enabled: boolean): void {
+    // Idempotent: the move tool calls this on every pointermove (which fires at
+    // mouse rate, hundreds of Hz). Without the early-return, every pointermove
+    // would invalidate hasStableTex and force the next renderPlan() onto the
+    // full-canvas path — defeating the incremental drag optimization.
+    if (this.previewMode === enabled) return
     this.previewMode = enabled
     // Mode change can flip skipped/visible without altering layer fingerprints.
     this.lastPlanFp = null
@@ -303,6 +353,58 @@ export class WebGPURenderer {
       const rx1 = Math.max(r.x + r.w, x1)
       const ry1 = Math.max(r.y + r.h, y1)
       r.x = rx0; r.y = ry0; r.w = rx1 - rx0; r.h = ry1 - ry0
+    }
+  }
+
+  /** Walk the plan and union (prev pos) ∪ (current pos) into the frame dirty
+   *  rect for every layer whose offset changed since the last render. Lets the
+   *  incremental path fire during a drag (offset-only edits never call
+   *  flushLayer, so frameDirtyCanvasRect would otherwise stay null). */
+  private detectDragDirty(plan: RenderPlanEntry[]): void {
+    for (const entry of plan) {
+      if (entry.kind === 'layer') {
+        if (!entry.layer.visible || entry.layer.opacity === 0) continue
+        const l = entry.layer
+        const prev = this.lastRenderedOffsets.get(l.id)
+        if (prev && (prev.x !== l.offsetX || prev.y !== l.offsetY)) {
+          this.unionFrameDirty(prev.x, prev.y, prev.w, prev.h)
+          this.unionFrameDirty(l.offsetX, l.offsetY, l.layerWidth, l.layerHeight)
+        }
+      } else if (entry.kind === 'adjustment-group') {
+        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
+        const l = entry.baseLayer
+        const prev = this.lastRenderedOffsets.get(entry.parentLayerId)
+        if (prev && (prev.x !== l.offsetX || prev.y !== l.offsetY)) {
+          this.unionFrameDirty(prev.x, prev.y, prev.w, prev.h)
+          this.unionFrameDirty(l.offsetX, l.offsetY, l.layerWidth, l.layerHeight)
+        }
+      } else if (entry.kind === 'layer-group' || entry.kind === 'composite-layer') {
+        if (!entry.visible) continue
+        this.detectDragDirty(entry.children)
+      }
+    }
+  }
+
+  /** Snapshot the current rendered offset of every visible plan layer. Read by
+   *  the next frame's detectDragDirty(). */
+  private updateLastRenderedOffsets(plan: RenderPlanEntry[]): void {
+    for (const entry of plan) {
+      if (entry.kind === 'layer') {
+        if (!entry.layer.visible || entry.layer.opacity === 0) continue
+        const l = entry.layer
+        this.lastRenderedOffsets.set(l.id, {
+          x: l.offsetX, y: l.offsetY, w: l.layerWidth, h: l.layerHeight,
+        })
+      } else if (entry.kind === 'adjustment-group') {
+        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
+        const l = entry.baseLayer
+        this.lastRenderedOffsets.set(entry.parentLayerId, {
+          x: l.offsetX, y: l.offsetY, w: l.layerWidth, h: l.layerHeight,
+        })
+      } else if (entry.kind === 'layer-group' || entry.kind === 'composite-layer') {
+        if (!entry.visible) continue
+        this.updateLastRenderedOffsets(entry.children)
+      }
     }
   }
 
@@ -635,6 +737,7 @@ export class WebGPURenderer {
       destroyTrackedTexture(cachedCL.tex)
       this.compositeLayerCache.delete(layer.id)
     }
+    this.lastRenderedOffsets.delete(layer.id)
   }
 
   growLayerToFit(layer: GpuLayer, canvasX: number, canvasY: number, extraRadius = 0): boolean {
@@ -812,18 +915,33 @@ export class WebGPURenderer {
       return
     }
 
+    // Drag-only edits change layer.offsetX/Y in place without calling
+    // flushLayer, so frameDirtyCanvasRect would otherwise stay null and force
+    // the full-canvas path. Synthesize the dirty rect from any layer whose
+    // offset has changed since the last render.
+    this.detectDragDirty(plan)
+
     // Decide path: incremental (small rect, plain layer plan, stable cache valid)
     // vs. full (cold cache, complex plan with adjustments/groups, or no dirty rect).
     const dirty = this.frameDirtyCanvasRect
+    const flatPlan = this.planIsFlatLayersOnly(plan)
     const canIncremental =
       this.hasStableTex &&
       this.stableTex !== null &&
       dirty !== null &&
       dirty.w > 0 && dirty.h > 0 &&
-      this.planIsFlatLayersOnly(plan) &&
+      flatPlan &&
       // Skip incremental when dirty area covers most of the canvas — preload
       // DMA cost (2× full canvas) outweighs the saved per-layer composite work.
       (dirty.w * dirty.h) < (w * h * 0.6)
+    if (this.previewMode) {
+      const why = canIncremental ? 'OK'
+        : !this.hasStableTex ? 'no-stableTex'
+        : !dirty ? 'no-dirty'
+        : !flatPlan ? 'plan-not-flat'
+        : 'dirty-too-big'
+      console.log(`[renderPlan] inc=${canIncremental} (${why}), layers=${plan.length}`)
+    }
 
     const encoder = device.createCommandEncoder()
 
@@ -920,6 +1038,9 @@ export class WebGPURenderer {
 
     this.lastPlanFp = planFp
     this.frameDirtyCanvasRect = null
+    // Snapshot the rendered offsets so the next frame's detectDragDirty can
+    // compare against them.
+    this.updateLastRenderedOffsets(plan)
     // Both render paths above blit to the swapchain inside the current scissor,
     // so any pending viewport-only update is satisfied.
     this.viewportDirty = false
@@ -943,11 +1064,30 @@ export class WebGPURenderer {
         }
         return false
       }
-      if (
-        entry.kind === 'adjustment-group' &&
-        entry.locked === true &&
-        this.bakedLockedLayers.has(entry.parentLayerId)
-      ) continue
+      if (entry.kind === 'adjustment-group') {
+        // Invisible / zero-opacity: the encoder skips it, so it doesn't
+        // disable the flat path either.
+        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue
+        // Locked + baked: same flat-blit shape as a plain layer.
+        if (entry.locked === true && this.bakedLockedLayers.has(entry.parentLayerId)) continue
+        // Unlocked, in preview mode (drag): the moveOnlyMatch path will skip
+        // every adjustment pass and just blit the cached output with an
+        // offset delta. That blit is shaped exactly like a layer composite,
+        // so it's compatible with the incremental path's scissor.
+        if (this.previewMode) {
+          const cached = this.adjGroupCache.get(entry.parentLayerId)
+          if (cached) {
+            const baseMaskVersion = entry.baseMask ? entry.baseMask.contentVersion : -1
+            const paramsKey = computeAdjGroupParamsKey(entry.adjustments)
+            if (
+              cached.paramsKey === paramsKey &&
+              cached.baseMaskVersion === baseMaskVersion &&
+              cached.baseContentVersion === entry.baseLayer.contentVersion
+            ) continue
+          }
+        }
+        return false
+      }
       if (
         entry.kind === 'composite-layer' &&
         entry.locked === true &&
@@ -974,6 +1114,10 @@ export class WebGPURenderer {
         if (entry.adjustments.length > 0) return false
         continue
       }
+      // Top-level standalone AdjustmentRenderOp: skipped entirely by
+      // encodeSubPlan when previewMode is on, so it doesn't contribute to
+      // output and doesn't disable the flat path during a drag.
+      if (this.previewMode) continue
       return false
     }
     return true
@@ -1479,16 +1623,59 @@ export class WebGPURenderer {
         if (this.adjGroupCacheEnabled) {
           const cached = this.adjGroupCache.get(entry.parentLayerId)
 
-          if (
-            cached &&
-            cached.baseContentVersion === entry.baseLayer.contentVersion &&
-            cached.offsetX === entry.baseLayer.offsetX &&
-            cached.offsetY === entry.baseLayer.offsetY &&
+          const paramsAndMaskMatch = !!cached &&
             cached.baseMaskVersion === baseMaskVersion &&
             cached.paramsKey === paramsKey
-          ) {
-            // Cache hit: composite the pre-computed result directly.
-            groupResult = cached.tex
+          const positionAndParamsMatch = paramsAndMaskMatch &&
+            cached!.offsetX === entry.baseLayer.offsetX &&
+            cached!.offsetY === entry.baseLayer.offsetY
+          const fullMatch = positionAndParamsMatch &&
+            cached!.baseContentVersion === entry.baseLayer.contentVersion
+          // Throttle: layer pixels changed (mid-stroke) but adjustment params,
+          // mask, and position are identical → composite the layer's raw
+          // pixels for real-time stroke feedback while skipping the (often
+          // multi-pass) effect chain. Gated on strokeActive so the effect
+          // re-runs exactly once on pointer-up, never mid-stroke on idle.
+          const throttledMatch = !fullMatch && positionAndParamsMatch && this.strokeActive
+          // Move-drag: only the layer offset changed (params, content, mask
+          // identical). The cached canvas-sized adj output already contains
+          // the layer's adjusted pixels at the OLD offset — shift the blit by
+          // (current - cached) to draw it at the NEW position. Free move.
+          // Selection masks are anchored to canvas coords so they will appear
+          // to drag with the layer for the duration of the drag; the next
+          // non-preview frame (pointer-up) re-encodes correctly.
+          const moveOnlyMatch = !fullMatch && !throttledMatch &&
+            this.previewMode && paramsAndMaskMatch &&
+            cached!.baseContentVersion === entry.baseLayer.contentVersion
+
+          if (fullMatch) {
+            // Real cache hit: composite the pre-computed result directly.
+            groupResult = cached!.tex
+          } else if (throttledMatch) {
+            // Real-time stroke feedback: composite the layer's RAW pixels (no
+            // effect) across its full bbox. Brush strokes appear immediately
+            // at full framerate. The effect chain re-runs once on stroke end
+            // (strokeEnd flips strokeActive to false and forces a refresh).
+            this.encodeCompositeLayer(encoder, entry.baseLayer, src, dst, entry.baseMask, srcIsEmpty)
+            ;[src, dst] = [dst, src]
+            srcIsEmpty = false
+            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${paramsKey}`
+            continue
+          } else if (moveOnlyMatch) {
+            // Composite the cached tex with an offset delta and skip the
+            // expensive recompute. We bypass the standard groupResult path
+            // because that always blits at (0,0).
+            const dx = entry.baseLayer.offsetX - cached!.offsetX
+            const dy = entry.baseLayer.offsetY - cached!.offsetY
+            this.encodeCompositeTexture(
+              encoder, cached!.tex, src, dst,
+              entry.baseLayer.opacity, entry.baseLayer.blendMode, srcIsEmpty,
+              dx, dy,
+            )
+            ;[src, dst] = [dst, src]
+            srcIsEmpty = false
+            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${paramsKey}`
+            continue
           } else {
             // Cache miss: run all adjustment passes.
             const result = this.encodeAdjustmentGroup(encoder, entry)
@@ -1516,6 +1703,7 @@ export class WebGPURenderer {
               baseMaskVersion,
               paramsKey,
               tex: cacheTex,
+              lastEncodeTime: performance.now(),
             })
 
             groupResult = result
@@ -1559,10 +1747,21 @@ export class WebGPURenderer {
 
         if (this.adjGroupCacheEnabled) {
           const cached = this.standaloneOpCache.get(op.layerId)
-          if (cached && cached.inputFp === inputFp && cached.paramsKey === opParamsKey) {
+          const fullMatch = !!cached && cached.inputFp === inputFp && cached.paramsKey === opParamsKey
+          // Throttle: standalone effect input changed (upstream pixels were
+          // painted) but its own params are identical → reuse stale output
+          // until the 250 ms window expires. Avoids re-running expensive
+          // multi-pass effects (bloom, halation, glow, drop-shadow) on every
+          // paint event.
+          // Throttle while a stroke is active: skip re-running the (typically
+          // multi-pass) standalone effect and reuse the previous output.
+          // strokeEnd forces a refresh so the cache miss path runs once.
+          const throttledMatch = !fullMatch && !!cached && cached.paramsKey === opParamsKey &&
+            this.strokeActive
+          if (fullMatch || throttledMatch) {
             // Cache hit: dst = src + op(src) is replaced by dst = cached. Copy and swap.
             encoder.copyTextureToTexture(
-              { texture: cached.tex },
+              { texture: cached!.tex },
               { texture: dst },
               { width: this.pixelWidth, height: this.pixelHeight },
             )
@@ -1591,7 +1790,7 @@ export class WebGPURenderer {
             { texture: cacheTex },
             { width: this.pixelWidth, height: this.pixelHeight },
           )
-          this.standaloneOpCache.set(op.layerId, { inputFp, paramsKey: opParamsKey, tex: cacheTex })
+          this.standaloneOpCache.set(op.layerId, { inputFp, paramsKey: opParamsKey, tex: cacheTex, lastEncodeTime: performance.now() })
           inputFp += `|SO:${op.layerId}:${opParamsKey}`
         } else {
           this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat)
@@ -1925,6 +2124,8 @@ export class WebGPURenderer {
     opacity: number,
     blendMode: string,
     srcIsEmpty = false,
+    offsetX = 0,
+    offsetY = 0,
   ): void {
     const pseudoLayer: GpuLayer = {
       id: '__group-composite__',
@@ -1934,8 +2135,8 @@ export class WebGPURenderer {
       format: this.pixelFormat,
       layerWidth:  this.pixelWidth,
       layerHeight: this.pixelHeight,
-      offsetX: 0,
-      offsetY: 0,
+      offsetX,
+      offsetY,
       opacity,
       visible: true,
       blendMode,
@@ -1982,6 +2183,7 @@ export class WebGPURenderer {
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   destroy(): void {
+    this.refreshCallback = null
     destroyTrackedTexture(this.pingTex)
     destroyTrackedTexture(this.pongTex)
     destroyTrackedTexture(this.groupPingTex)

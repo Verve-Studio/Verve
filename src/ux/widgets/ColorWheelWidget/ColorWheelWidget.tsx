@@ -92,10 +92,41 @@ function drawWheel(canvas: HTMLCanvasElement, value: ColorGradingWheelParams): v
 export function ColorWheelWidget({ label, value, onChange }: ColorWheelWidgetProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const draggingRef = useRef(false)
+  const masterRef = useRef<HTMLDivElement>(null)
+  const masterDraggingRef = useRef(false)
 
   useEffect(() => {
     if (canvasRef.current) drawWheel(canvasRef.current, value)
   }, [value])
+
+  // ── Master slider (vertical, top=+1, bottom=−1, centre=0) ────────────────────
+  const updateMasterFromPointer = useCallback((e: React.PointerEvent<HTMLDivElement> | PointerEvent): void => {
+    const el = masterRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const t = (e.clientY - rect.top) / rect.height
+    const raw = 1 - t * 2
+    const clamped = Math.max(-1, Math.min(1, raw))
+    onChange({ ...value, master: parseFloat(clamped.toFixed(3)) })
+  }, [value, onChange])
+
+  const onMasterDown = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return
+    masterDraggingRef.current = true
+    e.currentTarget.setPointerCapture(e.pointerId)
+    updateMasterFromPointer(e)
+  }, [updateMasterFromPointer])
+
+  const onMasterMove = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!masterDraggingRef.current) return
+    updateMasterFromPointer(e)
+  }, [updateMasterFromPointer])
+
+  const onMasterUp = useCallback((): void => { masterDraggingRef.current = false }, [])
+
+  const onMasterDoubleClick = useCallback((): void => {
+    onChange({ ...value, master: 0 })
+  }, [value, onChange])
 
   // Drag handling
   const updateFromPointer = useCallback((e: React.PointerEvent<HTMLCanvasElement> | PointerEvent): void => {
@@ -165,16 +196,47 @@ export function ColorWheelWidget({ label, value, onChange }: ColorWheelWidgetPro
         <span className={styles.label}>{label}</span>
         <button className={styles.resetBtn} onClick={handleReset} title="Reset" aria-label={`Reset ${label}`}>↺</button>
       </div>
-      <div className={styles.canvasWrap}>
-        <canvas
-          ref={canvasRef}
-          className={styles.canvas}
-          width={CANVAS_SIZE}
-          height={CANVAS_SIZE}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-        />
+      <div className={styles.canvasRow}>
+        <div
+          ref={masterRef}
+          className={styles.masterSlider}
+          onPointerDown={onMasterDown}
+          onPointerMove={onMasterMove}
+          onPointerUp={onMasterUp}
+          onDoubleClick={onMasterDoubleClick}
+          role="slider"
+          aria-label={`${label} master`}
+          aria-valuemin={-1}
+          aria-valuemax={1}
+          aria-valuenow={value.master}
+          title="Master (double-click to reset)"
+        >
+          <div className={styles.masterTrack} />
+          <div className={styles.masterCenter} />
+          <div
+            className={styles.masterFill}
+            style={
+              value.master >= 0
+                ? { top: `${(1 - value.master) * 50}%`, height: `${value.master * 50}%` }
+                : { top: '50%', height: `${-value.master * 50}%` }
+            }
+          />
+          <div
+            className={styles.masterThumb}
+            style={{ top: `${(1 - value.master) * 50}%` }}
+          />
+        </div>
+        <div className={styles.canvasWrap}>
+          <canvas
+            ref={canvasRef}
+            className={styles.canvas}
+            width={CANVAS_SIZE}
+            height={CANVAS_SIZE}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+          />
+        </div>
       </div>
       <div className={styles.fields}>
         {(['master', 'r', 'g', 'b'] as const).map((ch) => (

@@ -75,6 +75,7 @@ function createDodgeBurnHandler(opts: typeof dodgeOptions, sign: 1 | -1): () => 
 
     return {
       onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
+        ctx.renderer.strokeStart()
         touched = new Map()
         origData = new Map()
         lastPos = null
@@ -88,10 +89,11 @@ function createDodgeBurnHandler(opts: typeof dodgeOptions, sign: 1 | -1): () => 
         lastPos = { x, y }
       },
 
-      onPointerUp() {
+      onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
         lastPos = null
         touched = null
         origData = null
+        ctx.renderer.strokeEnd()
       },
     }
   }

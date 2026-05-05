@@ -146,6 +146,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const mirror = document.createElement('canvas')
     mirror.width = mirrorW
     mirror.height = mirrorH
+    // Force-allocate the 2D backing store. Navigator's RAF loop reads the
+    // mirror via drawImage every frame; without this, the first reads (before
+    // scheduleMirrorUpdate has populated the mirror) hit an uninitialized
+    // SharedImage and Chromium logs GL_INVALID_OPERATION.
+    mirror.getContext('2d')?.clearRect(0, 0, mirrorW, mirrorH)
     thumbnailCanvasRef.current = mirror
     return () => { thumbnailCanvasRef.current = null }
   }, [mirrorW, mirrorH, thumbnailCanvasRef])
@@ -797,6 +802,17 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   // Keep doRenderRef current every render so subscriptions always call the latest closure
   doRenderRef.current = doRender
+
+  // Wire the renderer's effect-recompute throttle: when an adjustment/effect
+  // cache is reused mid-stroke (instead of recomputed), the renderer needs a
+  // way to re-trigger a render after the 250 ms throttle window so the user
+  // sees the updated effect output even if no further input events arrive.
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer) return
+    renderer.setRefreshCallback(() => doRenderRef.current())
+    return () => { renderer.setRefreshCallback(null) }
+  }, [rendererVersion])
 
   // When the canvas backing buffer is resized (zoom crosses a threshold), the
   // WebGPU swapchain texture is reallocated and contains undefined pixels.
