@@ -46,6 +46,7 @@ import type {
   InnerGlowAdjustmentLayer,
   SeamlessTextureAdjustmentLayer,
   VignetteAdjustmentLayer,
+  LensDistortionAdjustmentLayer,
 } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { BrightnessContrastPanel } from "./adjustments/BrightnessContrastPanel/BrightnessContrastPanel";
@@ -65,6 +66,7 @@ import { ColorDitheringPanel } from "./adjustments/ColorDitheringPanel/ColorDith
 import { BloomOptions } from "./effects/BloomOptions/BloomOptions";
 import { ChromaticAberrationOptions } from "./effects/ChromaticAberrationOptions/ChromaticAberrationOptions";
 import { VignetteOptions } from "./effects/VignetteOptions/VignetteOptions";
+import { LensDistortionOptions } from "./effects/LensDistortionOptions/LensDistortionOptions";
 import { HalationOptions } from "./effects/HalationOptions/HalationOptions";
 import { ColorKeyPanel } from "./effects/ColorKeyPanel/ColorKeyPanel";
 import { DropShadowOptions } from "./effects/DropShadowOptions/DropShadowOptions";
@@ -139,6 +141,8 @@ function toolTitle(layer: AdjustmentLayerState): string {
       return "Chromatic Aberration";
     case "vignette":
       return "Vignette";
+    case "lens-distortion":
+      return "Lens Distortion";
     case "halation":
       return "Halation";
     case "color-key":
@@ -467,6 +471,25 @@ const BloomHeaderIcon = (): React.JSX.Element => (
   </svg>
 );
 
+const LensDistortionHeaderIcon = (): React.JSX.Element => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+    <path d="M2.5 4 Q6 2.6 9.5 4" />
+    <path d="M2.5 8 Q6 9.4 9.5 8" />
+    <path d="M4 2.5 Q2.6 6 4 9.5" />
+    <path d="M8 2.5 Q9.4 6 8 9.5" />
+  </svg>
+);
+
 const VignetteHeaderIcon = (): React.JSX.Element => (
   <svg
     width="12"
@@ -679,6 +702,7 @@ function AdjPanelIcon({
   if (type === "bloom") return <BloomHeaderIcon />;
   if (type === "chromatic-aberration") return <ChromaticAberrationHeaderIcon />;
   if (type === "vignette") return <VignetteHeaderIcon />;
+  if (type === "lens-distortion") return <LensDistortionHeaderIcon />;
   if (type === "halation") return <HalationHeaderIcon />;
   if (type === "color-key") return <ColorKeyHeaderIcon />;
   if (type === "drop-shadow") return <DropShadowHeaderIcon />;
@@ -719,12 +743,18 @@ export function AdjustmentPanel({
   const parentLocked =
     (parentLayer as { locked?: boolean } | undefined)?.locked === true;
 
-  const panelWidth =
-    adjLayer.adjustmentType === "curves"
-      ? 306
-      : adjLayer.adjustmentType === "color-grading"
-        ? 504
-        : 236;
+  var panelWidth = 0;
+
+  switch(adjLayer.adjustmentType) {
+    case "curves":
+      panelWidth = 306;
+      break;
+    case "color-grading":
+      panelWidth = 504;
+      break;
+    default:
+      panelWidth = 236;
+  }
 
   return (
     <ToolWindow
@@ -844,6 +874,12 @@ export function AdjustmentPanel({
         {adjLayer.adjustmentType === "vignette" && (
           <VignetteOptions
             layer={adjLayer as VignetteAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "lens-distortion" && (
+          <LensDistortionOptions
+            layer={adjLayer as LensDistortionAdjustmentLayer}
             parentLayerName={parentLayerName}
           />
         )}

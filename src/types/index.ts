@@ -320,7 +320,8 @@ export type AdjustmentType =
   | "inner-shadow"
   | "inner-glow"
   | "seamless-texture"
-  | "vignette";
+  | "vignette"
+  | "lens-distortion";
 
 export type FilterKey =
   | "gaussian-blur"
@@ -522,6 +523,32 @@ export interface AdjustmentParamsMap {
     type: "radial" | "directional";
     distance: number; // 0–50 px
     angle: number; // 0–360 degrees (used only when type === 'directional')
+  };
+  "lens-distortion": {
+    /** Distortion model. `radial` covers barrel/pincushion via signed strength;
+     *  `fisheye` is an equidistant fisheye projection; `mustache` adds a
+     *  fourth-order term for the classic wave/moustache lens defect;
+     *  `perspective` is a keystone-style projective transform. */
+    type: "radial" | "fisheye" | "mustache" | "perspective";
+    /** Primary distortion strength. −100 = max pincushion, +100 = max barrel.
+     *  For fisheye, magnitude controls the field-of-view; sign is ignored. */
+    strength: number;
+    /** Secondary (4th-order) distortion term, used only by `mustache`. */
+    secondary: number;
+    /** Distortion centre in normalised image coords (0..1, default 0.5). */
+    centerX: number;
+    centerY: number;
+    /** Post-distortion zoom (50..200%, 100 = no zoom). Used to crop barrel
+     *  shrinkage or compensate for the empty corners pincushion produces. */
+    zoom: number;
+    /** Perspective tilt around the vertical axis (−100..100). */
+    tiltX: number;
+    /** Perspective tilt around the horizontal axis (−100..100). */
+    tiltY: number;
+    /** What to sample when the distorted UV falls outside the source image:
+     *  `transparent` leaves it empty, `clamp` repeats the edge, `mirror`
+     *  reflects. */
+    edgeMode: "transparent" | "clamp" | "mirror";
   };
   halation: {
     threshold: number; // 0–1: luminance level above which halation activates
@@ -1022,6 +1049,12 @@ export interface VignetteAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean;
 }
 
+export interface LensDistortionAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "lens-distortion";
+  params: AdjustmentParamsMap["lens-distortion"];
+  hasMask: boolean;
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -1066,7 +1099,8 @@ export type AdjustmentLayerState =
   | InnerShadowAdjustmentLayer
   | InnerGlowAdjustmentLayer
   | SeamlessTextureAdjustmentLayer
-  | VignetteAdjustmentLayer;
+  | VignetteAdjustmentLayer
+  | LensDistortionAdjustmentLayer;
 
 export interface GroupLayerState {
   id: string;

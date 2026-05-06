@@ -179,6 +179,23 @@ export const ADJUSTMENT_REGISTRY = [
     },
   },
   {
+    adjustmentType: "lens-distortion" as const,
+    label: "Lens Distortion…",
+    group: "real-time-effects",
+    menuGroup: "fx-glow",
+    defaultParams: {
+      type: "radial" as const,
+      strength: 25,
+      secondary: 0,
+      centerX: 0.5,
+      centerY: 0.5,
+      zoom: 100,
+      tiltX: 0,
+      tiltY: 0,
+      edgeMode: "transparent" as const,
+    },
+  },
+  {
     adjustmentType: "chromatic-aberration" as const,
     label: "Chromatic Aberration…",
     group: "real-time-effects",

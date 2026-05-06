@@ -19,6 +19,7 @@ import {
   SEL_COLOR_COMPUTE,
   CHANNEL_MIXER_COMPUTE,
   AUTO_MATCH_COMPUTE,
+  LENS_DISTORTION_COMPUTE,
   CURVES_COMPUTE,
   CG_COMPUTE,
   RC_COMPUTE,
@@ -256,6 +257,7 @@ export class AdjustmentEncoder {
   private readonly selColorPipeline: AdjPipelinePair;
   private readonly channelMixerPipeline: AdjPipelinePair;
   private readonly autoMatchPipeline: AdjPipelinePair;
+  private readonly lensDistortionPipeline: AdjPipelinePair;
   private readonly curvesPipeline: AdjPipelinePair;
   private readonly cgPipeline: AdjPipelinePair;
   private readonly rcPipeline: AdjPipelinePair;
@@ -425,6 +427,12 @@ export class AdjustmentEncoder {
       device,
       AUTO_MATCH_COMPUTE,
       "fs_auto_match",
+      STD,
+    );
+    this.lensDistortionPipeline = createAdjRenderPipelinePair(
+      device,
+      LENS_DISTORTION_COMPUTE,
+      "fs_lens_distortion",
       STD,
     );
     // Curves: srcTex, smp, selMask, maskFlags, lutSampler (filtering), rgbLut, redLut, greenLut, blueLut (filterable r8unorm)
@@ -789,6 +797,37 @@ export class AdjustmentEncoder {
         dstTex,
         format,
         entry.params,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "lens-distortion") {
+      // LensDistParams: 48 bytes (12 × 4-byte slots). WGSL rounds the struct
+      // size up to a multiple of 16 for uniform-buffer storage; the pipeline
+      // therefore expects 48 bytes even though the declared members add up to
+      // 44. A 32-byte buffer here silently drops the trailing writes.
+      const buf = new ArrayBuffer(48);
+      const u = new Uint32Array(buf);
+      const f = new Float32Array(buf);
+      u[0] = entry.distType;
+      u[1] = entry.edgeMode;
+      u[2] = 0;
+      u[3] = 0;
+      f[4] = entry.strength;
+      f[5] = entry.secondary;
+      f[6] = entry.centerX;
+      f[7] = entry.centerY;
+      f[8] = entry.zoom;
+      f[9] = entry.tiltX;
+      f[10] = entry.tiltY;
+      f[11] = 0;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.lensDistortionPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
         entry.selMaskLayer,
       );
       return;

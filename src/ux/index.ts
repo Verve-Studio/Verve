@@ -18,6 +18,7 @@ export { ColorDitheringPanel } from "./windows/adjustments/ColorDitheringPanel/C
 export { BloomOptions } from "./windows/effects/BloomOptions/BloomOptions";
 export { ChromaticAberrationOptions } from "./windows/effects/ChromaticAberrationOptions/ChromaticAberrationOptions";
 export { VignetteOptions } from "./windows/effects/VignetteOptions/VignetteOptions";
+export { LensDistortionOptions } from "./windows/effects/LensDistortionOptions/LensDistortionOptions";
 export { HalationOptions } from "./windows/effects/HalationOptions/HalationOptions";
 export { ColorKeyPanel } from "./windows/effects/ColorKeyPanel/ColorKeyPanel";
 export { DropShadowOptions } from "./windows/effects/DropShadowOptions/DropShadowOptions";

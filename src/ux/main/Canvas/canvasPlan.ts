@@ -125,6 +125,35 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     };
   }
+  if (ls.adjustmentType === "lens-distortion") {
+    const p = ls.params;
+    const TYPE_MAP: Record<typeof p.type, number> = {
+      radial: 0,
+      fisheye: 1,
+      mustache: 2,
+      perspective: 3,
+    };
+    const EDGE_MAP: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    return {
+      kind: "lens-distortion",
+      layerId: ls.id,
+      distType: TYPE_MAP[p.type],
+      edgeMode: EDGE_MAP[p.edgeMode],
+      strength: p.strength / 100,
+      secondary: p.secondary / 100,
+      centerX: p.centerX,
+      centerY: p.centerY,
+      zoom: p.zoom / 100,
+      tiltX: p.tiltX / 100,
+      tiltY: p.tiltY / 100,
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
   if (ls.adjustmentType === "auto-match") {
     const p = ls.params;
     const stats = p.cachedStats;

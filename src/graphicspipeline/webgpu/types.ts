@@ -492,6 +492,21 @@ export type AdjustmentRenderOp =
       selMaskLayer?: GpuLayer;
     }
   | {
+      kind: "lens-distortion";
+      layerId: string;
+      distType: number; // 0=radial, 1=fisheye, 2=mustache, 3=perspective
+      edgeMode: number; // 0=transparent, 1=clamp, 2=mirror
+      strength: number; // already pre-divided by 100
+      secondary: number;
+      centerX: number; // 0..1
+      centerY: number;
+      zoom: number; // already pre-divided by 100 (1.0 = no zoom)
+      tiltX: number;
+      tiltY: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
       kind: "seamless-texture";
       layerId: string;
       breakRepetition: boolean;
