@@ -4,6 +4,7 @@ import { CurveEditor } from "@/ux/widgets/CurveEditor/CurveEditor";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useBrushes } from "@/core/services/useBrushes";
 import { brushPanelStore } from "@/core/store/brushPanelStore";
+import { brushManagerStore } from "@/core/store/brushManagerStore";
 import type { Brush, DynamicCurve, DynamicSource } from "@/types";
 import { identityCurve } from "@/types";
 import styles from "./BrushSettingsPanel.module.scss";
@@ -29,6 +30,10 @@ interface DynamicEditorProps {
   hint?: string;
   /** When true, show the curve editor inline (default true). */
   showCurve?: boolean;
+  /** When false, hide the Minimum slider — used for symmetric dynamics
+   *  (hue / saturation / brightness / angle jitter) where Minimum has
+   *  no meaningful effect (no multiplier floor — they're signed offsets). */
+  showMinimum?: boolean;
 }
 
 function DynamicEditor({
@@ -37,6 +42,7 @@ function DynamicEditor({
   onChange,
   hint,
   showCurve = true,
+  showMinimum = true,
 }: DynamicEditorProps): React.JSX.Element {
   const set = (patch: Partial<DynamicCurve>): void =>
     onChange({ ...value, ...patch });
@@ -70,17 +76,19 @@ function DynamicEditor({
           ))}
         </select>
       </div>
-      <div className={styles.row}>
-        <label className={styles.smallLabel}>Minimum</label>
-        <SliderInput
-          value={Math.round(value.minimum * 100)}
-          min={0}
-          max={100}
-          suffix="%"
-          inputWidth={36}
-          onChange={(v) => set({ minimum: v / 100 })}
-        />
-      </div>
+      {showMinimum && (
+        <div className={styles.row}>
+          <label className={styles.smallLabel}>Minimum</label>
+          <SliderInput
+            value={Math.round(value.minimum * 100)}
+            min={0}
+            max={100}
+            suffix="%"
+            inputWidth={36}
+            onChange={(v) => set({ minimum: v / 100 })}
+          />
+        </div>
+      )}
       {value.source === "fade" && (
         <div className={styles.row}>
           <label className={styles.smallLabel}>Steps</label>
@@ -253,16 +261,26 @@ export function BrushSettingsPanel({
           onDuplicate={(id) => void duplicateBrush(id, "user")}
         />
 
-        {onCaptureFromSelection && (
+        <div className={styles.headerRow}>
+          {onCaptureFromSelection && (
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Create a new brush whose tip is taken from the current selection."
+              onClick={() => void onCaptureFromSelection()}
+            >
+              Capture from selection
+            </button>
+          )}
           <button
             type="button"
             className={styles.resetBtn}
-            title="Create a new brush whose tip is taken from the current selection. (PR1: bitmap; PR2 will compute an SDF for clean scaling.)"
-            onClick={() => void onCaptureFromSelection()}
+            title="Open the Paint Brushes manager"
+            onClick={() => brushManagerStore.open()}
           >
-            Capture brush from selection
+            Manage…
           </button>
-        )}
+        </div>
 
         {/* ── Brush Tip ───────────────────────────────────────── */}
         <Section title="Brush Tip" defaultOpen={true}>
@@ -370,6 +388,7 @@ export function BrushSettingsPanel({
             label="Angle Jitter"
             value={activeBrush.shapeDyn.angleJitter}
             onChange={(v) => setShapeDyn({ angleJitter: v })}
+            showMinimum={false}
           />
           <DynamicEditor
             label="Roundness Jitter"
@@ -462,16 +481,19 @@ export function BrushSettingsPanel({
             label="Hue Jitter"
             value={activeBrush.colorDyn.hueJitter}
             onChange={(v) => setColorDyn({ hueJitter: v })}
+            showMinimum={false}
           />
           <DynamicEditor
             label="Saturation Jitter"
             value={activeBrush.colorDyn.saturationJitter}
             onChange={(v) => setColorDyn({ saturationJitter: v })}
+            showMinimum={false}
           />
           <DynamicEditor
             label="Brightness Jitter"
             value={activeBrush.colorDyn.brightnessJitter}
             onChange={(v) => setColorDyn({ brightnessJitter: v })}
+            showMinimum={false}
           />
           <DynamicEditor
             label="Purity Jitter"

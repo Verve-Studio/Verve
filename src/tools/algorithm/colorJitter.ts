@@ -78,11 +78,23 @@ export function resolveStampColor(
   dyn: ColorDynamics,
   inputs: StampInputs,
 ): ResolvedColor {
-  // FG/BG swap by probability — `resolveDynamic` returns 1 at jitter=0; subtracting
-  // 1 gives a 0..jitter probability of swap.
-  const swapProb = 1 - resolveDynamic(dyn.fgBgJitter, inputs);
-  const useSecondary = (inputs.hash & 0xffff) / 0x10000 < swapProb;
-  const base = useSecondary ? secondary : primary;
+  // FG/BG mix as a continuous lerp in float space. The curve drives the mix
+  // amount per stamp, so:
+  //   - identity curve + Fade source → linear gradient from FG to BG over
+  //     the fade window.
+  //   - identity curve + Random source → smoothly-varying mix between the
+  //     two colors (because `random` is 1-D smooth noise).
+  //   - jitter = 0 → mix = 0 (pure FG).
+  // Mix ranges over [0, jitter], so a 50% setting fully reaches "halfway
+  // between FG and BG" at the curve's peak — matching Photoshop's slider
+  // semantics.
+  const bgMix = Math.max(0, Math.min(1, 1 - resolveDynamic(dyn.fgBgJitter, inputs)));
+  const base: RGBAColor = {
+    r: primary.r + (secondary.r - primary.r) * bgMix,
+    g: primary.g + (secondary.g - primary.g) * bgMix,
+    b: primary.b + (secondary.b - primary.b) * bgMix,
+    a: primary.a + (secondary.a - primary.a) * bgMix,
+  };
 
   // Extract HDR scale: if any RGB > 1 we're in HDR; preserve max value, normalise
   // the rest before HSV conversion to avoid clamping.

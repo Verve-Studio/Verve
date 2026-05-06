@@ -207,6 +207,32 @@ export function registerIpcHandlers(): void {
     await writeFile(userPaintBrushesPath(), data, 'utf-8')
   })
 
+  // ── Paint Brush import/export (.vbrush) ─────────────────────────────────────
+
+  ipcMain.handle('dialog:openPaintBrushFile', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Verve Paint Brushes', extensions: ['vbrush'] }],
+    })
+    return canceled ? null : filePaths[0]
+  })
+
+  ipcMain.handle('dialog:savePaintBrushFile', async (_event, defaultPath?: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath,
+      filters: [{ name: 'Verve Paint Brushes', extensions: ['vbrush'] }],
+    })
+    return canceled ? null : filePath
+  })
+
+  ipcMain.handle('file:readPaintBrushFile', async (_event, filePath: string) => {
+    return readFile(filePath, 'utf-8')
+  })
+
+  ipcMain.handle('file:writePaintBrushFile', async (_event, filePath: string, data: string) => {
+    await writeFile(filePath, data, 'utf-8')
+  })
+
   // ── Dock layout ───────────────────────────────────────────────────────────
   const dockLayoutPath = (): string => join(app.getPath('userData'), 'dock-layout.json')
 

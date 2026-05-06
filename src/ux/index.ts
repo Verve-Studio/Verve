@@ -60,6 +60,7 @@ export {
   BrushSettingsPanel,
   BrushSettingsPanelMount,
 } from "./windows/brush/BrushSettingsPanel/BrushSettingsPanel";
+export { PaintBrushesModal } from "./modals/PaintBrushesModal/PaintBrushesModal";
 export { ColorSwatch } from "./widgets/ColorSwatch/ColorSwatch";
 export type { ColorSwatchProps } from "./widgets/ColorSwatch/ColorSwatch";
 export { EmbedColorPicker } from "./widgets/EmbedColorPicker/EmbedColorPicker";

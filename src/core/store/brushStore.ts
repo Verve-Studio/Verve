@@ -73,6 +73,14 @@ class BrushStore {
     await this.persist();
   }
 
+  async renameUserBrush(id: string, name: string): Promise<void> {
+    this.brushes = this.brushes.map((b) =>
+      b.id === id ? { ...b, name } : b,
+    );
+    this.notify();
+    await this.persist();
+  }
+
   async setUserBrushes(brushes: Brush[]): Promise<void> {
     this.brushes = brushes;
     this.notify();
@@ -94,8 +102,11 @@ class BrushStore {
   private async persist(): Promise<void> {
     try {
       await window.api.saveUserBrushes(serializeBrushFile(this.brushes));
-    } catch {
-      // non-fatal
+    } catch (err) {
+      // Surface failures so we don't silently lose brush edits. The store
+      // keeps the in-memory state, but the next reload won't see it.
+      // eslint-disable-next-line no-console
+      console.error("brushStore: failed to persist user brushes", err);
     }
   }
 }

@@ -27,6 +27,7 @@ import { PlaybackBar } from "@/ux/main/PlaybackBar/PlaybackBar";
 import { AnimationPanel } from "@/ux/main/AnimationPanel/AnimationPanel";
 import { AdjustmentPanel } from "@/ux/windows/ToolWindow";
 import { BrushSettingsPanelMount } from "@/ux/windows/brush/BrushSettingsPanel/BrushSettingsPanel";
+import { PaintBrushesModalMount } from "@/ux/modals/PaintBrushesModal/PaintBrushesModal";
 import { NewImageDialog } from "@/ux/modals/NewImageDialog/NewImageDialog";
 import { ExportDialog } from "@/ux/modals/ExportDialog/ExportDialog";
 import { ResizeImageDialog } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
@@ -621,6 +622,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         />
       )}
 
+      <PaintBrushesModalMount />
       <BrushSettingsPanelMount
         onCaptureFromSelection={async () => {
           if (!activeLayerId) return;
@@ -645,6 +647,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           const brush = makeDefaultBrush(id, "Captured Brush");
           brush.shape = tip;
           await brushStore.addUserBrush(brush);
+          // Make the freshly-captured brush active so the user sees it
+          // immediately on the next stroke instead of having to find it
+          // in the dropdown.
+          dispatch({ type: "SET_ACTIVE_BRUSH", payload: id });
         }}
       />
 

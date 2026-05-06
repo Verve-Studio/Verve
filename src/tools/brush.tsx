@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useBrushes } from "@/core/services/useBrushes";
 import { brushPanelStore } from "@/core/store/brushPanelStore";
+import { brushManagerStore } from "@/core/store/brushManagerStore";
 import type { Brush } from "@/types";
 import { makeDefaultBrush } from "@/types";
 import {
@@ -580,6 +581,15 @@ function BrushOptions({
         title="Open brush settings panel"
       >
         Settings…
+      </button>
+      <span className={styles.optSep} />
+      <button
+        type="button"
+        className={styles.optSelect}
+        onClick={() => brushManagerStore.open()}
+        title="Open the Paint Brushes manager (rename, organise, import/export)"
+      >
+        Manage…
       </button>
       <span className={styles.optSep} />
       <label className={styles.optLabel}>Size:</label>

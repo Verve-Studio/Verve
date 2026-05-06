@@ -1,0 +1,231 @@
+@use '@/styles/variables' as vars;
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog {
+  background: vars.$color-surface;
+  border-radius: vars.$radius-xl;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.85);
+  width: 560px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.titleBar {
+  background: vars.$color-surface-2;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  text-align: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid vars.$color-border;
+  flex-shrink: 0;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  padding: 12px;
+  gap: 8px;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid vars.$color-border;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  border-radius: vars.$radius-md vars.$radius-md 0 0;
+  margin-bottom: -1px;
+
+  &:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+}
+
+.tabActive {
+  color: vars.$color-text;
+  border-bottom-color: vars.$color-accent-blue;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: vars.$font-size-xs;
+  background: vars.$color-surface-2;
+  border-radius: 8px;
+  color: vars.$color-text-muted;
+}
+
+.listWrap {
+  flex: 1;
+  overflow-y: auto;
+  background: vars.$color-bg;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-md;
+  min-height: 240px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+  font-style: italic;
+}
+
+.row, .rowActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: vars.$radius-sm;
+  cursor: pointer;
+  border: 1px solid transparent;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+}
+
+.rowActive {
+  background: vars.$color-accent;
+  border-color: vars.$color-accent-border;
+}
+
+.rowSwatch {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: vars.$color-surface-2;
+  border-radius: vars.$radius-sm;
+  color: vars.$color-text;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rowName {
+  font-size: vars.$font-size-base;
+  color: vars.$color-text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowNameInput {
+  font-size: vars.$font-size-base;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-focus;
+  color: vars.$color-text;
+  padding: 1px 4px;
+  border-radius: vars.$radius-sm;
+  outline: none;
+}
+
+.rowMeta {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.iconBtn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: vars.$color-text-dim;
+  border-radius: vars.$radius-sm;
+  cursor: pointer;
+  font-size: 13px;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+    border-color: vars.$color-border-light;
+  }
+}
+
+.transferRow {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.error {
+  background: rgba(192, 64, 64, 0.18);
+  border: 1px solid vars.$color-danger;
+  color: vars.$color-text;
+  padding: 6px 10px;
+  font-size: vars.$font-size-sm;
+  border-radius: vars.$radius-sm;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid vars.$color-border;
+  background: vars.$color-surface-2;
+  flex-shrink: 0;
+}
+
+.footerSep {
+  flex: 1;
+}

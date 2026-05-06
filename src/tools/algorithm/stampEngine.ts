@@ -47,6 +47,7 @@ import {
   resolveDynamic,
   resolveSymmetric,
   shouldFlip,
+  smoothNoise1D,
   stampHash,
   type StampInputs,
 } from "./dynamicsResolver";
@@ -92,6 +93,16 @@ export interface StrokeStampState {
    * Null until the first stamp.
    */
   smoothDirection: number | null;
+  /**
+   * Inter-stamp colour EMA. Each stamp paints a single uniform colour and
+   * (at full opacity) overwrites the previous stamp's pixels — so even
+   * with smooth-noise jitter, big swings produce a chain of differently
+   * coloured "pills" along the stroke. We blend each stamp's resolved
+   * colour with the previous stamp's so consecutive stamps differ only
+   * marginally, and the optical result is a smooth gradient.
+   * Null until the first stamp samples a colour.
+   */
+  prevStampColor: { r: number; g: number; b: number; a: number } | null;
 }
 
 export function makeStrokeStampState(
@@ -114,6 +125,7 @@ export function makeStrokeStampState(
     },
     smudgeColor: null,
     smoothDirection: null,
+    prevStampColor: null,
   };
 }
 
@@ -311,6 +323,14 @@ function floatToBytes(
   };
 }
 
+/**
+ * Correlation length for the smooth `random` source, in stamps. A new noise
+ * sample is interpolated every ~6 stamps, which translates to roughly one
+ * brush-diameter at default spacing — short enough that variation is visible
+ * along a stroke, long enough that adjacent stamps don't strobe.
+ */
+const NOISE_CORRELATION_STAMPS = 6;
+
 /** Compose StampInputs from stroke pose + per-stamp counters. */
 function makeStampInputs(
   pose: StrokePoseInputs,
@@ -325,6 +345,13 @@ function makeStampInputs(
     state.strokeSeed ^ (countSubindex * 0xa1b2c3d4),
     state.stampIndex,
   );
+  // Smooth noise sample for the `random` source. The `+ countSubindex × 0.137`
+  // offset gives sub-stamps in a scatter group different noise samples even
+  // though they share a stampIndex — without it, all sub-stamps would have
+  // identical size/colour jitter.
+  const noiseT =
+    (state.stampIndex + countSubindex * 0.137) / NOISE_CORRELATION_STAMPS;
+  const noiseSample = smoothNoise1D(noiseT, state.strokeSeed);
   return {
     pressure: pose.pressure,
     velocity: pose.velocity,
@@ -333,6 +360,7 @@ function makeStampInputs(
     direction: pose.direction / (2 * Math.PI),
     stampIndex: state.stampIndex,
     hash,
+    noiseSample,
   };
 }
 
@@ -734,6 +762,14 @@ function emitStampWithCount(
   const bypassCap = brush.smudge.enabled;
   const colorRate = Math.max(0, Math.min(1, brush.smudge.colorRate));
 
+  // EMA weight for inter-stamp colour smoothing. Lower values produce
+  // smoother gradients (more lag); higher values track jitter swings more
+  // closely. 0.18 means each new stamp contributes ~18% of the colour
+  // change, so a full transition spans ~6 stamps — about one brush-diameter
+  // at default spacing — which reads as a continuous gradient instead of
+  // discrete pills.
+  const COLOR_EMA = 0.18;
+
   for (let k = 0; k < count; k++) {
     const resolved = resolveStamp(
       brush,
@@ -747,6 +783,25 @@ function emitStampWithCount(
       state,
       k,
     );
+    // Inter-stamp colour smoothing — applied to the jitter-resolved base
+    // colour. Smudge has its own carry-color path (state.smudgeColor) so
+    // we deliberately smooth before the smudge override, not after.
+    if (state.prevStampColor) {
+      resolved.fr =
+        state.prevStampColor.r * (1 - COLOR_EMA) + resolved.fr * COLOR_EMA;
+      resolved.fg =
+        state.prevStampColor.g * (1 - COLOR_EMA) + resolved.fg * COLOR_EMA;
+      resolved.fb =
+        state.prevStampColor.b * (1 - COLOR_EMA) + resolved.fb * COLOR_EMA;
+      resolved.fa =
+        state.prevStampColor.a * (1 - COLOR_EMA) + resolved.fa * COLOR_EMA;
+    }
+    state.prevStampColor = {
+      r: resolved.fr,
+      g: resolved.fg,
+      b: resolved.fb,
+      a: resolved.fa,
+    };
     if (smudgeMix) {
       // Mix carried color with the (possibly jittered) brush colour by
       // colorRate. 0 → pure smudge, 1 → pure paint, in-between is "finger

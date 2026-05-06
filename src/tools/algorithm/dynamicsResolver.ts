@@ -32,14 +32,40 @@ export interface StampInputs {
   direction: number;
   /** Stamp index since stroke start. Used for `fade`. */
   stampIndex: number;
-  /** Deterministic 32-bit hash unique to this (strokeSeed, stampIndex). */
+  /** Deterministic 32-bit hash unique to this (strokeSeed, stampIndex).
+   *  Used for boolean decisions where each stamp should be independent
+   *  (flip-X/Y jitter, fg/bg swap, scatter direction). */
   hash: number;
+  /** Smooth 1-D value noise sample in [0, 1], keyed on (strokeSeed, stampIndex)
+   *  with a configurable correlation length. Used by the `random` source so
+   *  size/angle/color jitter varies gradually along the stroke instead of
+   *  strobing per stamp. */
+  noiseSample: number;
 }
 
-/** Convert the stamp hash to a uniform 0..1 sample for the `random` source. */
-function hashToUnit(h: number): number {
-  // Multiply by 1/2^32; bias by 0.5 so 0 → 0.5 (mid-curve) like Photoshop.
-  return ((h >>> 0) / 0x100000000);
+function hashIntToUnit(seed: number, key: number): number {
+  let h = (seed ^ Math.imul(key, 0x9e3779b1)) >>> 0;
+  h ^= h << 13;
+  h ^= h >>> 17;
+  h ^= h << 5;
+  return (h >>> 0) / 0x100000000;
+}
+
+/**
+ * 1-D smooth value noise. Adjacent integer-indexed samples are independently
+ * hashed; intermediate `t` values use a smoothstep interpolation between the
+ * neighbouring keys. Output is in [0, 1] with a continuous (C¹) profile,
+ * which is what you want for size / opacity / colour jitter that tracks the
+ * `random` source — uncorrelated per-stamp hashes produce a "strobing"
+ * stroke whose thickness jumps abruptly between stamps.
+ */
+export function smoothNoise1D(t: number, seed: number): number {
+  const i = Math.floor(t);
+  const f = t - i;
+  const ff = f * f * (3 - 2 * f);
+  const a = hashIntToUnit(seed >>> 0, i);
+  const b = hashIntToUnit(seed >>> 0, i + 1);
+  return a * (1 - ff) + b * ff;
 }
 
 function selectSource(
@@ -58,7 +84,11 @@ function selectSource(
     case "direction":
       return inputs.direction;
     case "random":
-      return hashToUnit(inputs.hash);
+      // Smooth 1-D noise — adjacent stamps get correlated values so size /
+      // angle / colour jitter glide instead of strobing. Uncorrelated random
+      // is still available via `inputs.hash` for boolean dynamics that need
+      // per-stamp independence (flip-X/Y, fg/bg swap, scatter direction).
+      return inputs.noiseSample;
     case "fade": {
       const total = curve.fadeStamps ?? 25;
       if (total <= 0) return 0;
@@ -93,14 +123,24 @@ export function resolveDynamic(
 }
 
 /**
- * Variant for symmetric dynamics (angle, hue, etc.) that should swing in both
- * directions around 0 rather than scaling toward 1. Returns a signed value
- * in roughly `[-jitter, +jitter]`. The curve still shapes the response (e.g.
- * pressure-driven angle wobble can be made gentle near light pressure).
+ * Variant for symmetric dynamics (angle, hue, sat, brightness) that swing
+ * in both directions around 0 rather than scaling toward 1. Returns a
+ * continuous signed value in `[-jitter, +jitter]`. The curve shapes the
+ * response (e.g. a pressure-driven hue swing can be flat at low pressure
+ * and ramp up at high pressure).
  *
- * For `random` source we centre the unit hash to `[-0.5, +0.5]` then double
- * for full ±1 range. For deterministic sources (pressure, velocity, …) we
- * return the curve directly minus 0.5 (so identity curve gives 0).
+ * Source mapping:
+ *   - `random` → `(noiseSample − 0.5) × 2` so we get smooth bipolar noise.
+ *   - everything else → curve evaluated at the source value, then
+ *     `c × 2 − 1` so an identity curve gives `(2 sv − 1)`.
+ *
+ * `minimum` is **not** applied here. Treating it as a "deadzone" (snap to 0
+ * inside ±minimum) introduced visible binary behaviour in colour jitter —
+ * the hue / saturation / brightness offsets would step abruptly at the
+ * threshold instead of fading. The slider is currently a no-op for
+ * symmetric dynamics; if a use case for an amplitude floor emerges later
+ * it can be reintroduced as a smooth transform (e.g. a magnitude curve
+ * compression) rather than a hard cutoff.
  */
 export function resolveSymmetric(
   curve: DynamicCurve,
@@ -115,8 +155,6 @@ export function resolveSymmetric(
     const c = Math.min(1, Math.max(0, evaluateCurve(curve.curve, sv)));
     signed = c * 2 - 1; // -1..1
   }
-  // Apply minimum as a "deadzone" — values within ±minimum get pulled to 0.
-  if (Math.abs(signed) < curve.minimum) signed = 0;
   return signed * curve.jitter;
 }
 
