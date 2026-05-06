@@ -1,0 +1,80 @@
+.previewWrap {
+  position: relative;
+  margin: 4px auto 6px;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+  background:
+    repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 12px 12px;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.previewCanvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: auto;
+}
+
+.crosshair {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  pointer-events: none;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+
+  &::before {
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    margin-left: -0.5px;
+  }
+
+  &::after {
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    margin-top: -0.5px;
+  }
+}
+
+.crosshairDot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: #0699fb;
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.previewHint {
+  text-align: center;
+  font-size: 10px;
+  color: #7a7a7a;
+  margin: 0 0 6px;
+  user-select: none;
+}
+
+.axisLabel {
+  font-size: 10px;
+  color: #7a7a7a;
+  width: 10px;
+  flex-shrink: 0;
+}
