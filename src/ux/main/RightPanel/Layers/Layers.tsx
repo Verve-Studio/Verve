@@ -54,7 +54,12 @@ interface TreeRow {
   depth: number;
   /** Pixel/text/shape layers that have at least one attached child (mask/adjustment) */
   hasChildren: boolean;
+  /** True for child rows (mask/adjustment) that are the last sibling under their parent */
+  isLastChild: boolean;
 }
+
+const INDENT_STEP_PX = 20;
+const ROW_PADDING_LEFT_PX = 5;
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -150,6 +155,22 @@ const MaskIcon = ({ active }: { active: boolean }): React.JSX.Element => (
     ) : (
       <path d="M2 7h10" strokeLinecap="round" />
     )}
+  </svg>
+);
+
+const PowerIcon = ({ on }: { on: boolean }): React.JSX.Element => (
+  <svg
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    width="11"
+    height="11"
+    style={{ opacity: on ? 1 : 0.45 }}
+  >
+    <path d="M4.1 3.7a4.5 4.5 0 105.8 0" />
+    <line x1="7" y1="2" x2="7" y2="7.2" />
   </svg>
 );
 
@@ -442,19 +463,21 @@ export function Layers({
             layer,
             depth,
             hasChildren: adjChildren.length > 0 || layer.childIds.length > 0,
+            isLastChild: false,
           });
           if (!layer.collapsed) {
-            for (const child of adjChildren) {
+            for (let ci = 0; ci < adjChildren.length; ci++) {
               result.push({
-                layer: child,
+                layer: adjChildren[ci],
                 depth: depth + 1,
                 hasChildren: false,
+                isLastChild: ci === adjChildren.length - 1,
               });
             }
             walk(layer.childIds, depth + 1, false);
           }
         } else if (isContainerLayer(layer)) {
-          result.push({ layer, depth, hasChildren: false });
+          result.push({ layer, depth, hasChildren: false, isLastChild: false });
           walk(layer.childIds, depth + 1, layer.collapsed);
         } else if (
           !("type" in layer) ||
@@ -469,18 +492,24 @@ export function Layers({
                 layer.id,
           );
           const isCollapsed = collapsedPixelLayers.has(layer.id);
-          result.push({ layer, depth, hasChildren: children.length > 0 });
+          result.push({
+            layer,
+            depth,
+            hasChildren: children.length > 0,
+            isLastChild: false,
+          });
           if (!isCollapsed) {
-            for (const child of children) {
+            for (let ci = 0; ci < children.length; ci++) {
               result.push({
-                layer: child,
+                layer: children[ci],
                 depth: depth + 1,
                 hasChildren: false,
+                isLastChild: ci === children.length - 1,
               });
             }
           }
         } else {
-          result.push({ layer, depth, hasChildren: false });
+          result.push({ layer, depth, hasChildren: false, isLastChild: false });
         }
       }
     }
@@ -1177,7 +1206,7 @@ export function Layers({
             </span>
           </li>
         ) : (
-          filteredRows.map(({ layer, depth, hasChildren }) => {
+          filteredRows.map(({ layer, depth, hasChildren, isLastChild }) => {
             const isMask = "type" in layer && layer.type === "mask";
             const isAdjustment = "type" in layer && layer.type === "adjustment";
             const isText = "type" in layer && layer.type === "text";
@@ -1231,7 +1260,9 @@ export function Layers({
                     : "",
                   isDropInto ? styles.dropTargetGroup : "",
                 ].join(" ")}
-                style={{ paddingLeft: `${5 + depth * 16}px` }}
+                style={{
+                  paddingLeft: `${ROW_PADDING_LEFT_PX + depth * INDENT_STEP_PX}px`,
+                }}
                 role="option"
                 aria-selected={isActive}
                 draggable={true}
@@ -1299,7 +1330,17 @@ export function Layers({
                   !isChild && <div className={styles.disclosureSpacer} />
                 )}
 
-                {isChild && <div className={styles.childConnector} />}
+                {isChild && (
+                  <div
+                    className={[
+                      styles.childConnector,
+                      isLastChild ? "" : styles.childConnectorContinues,
+                    ].join(" ")}
+                    style={{
+                      left: `${ROW_PADDING_LEFT_PX + (depth - 1) * INDENT_STEP_PX + 8}px`,
+                    }}
+                  />
+                )}
 
                 <button
                   className={styles.eyeBtn}
@@ -1307,12 +1348,27 @@ export function Layers({
                     e.stopPropagation();
                     onLayerToggleVisibility(layer.id);
                   }}
-                  aria-label={layer.visible ? "Hide layer" : "Show layer"}
+                  aria-label={
+                    isChild
+                      ? layer.visible
+                        ? "Disable"
+                        : "Enable"
+                      : layer.visible
+                        ? "Hide layer"
+                        : "Show layer"
+                  }
+                  title={
+                    isChild
+                      ? layer.visible
+                        ? "Disable"
+                        : "Enable"
+                      : layer.visible
+                        ? "Hide layer"
+                        : "Show layer"
+                  }
                 >
-                  {isMask ? (
-                    <MaskIcon active={layer.visible} />
-                  ) : isAdjustment ? (
-                    <AdjustmentIcon />
+                  {isChild ? (
+                    <PowerIcon on={layer.visible} />
                   ) : (
                     <EyeIcon visible={layer.visible} />
                   )}
