@@ -28,6 +28,7 @@ export {
   BLOOM_COMPOSITE_COMPUTE,
 } from "./compute/adjustments/bloom";
 export { CHROMATIC_ABERRATION_COMPUTE } from "./compute/adjustments/chromatic-aberration";
+export { VIGNETTE_COMPUTE } from "./compute/adjustments/vignette";
 export { HALATION_EXTRACT_COMPUTE } from "./compute/adjustments/halation";
 export { CK_COMPUTE } from "./compute/adjustments/color-key";
 export {

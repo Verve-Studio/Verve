@@ -223,6 +223,23 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     };
   }
+  if (ls.adjustmentType === "vignette") {
+    const { r, g, b } = ls.params.color;
+    return {
+      kind: "vignette",
+      layerId: ls.id,
+      shape: ls.params.shape,
+      spread: ls.params.spread,
+      softness: ls.params.softness,
+      opacity: ls.params.opacity,
+      colorR: r / 255,
+      colorG: g / 255,
+      colorB: b / 255,
+      roundness: ls.params.roundness,
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
   if (ls.adjustmentType === "halation") {
     return {
       kind: "halation",

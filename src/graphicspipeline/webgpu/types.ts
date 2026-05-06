@@ -162,6 +162,21 @@ export type AdjustmentRenderOp =
       selMaskLayer?: GpuLayer;
     }
   | {
+      kind: "vignette";
+      layerId: string;
+      shape: "ellipse" | "rectangle";
+      spread: number;
+      softness: number;
+      opacity: number;
+      /** Pre-normalised 0..1 colour components. */
+      colorR: number;
+      colorG: number;
+      colorB: number;
+      roundness: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
       kind: "halation";
       layerId: string;
       threshold: number;

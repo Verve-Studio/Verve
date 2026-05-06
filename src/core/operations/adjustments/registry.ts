@@ -153,6 +153,20 @@ export const ADJUSTMENT_REGISTRY = [
     },
   },
   {
+    adjustmentType: "vignette" as const,
+    label: "Vignette…",
+    group: "real-time-effects",
+    menuGroup: "fx-glow",
+    defaultParams: {
+      shape: "ellipse",
+      spread: 0.55,
+      softness: 0.5,
+      opacity: 0.75,
+      color: { r: 0, g: 0, b: 0 },
+      roundness: 0.6,
+    },
+  },
+  {
     adjustmentType: "halation" as const,
     label: "Halation…",
     group: "real-time-effects",

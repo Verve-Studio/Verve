@@ -317,7 +317,8 @@ export type AdjustmentType =
   | "bevel"
   | "inner-shadow"
   | "inner-glow"
-  | "seamless-texture";
+  | "seamless-texture"
+  | "vignette";
 
 export type FilterKey =
   | "gaussian-blur"
@@ -587,6 +588,20 @@ export interface AdjustmentParamsMap {
     seed: number;
   };
   pixelate: { blockSize: number };
+  vignette: {
+    /** "ellipse" — soft elliptical falloff; "rectangle" — super-ellipse with controllable corners. */
+    shape: "ellipse" | "rectangle";
+    /** Where the vignette begins. 0 = at the center, 1 = at the corner (no vignette). */
+    spread: number;
+    /** Width of the falloff band. 0 = hard edge, 1 = very soft. */
+    softness: number;
+    /** Overall opacity of the vignette overlay. 0–1. */
+    opacity: number;
+    /** Vignette colour as sRGB bytes (0–255). */
+    color: { r: number; g: number; b: number };
+    /** Corner roundness for `shape: "rectangle"`. 0 = sharp rectangle, 1 = ellipse. */
+    roundness: number;
+  };
   "seamless-texture": {
     /** Enable the Voronoi island break-repetition pass. Default: true */
     breakRepetition: boolean;
@@ -917,6 +932,12 @@ export interface SeamlessTextureAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean;
 }
 
+export interface VignetteAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "vignette";
+  params: AdjustmentParamsMap["vignette"];
+  hasMask: boolean;
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -958,7 +979,8 @@ export type AdjustmentLayerState =
   | BevelAdjustmentLayer
   | InnerShadowAdjustmentLayer
   | InnerGlowAdjustmentLayer
-  | SeamlessTextureAdjustmentLayer;
+  | SeamlessTextureAdjustmentLayer
+  | VignetteAdjustmentLayer;
 
 export interface GroupLayerState {
   id: string;

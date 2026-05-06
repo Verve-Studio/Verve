@@ -15,6 +15,7 @@ export { ReduceColorsPanel } from "./windows/adjustments/ReduceColorsPanel/Reduc
 export { ColorDitheringPanel } from "./windows/adjustments/ColorDitheringPanel/ColorDitheringPanel";
 export { BloomOptions } from "./windows/effects/BloomOptions/BloomOptions";
 export { ChromaticAberrationOptions } from "./windows/effects/ChromaticAberrationOptions/ChromaticAberrationOptions";
+export { VignetteOptions } from "./windows/effects/VignetteOptions/VignetteOptions";
 export { HalationOptions } from "./windows/effects/HalationOptions/HalationOptions";
 export { ColorKeyPanel } from "./windows/effects/ColorKeyPanel/ColorKeyPanel";
 export { DropShadowOptions } from "./windows/effects/DropShadowOptions/DropShadowOptions";

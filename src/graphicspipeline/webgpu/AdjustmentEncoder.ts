@@ -27,6 +27,7 @@ import {
   BLOOM_BLUR_V_COMPUTE,
   BLOOM_COMPOSITE_COMPUTE,
   CHROMATIC_ABERRATION_COMPUTE,
+  VIGNETTE_COMPUTE,
   HALATION_EXTRACT_COMPUTE,
   CK_COMPUTE,
   DROP_SHADOW_DILATE_H_COMPUTE,
@@ -271,6 +272,9 @@ export class AdjustmentEncoder {
   // Render pipeline pair for chromatic aberration (converted from compute)
   private readonly caPipeline: AdjPipelinePair;
 
+  // Render pipeline pair for vignette
+  private readonly vignettePipeline: AdjPipelinePair;
+
   // Compute pipelines — shaders still use cs_* entry + texture_storage_2d write
   private readonly shadowDilateHPipeline: GPUComputePipeline;
   private readonly shadowDilateVPipeline: GPUComputePipeline;
@@ -509,6 +513,12 @@ export class AdjustmentEncoder {
       device,
       CHROMATIC_ABERRATION_COMPUTE,
       "fs_chromatic_aberration",
+      STD,
+    );
+    this.vignettePipeline = createAdjRenderPipelinePair(
+      device,
+      VIGNETTE_COMPUTE,
+      "fs_vignette",
       STD,
     );
 
@@ -828,6 +838,36 @@ export class AdjustmentEncoder {
       this.encodeStdAdjRenderPass(
         encoder,
         this.caPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "vignette") {
+      // VignetteParams layout (32 bytes):
+      //   0  shape     u32
+      //   4  spread    f32
+      //   8  softness  f32
+      //  12  opacity   f32
+      //  16  color     vec3f
+      //  28  roundness f32
+      const buf = new ArrayBuffer(32);
+      const u = new Uint32Array(buf);
+      const f = new Float32Array(buf);
+      u[0] = entry.shape === "ellipse" ? 0 : 1;
+      f[1] = entry.spread;
+      f[2] = entry.softness;
+      f[3] = entry.opacity;
+      f[4] = entry.colorR;
+      f[5] = entry.colorG;
+      f[6] = entry.colorB;
+      f[7] = entry.roundness;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.vignettePipeline,
         srcTex,
         dstTex,
         format,

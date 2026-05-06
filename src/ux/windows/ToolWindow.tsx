@@ -43,6 +43,7 @@ import type {
   InnerShadowAdjustmentLayer,
   InnerGlowAdjustmentLayer,
   SeamlessTextureAdjustmentLayer,
+  VignetteAdjustmentLayer,
 } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { BrightnessContrastPanel } from "./adjustments/BrightnessContrastPanel/BrightnessContrastPanel";
@@ -59,6 +60,7 @@ import { ReduceColorsPanel } from "./adjustments/ReduceColorsPanel/ReduceColorsP
 import { ColorDitheringPanel } from "./adjustments/ColorDitheringPanel/ColorDitheringPanel";
 import { BloomOptions } from "./effects/BloomOptions/BloomOptions";
 import { ChromaticAberrationOptions } from "./effects/ChromaticAberrationOptions/ChromaticAberrationOptions";
+import { VignetteOptions } from "./effects/VignetteOptions/VignetteOptions";
 import { HalationOptions } from "./effects/HalationOptions/HalationOptions";
 import { ColorKeyPanel } from "./effects/ColorKeyPanel/ColorKeyPanel";
 import { DropShadowOptions } from "./effects/DropShadowOptions/DropShadowOptions";
@@ -127,6 +129,8 @@ function toolTitle(layer: AdjustmentLayerState): string {
       return "Bloom";
     case "chromatic-aberration":
       return "Chromatic Aberration";
+    case "vignette":
+      return "Vignette";
     case "halation":
       return "Halation";
     case "color-key":
@@ -418,6 +422,41 @@ const BloomHeaderIcon = (): React.JSX.Element => (
   </svg>
 );
 
+const VignetteHeaderIcon = (): React.JSX.Element => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    aria-hidden="true"
+  >
+    <defs>
+      <radialGradient id="vignette-grad" cx="0.5" cy="0.5" r="0.55">
+        <stop offset="0.45" stopColor="#d4d4d4" stopOpacity="0" />
+        <stop offset="1" stopColor="#000000" stopOpacity="0.95" />
+      </radialGradient>
+    </defs>
+    <rect
+      x="1"
+      y="1"
+      width="10"
+      height="10"
+      rx="1.5"
+      stroke="currentColor"
+      strokeWidth="1"
+      fill="#d4d4d4"
+    />
+    <rect
+      x="1"
+      y="1"
+      width="10"
+      height="10"
+      rx="1.5"
+      fill="url(#vignette-grad)"
+    />
+  </svg>
+);
+
 const ChromaticAberrationHeaderIcon = (): React.JSX.Element => (
   <svg
     width="12"
@@ -592,6 +631,7 @@ function AdjPanelIcon({
   if (type === "color-dithering") return <ColorDitheringHeaderIcon />;
   if (type === "bloom") return <BloomHeaderIcon />;
   if (type === "chromatic-aberration") return <ChromaticAberrationHeaderIcon />;
+  if (type === "vignette") return <VignetteHeaderIcon />;
   if (type === "halation") return <HalationHeaderIcon />;
   if (type === "color-key") return <ColorKeyHeaderIcon />;
   if (type === "drop-shadow") return <DropShadowHeaderIcon />;
@@ -738,6 +778,12 @@ export function AdjustmentPanel({
         {adjLayer.adjustmentType === "chromatic-aberration" && (
           <ChromaticAberrationOptions
             layer={adjLayer as ChromaticAberrationAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "vignette" && (
+          <VignetteOptions
+            layer={adjLayer as VignetteAdjustmentLayer}
             parentLayerName={parentLayerName}
           />
         )}
