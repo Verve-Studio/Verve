@@ -321,7 +321,14 @@ export type AdjustmentType =
   | "inner-glow"
   | "seamless-texture"
   | "vignette"
-  | "lens-distortion";
+  | "lens-distortion"
+  | "pinch"
+  | "polar-coordinates"
+  | "ripple"
+  | "shear"
+  | "twirl"
+  | "displace"
+  | "offset";
 
 export type FilterKey =
   | "gaussian-blur"
@@ -342,7 +349,8 @@ export type FilterKey =
   | "reduce-noise"
   | "render-lens-flare"
   | "pixelate"
-  | "seamless-texture";
+  | "seamless-texture"
+  | "offset";
 
 export type CurvesChannel = "rgb" | "red" | "green" | "blue";
 
@@ -523,6 +531,79 @@ export interface AdjustmentParamsMap {
     type: "radial" | "directional";
     distance: number; // 0–50 px
     angle: number; // 0–360 degrees (used only when type === 'directional')
+  };
+  /** Photoshop-style Pinch — pulls pixels toward (positive amount) or pushes
+   *  them away from (negative) a centre point with a smooth radial falloff. */
+  pinch: {
+    /** −100..100. Positive pinches inward, negative spherises outward. */
+    amount: number;
+    /** Falloff radius as a fraction of the image's half-diagonal (0..1). */
+    radius: number;
+    centerX: number;
+    centerY: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+  };
+  /** Photoshop's Polar Coordinates: rect↔polar coordinate conversion. */
+  "polar-coordinates": {
+    mode: "rect-to-polar" | "polar-to-rect";
+    centerX: number;
+    centerY: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+  };
+  /** Sinusoidal Ripple displacement (Photoshop's Distort → Ripple). */
+  ripple: {
+    /** Wave amplitude, −500..500 (≈px peak displacement). */
+    amount: number;
+    /** Wavelength control (1..100, larger = bigger waves). */
+    size: number;
+    /** Which axes ripple along. `both` produces a cross-pattern. */
+    direction: "horizontal" | "vertical" | "both";
+    edgeMode: "transparent" | "clamp" | "mirror";
+  };
+  /** Shear — sinusoidal or linear horizontal/vertical pixel shifting. */
+  shear: {
+    /** Total pixel shift across the axis (−500..500). */
+    amplitude: number;
+    /** Axis the shift acts on. `horizontal` shifts pixels along X by an
+     *  amount that varies with Y; `vertical` is the opposite. */
+    direction: "horizontal" | "vertical";
+    /** 0 = pure linear shear, >0 introduces sine-wave shape (Photoshop's
+     *  free-form curve approximated via a frequency control). 0..10. */
+    waveFrequency: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+  };
+  /** Twirl — angular rotation that decays from a centre point. */
+  twirl: {
+    /** Twirl angle in degrees (−1080..1080, multi-rev allowed). */
+    angle: number;
+    centerX: number;
+    centerY: number;
+    /** Effective twirl radius as fraction of the image half-diagonal (0..1). */
+    radius: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+  };
+  /** Displace — procedural noise-driven pixel displacement. Photoshop's
+   *  Displace uses a .psd map; we use Perlin-style noise as a built-in
+   *  source so the effect runs without an additional layer pick. */
+  displace: {
+    /** Horizontal displacement scale in pixels at noise peak (−200..200). */
+    horizontalScale: number;
+    /** Vertical displacement scale in pixels at noise peak. */
+    verticalScale: number;
+    /** Noise frequency (1..200, higher = finer-grained noise). */
+    noiseFrequency: number;
+    /** Random seed so users can vary the displacement pattern. */
+    seed: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+  };
+  /** Wrap-around pixel offset (Photoshop's Filter > Other > Offset). */
+  offset: {
+    /** Horizontal shift in pixels. Positive = image moves right; pixels
+     *  pushed off the right edge reappear on the left. */
+    offsetX: number;
+    /** Vertical shift in pixels. Positive = image moves down; pixels pushed
+     *  off the bottom reappear on the top. */
+    offsetY: number;
   };
   "lens-distortion": {
     /** Distortion model. `radial` covers barrel/pincushion via signed strength;
@@ -1055,6 +1136,48 @@ export interface LensDistortionAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean;
 }
 
+export interface OffsetAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "offset";
+  params: AdjustmentParamsMap["offset"];
+  hasMask: boolean;
+}
+
+export interface PinchAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "pinch";
+  params: AdjustmentParamsMap["pinch"];
+  hasMask: boolean;
+}
+
+export interface PolarCoordinatesAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "polar-coordinates";
+  params: AdjustmentParamsMap["polar-coordinates"];
+  hasMask: boolean;
+}
+
+export interface RippleAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "ripple";
+  params: AdjustmentParamsMap["ripple"];
+  hasMask: boolean;
+}
+
+export interface ShearAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "shear";
+  params: AdjustmentParamsMap["shear"];
+  hasMask: boolean;
+}
+
+export interface TwirlAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "twirl";
+  params: AdjustmentParamsMap["twirl"];
+  hasMask: boolean;
+}
+
+export interface DisplaceAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "displace";
+  params: AdjustmentParamsMap["displace"];
+  hasMask: boolean;
+}
+
 export type AdjustmentLayerState =
   | BrightnessContrastAdjustmentLayer
   | HueSaturationAdjustmentLayer
@@ -1100,7 +1223,14 @@ export type AdjustmentLayerState =
   | InnerGlowAdjustmentLayer
   | SeamlessTextureAdjustmentLayer
   | VignetteAdjustmentLayer
-  | LensDistortionAdjustmentLayer;
+  | LensDistortionAdjustmentLayer
+  | PinchAdjustmentLayer
+  | PolarCoordinatesAdjustmentLayer
+  | RippleAdjustmentLayer
+  | ShearAdjustmentLayer
+  | TwirlAdjustmentLayer
+  | DisplaceAdjustmentLayer
+  | OffsetAdjustmentLayer;
 
 export interface GroupLayerState {
   id: string;

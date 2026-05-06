@@ -20,6 +20,12 @@ import {
   CHANNEL_MIXER_COMPUTE,
   AUTO_MATCH_COMPUTE,
   LENS_DISTORTION_COMPUTE,
+  PINCH_COMPUTE,
+  POLAR_COORDINATES_COMPUTE,
+  RIPPLE_COMPUTE,
+  SHEAR_COMPUTE,
+  TWIRL_COMPUTE,
+  DISPLACE_COMPUTE,
   CURVES_COMPUTE,
   CG_COMPUTE,
   RC_COMPUTE,
@@ -76,6 +82,7 @@ import {
   encodeReduceNoise,
   encodeClouds,
   encodePixelate,
+  encodeOffset,
   encodeSeamlessTexture,
   flushFilterComputeDestroys,
 } from "./compute/filterCompute";
@@ -258,6 +265,12 @@ export class AdjustmentEncoder {
   private readonly channelMixerPipeline: AdjPipelinePair;
   private readonly autoMatchPipeline: AdjPipelinePair;
   private readonly lensDistortionPipeline: AdjPipelinePair;
+  private readonly pinchPipeline: AdjPipelinePair;
+  private readonly polarPipeline: AdjPipelinePair;
+  private readonly ripplePipeline: AdjPipelinePair;
+  private readonly shearPipeline: AdjPipelinePair;
+  private readonly twirlPipeline: AdjPipelinePair;
+  private readonly displacePipeline: AdjPipelinePair;
   private readonly curvesPipeline: AdjPipelinePair;
   private readonly cgPipeline: AdjPipelinePair;
   private readonly rcPipeline: AdjPipelinePair;
@@ -433,6 +446,42 @@ export class AdjustmentEncoder {
       device,
       LENS_DISTORTION_COMPUTE,
       "fs_lens_distortion",
+      STD,
+    );
+    this.pinchPipeline = createAdjRenderPipelinePair(
+      device,
+      PINCH_COMPUTE,
+      "fs_pinch",
+      STD,
+    );
+    this.polarPipeline = createAdjRenderPipelinePair(
+      device,
+      POLAR_COORDINATES_COMPUTE,
+      "fs_polar",
+      STD,
+    );
+    this.ripplePipeline = createAdjRenderPipelinePair(
+      device,
+      RIPPLE_COMPUTE,
+      "fs_ripple",
+      STD,
+    );
+    this.shearPipeline = createAdjRenderPipelinePair(
+      device,
+      SHEAR_COMPUTE,
+      "fs_shear",
+      STD,
+    );
+    this.twirlPipeline = createAdjRenderPipelinePair(
+      device,
+      TWIRL_COMPUTE,
+      "fs_twirl",
+      STD,
+    );
+    this.displacePipeline = createAdjRenderPipelinePair(
+      device,
+      DISPLACE_COMPUTE,
+      "fs_displace",
       STD,
     );
     // Curves: srcTex, smp, selMask, maskFlags, lutSampler (filtering), rgbLut, redLut, greenLut, blueLut (filterable r8unorm)
@@ -824,6 +873,124 @@ export class AdjustmentEncoder {
       this.encodeStdAdjRenderPass(
         encoder,
         this.lensDistortionPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "pinch") {
+      // 32-byte UBO (rounded by WGSL): amount, radius, cx, cy, edgeMode, _pad×3
+      const buf = new ArrayBuffer(32);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      f[0] = entry.amount;
+      f[1] = entry.radius;
+      f[2] = entry.centerX;
+      f[3] = entry.centerY;
+      u[4] = entry.edgeMode;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.pinchPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "polar-coordinates") {
+      const buf = new ArrayBuffer(32);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      u[0] = entry.mode;
+      f[1] = entry.centerX;
+      f[2] = entry.centerY;
+      u[3] = entry.edgeMode;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.polarPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "ripple") {
+      const buf = new ArrayBuffer(32);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      f[0] = entry.amount;
+      f[1] = entry.wavelengthPx;
+      u[2] = entry.direction;
+      u[3] = entry.edgeMode;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.ripplePipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "shear") {
+      const buf = new ArrayBuffer(32);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      f[0] = entry.amplitude;
+      u[1] = entry.direction;
+      f[2] = entry.waveFrequency;
+      u[3] = entry.edgeMode;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.shearPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "twirl") {
+      const buf = new ArrayBuffer(32);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      f[0] = entry.angleRad;
+      f[1] = entry.centerX;
+      f[2] = entry.centerY;
+      f[3] = entry.radius;
+      u[4] = entry.edgeMode;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.twirlPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "displace") {
+      const buf = new ArrayBuffer(32);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      f[0] = entry.horizontalScale;
+      f[1] = entry.verticalScale;
+      f[2] = entry.noiseFrequency;
+      f[3] = entry.seed;
+      u[4] = entry.edgeMode;
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.displacePipeline,
         srcTex,
         dstTex,
         format,
@@ -1339,6 +1506,18 @@ export class AdjustmentEncoder {
     }
     if (entry.kind === "pixelate") {
       encodePixelate(encoder, srcTex, dstTex, w, h, entry.blockSize);
+      return;
+    }
+    if (entry.kind === "offset") {
+      encodeOffset(
+        encoder,
+        srcTex,
+        dstTex,
+        w,
+        h,
+        entry.offsetX,
+        entry.offsetY,
+      );
       return;
     }
     if (entry.kind === "seamless-texture") {

@@ -125,6 +125,139 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     };
   }
+  if (ls.adjustmentType === "pinch") {
+    const p = ls.params;
+    const EDGE: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    return {
+      kind: "pinch",
+      layerId: ls.id,
+      amount: p.amount / 100,
+      radius: p.radius,
+      centerX: p.centerX,
+      centerY: p.centerY,
+      edgeMode: EDGE[p.edgeMode],
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "polar-coordinates") {
+    const p = ls.params;
+    const EDGE: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    return {
+      kind: "polar-coordinates",
+      layerId: ls.id,
+      mode: p.mode === "rect-to-polar" ? 0 : 1,
+      centerX: p.centerX,
+      centerY: p.centerY,
+      edgeMode: EDGE[p.edgeMode],
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "ripple") {
+    const p = ls.params;
+    const DIR: Record<typeof p.direction, number> = {
+      horizontal: 0,
+      vertical: 1,
+      both: 2,
+    };
+    const EDGE: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    // Map the abstract `size` slider (1..100) into a wavelength in pixels.
+    // Larger size → longer wavelength (slower waves).
+    const wavelengthPx = Math.max(2, p.size * 4);
+    return {
+      kind: "ripple",
+      layerId: ls.id,
+      amount: p.amount,
+      wavelengthPx,
+      direction: DIR[p.direction],
+      edgeMode: EDGE[p.edgeMode],
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "shear") {
+    const p = ls.params;
+    const DIR: Record<typeof p.direction, number> = {
+      horizontal: 0,
+      vertical: 1,
+    };
+    const EDGE: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    return {
+      kind: "shear",
+      layerId: ls.id,
+      amplitude: p.amplitude,
+      direction: DIR[p.direction],
+      waveFrequency: p.waveFrequency,
+      edgeMode: EDGE[p.edgeMode],
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "twirl") {
+    const p = ls.params;
+    const EDGE: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    return {
+      kind: "twirl",
+      layerId: ls.id,
+      angleRad: (p.angle * Math.PI) / 180,
+      centerX: p.centerX,
+      centerY: p.centerY,
+      radius: p.radius,
+      edgeMode: EDGE[p.edgeMode],
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "displace") {
+    const p = ls.params;
+    const EDGE: Record<typeof p.edgeMode, number> = {
+      transparent: 0,
+      clamp: 1,
+      mirror: 2,
+    };
+    return {
+      kind: "displace",
+      layerId: ls.id,
+      horizontalScale: p.horizontalScale,
+      verticalScale: p.verticalScale,
+      noiseFrequency: p.noiseFrequency,
+      seed: p.seed,
+      edgeMode: EDGE[p.edgeMode],
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "offset") {
+    return {
+      kind: "offset",
+      layerId: ls.id,
+      offsetX: Math.round(ls.params.offsetX),
+      offsetY: Math.round(ls.params.offsetY),
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
   if (ls.adjustmentType === "lens-distortion") {
     const p = ls.params;
     const TYPE_MAP: Record<typeof p.type, number> = {

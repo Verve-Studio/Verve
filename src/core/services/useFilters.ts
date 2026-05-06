@@ -43,6 +43,7 @@ export interface UseFiltersReturn {
   handleInstantFilter: (key: FilterKey) => void;
   handleOpenPixelate: () => void;
   handleOpenSeamlessTexture: () => void;
+  handleOpenOffset: () => void;
 }
 
 export function useFilters({
@@ -188,6 +189,11 @@ export function useFilters({
     [onCreateFilterAdjLayer],
   );
 
+  const handleOpenOffset = useCallback(
+    () => onCreateFilterAdjLayer("offset"),
+    [onCreateFilterAdjLayer],
+  );
+
   return {
     isFiltersMenuEnabled,
     handleOpenGaussianBlur,
@@ -211,5 +217,6 @@ export function useFilters({
     handleInstantFilter,
     handleOpenPixelate,
     handleOpenSeamlessTexture,
+    handleOpenOffset,
   };
 }

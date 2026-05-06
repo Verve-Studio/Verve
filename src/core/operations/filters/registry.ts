@@ -4,7 +4,14 @@ export interface FilterRegistryEntry {
   key: FilterKey;
   label: string;
   instant?: boolean;
-  group?: "blur" | "sharpen" | "noise" | "render" | "pixelate" | "texture";
+  group?:
+    | "blur"
+    | "sharpen"
+    | "noise"
+    | "render"
+    | "pixelate"
+    | "texture"
+    | "other";
 }
 
 export const FILTER_REGISTRY: FilterRegistryEntry[] = [
@@ -32,4 +39,5 @@ export const FILTER_REGISTRY: FilterRegistryEntry[] = [
   { key: "render-lens-flare", label: "Lens Flare…", group: "render" },
   { key: "pixelate", label: "Pixelate…", group: "pixelate" },
   { key: "seamless-texture", label: "Seamless Texture…", group: "texture" },
+  { key: "offset", label: "Offset…", group: "other" },
 ];

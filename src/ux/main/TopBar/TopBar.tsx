@@ -510,7 +510,34 @@ export function TopBar({
         items: (() => {
           const result: MenuDef["items"] = [];
           let lastGroup: string | undefined = undefined;
+          // Items whose menuGroup is `fx-distortion` collapse into a single
+          // "Distortion" submenu inserted at the position the first such item
+          // would have appeared. Other groups stay as flat sections separated
+          // by separators.
+          const distortionItems = (effectsMenuItems ?? []).filter(
+            (i) => i.group === "fx-distortion",
+          );
+          let distortionInserted = false;
           for (const item of effectsMenuItems ?? []) {
+            if (item.group === "fx-distortion") {
+              if (!distortionInserted) {
+                if (lastGroup !== undefined && lastGroup !== "fx-distortion") {
+                  result.push({ separator: true, label: "" });
+                }
+                result.push({
+                  label: "Distortion",
+                  submenu: distortionItems.map((d) => ({
+                    label: d.label,
+                    disabled:
+                      !isAdjustmentMenuEnabled || pixelFormat === "indexed8",
+                    action: () => onCreateAdjustmentLayer?.(d.type),
+                  })),
+                });
+                distortionInserted = true;
+                lastGroup = item.group;
+              }
+              continue;
+            }
             if (
               item.group !== undefined &&
               item.group !== lastGroup &&

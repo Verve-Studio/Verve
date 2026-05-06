@@ -492,6 +492,77 @@ export type AdjustmentRenderOp =
       selMaskLayer?: GpuLayer;
     }
   | {
+      kind: "pinch";
+      layerId: string;
+      amount: number; // −1..1
+      radius: number; // 0..1
+      centerX: number;
+      centerY: number;
+      edgeMode: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "polar-coordinates";
+      layerId: string;
+      mode: number; // 0=rect→polar, 1=polar→rect
+      centerX: number;
+      centerY: number;
+      edgeMode: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "ripple";
+      layerId: string;
+      amount: number; // pixels
+      wavelengthPx: number;
+      direction: number; // 0=h, 1=v, 2=both
+      edgeMode: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "shear";
+      layerId: string;
+      amplitude: number; // pixels
+      direction: number; // 0=h, 1=v
+      waveFrequency: number;
+      edgeMode: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "twirl";
+      layerId: string;
+      angleRad: number;
+      centerX: number;
+      centerY: number;
+      radius: number; // 0..1
+      edgeMode: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "displace";
+      layerId: string;
+      horizontalScale: number; // pixels
+      verticalScale: number;
+      noiseFrequency: number;
+      seed: number;
+      edgeMode: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "offset";
+      layerId: string;
+      offsetX: number;
+      offsetY: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
       kind: "lens-distortion";
       layerId: string;
       distType: number; // 0=radial, 1=fisheye, 2=mustache, 3=perspective

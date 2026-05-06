@@ -68,6 +68,7 @@ import {
   FILTER_PIXELATE_COMPUTE,
   runPixelate,
 } from "../shaders/compute/filters/pixelate";
+import { FILTER_OFFSET_COMPUTE } from "../shaders/compute/filters/offset";
 import {
   FILTER_SEAMLESS_BREAK_COMPUTE,
   FILTER_SEAMLESS_BORDER_COMPUTE,
@@ -148,6 +149,7 @@ class FilterComputeEngine {
   private readonly reduceNoisePipeline: FilterPipelinePair;
   private readonly lensFlareRenderPipeline: GPURenderPipeline;
   private readonly pixelatePipeline: FilterPipelinePair;
+  private readonly offsetPipeline: FilterPipelinePair;
   private readonly seamlessBreakPipeline: FilterPipelinePair;
   private readonly seamlessBorderPipeline: FilterPipelinePair;
   private readonly rmbPsfPipeline: GPURenderPipeline;
@@ -251,6 +253,7 @@ class FilterComputeEngine {
       FILTER_PIXELATE_COMPUTE,
       "fs_pixelate",
     );
+    this.offsetPipeline = this.makePair(FILTER_OFFSET_COMPUTE, "fs_offset");
     this.seamlessBreakPipeline = this.makePair(
       FILTER_SEAMLESS_BREAK_COMPUTE,
       "fs_seamless_break",
@@ -1556,6 +1559,32 @@ class FilterComputeEngine {
     );
   }
 
+  encodeOffset(
+    encoder: GPUCommandEncoder,
+    srcTex: GPUTexture,
+    dstTex: GPUTexture,
+    _w: number,
+    _h: number,
+    offsetX: number,
+    offsetY: number,
+  ): void {
+    // Pack as i32 (Int32Array) so the WGSL `%` operator's signed semantics
+    // are unambiguous on negative offsets.
+    const data = new Int32Array([offsetX | 0, offsetY | 0, 0, 0]);
+    const paramsBuf = this.makeParamsBuf(
+      new Uint32Array(data.buffer, data.byteOffset, data.length),
+    );
+    this.encodeRenderPass(
+      encoder,
+      this.selectPipeline(this.offsetPipeline, dstTex),
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
+      dstTex,
+    );
+  }
+
   encodeSeamlessTexture(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
@@ -2212,6 +2241,17 @@ export function encodePixelate(
   blockSize: number,
 ): void {
   _engine!.encodePixelate(encoder, srcTex, dstTex, w, h, blockSize);
+}
+export function encodeOffset(
+  encoder: GPUCommandEncoder,
+  srcTex: GPUTexture,
+  dstTex: GPUTexture,
+  w: number,
+  h: number,
+  offsetX: number,
+  offsetY: number,
+): void {
+  _engine!.encodeOffset(encoder, srcTex, dstTex, w, h, offsetX, offsetY);
 }
 export function encodeSeamlessTexture(
   encoder: GPUCommandEncoder,

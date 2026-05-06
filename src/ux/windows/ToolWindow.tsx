@@ -47,6 +47,13 @@ import type {
   SeamlessTextureAdjustmentLayer,
   VignetteAdjustmentLayer,
   LensDistortionAdjustmentLayer,
+  PinchAdjustmentLayer,
+  PolarCoordinatesAdjustmentLayer,
+  RippleAdjustmentLayer,
+  ShearAdjustmentLayer,
+  TwirlAdjustmentLayer,
+  DisplaceAdjustmentLayer,
+  OffsetAdjustmentLayer,
 } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { BrightnessContrastPanel } from "./adjustments/BrightnessContrastPanel/BrightnessContrastPanel";
@@ -67,6 +74,12 @@ import { BloomOptions } from "./effects/BloomOptions/BloomOptions";
 import { ChromaticAberrationOptions } from "./effects/ChromaticAberrationOptions/ChromaticAberrationOptions";
 import { VignetteOptions } from "./effects/VignetteOptions/VignetteOptions";
 import { LensDistortionOptions } from "./effects/LensDistortionOptions/LensDistortionOptions";
+import { PinchOptions } from "./effects/PinchOptions/PinchOptions";
+import { PolarCoordinatesOptions } from "./effects/PolarCoordinatesOptions/PolarCoordinatesOptions";
+import { RippleOptions } from "./effects/RippleOptions/RippleOptions";
+import { ShearOptions } from "./effects/ShearOptions/ShearOptions";
+import { TwirlOptions } from "./effects/TwirlOptions/TwirlOptions";
+import { DisplaceOptions } from "./effects/DisplaceOptions/DisplaceOptions";
 import { HalationOptions } from "./effects/HalationOptions/HalationOptions";
 import { ColorKeyPanel } from "./effects/ColorKeyPanel/ColorKeyPanel";
 import { DropShadowOptions } from "./effects/DropShadowOptions/DropShadowOptions";
@@ -93,6 +106,7 @@ import { ReduceNoisePanel } from "./filters/ReduceNoisePanel/ReduceNoisePanel";
 import { CloudsPanel } from "./filters/CloudsPanel/CloudsPanel";
 import { PixelatePanel } from "./filters/PixelatePanel/PixelatePanel";
 import { SeamlessTexturePanel } from "./filters/SeamlessTexturePanel/SeamlessTexturePanel";
+import { OffsetPanel } from "./filters/OffsetPanel/OffsetPanel";
 import { ToolWindow } from "@/ux";
 import styles from "./ToolWindow.module.scss";
 
@@ -143,6 +157,18 @@ function toolTitle(layer: AdjustmentLayerState): string {
       return "Vignette";
     case "lens-distortion":
       return "Lens Distortion";
+    case "pinch":
+      return "Pinch";
+    case "polar-coordinates":
+      return "Polar Coordinates";
+    case "ripple":
+      return "Ripple";
+    case "shear":
+      return "Shear";
+    case "twirl":
+      return "Twirl";
+    case "displace":
+      return "Displace";
     case "halation":
       return "Halation";
     case "color-key":
@@ -191,6 +217,8 @@ function toolTitle(layer: AdjustmentLayerState): string {
       return "Pixelate";
     case "seamless-texture":
       return "Seamless Texture";
+    case "offset":
+      return "Offset";
     case "bevel":
       return "Bevel";
     case "inner-shadow":
@@ -703,6 +731,15 @@ function AdjPanelIcon({
   if (type === "chromatic-aberration") return <ChromaticAberrationHeaderIcon />;
   if (type === "vignette") return <VignetteHeaderIcon />;
   if (type === "lens-distortion") return <LensDistortionHeaderIcon />;
+  if (
+    type === "pinch" ||
+    type === "polar-coordinates" ||
+    type === "ripple" ||
+    type === "shear" ||
+    type === "twirl" ||
+    type === "displace"
+  )
+    return <LensDistortionHeaderIcon />;
   if (type === "halation") return <HalationHeaderIcon />;
   if (type === "color-key") return <ColorKeyHeaderIcon />;
   if (type === "drop-shadow") return <DropShadowHeaderIcon />;
@@ -886,6 +923,42 @@ export function AdjustmentPanel({
             parentLayerName={parentLayerName}
           />
         )}
+        {adjLayer.adjustmentType === "pinch" && (
+          <PinchOptions
+            layer={adjLayer as PinchAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "polar-coordinates" && (
+          <PolarCoordinatesOptions
+            layer={adjLayer as PolarCoordinatesAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "ripple" && (
+          <RippleOptions
+            layer={adjLayer as RippleAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "shear" && (
+          <ShearOptions
+            layer={adjLayer as ShearAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "twirl" && (
+          <TwirlOptions
+            layer={adjLayer as TwirlAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "displace" && (
+          <DisplaceOptions
+            layer={adjLayer as DisplaceAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
         {adjLayer.adjustmentType === "halation" && (
           <HalationOptions
             layer={adjLayer as HalationAdjustmentLayer}
@@ -1045,6 +1118,12 @@ export function AdjustmentPanel({
         {adjLayer.adjustmentType === "seamless-texture" && (
           <SeamlessTexturePanel
             layer={adjLayer as SeamlessTextureAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "offset" && (
+          <OffsetPanel
+            layer={adjLayer as OffsetAdjustmentLayer}
             parentLayerName={parentLayerName}
           />
         )}
