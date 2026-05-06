@@ -125,6 +125,54 @@ export function buildAdjustmentEntry(
       selMaskLayer: mask,
     };
   }
+  if (ls.adjustmentType === "auto-match") {
+    const p = ls.params;
+    const stats = p.cachedStats;
+    const lz = stats?.layer;
+    const cz = stats?.context;
+    return {
+      kind: "auto-match",
+      layerId: ls.id,
+      strength: p.strength / 100,
+      brightness: p.brightness / 100,
+      contrast: p.contrast / 100,
+      gamma: p.gamma / 100,
+      color: p.color / 100,
+      saturation: p.saturation / 100,
+      clampHighlights: p.clampHighlights,
+      clampShadows: p.clampShadows,
+      layerMeanL: lz?.meanL ?? 0,
+      layerStdL: lz?.stdL ?? 0,
+      layerMinL: lz?.minL ?? 0,
+      layerMaxL: lz?.maxL ?? 1,
+      layerMeanR: lz?.meanR ?? 0,
+      layerMeanG: lz?.meanG ?? 0,
+      layerMeanB: lz?.meanB ?? 0,
+      layerChromaMag: lz?.chromaMag ?? 0,
+      layerCount: lz?.count ?? 0,
+      contextMeanL: cz?.meanL ?? 0,
+      contextStdL: cz?.stdL ?? 0,
+      contextMinL: cz?.minL ?? 0,
+      contextMaxL: cz?.maxL ?? 1,
+      contextMeanR: cz?.meanR ?? 0,
+      contextMeanG: cz?.meanG ?? 0,
+      contextMeanB: cz?.meanB ?? 0,
+      contextChromaMag: cz?.chromaMag ?? 0,
+      contextCount: cz?.count ?? 0,
+      statsVersion: p.statsVersion,
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
+  if (ls.adjustmentType === "channel-mixer") {
+    return {
+      kind: "channel-mixer",
+      layerId: ls.id,
+      params: ls.params,
+      visible: ls.visible,
+      selMaskLayer: mask,
+    };
+  }
   if (ls.adjustmentType === "curves") {
     return {
       kind: "curves",

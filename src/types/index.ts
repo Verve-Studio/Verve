@@ -285,6 +285,8 @@ export type AdjustmentType =
   | "color-temperature"
   | "color-invert"
   | "selective-color"
+  | "channel-mixer"
+  | "auto-match"
   | "curves"
   | "color-grading"
   | "reduce-colors"
@@ -372,6 +374,33 @@ export interface CurvesPreset {
   channels: Record<CurvesChannel, CurvesChannelCurve>;
 }
 
+export interface AutoMatchSourceStats {
+  /** Number of opaque pixels that contributed to this stats bucket. */
+  count: number;
+  /** Mean Rec.709 luma (0..1). */
+  meanL: number;
+  /** Standard deviation of luma (0..1). */
+  stdL: number;
+  /** Min/max luma observed (0..1). */
+  minL: number;
+  maxL: number;
+  /** Per-channel mean (0..1). */
+  meanR: number;
+  meanG: number;
+  meanB: number;
+  /** Mean chroma magnitude — average length of (rgb − vec3(luma)) over the
+   *  opaque pixel set. A measure of "how saturated" the source is overall. */
+  chromaMag: number;
+}
+
+export interface AutoMatchStats {
+  /** Stats of the parent layer's opaque pixels. */
+  layer: AutoMatchSourceStats;
+  /** Stats of the rest-of-image opaque pixels within `samplingDistance` of
+   *  the parent layer's bounding box. */
+  context: AutoMatchSourceStats;
+}
+
 export interface AdjustmentParamsMap {
   "brightness-contrast": { brightness: number; contrast: number };
   "hue-saturation": { hue: number; saturation: number; lightness: number };
@@ -406,6 +435,47 @@ export interface AdjustmentParamsMap {
     neutrals: { cyan: number; magenta: number; yellow: number; black: number };
     blacks: { cyan: number; magenta: number; yellow: number; black: number };
     mode: "relative" | "absolute";
+  };
+  /**
+   * Per-source statistics captured by the Auto Match analysis pass. Each
+   * value is in linear-display units of 0..1 (luma channels) or raw 0..1
+   * sRGB byte/255 (mean R/G/B). `count` is the number of opaque pixels that
+   * contributed; when 0 the stats are invalid and the apply pass becomes a
+   * pass-through.
+   */
+  "auto-match": {
+    /** Pixel radius around the parent layer's bounding box used to gather
+     *  context (rest-of-image) statistics. */
+    samplingDistance: number;
+    /** Overall match strength (0..100). 0 = pass-through, 100 = full match. */
+    strength: number;
+    /** Per-component micro-adjustments (0..200, default 100 = match exactly). */
+    brightness: number;
+    contrast: number;
+    gamma: number;
+    color: number;
+    /** Saturation match (0..200). Scales the layer's chroma magnitude toward
+     *  the surroundings'. 100 = match exactly, 0 = leave saturation alone,
+     *  200 = double the match strength (clamped at the per-axis caps). */
+    saturation: number;
+    /** When true, clamps output luma to the surroundings' max luma. */
+    clampHighlights: boolean;
+    /** When true, clamps output luma below the surroundings' min luma. */
+    clampShadows: boolean;
+    /** Cached statistics produced by the analysis pass. Null until first analyze. */
+    cachedStats: AutoMatchStats | null;
+    /** Bumped every time analysis finishes; forces render-plan recomputation. */
+    statsVersion: number;
+  };
+  "channel-mixer": {
+    monochrome: boolean;
+    /** Output channel currently shown in the panel UI. */
+    outputChannel: "red" | "green" | "blue" | "gray";
+    /** Source-channel multipliers (-200..+200, expressed as percent) and constant offset. */
+    red: { red: number; green: number; blue: number; constant: number };
+    green: { red: number; green: number; blue: number; constant: number };
+    blue: { red: number; green: number; blue: number; constant: number };
+    gray: { red: number; green: number; blue: number; constant: number };
   };
   curves: {
     version: 1;
@@ -730,6 +800,20 @@ export interface SelectiveColorAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean;
 }
 
+export interface AutoMatchAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "auto-match";
+  params: AdjustmentParamsMap["auto-match"];
+  hasMask: boolean;
+}
+
+export interface ChannelMixerAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "channel-mixer";
+  params: AdjustmentParamsMap["channel-mixer"];
+  /** True when a selection was active at creation time; the baked mask pixels
+   *  live in useCanvas.adjustmentMaskMap (not in React state). */
+  hasMask: boolean;
+}
+
 export interface CurvesAdjustmentLayer extends AdjustmentLayerBase {
   adjustmentType: "curves";
   params: AdjustmentParamsMap["curves"];
@@ -947,6 +1031,8 @@ export type AdjustmentLayerState =
   | ColorTemperatureAdjustmentLayer
   | ColorInvertAdjustmentLayer
   | SelectiveColorAdjustmentLayer
+  | ChannelMixerAdjustmentLayer
+  | AutoMatchAdjustmentLayer
   | CurvesAdjustmentLayer
   | ColorGradingAdjustmentLayer
   | ReduceColorsAdjustmentLayer

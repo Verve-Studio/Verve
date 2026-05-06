@@ -16,6 +16,8 @@ export { BW_COMPUTE } from "./compute/adjustments/black-and-white";
 export { TEMP_COMPUTE } from "./compute/adjustments/temperature";
 export { INVERT_COMPUTE } from "./compute/adjustments/invert";
 export { SEL_COLOR_COMPUTE } from "./compute/adjustments/selective-color";
+export { CHANNEL_MIXER_COMPUTE } from "./compute/adjustments/channel-mixer";
+export { AUTO_MATCH_COMPUTE } from "./compute/adjustments/auto-match";
 export { CURVES_COMPUTE } from "./compute/adjustments/curves";
 export { CG_COMPUTE } from "./compute/adjustments/color-grading";
 export { RC_COMPUTE } from "./compute/adjustments/reduce-colors";

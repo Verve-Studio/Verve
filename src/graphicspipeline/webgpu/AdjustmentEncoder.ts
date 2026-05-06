@@ -17,6 +17,8 @@ import {
   TEMP_COMPUTE,
   INVERT_COMPUTE,
   SEL_COLOR_COMPUTE,
+  CHANNEL_MIXER_COMPUTE,
+  AUTO_MATCH_COMPUTE,
   CURVES_COMPUTE,
   CG_COMPUTE,
   RC_COMPUTE,
@@ -52,6 +54,7 @@ import type {
   AdjustmentRenderOp,
   SelectiveColorPassParams,
   ColorGradingPassParams,
+  ChannelMixerPassParams,
 } from "./types";
 import type { CurvesLuts } from "@/core/operations/adjustments/curves";
 import {
@@ -251,6 +254,8 @@ export class AdjustmentEncoder {
   private readonly tempPipeline: AdjPipelinePair;
   private readonly invertPipeline: AdjPipelinePair;
   private readonly selColorPipeline: AdjPipelinePair;
+  private readonly channelMixerPipeline: AdjPipelinePair;
+  private readonly autoMatchPipeline: AdjPipelinePair;
   private readonly curvesPipeline: AdjPipelinePair;
   private readonly cgPipeline: AdjPipelinePair;
   private readonly rcPipeline: AdjPipelinePair;
@@ -408,6 +413,18 @@ export class AdjustmentEncoder {
       device,
       SEL_COLOR_COMPUTE,
       "fs_selective_color",
+      STD,
+    );
+    this.channelMixerPipeline = createAdjRenderPipelinePair(
+      device,
+      CHANNEL_MIXER_COMPUTE,
+      "fs_channel_mixer",
+      STD,
+    );
+    this.autoMatchPipeline = createAdjRenderPipelinePair(
+      device,
+      AUTO_MATCH_COMPUTE,
+      "fs_auto_match",
       STD,
     );
     // Curves: srcTex, smp, selMask, maskFlags, lutSampler (filtering), rgbLut, redLut, greenLut, blueLut (filterable r8unorm)
@@ -761,6 +778,74 @@ export class AdjustmentEncoder {
         dstTex,
         format,
         entry.params,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "channel-mixer") {
+      this.encodeChannelMixerRenderPass(
+        encoder,
+        srcTex,
+        dstTex,
+        format,
+        entry.params,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    if (entry.kind === "auto-match") {
+      // AutoMatchParams: 8 × vec4 = 128 bytes
+      const buf = new ArrayBuffer(128);
+      const f = new Float32Array(buf);
+      const u = new Uint32Array(buf);
+      // layerStats
+      f[0] = entry.layerMeanL;
+      f[1] = entry.layerStdL;
+      f[2] = entry.layerMinL;
+      f[3] = entry.layerMaxL;
+      // layerColor (.w = valid01)
+      f[4] = entry.layerMeanR;
+      f[5] = entry.layerMeanG;
+      f[6] = entry.layerMeanB;
+      f[7] = entry.layerCount > 0 ? 1 : 0;
+      // contextStats
+      f[8] = entry.contextMeanL;
+      f[9] = entry.contextStdL;
+      f[10] = entry.contextMinL;
+      f[11] = entry.contextMaxL;
+      // contextColor (.w = valid01)
+      f[12] = entry.contextMeanR;
+      f[13] = entry.contextMeanG;
+      f[14] = entry.contextMeanB;
+      f[15] = entry.contextCount > 0 ? 1 : 0;
+      // factors (already pre-divided by 100 in canvasPlan)
+      f[16] = entry.strength;
+      f[17] = entry.brightness;
+      f[18] = entry.contrast;
+      f[19] = entry.gamma;
+      // colorFactor: (color, saturation, _, _)
+      f[20] = entry.color;
+      f[21] = entry.saturation;
+      f[22] = 0;
+      f[23] = 0;
+      // flags
+      u[24] = entry.clampHighlights ? 1 : 0;
+      u[25] = entry.clampShadows ? 1 : 0;
+      u[26] = 0;
+      u[27] = 0;
+      // extraStats: (layerChromaMag, contextChromaMag, _, _)
+      f[28] = entry.layerChromaMag;
+      f[29] = entry.contextChromaMag;
+      f[30] = 0;
+      f[31] = 0;
+
+      this.encodeStdAdjRenderPass(
+        encoder,
+        this.autoMatchPipeline,
+        srcTex,
+        dstTex,
+        format,
+        buf,
         entry.selMaskLayer,
       );
       return;
@@ -1526,6 +1611,44 @@ export class AdjustmentEncoder {
     );
 
     this.pendingDestroyBuffers.push(paramsBuf, maskFlagsBuf);
+  }
+
+  private encodeChannelMixerRenderPass(
+    encoder: GPUCommandEncoder,
+    srcTex: GPUTexture,
+    dstTex: GPUTexture,
+    format: GPUTextureFormat,
+    params: ChannelMixerPassParams,
+    selMaskLayer?: GpuLayer,
+  ): void {
+    // Layout: red, green, blue, gray (4 × vec4f) + flags (vec4u) = 80 bytes
+    const buf = new ArrayBuffer(80);
+    const f = new Float32Array(buf);
+    const u = new Uint32Array(buf);
+    const writeRow = (
+      offset: number,
+      c: { red: number; green: number; blue: number; constant: number },
+    ): void => {
+      f[offset + 0] = c.red;
+      f[offset + 1] = c.green;
+      f[offset + 2] = c.blue;
+      f[offset + 3] = c.constant;
+    };
+    writeRow(0, params.red);
+    writeRow(4, params.green);
+    writeRow(8, params.blue);
+    writeRow(12, params.gray);
+    u[16] = params.monochrome ? 1 : 0;
+
+    this.encodeStdAdjRenderPass(
+      encoder,
+      this.channelMixerPipeline,
+      srcTex,
+      dstTex,
+      format,
+      buf,
+      selMaskLayer,
+    );
   }
 
   private ensureCurvesLutTextures(

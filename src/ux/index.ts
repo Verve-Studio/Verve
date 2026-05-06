@@ -10,6 +10,8 @@ export { BlackAndWhitePanel } from "./windows/adjustments/BlackAndWhitePanel/Bla
 export { ColorTemperaturePanel } from "./windows/adjustments/ColorTemperaturePanel/ColorTemperaturePanel";
 export { InvertPanel } from "./windows/adjustments/InvertPanel/InvertPanel";
 export { SelectiveColorPanel } from "./windows/adjustments/SelectiveColorPanel/SelectiveColorPanel";
+export { ChannelMixerPanel } from "./windows/adjustments/ChannelMixerPanel/ChannelMixerPanel";
+export { AutoMatchPanel } from "./windows/adjustments/AutoMatchPanel/AutoMatchPanel";
 export { ColorGradingPanel } from "./windows/adjustments/ColorGradingPanel/ColorGradingPanel";
 export { ReduceColorsPanel } from "./windows/adjustments/ReduceColorsPanel/ReduceColorsPanel";
 export { ColorDitheringPanel } from "./windows/adjustments/ColorDitheringPanel/ColorDitheringPanel";

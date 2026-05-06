@@ -10,6 +10,8 @@ import type {
   ColorTemperatureAdjustmentLayer,
   ColorInvertAdjustmentLayer,
   SelectiveColorAdjustmentLayer,
+  ChannelMixerAdjustmentLayer,
+  AutoMatchAdjustmentLayer,
   CurvesAdjustmentLayer,
   ColorGradingAdjustmentLayer,
   ReduceColorsAdjustmentLayer,
@@ -54,6 +56,8 @@ import { BlackAndWhitePanel } from "./adjustments/BlackAndWhitePanel/BlackAndWhi
 import { ColorTemperaturePanel } from "./adjustments/ColorTemperaturePanel/ColorTemperaturePanel";
 import { InvertPanel } from "./adjustments/InvertPanel/InvertPanel";
 import { SelectiveColorPanel } from "./adjustments/SelectiveColorPanel/SelectiveColorPanel";
+import { ChannelMixerPanel } from "./adjustments/ChannelMixerPanel/ChannelMixerPanel";
+import { AutoMatchPanel } from "./adjustments/AutoMatchPanel/AutoMatchPanel";
 import { CurvesPanel } from "./adjustments/CurvesPanel/CurvesPanel";
 import { ColorGradingPanel } from "./adjustments/ColorGradingPanel/ColorGradingPanel";
 import { ReduceColorsPanel } from "./adjustments/ReduceColorsPanel/ReduceColorsPanel";
@@ -117,6 +121,10 @@ function toolTitle(layer: AdjustmentLayerState): string {
       return "Invert";
     case "selective-color":
       return "Selective Color";
+    case "channel-mixer":
+      return "Channel Mixer";
+    case "auto-match":
+      return "Auto Match";
     case "curves":
       return "Curves";
     case "color-grading":
@@ -334,6 +342,43 @@ const SelectiveColorHeaderIcon = (): React.JSX.Element => (
     <circle cx="4.5" cy="4.5" r="2.8" stroke="#ff6060" />
     <circle cx="7.5" cy="4.5" r="2.8" stroke="#60d060" />
     <circle cx="6" cy="7" r="2.8" stroke="#6060ff" />
+  </svg>
+);
+
+const AutoMatchHeaderIcon = (): React.JSX.Element => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+    <path d="M3 8 L5 5 L7 7 L9 3" />
+    <circle cx="5" cy="5" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+const ChannelMixerHeaderIcon = (): React.JSX.Element => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <line x1="3" y1="2" x2="3" y2="10" stroke="#ff6060" />
+    <line x1="6" y1="2" x2="6" y2="10" stroke="#60d060" />
+    <line x1="9" y1="2" x2="9" y2="10" stroke="#6060ff" />
+    <circle cx="3" cy="4" r="1" fill="#ff6060" stroke="none" />
+    <circle cx="6" cy="7" r="1" fill="#60d060" stroke="none" />
+    <circle cx="9" cy="5" r="1" fill="#6060ff" stroke="none" />
   </svg>
 );
 
@@ -625,6 +670,8 @@ function AdjPanelIcon({
   if (type === "color-temperature") return <ColorTemperatureHeaderIcon />;
   if (type === "color-invert") return <ColorInvertHeaderIcon />;
   if (type === "selective-color") return <SelectiveColorHeaderIcon />;
+  if (type === "channel-mixer") return <ChannelMixerHeaderIcon />;
+  if (type === "auto-match") return <AutoMatchHeaderIcon />;
   if (type === "curves") return <CurvesHeaderIcon />;
   if (type === "color-grading") return <ColorGradingHeaderIcon />;
   if (type === "reduce-colors") return <ReduceColorsHeaderIcon />;
@@ -741,6 +788,19 @@ export function AdjustmentPanel({
           <SelectiveColorPanel
             layer={adjLayer as SelectiveColorAdjustmentLayer}
             parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "channel-mixer" && (
+          <ChannelMixerPanel
+            layer={adjLayer as ChannelMixerAdjustmentLayer}
+            parentLayerName={parentLayerName}
+          />
+        )}
+        {adjLayer.adjustmentType === "auto-match" && (
+          <AutoMatchPanel
+            layer={adjLayer as AutoMatchAdjustmentLayer}
+            parentLayerName={parentLayerName}
+            canvasHandleRef={canvasHandleRef}
           />
         )}
         {adjLayer.adjustmentType === "curves" && (

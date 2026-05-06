@@ -6,6 +6,7 @@ import type { CurvesLuts } from "@/core/operations/adjustments/curves";
 export type ColorBalancePassParams = AdjustmentParamsMap["color-balance"];
 export type BlackAndWhitePassParams = AdjustmentParamsMap["black-and-white"];
 export type SelectiveColorPassParams = AdjustmentParamsMap["selective-color"];
+export type ChannelMixerPassParams = AdjustmentParamsMap["channel-mixer"];
 export type CurvesPassParams = AdjustmentParamsMap["curves"];
 export type ColorGradingPassParams = AdjustmentParamsMap["color-grading"];
 
@@ -106,6 +107,50 @@ export type AdjustmentRenderOp =
       kind: "selective-color";
       layerId: string;
       params: SelectiveColorPassParams;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "auto-match";
+      layerId: string;
+      /** Pre-mixed factors in 0..1 (already divided by 100). */
+      strength: number;
+      brightness: number;
+      contrast: number;
+      gamma: number;
+      color: number;
+      saturation: number;
+      clampHighlights: boolean;
+      clampShadows: boolean;
+      /** Pixel statistics for the parent layer's opaque pixels (0..1). */
+      layerMeanL: number;
+      layerStdL: number;
+      layerMinL: number;
+      layerMaxL: number;
+      layerMeanR: number;
+      layerMeanG: number;
+      layerMeanB: number;
+      layerChromaMag: number;
+      layerCount: number;
+      /** Pixel statistics for the surroundings (rest of image, sampling-restricted). */
+      contextMeanL: number;
+      contextStdL: number;
+      contextMinL: number;
+      contextMaxL: number;
+      contextMeanR: number;
+      contextMeanG: number;
+      contextMeanB: number;
+      contextChromaMag: number;
+      contextCount: number;
+      /** Cache key — when this changes the renderer's content cache invalidates. */
+      statsVersion: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
+      kind: "channel-mixer";
+      layerId: string;
+      params: ChannelMixerPassParams;
       visible: boolean;
       selMaskLayer?: GpuLayer;
     }

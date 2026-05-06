@@ -86,6 +86,43 @@ export const ADJUSTMENT_REGISTRY = [
     group: "color-adjustments",
   },
   {
+    adjustmentType: "auto-match" as const,
+    label: "Auto Match…",
+    defaultParams: {
+      samplingDistance: 100,
+      strength: 100,
+      // Brightness defaults to 0 because forcing the layer's mean luma to
+      // match its surroundings is rarely what you want for ground-in
+      // compositing — subject lighting is normally a touch brighter than the
+      // environment in real photos (rim/fill lighting), and removing that
+      // makes the layer read as flatly dim. The slider stays available for
+      // the cases where the layer's overall exposure genuinely doesn't fit.
+      brightness: 0,
+      contrast: 100,
+      gamma: 100,
+      color: 100,
+      saturation: 100,
+      clampHighlights: true,
+      clampShadows: true,
+      cachedStats: null,
+      statsVersion: 0,
+    },
+    group: "color-adjustments",
+  },
+  {
+    adjustmentType: "channel-mixer" as const,
+    label: "Channel Mixer…",
+    defaultParams: {
+      monochrome: false,
+      outputChannel: "red" as const,
+      red: { red: 100, green: 0, blue: 0, constant: 0 },
+      green: { red: 0, green: 100, blue: 0, constant: 0 },
+      blue: { red: 0, green: 0, blue: 100, constant: 0 },
+      gray: { red: 40, green: 40, blue: 20, constant: 0 },
+    },
+    group: "color-adjustments",
+  },
+  {
     adjustmentType: "curves" as const,
     label: "Curves…",
     defaultParams: createDefaultCurvesParams(),
