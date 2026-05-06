@@ -752,6 +752,9 @@ export function AdjustmentPanel({
     case "color-grading":
       panelWidth = 504;
       break;
+    case "lens-distortion":
+      panelWidth = 360;
+      break;
     default:
       panelWidth = 236;
   }
