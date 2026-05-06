@@ -31,6 +31,8 @@ import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
 import { useAnimationPlayback } from "@/core/services/useAnimationPlayback";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
 import { pixelBrushStore } from "@/core/store/pixelBrushStore";
+import { brushStore } from "@/core/store/brushStore";
+import { makeDefaultBrush } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
@@ -97,6 +99,27 @@ function AppContent(): React.JSX.Element {
   // ── Pixel brush store init ────────────────────────────────────────
   useEffect(() => {
     void pixelBrushStore.init();
+  }, []);
+
+  // ── Paint brush store init + bootstrap default brush ─────────────
+  useEffect(() => {
+    void (async () => {
+      await brushStore.init();
+      if (brushStore.getUserBrushes().length === 0) {
+        await brushStore.addUserBrush(
+          makeDefaultBrush(crypto.randomUUID(), "Default Round"),
+        );
+      }
+      // If no active brush is set yet, pick the first available user brush.
+      if (state.activeBrushId === null) {
+        const first = brushStore.getUserBrushes()[0];
+        if (first) {
+          dispatch({ type: "SET_ACTIVE_BRUSH", payload: first.id });
+        }
+      }
+    })();
+    // Intentionally run once on mount; no dependency array changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Clone stamp source deletion notification ─────────────────────

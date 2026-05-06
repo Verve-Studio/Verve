@@ -7,6 +7,11 @@ export interface CanvasPointerPosition {
   shiftKey: boolean;
   altKey: boolean;
   timeStamp: number;
+  /** Pen tilt in degrees, -90..90. 0 for mouse / unsupported devices. */
+  tiltX: number;
+  tiltY: number;
+  /** Pen barrel rotation in degrees, 0..359. 0 for mouse / unsupported devices. */
+  twist: number;
 }
 
 interface UseCanvasOptions {
@@ -89,6 +94,9 @@ export function useCanvas({
         shiftKey: e.shiftKey,
         altKey: e.altKey,
         timeStamp: e.timeStamp,
+        tiltX: e.tiltX ?? 0,
+        tiltY: e.tiltY ?? 0,
+        twist: e.twist ?? 0,
       };
     },
     [coordinateOffset, documentWidth, documentHeight],
@@ -111,6 +119,9 @@ export function useCanvas({
         shiftKey: e.shiftKey,
         altKey: e.altKey,
         timeStamp: e.timeStamp,
+        tiltX: e.tiltX ?? 0,
+        tiltY: e.tiltY ?? 0,
+        twist: e.twist ?? 0,
       };
     },
     [coordinateOffset, documentWidth, documentHeight],
@@ -169,6 +180,11 @@ export function useCanvas({
             // Use the coalesced sample's own timestamp for correct velocity calculation;
             // coalesced events all fire in the same JS tick but have real hardware timestamps.
             timeStamp: ce.timeStamp,
+            // Same rationale as pressure: per-coalesced tilt/twist is too noisy to drive
+            // shape dynamics; use the primary event's value for stable per-frame samples.
+            tiltX: e.tiltX ?? 0,
+            tiltY: e.tiltY ?? 0,
+            twist: e.twist ?? 0,
           };
           onHover?.(pos);
           if (isDrawing.current) positions.push(pos);

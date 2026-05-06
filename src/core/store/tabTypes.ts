@@ -5,6 +5,7 @@ import type {
   RGBAColor,
   SwatchGroup,
   PixelBrush,
+  Brush,
   PixelFormat,
   ToneMappingOperator,
   SpritesheetState,
@@ -46,6 +47,10 @@ export interface TabSnapshot {
   swatchGroups: SwatchGroup[];
   /** Pixel brushes stored with this document. */
   pixelBrushes: PixelBrush[];
+  /** Paint brushes stored with this document. */
+  brushes?: Brush[];
+  /** Currently selected paint brush id (looked up first in document, then user store). */
+  activeBrushId?: string | null;
   pixelFormat: PixelFormat;
   spritesheet?: SpritesheetState;
 }
@@ -105,5 +110,7 @@ export const INITIAL_SNAPSHOT: TabSnapshot = {
   swatches: DEFAULT_SWATCHES,
   swatchGroups: [],
   pixelBrushes: [],
+  brushes: [],
+  activeBrushId: null,
   pixelFormat: "rgba8",
 };

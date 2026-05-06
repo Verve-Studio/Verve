@@ -191,6 +191,22 @@ export function registerIpcHandlers(): void {
     await writeFile(userBrushesPath(), data, 'utf-8')
   })
 
+  // ── Paint Brushes (user-profile storage) ─────────────────────────────────────
+
+  const userPaintBrushesPath = (): string => join(app.getPath('userData'), 'paint-brushes.json')
+
+  ipcMain.handle('paintBrushes:load', async () => {
+    try {
+      return await readFile(userPaintBrushesPath(), 'utf-8')
+    } catch {
+      return '[]'
+    }
+  })
+
+  ipcMain.handle('paintBrushes:save', async (_event, data: string) => {
+    await writeFile(userPaintBrushesPath(), data, 'utf-8')
+  })
+
   // ── Dock layout ───────────────────────────────────────────────────────────
   const dockLayoutPath = (): string => join(app.getPath('userData'), 'dock-layout.json')
 

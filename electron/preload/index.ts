@@ -43,6 +43,8 @@ const api = {
   // ── Pixel Brushes (user-profile storage) ─────────────────────────────────────
   loadUserPixelBrushes: (): Promise<string> => ipcRenderer.invoke('pixelBrushes:load'),
   saveUserPixelBrushes: (data: string): Promise<void> => ipcRenderer.invoke('pixelBrushes:save', data),
+  loadUserBrushes: (): Promise<string> => ipcRenderer.invoke('paintBrushes:load'),
+  saveUserBrushes: (data: string): Promise<void> => ipcRenderer.invoke('paintBrushes:save', data),
   openBrushFileDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openBrushFile'),
   saveBrushFileDialog: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveBrushFile', defaultPath),

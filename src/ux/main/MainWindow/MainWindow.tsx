@@ -26,6 +26,7 @@ import { StatusBar } from "@/ux/main/StatusBar/StatusBar";
 import { PlaybackBar } from "@/ux/main/PlaybackBar/PlaybackBar";
 import { AnimationPanel } from "@/ux/main/AnimationPanel/AnimationPanel";
 import { AdjustmentPanel } from "@/ux/windows/ToolWindow";
+import { BrushSettingsPanelMount } from "@/ux/windows/brush/BrushSettingsPanel/BrushSettingsPanel";
 import { NewImageDialog } from "@/ux/modals/NewImageDialog/NewImageDialog";
 import { ExportDialog } from "@/ux/modals/ExportDialog/ExportDialog";
 import { ResizeImageDialog } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
@@ -619,6 +620,33 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           canvasHandleRef={canvasHandleRef}
         />
       )}
+
+      <BrushSettingsPanelMount
+        onCaptureFromSelection={async () => {
+          if (!activeLayerId) return;
+          const layerPixels = canvasHandleRef.current?.getLayerPixels(
+            activeLayerId,
+          );
+          const mask = selectionStore.mask;
+          if (!layerPixels || !mask) return;
+          const { captureBrushTipFromSelection } = await import(
+            "@/core/services/captureBrush"
+          );
+          const tip = captureBrushTipFromSelection({
+            canvasWidth,
+            canvasHeight,
+            layerPixels,
+            selectionMask: mask,
+          });
+          if (!tip) return;
+          const { brushStore } = await import("@/core/store/brushStore");
+          const { makeDefaultBrush } = await import("@/types");
+          const id = crypto.randomUUID();
+          const brush = makeDefaultBrush(id, "Captured Brush");
+          brush.shape = tip;
+          await brushStore.addUserBrush(brush);
+        }}
+      />
 
       <NewImageDialog
         open={showNewImageDialog}

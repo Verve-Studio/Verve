@@ -123,6 +123,11 @@ export interface ToolPointerPos {
   altKey: boolean;
   /** Hardware event timestamp (ms, same epoch as performance.now). Used for accurate velocity when coalesced events are replayed. */
   timeStamp: number;
+  /** Pen tilt in degrees, -90..90. 0 for mouse / unsupported devices. */
+  tiltX: number;
+  tiltY: number;
+  /** Pen barrel rotation in degrees, 0..359. 0 for mouse / unsupported devices. */
+  twist: number;
 }
 
 // ─── Stateful handler created fresh for each tool activation ──────────────────

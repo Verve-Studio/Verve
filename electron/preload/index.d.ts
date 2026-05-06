@@ -29,6 +29,9 @@ declare global {
       // Pixel Brushes (user-profile storage)
       loadUserPixelBrushes: () => Promise<string>
       saveUserPixelBrushes: (data: string) => Promise<void>
+      // Paint Brushes (user-profile storage)
+      loadUserBrushes: () => Promise<string>
+      saveUserBrushes: (data: string) => Promise<void>
       openBrushFileDialog: () => Promise<string | null>
       saveBrushFileDialog: (defaultPath?: string) => Promise<string | null>
       readBrushFile: (filePath: string) => Promise<string>

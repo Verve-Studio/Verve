@@ -93,6 +93,8 @@ export function useTabs(
       swatches: state.swatches,
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
+      brushes: state.brushes,
+      activeBrushId: state.activeBrushId,
       pixelFormat: state.pixelFormat,
       spritesheet: state.spritesheet,
     }),
@@ -208,6 +210,14 @@ export function useTabs(
       dispatch({
         type: "SET_PIXEL_BRUSHES",
         payload: toTab.snapshot.pixelBrushes ?? [],
+      });
+      dispatch({
+        type: "SET_BRUSHES",
+        payload: toTab.snapshot.brushes ?? [],
+      });
+      dispatch({
+        type: "SET_ACTIVE_BRUSH",
+        payload: toTab.snapshot.activeBrushId ?? null,
       });
       if (toTab.snapshot.spritesheet) {
         dispatch({

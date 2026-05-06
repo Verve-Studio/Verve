@@ -1344,6 +1344,28 @@ export interface PixelBrush {
 
 export type PixelFormat = "rgba8" | "rgba32f" | "indexed8";
 
+// Re-export brush types
+export type {
+  Brush,
+  BrushScope,
+  BrushTipKind,
+  BrushTipShape,
+  TipSettings,
+  ScatterDynamics,
+  ShapeDynamics,
+  ColorDynamics,
+  PoseDynamics,
+  NoiseSettings,
+  WetEdgeSettings,
+  BuildUpSettings,
+  SmudgeSettings,
+  SmoothingSettings,
+  PaperTexture,
+  DynamicCurve,
+  DynamicSource,
+} from "./brush";
+export { makeDefaultBrush, identityCurve } from "./brush";
+
 export type ToneMappingOperator = "reinhard" | "clamp";
 
 // ─── Spritesheet / Animation ──────────────────────────────────────────────────
@@ -1389,6 +1411,10 @@ export interface AppState {
   swatchGroups: SwatchGroup[];
   /** Pixel brushes stored with this document (travel with the .verve file). */
   pixelBrushes: PixelBrush[];
+  /** Paint brushes stored with this document (travel with the .verve file). */
+  brushes: import("./brush").Brush[];
+  /** Currently selected paint brush id (looked up first in document, then user store). */
+  activeBrushId: string | null;
   layers: LayerState[];
   activeLayerId: string | null;
   /** Layer IDs ctrl/cmd-clicked in the Layers panel for multi-selection operations. */

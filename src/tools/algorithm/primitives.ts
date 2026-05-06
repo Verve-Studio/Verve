@@ -92,6 +92,11 @@ export function blendPixelOver(
    * is lost. HDR paint intensity is still applied to RGB internally.
    * Ignored for rgba8 and indexed8 layers. */
   srcFloat?: readonly [number, number, number, number],
+  /** When true, the per-stroke alpha cap from `touched` is skipped (so a
+   *  smudge stamp can re-blend over a previously stamped pixel) but the
+   *  map is still updated with `max(existing, srcA)`, preserving its role
+   *  as the stroke silhouette for downstream effects (wet edges). */
+  bypassTouchedCap?: boolean,
 ): void {
   // Apply modular wrap BEFORE bounds check and touched-map key computation.
   // This ensures a pixel at (-1, 0) and (W-1, 0) share the same touched-map
@@ -128,10 +133,22 @@ export function blendPixelOver(
     // Key in canvas-space so it stays stable across layer growth within a stroke
     const key = canvasY * renderer.pixelWidth + canvasX;
     const existingA = touched.get(key) ?? 0;
-    if (srcA <= existingA) return;
-    blendA = existingA < 1 ? (srcA - existingA) / (1 - existingA) : 0;
-    if (blendA <= 0) return;
-    touched.set(key, srcA);
+    if (bypassTouchedCap) {
+      // Smudge / build-up paths: no cap, but keep the silhouette growing so
+      // stroke-level effects (wet edges) still see every painted pixel.
+      // Store *geometric* coverage (opacity-driven, free of carried-alpha
+      // fluctuations from smudge sampling) so the wet-edge boundary detector
+      // gets a clean stroke shape — otherwise a smudged stroke whose carried
+      // alpha varies stamp-to-stamp produces noisy silhouette values and a
+      // patchy rim.
+      const geom = opacity / 100;
+      if (geom > existingA) touched.set(key, geom);
+    } else {
+      if (srcA <= existingA) return;
+      blendA = existingA < 1 ? (srcA - existingA) / (1 - existingA) : 0;
+      if (blendA <= 0) return;
+      touched.set(key, srcA);
+    }
   }
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);

@@ -1,0 +1,58 @@
+@use "@/styles/variables" as *;
+
+.wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.surface {
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-sm;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+
+.svg {
+  display: block;
+}
+
+.gridLine {
+  stroke: $color-border-light;
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
+.curve {
+  stroke: $color-accent-blue;
+  stroke-width: 1.6;
+}
+
+.point {
+  fill: $color-text;
+  stroke: $color-accent-blue;
+  stroke-width: 1.2;
+}
+
+.pointActive {
+  fill: $color-accent-blue;
+  stroke: $color-text;
+  stroke-width: 1.4;
+}
+
+.labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.yLabel {
+  text-align: left;
+}
+
+.xLabel {
+  text-align: right;
+}

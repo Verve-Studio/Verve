@@ -55,6 +55,11 @@ export { OffsetPanel } from "./windows/filters/OffsetPanel/OffsetPanel";
 export { ColorWheelWidget } from "./widgets/ColorWheelWidget/ColorWheelWidget";
 export { SliderInput } from "./widgets/SliderInput/SliderInput";
 export { ToolWindow } from "./widgets/ToolWindow/ToolWindow";
+export { CurveEditor } from "./widgets/CurveEditor/CurveEditor";
+export {
+  BrushSettingsPanel,
+  BrushSettingsPanelMount,
+} from "./windows/brush/BrushSettingsPanel/BrushSettingsPanel";
 export { ColorSwatch } from "./widgets/ColorSwatch/ColorSwatch";
 export type { ColorSwatchProps } from "./widgets/ColorSwatch/ColorSwatch";
 export { EmbedColorPicker } from "./widgets/EmbedColorPicker/EmbedColorPicker";

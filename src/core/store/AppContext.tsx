@@ -17,6 +17,7 @@ import type {
   GridType,
   SwatchGroup,
   PixelBrush,
+  Brush,
   PixelFormat,
   AnimationDef,
   AnimationFrame,
@@ -135,6 +136,11 @@ export type AppAction =
   | { type: "REMOVE_PIXEL_BRUSH"; payload: string }
   | { type: "RENAME_PIXEL_BRUSH"; payload: { id: string; name: string } }
   | { type: "SET_PIXEL_BRUSHES"; payload: PixelBrush[] }
+  | { type: "ADD_BRUSH"; payload: Brush }
+  | { type: "UPDATE_BRUSH"; payload: Brush }
+  | { type: "REMOVE_BRUSH"; payload: string }
+  | { type: "SET_BRUSHES"; payload: Brush[] }
+  | { type: "SET_ACTIVE_BRUSH"; payload: string | null }
   | { type: "SET_TILED_MODE"; payload: boolean }
   | { type: "SET_SHOW_TILE_GRID"; payload: boolean }
   | { type: "SET_ANIMATION_MODE"; payload: boolean }
@@ -210,6 +216,8 @@ const initialState: AppState = {
   swatches: DEFAULT_SWATCHES,
   swatchGroups: [],
   pixelBrushes: [],
+  brushes: [],
+  activeBrushId: null,
   layers: [
     {
       id: "layer-0",
@@ -322,6 +330,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_PIXEL_BRUSHES":
       return { ...state, pixelBrushes: action.payload };
+
+    case "ADD_BRUSH":
+      return { ...state, brushes: [...state.brushes, action.payload] };
+
+    case "UPDATE_BRUSH":
+      return {
+        ...state,
+        brushes: state.brushes.map((b) =>
+          b.id === action.payload.id ? action.payload : b,
+        ),
+      };
+
+    case "REMOVE_BRUSH":
+      return {
+        ...state,
+        brushes: state.brushes.filter((b) => b.id !== action.payload),
+        activeBrushId:
+          state.activeBrushId === action.payload ? null : state.activeBrushId,
+      };
+
+    case "SET_BRUSHES":
+      return { ...state, brushes: action.payload };
+
+    case "SET_ACTIVE_BRUSH":
+      return { ...state, activeBrushId: action.payload };
 
     case "ADD_SWATCH_GROUP": {
       const { name, swatchIndices } = action.payload;
