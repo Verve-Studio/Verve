@@ -30,7 +30,7 @@ export const VignetteEffect: IPipelineEffect<
 > = {
   id: "vignette",
   label: "Vignette…",
-  menu: { root: "effects", submenu: "fx-glow" },
+  menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: {
     shape: "ellipse",
     spread: 0.55,

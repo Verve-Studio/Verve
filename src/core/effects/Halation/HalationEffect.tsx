@@ -51,7 +51,7 @@ export const HalationEffect: IPipelineEffect<
 > = {
   id: "halation",
   label: "Halation…",
-  menu: { root: "effects", submenu: "fx-glow" },
+  menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: { threshold: 0.5, spread: 30, blur: 2, strength: 0.6 },
 
   buildPlanEntry(layer, { mask }) {

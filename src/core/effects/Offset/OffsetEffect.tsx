@@ -21,7 +21,7 @@ type OffsetOp = Extract<EffectRenderOp, { kind: "offset" }>;
 export const OffsetEffect: IPipelineEffect<OffsetEffectLayer, OffsetOp> = {
   id: "offset",
   label: "Offset…",
-  menu: { root: "filters", submenu: "other" },
+  menu: { root: "filters", submenu: "texture" },
   defaultParams: { offsetX: 0, offsetY: 0 },
 
   buildPlanEntry(layer, { mask }) {

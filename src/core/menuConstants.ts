@@ -47,6 +47,29 @@ for (const effect of effectRegistry.all()) {
   }
 }
 
-export const ADJUSTMENT_MENU_ITEMS = adjustmentItems;
-export const EFFECTS_MENU_ITEMS = effectsItems;
-export const FILTER_MENU_ITEMS = filterItems;
+/**
+ * Stable bucket-by-group: items with the same `group` key become contiguous,
+ * preserving group order by first appearance and within-group registration
+ * order. Without this the consumers' "insert separator when group changes"
+ * logic produces duplicate sections for any group whose effects are scattered
+ * across the registration order (e.g. Bloom + Halation both `fx-lenseffects`
+ * but registered with other groups between them).
+ */
+function groupContiguous<T extends { group?: string }>(items: readonly T[]): T[] {
+  const groupOrder: Array<string | undefined> = [];
+  const buckets = new Map<string | undefined, T[]>();
+  for (const item of items) {
+    let bucket = buckets.get(item.group);
+    if (!bucket) {
+      bucket = [];
+      buckets.set(item.group, bucket);
+      groupOrder.push(item.group);
+    }
+    bucket.push(item);
+  }
+  return groupOrder.flatMap((g) => buckets.get(g) ?? []);
+}
+
+export const ADJUSTMENT_MENU_ITEMS = groupContiguous(adjustmentItems);
+export const EFFECTS_MENU_ITEMS = groupContiguous(effectsItems);
+export const FILTER_MENU_ITEMS = groupContiguous(filterItems);

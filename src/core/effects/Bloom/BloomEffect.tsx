@@ -83,7 +83,7 @@ function ensureTextures(
 export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
   id: "bloom",
   label: "Bloom…",
-  menu: { root: "effects", submenu: "fx-glow" },
+  menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: {
     threshold: 0.5,
     strength: 0.5,

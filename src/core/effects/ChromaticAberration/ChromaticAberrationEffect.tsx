@@ -24,7 +24,7 @@ export const ChromaticAberrationEffect: IPipelineEffect<
 > = {
   id: "chromatic-aberration",
   label: "Chromatic Aberration…",
-  menu: { root: "effects", submenu: "fx-glow" },
+  menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: { type: "radial", distance: 5, angle: 0 },
 
   buildPlanEntry(layer, { mask }) {

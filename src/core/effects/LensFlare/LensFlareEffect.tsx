@@ -35,7 +35,7 @@ export const LensFlareEffect: IPipelineEffect<
 > = {
   id: "lens-flare",
   label: "Lens Flare…",
-  menu: { root: "filters", submenu: "render" },
+  menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: {
     centerX: 256,
     centerY: 256,

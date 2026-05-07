@@ -79,7 +79,7 @@ function PixelatePanel({
 export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> = {
   id: "pixelate",
   label: "Pixelate…",
-  menu: { root: "filters", submenu: "pixelate" },
+  menu: { root: "filters", submenu: "stylize" },
   defaultParams: { blockSize: 10 },
 
   buildPlanEntry(layer, { mask }) {
