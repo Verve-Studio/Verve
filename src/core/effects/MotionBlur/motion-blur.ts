@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_MOTION_BLUR_COMPUTE from "./filter-motion-blur.wgsl?raw";
-export { FILTER_MOTION_BLUR_COMPUTE };
-
 export async function runMotionBlur(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_LENS_BLUR_COMPUTE from "./filter-lens-blur.wgsl?raw";
-export { FILTER_LENS_BLUR_COMPUTE };
-
 export function buildKernelEntries(
   radius: number,
   bladeCount: number,

@@ -1,8 +1,6 @@
-import {
-  COMPOSITE_SHADER,
-  CHECKER_SHADER,
-  HDR_BLIT_SHADER,
-} from "../shaders/shaders";
+import { COMPOSITE_SHADER } from "../shaders/rendering/composite";
+import { CHECKER_SHADER } from "../shaders/rendering/checker";
+import { HDR_BLIT_SHADER } from "../shaders/rendering/blit";
 
 /**
  * Standard interleaved layout used by every composite/checker/blit pipeline:

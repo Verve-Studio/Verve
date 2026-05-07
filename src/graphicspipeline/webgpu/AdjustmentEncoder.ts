@@ -9,55 +9,7 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import { effectRegistry } from "@/core/effects";
-import {
-  BC_COMPUTE,
-  HS_COMPUTE,
-  VIB_COMPUTE,
-  CB_COMPUTE,
-  BW_COMPUTE,
-  TEMP_COMPUTE,
-  INVERT_COMPUTE,
-  SEL_COLOR_COMPUTE,
-  CHANNEL_MIXER_COMPUTE,
-  AUTO_MATCH_COMPUTE,
-  LENS_DISTORTION_COMPUTE,
-  PINCH_COMPUTE,
-  POLAR_COORDINATES_COMPUTE,
-  RIPPLE_COMPUTE,
-  SHEAR_COMPUTE,
-  TWIRL_COMPUTE,
-  DISPLACE_COMPUTE,
-  CURVES_COMPUTE,
-  CG_COMPUTE,
-  RC_COMPUTE,
-  DITHER_COMPUTE,
-  BLOOM_EXTRACT_COMPUTE,
-  BLOOM_DOWNSAMPLE_COMPUTE,
-  BLOOM_BLUR_H_COMPUTE,
-  BLOOM_BLUR_V_COMPUTE,
-  BLOOM_COMPOSITE_COMPUTE,
-  CHROMATIC_ABERRATION_COMPUTE,
-  VIGNETTE_COMPUTE,
-  HALATION_EXTRACT_COMPUTE,
-  CK_COMPUTE,
-  DROP_SHADOW_DILATE_H_COMPUTE,
-  DROP_SHADOW_DILATE_V_COMPUTE,
-  DROP_SHADOW_BLUR_H_COMPUTE,
-  DROP_SHADOW_BLUR_V_COMPUTE,
-  DROP_SHADOW_COMPOSITE_COMPUTE,
-  OUTLINE_DILATE_H_COMPUTE,
-  OUTLINE_DILATE_V_COMPUTE,
-  OUTLINE_ERODE_H_COMPUTE,
-  OUTLINE_ERODE_V_COMPUTE,
-  OUTLINE_MASK_COMPUTE,
-  OUTLINE_BLUR_H_COMPUTE,
-  OUTLINE_BLUR_V_COMPUTE,
-  OUTLINE_COMPOSITE_COMPUTE,
-  HALFTONE_COMPUTE,
-  BEVEL_COMPOSITE_COMPUTE,
-  INNER_SHADOW_COMPOSITE_COMPUTE,
-  FILTER_LENS_FLARE_COMPUTE,
-} from "./shaders/shaders";
+import { getShader } from "@/core/effects/shaderLoader";
 import type {
   GpuLayer,
   AdjustmentRenderOp,
@@ -369,111 +321,111 @@ export class AdjustmentEncoder {
     const STD: AdjBinding[] = ["tex", "sampler", "uniform", "tex", "uniform"];
     this.bcPipeline = createAdjRenderPipelinePair(
       device,
-      BC_COMPUTE,
+      getShader("bc"),
       "fs_brightness_contrast",
       STD,
     );
     this.hsPipeline = createAdjRenderPipelinePair(
       device,
-      HS_COMPUTE,
+      getShader("hs"),
       "fs_hue_saturation",
       STD,
     );
     this.vibPipeline = createAdjRenderPipelinePair(
       device,
-      VIB_COMPUTE,
+      getShader("vib"),
       "fs_color_vibrance",
       STD,
     );
     this.cbPipeline = createAdjRenderPipelinePair(
       device,
-      CB_COMPUTE,
+      getShader("cb"),
       "fs_color_balance",
       STD,
     );
     this.bwPipeline = createAdjRenderPipelinePair(
       device,
-      BW_COMPUTE,
+      getShader("bw"),
       "fs_black_and_white",
       STD,
     );
     this.tempPipeline = createAdjRenderPipelinePair(
       device,
-      TEMP_COMPUTE,
+      getShader("temp"),
       "fs_color_temperature",
       STD,
     );
     // Invert: srcTex, sampler, selMask, maskFlags (no params uniform)
     this.invertPipeline = createAdjRenderPipelinePair(
       device,
-      INVERT_COMPUTE,
+      getShader("invert"),
       "fs_color_invert",
       ["tex", "sampler", "tex", "uniform"],
     );
     this.selColorPipeline = createAdjRenderPipelinePair(
       device,
-      SEL_COLOR_COMPUTE,
+      getShader("sel-color"),
       "fs_selective_color",
       STD,
     );
     this.channelMixerPipeline = createAdjRenderPipelinePair(
       device,
-      CHANNEL_MIXER_COMPUTE,
+      getShader("channel-mixer"),
       "fs_channel_mixer",
       STD,
     );
     this.autoMatchPipeline = createAdjRenderPipelinePair(
       device,
-      AUTO_MATCH_COMPUTE,
+      getShader("auto-match"),
       "fs_auto_match",
       STD,
     );
     this.lensDistortionPipeline = createAdjRenderPipelinePair(
       device,
-      LENS_DISTORTION_COMPUTE,
+      getShader("lens-distortion"),
       "fs_lens_distortion",
       STD,
     );
     this.pinchPipeline = createAdjRenderPipelinePair(
       device,
-      PINCH_COMPUTE,
+      getShader("pinch"),
       "fs_pinch",
       STD,
     );
     this.polarPipeline = createAdjRenderPipelinePair(
       device,
-      POLAR_COORDINATES_COMPUTE,
+      getShader("polar-coordinates"),
       "fs_polar",
       STD,
     );
     this.ripplePipeline = createAdjRenderPipelinePair(
       device,
-      RIPPLE_COMPUTE,
+      getShader("ripple"),
       "fs_ripple",
       STD,
     );
     this.shearPipeline = createAdjRenderPipelinePair(
       device,
-      SHEAR_COMPUTE,
+      getShader("shear"),
       "fs_shear",
       STD,
     );
     this.twirlPipeline = createAdjRenderPipelinePair(
       device,
-      TWIRL_COMPUTE,
+      getShader("twirl"),
       "fs_twirl",
       STD,
     );
     this.displacePipeline = createAdjRenderPipelinePair(
       device,
-      DISPLACE_COMPUTE,
+      getShader("displace"),
       "fs_displace",
       STD,
     );
     // Curves: srcTex, smp, selMask, maskFlags, lutSampler (filtering), rgbLut, redLut, greenLut, blueLut (filterable r8unorm)
     this.curvesPipeline = createAdjRenderPipelinePair(
       device,
-      CURVES_COMPUTE,
+      getShader("curves"),
       "fs_curves",
       [
         "tex",
@@ -489,26 +441,26 @@ export class AdjustmentEncoder {
     );
     this.cgPipeline = createAdjRenderPipelinePair(
       device,
-      CG_COMPUTE,
+      getShader("cg"),
       "fs_color_grading",
       STD,
     );
     // Reduce-colors / dithering: standard 5 + storage palette buffer
     this.rcPipeline = createAdjRenderPipelinePair(
       device,
-      RC_COMPUTE,
+      getShader("rc"),
       "fs_reduce_colors",
       [...STD, "storage"],
     );
     this.ditherPipeline = createAdjRenderPipelinePair(
       device,
-      DITHER_COMPUTE,
+      getShader("dither"),
       "fs_color_dithering",
       [...STD, "storage"],
     );
     this.ckPipeline = createAdjRenderPipelinePair(
       device,
-      CK_COMPUTE,
+      getShader("ck"),
       "fs_color_key",
       STD,
     );
@@ -518,7 +470,7 @@ export class AdjustmentEncoder {
     {
       const ext = createAdjRenderPipelineWithBGL(
         device,
-        BLOOM_EXTRACT_COMPUTE,
+        getShader("bloom-extract"),
         "fs_bloom_extract",
         "rgba8unorm",
         STD,
@@ -529,14 +481,14 @@ export class AdjustmentEncoder {
     // Downsample/box-blur only sample rgba8unorm scratch textures → auto layout is fine
     this.bloomDownsamplePipeline = createAdjRenderPipelineAuto(
       device,
-      BLOOM_DOWNSAMPLE_COMPUTE,
+      getShader("bloom-downsample"),
       "fs_bloom_downsample",
       "rgba8unorm",
     );
     // Composite: srcTex, smp, glowTex, params, selMask, maskFlags
     this.bloomCompositePipeline = createAdjRenderPipelinePair(
       device,
-      BLOOM_COMPOSITE_COMPUTE,
+      getShader("bloom-composite"),
       "fs_bloom_composite",
       ["tex", "sampler", "tex", "uniform", "tex", "uniform"],
     );
@@ -544,13 +496,13 @@ export class AdjustmentEncoder {
     // Shared box-blur render pipelines (used by both bloom and halation; always rgba8unorm intermediate)
     this.boxBlurHPipeline = createAdjRenderPipelineAuto(
       device,
-      BLOOM_BLUR_H_COMPUTE,
+      getShader("bloom-blur-h"),
       "fs_bloom_blur_h",
       "rgba8unorm",
     );
     this.boxBlurVPipeline = createAdjRenderPipelineAuto(
       device,
-      BLOOM_BLUR_V_COMPUTE,
+      getShader("bloom-blur-v"),
       "fs_bloom_blur_v",
       "rgba8unorm",
     );
@@ -559,7 +511,7 @@ export class AdjustmentEncoder {
     {
       const ext = createAdjRenderPipelineWithBGL(
         device,
-        HALATION_EXTRACT_COMPUTE,
+        getShader("halation-extract"),
         "fs_halation_extract",
         "rgba8unorm",
         STD,
@@ -571,13 +523,13 @@ export class AdjustmentEncoder {
     // ── Render pipelines for chromatic aberration and halftone ──────────────────
     this.caPipeline = createAdjRenderPipelinePair(
       device,
-      CHROMATIC_ABERRATION_COMPUTE,
+      getShader("chromatic-aberration"),
       "fs_chromatic_aberration",
       STD,
     );
     this.vignettePipeline = createAdjRenderPipelinePair(
       device,
-      VIGNETTE_COMPUTE,
+      getShader("vignette"),
       "fs_vignette",
       STD,
     );
@@ -585,92 +537,92 @@ export class AdjustmentEncoder {
     // ── Compute pipelines ───────────────────────────────────────────────────────
     this.shadowDilateHPipeline = createComputePipeline(
       device,
-      DROP_SHADOW_DILATE_H_COMPUTE,
+      getShader("drop-shadow-dilate-h"),
       "cs_shadow_dilate_h",
     );
     this.shadowDilateVPipeline = createComputePipeline(
       device,
-      DROP_SHADOW_DILATE_V_COMPUTE,
+      getShader("drop-shadow-dilate-v"),
       "cs_shadow_dilate_v",
     );
     this.shadowBlurHPipeline = createComputePipeline(
       device,
-      DROP_SHADOW_BLUR_H_COMPUTE,
+      getShader("drop-shadow-blur-h"),
       "cs_shadow_blur_h",
     );
     this.shadowBlurVPipeline = createComputePipeline(
       device,
-      DROP_SHADOW_BLUR_V_COMPUTE,
+      getShader("drop-shadow-blur-v"),
       "cs_shadow_blur_v",
     );
     this.shadowCompositePipeline = createComputePipeline(
       device,
-      DROP_SHADOW_COMPOSITE_COMPUTE,
+      getShader("drop-shadow-composite"),
       "cs_shadow_composite",
     );
 
     this.outlineDilateHPipeline = createComputePipeline(
       device,
-      OUTLINE_DILATE_H_COMPUTE,
+      getShader("outline-dilate-h"),
       "cs_outline_dilate_h",
     );
     this.outlineDilateVPipeline = createComputePipeline(
       device,
-      OUTLINE_DILATE_V_COMPUTE,
+      getShader("outline-dilate-v"),
       "cs_outline_dilate_v",
     );
     this.outlineErodeHPipeline = createComputePipeline(
       device,
-      OUTLINE_ERODE_H_COMPUTE,
+      getShader("outline-erode-h"),
       "cs_outline_erode_h",
     );
     this.outlineErodeVPipeline = createComputePipeline(
       device,
-      OUTLINE_ERODE_V_COMPUTE,
+      getShader("outline-erode-v"),
       "cs_outline_erode_v",
     );
     this.outlineMaskPipeline = createComputePipeline(
       device,
-      OUTLINE_MASK_COMPUTE,
+      getShader("outline-mask"),
       "cs_outline_mask",
     );
     this.outlineBlurHPipeline = createComputePipeline(
       device,
-      OUTLINE_BLUR_H_COMPUTE,
+      getShader("outline-blur-h"),
       "cs_outline_blur_h",
     );
     this.outlineBlurVPipeline = createComputePipeline(
       device,
-      OUTLINE_BLUR_V_COMPUTE,
+      getShader("outline-blur-v"),
       "cs_outline_blur_v",
     );
     this.outlineCompositePipeline = createComputePipeline(
       device,
-      OUTLINE_COMPOSITE_COMPUTE,
+      getShader("outline-composite"),
       "cs_outline_composite",
     );
 
     this.bevelCompositePipeline = createComputePipeline(
       device,
-      BEVEL_COMPOSITE_COMPUTE,
+      getShader("bevel-composite"),
       "cs_bevel_composite",
     );
     this.innerShadowCompositePipeline = createComputePipeline(
       device,
-      INNER_SHADOW_COMPOSITE_COMPUTE,
+      getShader("inner-shadow-composite"),
       "cs_inner_shadow_composite",
     );
 
     this.halftonePipeline = createAdjRenderPipelinePair(
       device,
-      HALFTONE_COMPUTE,
+      getShader("halftone"),
       "fs_halftone",
       STD,
     );
 
     this.lensFlarePipeline = createAdjRenderPipelinePair(
       device,
-      FILTER_LENS_FLARE_COMPUTE,
+      getShader("filter-lens-flare"),
       "fs_lens_flare",
       STD,
     );

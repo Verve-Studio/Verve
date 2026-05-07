@@ -6,10 +6,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_SHARPEN_MORE_COMPUTE from "./filter-sharpen-more.wgsl?raw";
-export { FILTER_SHARPEN_MORE_COMPUTE };
-
 export async function runSharpenMore(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

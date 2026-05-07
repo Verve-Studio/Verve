@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_CLOUDS_COMPUTE from "./filter-clouds.wgsl?raw";
-export { FILTER_CLOUDS_COMPUTE };
-
 export async function runClouds(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

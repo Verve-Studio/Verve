@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_ADD_NOISE_COMPUTE from "./filter-add-noise.wgsl?raw";
-export { FILTER_ADD_NOISE_COMPUTE };
-
 export async function runAddNoise(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

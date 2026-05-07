@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_PIXELATE_COMPUTE from "./filter-pixelate.wgsl?raw";
-export { FILTER_PIXELATE_COMPUTE };
-
 export async function runPixelate(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

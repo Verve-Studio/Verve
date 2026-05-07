@@ -8,13 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_FILM_GRAIN_NOISE_COMPUTE from "./filter-film-grain-noise.wgsl?raw";
-export { FILTER_FILM_GRAIN_NOISE_COMPUTE };
-
-import FILTER_FILM_GRAIN_COMBINE_COMPUTE from "./filter-film-grain-combine.wgsl?raw";
-export { FILTER_FILM_GRAIN_COMBINE_COMPUTE };
-
 export async function runFilmGrain(
   device: GPUDevice,
   noisePipeline: GPURenderPipeline,

@@ -8,13 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_BOX_H_COMPUTE from "./filter-box-h.wgsl?raw";
-export { FILTER_BOX_H_COMPUTE };
-
-import FILTER_BOX_V_COMPUTE from "./filter-box-v.wgsl?raw";
-export { FILTER_BOX_V_COMPUTE };
-
 export async function runBoxBlur(
   device: GPUDevice,
   hPipeline: GPURenderPipeline,

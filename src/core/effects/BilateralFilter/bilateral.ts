@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_BILATERAL_COMPUTE from "./filter-bilateral.wgsl?raw";
-export { FILTER_BILATERAL_COMPUTE };
-
 export async function runBilateral(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

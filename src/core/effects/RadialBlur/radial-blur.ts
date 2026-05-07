@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_RADIAL_BLUR_COMPUTE from "./filter-radial-blur.wgsl?raw";
-export { FILTER_RADIAL_BLUR_COMPUTE };
-
 export async function runRadialBlur(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_UNSHARP_COMBINE_COMPUTE from "./filter-unsharp-combine.wgsl?raw";
-export { FILTER_UNSHARP_COMBINE_COMPUTE };
-
 export async function runUnsharpMask(
   device: GPUDevice,
   gaussianH: GPURenderPipeline,

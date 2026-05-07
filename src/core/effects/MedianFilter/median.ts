@@ -8,10 +8,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-
-import FILTER_MEDIAN_COMPUTE from "./filter-median.wgsl?raw";
-export { FILTER_MEDIAN_COMPUTE };
-
 export async function runMedian(
   device: GPUDevice,
   pipeline: GPURenderPipeline,

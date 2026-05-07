@@ -1,89 +1,28 @@
+import { getShader } from "@/core/effects/shaderLoader";
+import { runGaussianBlur } from "@/core/effects/GaussianBlur/gaussian-blur";
+import { runBoxBlur } from "@/core/effects/BoxBlur/box-blur";
+import { runRadialBlur } from "@/core/effects/RadialBlur/radial-blur";
+import { runMotionBlur } from "@/core/effects/MotionBlur/motion-blur";
 import {
-  FILTER_GAUSSIAN_H_COMPUTE,
-  FILTER_GAUSSIAN_V_COMPUTE,
-  runGaussianBlur,
-} from "@/core/effects/GaussianBlur/gaussian-blur";
-import {
-  FILTER_BOX_H_COMPUTE,
-  FILTER_BOX_V_COMPUTE,
-  runBoxBlur,
-} from "@/core/effects/BoxBlur/box-blur";
-import {
-  FILTER_RADIAL_BLUR_COMPUTE,
-  runRadialBlur,
-} from "@/core/effects/RadialBlur/radial-blur";
-import {
-  FILTER_MOTION_BLUR_COMPUTE,
-  runMotionBlur,
-} from "@/core/effects/MotionBlur/motion-blur";
-import {
-  FILTER_LENS_BLUR_COMPUTE,
   buildKernelEntries,
   runLensBlur,
 } from "@/core/effects/LensBlur/lens-blur";
-import {
-  FILTER_SHARPEN_COMPUTE,
-  runSharpen,
-} from "@/core/effects/Sharpen/sharpen";
-import {
-  FILTER_SHARPEN_MORE_COMPUTE,
-  runSharpenMore,
-} from "@/core/effects/SharpenMore/sharpen-more";
-import {
-  FILTER_UNSHARP_COMBINE_COMPUTE,
-  runUnsharpMask,
-} from "@/core/effects/UnsharpMask/unsharp-mask";
-import {
-  FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE,
-  FILTER_SMART_SHARPEN_LENS_COMPUTE,
-  FILTER_SMART_SHARPEN_BLEND_COMPUTE,
-  runSmartSharpen,
-} from "@/core/effects/SmartSharpen/smart-sharpen";
-import {
-  FILTER_ADD_NOISE_COMPUTE,
-  runAddNoise,
-} from "@/core/effects/AddNoise/add-noise";
-import {
-  FILTER_FILM_GRAIN_NOISE_COMPUTE,
-  FILTER_FILM_GRAIN_COMBINE_COMPUTE,
-  runFilmGrain,
-} from "@/core/effects/FilmGrain/film-grain";
-import {
-  FILTER_CLOUDS_COMPUTE,
-  runClouds,
-} from "@/core/effects/Clouds/clouds";
-import {
-  FILTER_MEDIAN_COMPUTE,
-  runMedian,
-} from "@/core/effects/MedianFilter/median";
-import {
-  FILTER_BILATERAL_COMPUTE,
-  runBilateral,
-} from "@/core/effects/BilateralFilter/bilateral";
-import {
-  FILTER_REDUCE_NOISE_COMPUTE,
-  runReduceNoise,
-} from "@/core/effects/ReduceNoise/reduce-noise";
-import {
-  FILTER_PIXELATE_COMPUTE,
-  runPixelate,
-} from "@/core/effects/Pixelate/pixelate";
-import { FILTER_OFFSET_COMPUTE } from "@/core/effects/Offset/offset";
-import {
-  FILTER_SEAMLESS_BREAK_COMPUTE,
-  FILTER_SEAMLESS_BORDER_COMPUTE,
-} from "@/core/effects/SeamlessTexture/seamless-texture";
+import { runSharpen } from "@/core/effects/Sharpen/sharpen";
+import { runSharpenMore } from "@/core/effects/SharpenMore/sharpen-more";
+import { runUnsharpMask } from "@/core/effects/UnsharpMask/unsharp-mask";
+import { runSmartSharpen } from "@/core/effects/SmartSharpen/smart-sharpen";
+import { runAddNoise } from "@/core/effects/AddNoise/add-noise";
+import { runFilmGrain } from "@/core/effects/FilmGrain/film-grain";
+import { runClouds } from "@/core/effects/Clouds/clouds";
+import { runMedian } from "@/core/effects/MedianFilter/median";
+import { runBilateral } from "@/core/effects/BilateralFilter/bilateral";
+import { runReduceNoise } from "@/core/effects/ReduceNoise/reduce-noise";
+import { runPixelate } from "@/core/effects/Pixelate/pixelate";
 import { createUniformBuffer, writeUniformBuffer } from "../utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import {
-  FILTER_RMB_PSF_COMPUTE,
-  FILTER_RMB_RATIO_COMPUTE,
-  FILTER_RMB_UPDATE_COMPUTE,
-  FILTER_RMB_FINAL_COMPUTE,
-} from "@/core/effects/RemoveMotionBlur/remove-motion-blur";
 
 // ─── Pipeline pair type ───────────────────────────────────────────────────────
 
@@ -176,105 +115,105 @@ class FilterComputeEngine {
         GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.gaussianHPipeline = this.makePair(
-      FILTER_GAUSSIAN_H_COMPUTE,
+      getShader("filter-gaussian-h"),
       "fs_gaussian_h",
     );
     this.gaussianVPipeline = this.makePair(
-      FILTER_GAUSSIAN_V_COMPUTE,
+      getShader("filter-gaussian-v"),
       "fs_gaussian_v",
     );
-    this.boxHPipeline = this.makePair(FILTER_BOX_H_COMPUTE, "fs_box_h");
-    this.boxVPipeline = this.makePair(FILTER_BOX_V_COMPUTE, "fs_box_v");
+    this.boxHPipeline = this.makePair(getShader("filter-box-h"), "fs_box_h");
+    this.boxVPipeline = this.makePair(getShader("filter-box-v"), "fs_box_v");
     this.radialBlurPipeline = this.makePair(
-      FILTER_RADIAL_BLUR_COMPUTE,
+      getShader("filter-radial-blur"),
       "fs_radial_blur",
     );
     this.motionBlurPipeline = this.makePair(
-      FILTER_MOTION_BLUR_COMPUTE,
+      getShader("filter-motion-blur"),
       "fs_motion_blur",
     );
     this.lensBlurPipeline = this.makePair(
-      FILTER_LENS_BLUR_COMPUTE,
+      getShader("filter-lens-blur"),
       "fs_lens_blur",
     );
-    this.sharpenPipeline = this.makePair(FILTER_SHARPEN_COMPUTE, "fs_sharpen");
+    this.sharpenPipeline = this.makePair(getShader("filter-sharpen"), "fs_sharpen");
     this.sharpenMorePipeline = this.makePair(
-      FILTER_SHARPEN_MORE_COMPUTE,
+      getShader("filter-sharpen-more"),
       "fs_sharpen_more",
     );
     this.unsharpCombinePipeline = this.makePair(
-      FILTER_UNSHARP_COMBINE_COMPUTE,
+      getShader("filter-unsharp-combine"),
       "fs_unsharp_combine",
     );
     this.smartSharpenGaussCombinePipeline = this.makePair(
-      FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE,
+      getShader("filter-smart-sharpen-gauss-combine"),
       "fs_smart_sharpen_gauss",
     );
     this.smartSharpenLensPipeline = this.makePair(
-      FILTER_SMART_SHARPEN_LENS_COMPUTE,
+      getShader("filter-smart-sharpen-lens"),
       "fs_smart_sharpen_lens",
     );
     this.smartSharpenBlendPipeline = this.makePair(
-      FILTER_SMART_SHARPEN_BLEND_COMPUTE,
+      getShader("filter-smart-sharpen-blend"),
       "fs_smart_sharpen_blend",
     );
     this.addNoisePipeline = this.makePair(
-      FILTER_ADD_NOISE_COMPUTE,
+      getShader("filter-add-noise"),
       "fs_add_noise",
     );
     this.filmGrainNoisePipeline = createFilterRenderPipeline(
       device,
-      FILTER_FILM_GRAIN_NOISE_COMPUTE,
+      getShader("filter-film-grain-noise"),
       "fs_film_grain_noise",
       "rgba8unorm",
     );
     this.filmGrainCombinePipeline = this.makePair(
-      FILTER_FILM_GRAIN_COMBINE_COMPUTE,
+      getShader("filter-film-grain-combine"),
       "fs_film_grain_combine",
     );
-    this.cloudsPipeline = this.makePair(FILTER_CLOUDS_COMPUTE, "fs_clouds");
-    this.medianPipeline = this.makePair(FILTER_MEDIAN_COMPUTE, "fs_median");
+    this.cloudsPipeline = this.makePair(getShader("filter-clouds"), "fs_clouds");
+    this.medianPipeline = this.makePair(getShader("filter-median"), "fs_median");
     this.bilateralPipeline = this.makePair(
-      FILTER_BILATERAL_COMPUTE,
+      getShader("filter-bilateral"),
       "fs_bilateral",
     );
     this.reduceNoisePipeline = this.makePair(
-      FILTER_REDUCE_NOISE_COMPUTE,
+      getShader("filter-reduce-noise"),
       "fs_reduce_noise",
     );
     this.pixelatePipeline = this.makePair(
-      FILTER_PIXELATE_COMPUTE,
+      getShader("filter-pixelate"),
       "fs_pixelate",
     );
-    this.offsetPipeline = this.makePair(FILTER_OFFSET_COMPUTE, "fs_offset");
+    this.offsetPipeline = this.makePair(getShader("filter-offset"), "fs_offset");
     this.seamlessBreakPipeline = this.makePair(
-      FILTER_SEAMLESS_BREAK_COMPUTE,
+      getShader("filter-seamless-break"),
       "fs_seamless_break",
     );
     this.seamlessBorderPipeline = this.makePair(
-      FILTER_SEAMLESS_BORDER_COMPUTE,
+      getShader("filter-seamless-border"),
       "fs_seamless_border",
     );
     this.rmbPsfPipeline = createFilterRenderPipeline(
       device,
-      FILTER_RMB_PSF_COMPUTE,
+      getShader("filter-rmb-psf"),
       "fs_rmb_psf",
       "rgba16float",
     );
     this.rmbRatioPipeline = createFilterRenderPipeline(
       device,
-      FILTER_RMB_RATIO_COMPUTE,
+      getShader("filter-rmb-ratio"),
       "fs_rmb_ratio",
       "rgba16float",
     );
     this.rmbUpdatePipeline = createFilterRenderPipeline(
       device,
-      FILTER_RMB_UPDATE_COMPUTE,
+      getShader("filter-rmb-update"),
       "fs_rmb_update",
       "rgba16float",
     );
     this.rmbFinalPipeline = this.makePair(
-      FILTER_RMB_FINAL_COMPUTE,
+      getShader("filter-rmb-final"),
       "fs_rmb_final",
     );
   }
