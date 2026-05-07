@@ -7,6 +7,8 @@ import type { UseFiltersReturn } from "@/core/services/useFilters";
 import type { UseColorModeReturn } from "@/core/services/useColorMode";
 import type { Tool, PixelFormat, RGBAColor } from "@/types";
 import type { FilterKey } from "@/types";
+import { makeDefaultBrush } from "@/types";
+import { brushStore } from "@/core/store/brushStore";
 import type { GuidePreset } from "@/core/services/useViewActions";
 import type {
   AlignEdge,
@@ -636,8 +638,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
             selectionMask: mask,
           });
           if (!tip) return;
-          const { brushStore } = await import("@/core/store/brushStore");
-          const { makeDefaultBrush } = await import("@/types");
           const id = crypto.randomUUID();
           const brush = makeDefaultBrush(id, "Captured Brush");
           brush.shape = tip;
