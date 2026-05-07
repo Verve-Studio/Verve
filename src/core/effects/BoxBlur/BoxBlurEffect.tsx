@@ -1,11 +1,11 @@
-import type { BoxBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { BoxBlurEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BoxBlurPanel } from "./BoxBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type BoxBlurOp = Extract<AdjustmentRenderOp, { kind: "box-blur" }>;
+type BoxBlurOp = Extract<EffectRenderOp, { kind: "box-blur" }>;
 
-export const BoxBlurEffect: IPipelineEffect<BoxBlurAdjustmentLayer, BoxBlurOp> =
+export const BoxBlurEffect: IPipelineEffect<BoxBlurEffectLayer, BoxBlurOp> =
   {
     id: "box-blur",
     label: "Box Blur…",

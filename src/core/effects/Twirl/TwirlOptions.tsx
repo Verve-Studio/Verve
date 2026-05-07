@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { TwirlAdjustmentLayer } from "@/types";
+import type { TwirlEffectLayer } from "@/types";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
@@ -11,12 +11,12 @@ import {
 import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
-  layer: TwirlAdjustmentLayer;
+  layer: TwirlEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): TwirlAdjustmentLayer["params"] =>
-  effectRegistry.get("twirl")!.defaultParams as TwirlAdjustmentLayer["params"];
+const getDefaultParams = (): TwirlEffectLayer["params"] =>
+  effectRegistry.get("twirl")!.defaultParams as TwirlEffectLayer["params"];
 
 export function TwirlOptions({
   layer,
@@ -24,7 +24,7 @@ export function TwirlOptions({
 }: Props): React.JSX.Element {
   const { dispatch } = useAppContext();
   const p = layer.params;
-  const update = (patch: Partial<TwirlAdjustmentLayer["params"]>): void => {
+  const update = (patch: Partial<TwirlEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },

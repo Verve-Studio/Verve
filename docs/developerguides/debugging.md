@@ -246,7 +246,7 @@ In React DevTools → Profiler, record a few interactions and look for component
 
 ### Identifying slow GPU operations
 
-Add `console.time`/`console.timeEnd` around `filterCompute` calls or `rasterizeDocument`:
+Add `console.time`/`console.timeEnd` around `EffectEncoder.encode` calls or `rasterizeDocument`:
 
 ```typescript
 console.time('gaussianBlur')

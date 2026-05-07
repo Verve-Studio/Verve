@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { MenuBar } from "../MenuBar/MenuBar";
 import type { MenuDef } from "../MenuBar/MenuBar";
-import type { AdjustmentType, FilterKey, PixelFormat } from "@/types";
+import type { EffectType, FilterKey, PixelFormat } from "@/types";
 import type { GuidePreset } from "@/core/services/useViewActions";
 import type {
   AlignEdge,
@@ -80,15 +80,15 @@ interface TopBarProps {
   onAbout?: () => void;
   onKeyboardShortcuts?: () => void;
   onSystemInfo?: () => void;
-  onCreateAdjustmentLayer?: (type: AdjustmentType) => void;
+  onCreateAdjustmentLayer?: (type: EffectType) => void;
   isAdjustmentMenuEnabled?: boolean;
   adjustmentMenuItems?: Array<{
-    type: AdjustmentType;
+    type: EffectType;
     label: string;
     group?: string;
   }>;
   effectsMenuItems?: Array<{
-    type: AdjustmentType;
+    type: EffectType;
     label: string;
     group?: string;
   }>;

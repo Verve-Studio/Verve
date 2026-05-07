@@ -1,15 +1,15 @@
-import type { SeamlessTextureAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { SeamlessTextureEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
 type SeamlessTextureOp = Extract<
-  AdjustmentRenderOp,
+  EffectRenderOp,
   { kind: "seamless-texture" }
 >;
 
 export const SeamlessTextureEffect: IPipelineEffect<
-  SeamlessTextureAdjustmentLayer,
+  SeamlessTextureEffectLayer,
   SeamlessTextureOp
 > = {
   id: "seamless-texture",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { AdjustmentType, FilterKey, PixelFormat } from "@/types";
+import type { EffectType, FilterKey, PixelFormat } from "@/types";
 import type { GuidePreset } from "./useViewActions";
 import { selectionStore } from "@/core/store/selectionStore";
 import {
@@ -20,7 +20,7 @@ interface MacNativeMenuParams {
   // Adjustment / effect / filter actions
   adjustments: {
     handleCreateAdjustmentLayer: (
-      type: AdjustmentType,
+      type: EffectType,
       params?: Record<string, unknown>,
     ) => void;
     isAdjustmentMenuEnabled: boolean;
@@ -223,7 +223,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     (actionId: string): void => {
       // Dynamic: adjustment / effect layers
       if (actionId.startsWith("adj:")) {
-        const type = actionId.slice(4) as AdjustmentType;
+        const type = actionId.slice(4) as EffectType;
         if (type === "color-dithering") {
           requireTransformDecision(() => openColorDitheringSetup());
         } else {

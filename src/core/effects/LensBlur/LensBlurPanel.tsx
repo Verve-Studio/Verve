@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { LensBlurAdjustmentLayer } from "@/types";
+import type { LensBlurEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: LensBlurAdjustmentLayer;
+  layer: LensBlurEffectLayer;
   parentLayerName: string;
 }
 

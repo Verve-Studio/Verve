@@ -1,12 +1,12 @@
-import type { GaussianBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { GaussianBlurEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GaussianBlurPanel } from "./GaussianBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type GaussianBlurOp = Extract<AdjustmentRenderOp, { kind: "gaussian-blur" }>;
+type GaussianBlurOp = Extract<EffectRenderOp, { kind: "gaussian-blur" }>;
 
 export const GaussianBlurEffect: IPipelineEffect<
-  GaussianBlurAdjustmentLayer,
+  GaussianBlurEffectLayer,
   GaussianBlurOp
 > = {
   id: "gaussian-blur",

@@ -9,7 +9,7 @@ import type {
   ShapeLayerState,
   FrameLayerState,
   MaskLayerState,
-  AdjustmentLayerState,
+  EffectLayerState,
   GroupLayerState,
   CompositeLayerState,
   BlendMode,
@@ -60,8 +60,8 @@ export type AppAction =
   | { type: "ADD_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "UPDATE_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "ADD_MASK_LAYER"; payload: MaskLayerState }
-  | { type: "ADD_ADJUSTMENT_LAYER"; payload: AdjustmentLayerState }
-  | { type: "UPDATE_ADJUSTMENT_LAYER"; payload: AdjustmentLayerState }
+  | { type: "ADD_ADJUSTMENT_LAYER"; payload: EffectLayerState }
+  | { type: "UPDATE_ADJUSTMENT_LAYER"; payload: EffectLayerState }
   | { type: "SET_OPEN_ADJUSTMENT"; payload: string | null }
   | { type: "SET_ZOOM"; payload: number }
   | { type: "TOGGLE_GRID" }
@@ -446,7 +446,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         if (
           "type" in l &&
           (l.type === "mask" || l.type === "adjustment") &&
-          toRemove.has((l as MaskLayerState | AdjustmentLayerState).parentId)
+          toRemove.has((l as MaskLayerState | EffectLayerState).parentId)
         ) {
           toRemove.add(l.id);
         }
@@ -498,7 +498,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       while (
         insertAt < state.layers.length &&
         "type" in state.layers[insertAt] &&
-        (state.layers[insertAt] as MaskLayerState | AdjustmentLayerState)
+        (state.layers[insertAt] as MaskLayerState | EffectLayerState)
           .parentId === action.payload.parentId
       ) {
         insertAt++;

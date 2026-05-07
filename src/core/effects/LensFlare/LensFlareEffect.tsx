@@ -1,13 +1,13 @@
-import type { LensFlareAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { LensFlareEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensFlarePanel } from "./LensFlarePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type LensFlareOp = Extract<AdjustmentRenderOp, { kind: "lens-flare" }>;
+type LensFlareOp = Extract<EffectRenderOp, { kind: "lens-flare" }>;
 
 export const LensFlareEffect: IPipelineEffect<
-  LensFlareAdjustmentLayer,
+  LensFlareEffectLayer,
   LensFlareOp
 > = {
   id: "lens-flare",

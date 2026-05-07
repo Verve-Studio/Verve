@@ -1,11 +1,11 @@
-import type { ReduceColorsAdjustmentLayer, RGBAColor } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { ReduceColorsEffectLayer, RGBAColor } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceColorsPanel } from "./ReduceColorsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
-type ReduceColorsOp = Extract<AdjustmentRenderOp, { kind: "reduce-colors" }>;
+type ReduceColorsOp = Extract<EffectRenderOp, { kind: "reduce-colors" }>;
 
 function srgbByteToLinear(
   r: number,
@@ -38,7 +38,7 @@ function linearSrgbToOklab(
 }
 
 export const ReduceColorsEffect: IPipelineEffect<
-  ReduceColorsAdjustmentLayer,
+  ReduceColorsEffectLayer,
   ReduceColorsOp
 > = {
   id: "reduce-colors",

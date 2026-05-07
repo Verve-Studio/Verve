@@ -1,14 +1,14 @@
-import type { PinchAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { PinchEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PinchOptions } from "./PinchOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type PinchOp = Extract<AdjustmentRenderOp, { kind: "pinch" }>;
+type PinchOp = Extract<EffectRenderOp, { kind: "pinch" }>;
 
 const EDGE_MAP = { transparent: 0, clamp: 1, mirror: 2 } as const;
 
-export const PinchEffect: IPipelineEffect<PinchAdjustmentLayer, PinchOp> = {
+export const PinchEffect: IPipelineEffect<PinchEffectLayer, PinchOp> = {
   id: "pinch",
   label: "Pinch…",
   menu: { root: "effects", submenu: "fx-distortion" },

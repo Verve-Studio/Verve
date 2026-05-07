@@ -1,7 +1,7 @@
 import type {
   CurvesChannel,
   CurvesChannelCurve,
-  AdjustmentParamsMap,
+  EffectParamsMap,
 } from "@/types";
 import { curvesChannelsSignature, makeIdentityCurve } from "./curves";
 
@@ -95,7 +95,7 @@ export function findBuiltinPresetById(id: string): BuiltinCurvesPreset | null {
 }
 
 export function findMatchingBuiltinPreset(
-  params: AdjustmentParamsMap["curves"],
+  params: EffectParamsMap["curves"],
 ): BuiltinCurvesPreset | null {
   const sig = curvesChannelsSignature(params.channels);
   return (

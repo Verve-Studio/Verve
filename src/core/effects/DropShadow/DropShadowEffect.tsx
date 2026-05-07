@@ -1,5 +1,5 @@
-import type { DropShadowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { DropShadowEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DropShadowOptions } from "./DropShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
-type DropShadowOp = Extract<AdjustmentRenderOp, { kind: "drop-shadow" }>;
+type DropShadowOp = Extract<EffectRenderOp, { kind: "drop-shadow" }>;
 
 let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
 let usedThisFrame = false;
@@ -228,7 +228,7 @@ export const dropShadowCache = {
 };
 
 export const DropShadowEffect: IPipelineEffect<
-  DropShadowAdjustmentLayer,
+  DropShadowEffectLayer,
   DropShadowOp
 > = {
   id: "drop-shadow",

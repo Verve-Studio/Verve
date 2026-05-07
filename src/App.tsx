@@ -36,7 +36,7 @@ import { makeDefaultBrush } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
-import type { Tool, LayerState, AdjustmentType, PixelFormat } from "@/types";
+import type { Tool, LayerState, EffectType, PixelFormat } from "@/types";
 import type { FilterKey } from "@/types";
 import { selectionStore } from "@/core/store/selectionStore";
 import {
@@ -388,7 +388,7 @@ function AppContent(): React.JSX.Element {
 
   // ── Filters ───────────────────────────────────────────────────────
   const onCreateFilterAdjLayer = useCallback(
-    (type: AdjustmentType): void => {
+    (type: EffectType): void => {
       requireTransformDecision(() => {
         if (type === "clouds") {
           const { r: fgR, g: fgG, b: fgB } = state.primaryColor;
@@ -424,7 +424,7 @@ function AppContent(): React.JSX.Element {
   const handleOpenFilterDialog = useCallback(
     (key: FilterKey): void => {
       requireTransformDecision(() => {
-        onCreateFilterAdjLayer(key as AdjustmentType);
+        onCreateFilterAdjLayer(key as EffectType);
       });
     },
     [requireTransformDecision, onCreateFilterAdjLayer],

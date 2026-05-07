@@ -1,5 +1,5 @@
-import type { OutlineAdjustmentLayer, OutlineParams } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { OutlineEffectLayer, OutlineParams } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OutlineOptions } from "./OutlineOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
-type OutlineOp = Extract<AdjustmentRenderOp, { kind: "outline" }>;
+type OutlineOp = Extract<EffectRenderOp, { kind: "outline" }>;
 
 let texCache: {
   tempA: GPUTexture;
@@ -68,7 +68,7 @@ export function getOutlinePipelines(runtime: EffectRuntime) {
 }
 
 export const OutlineEffect: IPipelineEffect<
-  OutlineAdjustmentLayer,
+  OutlineEffectLayer,
   OutlineOp
 > = {
   id: "outline",

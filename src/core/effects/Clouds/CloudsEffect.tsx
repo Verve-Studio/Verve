@@ -1,11 +1,11 @@
-import type { CloudsAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { CloudsEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type CloudsOp = Extract<AdjustmentRenderOp, { kind: "clouds" }>;
+type CloudsOp = Extract<EffectRenderOp, { kind: "clouds" }>;
 
-export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
+export const CloudsEffect: IPipelineEffect<CloudsEffectLayer, CloudsOp> = {
   id: "clouds",
   label: "Clouds…",
   menu: { root: "filters", submenu: "render" },

@@ -1,13 +1,13 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BrightnessContrastAdjustmentLayer } from "@/types";
+import type { BrightnessContrastEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BrightnessContrastPanel.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface BrightnessContrastPanelProps {
-  layer: BrightnessContrastAdjustmentLayer;
+  layer: BrightnessContrastEffectLayer;
   parentLayerName: string;
 }
 

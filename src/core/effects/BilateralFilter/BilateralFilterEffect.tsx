@@ -1,15 +1,15 @@
-import type { BilateralFilterAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { BilateralFilterEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BilateralFilterPanel } from "./BilateralFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
 type BilateralFilterOp = Extract<
-  AdjustmentRenderOp,
+  EffectRenderOp,
   { kind: "bilateral-filter" }
 >;
 
 export const BilateralFilterEffect: IPipelineEffect<
-  BilateralFilterAdjustmentLayer,
+  BilateralFilterEffectLayer,
   BilateralFilterOp
 > = {
   id: "bilateral-filter",

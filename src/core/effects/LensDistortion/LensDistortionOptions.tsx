@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { LensDistortionAdjustmentLayer } from "@/types";
+import type { LensDistortionEffectLayer } from "@/types";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./LensDistortionOptions.module.scss";
@@ -8,15 +8,15 @@ import styles from "./LensDistortionOptions.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface LensDistortionOptionsProps {
-  layer: LensDistortionAdjustmentLayer;
+  layer: LensDistortionEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): LensDistortionAdjustmentLayer["params"] =>
-  effectRegistry.get("lens-distortion")!.defaultParams as LensDistortionAdjustmentLayer["params"];
+const getDefaultParams = (): LensDistortionEffectLayer["params"] =>
+  effectRegistry.get("lens-distortion")!.defaultParams as LensDistortionEffectLayer["params"];
 
-type DistortionType = LensDistortionAdjustmentLayer["params"]["type"];
-type EdgeMode = LensDistortionAdjustmentLayer["params"]["edgeMode"];
+type DistortionType = LensDistortionEffectLayer["params"]["type"];
+type EdgeMode = LensDistortionEffectLayer["params"]["edgeMode"];
 
 const TYPE_LABEL: Record<DistortionType, string> = {
   radial: "Radial",
@@ -35,7 +35,7 @@ export function LensDistortionOptions({
   const p = layer.params;
 
   const update = (
-    patch: Partial<LensDistortionAdjustmentLayer["params"]>,
+    patch: Partial<LensDistortionEffectLayer["params"]>,
   ): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",

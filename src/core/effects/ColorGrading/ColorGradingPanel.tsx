@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type {
-  ColorGradingAdjustmentLayer,
+  ColorGradingEffectLayer,
   ColorGradingWheelParams,
 } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -12,7 +12,7 @@ import styles from "./ColorGradingPanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ColorGradingPanelProps {
-  layer: ColorGradingAdjustmentLayer;
+  layer: ColorGradingEffectLayer;
   parentLayerName: string;
 }
 

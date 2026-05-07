@@ -1,11 +1,11 @@
-import type { OffsetAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { OffsetEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OffsetPanel } from "./OffsetPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type OffsetOp = Extract<AdjustmentRenderOp, { kind: "offset" }>;
+type OffsetOp = Extract<EffectRenderOp, { kind: "offset" }>;
 
-export const OffsetEffect: IPipelineEffect<OffsetAdjustmentLayer, OffsetOp> = {
+export const OffsetEffect: IPipelineEffect<OffsetEffectLayer, OffsetOp> = {
   id: "offset",
   label: "Offset…",
   menu: { root: "filters", submenu: "other" },

@@ -56,16 +56,16 @@ Verve/
 │   ├── env.d.ts              ← Vite asset import type declarations
 │   │
 │   ├── core/
+│   │   ├── effects/          ← All adjustments/effects/filters (one folder per effect) + IPipelineEffect, effectRegistry, shaderLoader
 │   │   ├── io/               ← Export helpers: exportPng, exportJpeg, exportWebp, exportTiff, exportTga, imageLoader
 │   │   ├── operations/
-│   │   │   ├── adjustments/  ← ADJUSTMENT_REGISTRY + curves data
-│   │   │   └── filters/      ← FILTER_REGISTRY
+│   │   │   └── adjustments/  ← curves.ts + curvesPresets.ts (Curves data tables)
 │   │   ├── services/         ← All business-logic hooks (20+)
 │   │   └── store/            ← AppContext, CanvasContext, all singletons, tabTypes
 │   │
 │   ├── graphics/
 │   │   ├── rasterization/    ← Unified flatten/merge/export pipeline
-│   │   └── webgpu/           ← WebGPURenderer, AdjustmentEncoder, filterCompute, shaders
+│   │   └── webgpu/           ← WebGPURenderer, EffectEncoder, EffectRuntime, shaders
 │   │
 │   ├── styles/               ← global.scss, _variables.scss, _mixins.scss
 │   ├── tools/                ← Tool handlers + options UIs + algorithm/
@@ -209,9 +209,7 @@ renderer.renderPlan(plan: RenderPlanEntry[]): void
 renderer.readFlattenedPixels(layers): Promise<Uint8Array>
 ```
 
-**`webgpu/AdjustmentEncoder.ts`** runs the 25 adjustment compute pipelines non-destructively during compositing.
-
-**`webgpu/compute/filterCompute.ts`** runs destructive filter compute passes (blur, sharpen, noise, etc.) when you apply a filter.
+**`webgpu/EffectEncoder.ts`** is a thin dispatcher that looks up the registered effect by `entry.kind` in `effectRegistry` and calls its `encode()`. Each effect class under `src/core/effects/{Name}/` owns its own pipeline construction + encode body, talking to a shared `EffectRuntime` (`webgpu/EffectRuntime.ts`) for cached pipelines, samplers, scratch tex, and render-pass primitives.
 
 **`rasterization/`** provides the single entry point for all flatten/merge/export operations:
 

@@ -2,7 +2,7 @@ import type {
   CurvesChannel,
   CurvesChannelCurve,
   CurvesControlPoint,
-  AdjustmentParamsMap,
+  EffectParamsMap,
   CurvesPresetRef,
 } from "@/types";
 
@@ -28,7 +28,7 @@ export function makeIdentityCurve(channel: CurvesChannel): CurvesChannelCurve {
   };
 }
 
-export function createDefaultCurvesParams(): AdjustmentParamsMap["curves"] {
+export function createDefaultCurvesParams(): EffectParamsMap["curves"] {
   return {
     version: 1,
     channels: {
@@ -50,8 +50,8 @@ export function createDefaultCurvesParams(): AdjustmentParamsMap["curves"] {
 }
 
 export function cloneCurvesParams(
-  params: AdjustmentParamsMap["curves"],
-): AdjustmentParamsMap["curves"] {
+  params: EffectParamsMap["curves"],
+): EffectParamsMap["curves"] {
   return {
     version: 1,
     channels: {
@@ -69,7 +69,7 @@ export function cloneCurvesParams(
 }
 
 export function curvesChannelsSignature(
-  channels: AdjustmentParamsMap["curves"]["channels"],
+  channels: EffectParamsMap["curves"]["channels"],
 ): string {
   return CHANNELS.map((channel) =>
     channels[channel].points.map((p) => `${p.x}:${p.y}`).join(","),
@@ -78,9 +78,9 @@ export function curvesChannelsSignature(
 
 export function validateCurvesParams(
   value: unknown,
-): value is AdjustmentParamsMap["curves"] {
+): value is EffectParamsMap["curves"] {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as AdjustmentParamsMap["curves"];
+  const candidate = value as EffectParamsMap["curves"];
   if (candidate.version !== 1) return false;
   if (!candidate.channels || !candidate.ui) return false;
   for (const channel of CHANNELS) {
@@ -202,7 +202,7 @@ export function buildCurveLut(points: CurvesControlPoint[]): Uint8Array {
 }
 
 export function buildCurvesLuts(
-  params: AdjustmentParamsMap["curves"],
+  params: EffectParamsMap["curves"],
 ): CurvesLuts {
   return {
     rgb: buildCurveLut(params.channels.rgb.points),

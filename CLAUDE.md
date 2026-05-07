@@ -45,7 +45,7 @@ src/
   graphics/
     rasterization/           ← unified flatten/merge/export pipeline
     webgpu/
-      AdjustmentEncoder.ts   ← thin dispatcher (~80 lines): looks up effect by id, calls effect.encode()
+      EffectEncoder.ts   ← thin dispatcher (~80 lines): looks up effect by id, calls effect.encode()
       EffectRuntime.ts       ← shared GPU primitives for every effect (cached pipelines, samplers, scratch tex, render-pass helpers)
       compute/
         grabcutCompute.ts
@@ -198,8 +198,8 @@ Cross-effect helpers (`distortionShared.tsx`, `distortionPanel.module.scss`, `fi
 Defined in `src/core/effects/IPipelineEffect.ts`:
 
 ```ts
-interface IPipelineEffect<L extends AdjustmentLayerState, Op extends AdjustmentRenderOp> {
-  readonly id: L["adjustmentType"] & Op["kind"];   // stable id; routes layer/op union members to this effect
+interface IPipelineEffect<L extends EffectLayerState, Op extends EffectRenderOp> {
+  readonly id: L["effectType"] & Op["kind"];       // stable id; routes layer/op union members to this effect
   readonly label: string;
   readonly menu: { root: "adjustments" | "effects" | "filters"; submenu?: string; instant?: boolean; shortcut?: string };
   readonly defaultParams: L["params"];
@@ -214,7 +214,7 @@ interface IPipelineEffect<L extends AdjustmentLayerState, Op extends AdjustmentR
 }
 ```
 
-`EncodeContext` carries `{ encoder, srcTex, dstTex, format, engine }`. `engine` is the `AdjustmentEncoder` instance, which exposes `engine.runtime` (`EffectRuntime`) for shared GPU primitives.
+`EncodeContext` carries `{ encoder, srcTex, dstTex, format, engine }`. `engine` is the `EffectEncoder` instance, which exposes `engine.runtime` (`EffectRuntime`) for shared GPU primitives.
 
 ### Registry & dynamic discovery
 
@@ -234,20 +234,20 @@ Shaders are auto-discovered by `src/core/effects/shaderLoader.ts`, which uses `i
 
 Effects don't construct their own pipelines. One shared **`EffectRuntime`** (`src/graphics/webgpu/EffectRuntime.ts`) provides the cached pipeline / sampler / scratch-texture / render-pass primitives that every effect (adjustment, real-time effect, and filter) uses. Effects access it via `engine.runtime` from their `encode` body. It exposes `getRenderPipelinePair(shaderName, entryPoint, bindings?)`, `getRenderPipelineSingle(shaderName, entryPoint, format, bindings?)`, `getRenderPipelineWithBGL(...)`, `getRenderPipelineAuto(...)`, `getComputePipeline(...)`, `encodeStdAdjRenderPass(...)`, `encodeRenderPass(...)`, samplers (`adjSampler`, `lutSampler`), the shared `intermediate` scratch texture, transient `makeRgba8Tex` / `makeRgba16FloatTex` allocators, params/maskFlags buffer helpers, and pending-destroy tracking. All pipelines are lazily cached by key, so two effects that share a shader share the compiled `GPUShaderModule` and pipeline.
 
-`AdjustmentEncoder` is the dispatcher that owns the single `EffectRuntime` instance. Its `flushPendingDestroys()` releases the runtime's pending buffers and textures after `device.queue.submit()`. Cross-frame texture caches (e.g. Bloom's downsampled glow buffers) are owned by the effect itself as module-level state and evicted via `onFrameEnd`.
+`EffectEncoder` is the dispatcher that owns the single `EffectRuntime` instance. Its `flushPendingDestroys()` releases the runtime's pending buffers and textures after `device.queue.submit()`. Cross-frame texture caches (e.g. Bloom's downsampled glow buffers) are owned by the effect itself as module-level state and evicted via `onFrameEnd`.
 
-### `AdjustmentEncoder` — thin dispatcher
+### `EffectEncoder` — thin dispatcher
 
-`AdjustmentEncoder` is ~80 lines. Its `encode(encoder, entry, srcTex, dstTex, format)` looks up the effect by `entry.kind` in the registry and calls `effect.encode({ encoder, srcTex, dstTex, format, engine: this }, entry)`. It also iterates the registry on `endFrame()` and `destroy()` to invoke `onFrameEnd`/`onDestroy` hooks.
+`EffectEncoder` is ~80 lines. Its `encode(encoder, entry, srcTex, dstTex, format)` looks up the effect by `entry.kind` in the registry and calls `effect.encode({ encoder, srcTex, dstTex, format, engine: this }, entry)`. It also iterates the registry on `endFrame()` and `destroy()` to invoke `onFrameEnd`/`onDestroy` hooks.
 
 ### Adding a new effect / adjustment / filter
 
 It's a single-folder operation:
 
 1. Create `src/core/effects/{PascalName}/`.
-2. Add the `AdjustmentType` literal and `AdjustmentParamsMap` entry in `src/types/index.ts` (and the `*AdjustmentLayer` interface + union).
+2. Add the `EffectType` literal and `EffectParamsMap` entry in `src/types/index.ts` (and the `*EffectLayer` interface + union).
 3. Write the `.wgsl` shader(s) directly in the folder. No separate `.ts` re-export wrapper is needed — `shaderLoader` discovers them automatically by basename.
-4. Add a render-plan op variant (if any new fields) in the relevant `AdjustmentRenderOp` union, and the render-plan mapping in `src/ux/main/Canvas/canvasPlan.ts` (typically a one-line case that forwards `entry`).
+4. Add a render-plan op variant (if any new fields) in the relevant `EffectRenderOp` union, and the render-plan mapping in `src/ux/main/Canvas/canvasPlan.ts` (typically a one-line case that forwards `entry`).
 5. Write `{Name}Effect.tsx` implementing `IPipelineEffect` — its `encode` body uses `engine.runtime.getRenderPipelinePair(...)` directly. Mirror the pattern of the closest existing effect (e.g. for a standard color adjustment, copy `BrightnessContrast/BrightnessContrastEffect.tsx`).
 6. Write `{Name}Panel.tsx` + `.module.scss` for the right-panel UI.
 7. Register the effect in `src/core/effects/index.ts` (one import line + one `effectRegistry.register(...)` line). This is the only edit outside the new folder.

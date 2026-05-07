@@ -1,13 +1,13 @@
-import type { InnerGlowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { InnerGlowEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerGlowOptions } from "./InnerGlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeInnerShadowPass } from "../InnerShadow/InnerShadowEffect";
 
-type InnerGlowOp = Extract<AdjustmentRenderOp, { kind: "inner-glow" }>;
+type InnerGlowOp = Extract<EffectRenderOp, { kind: "inner-glow" }>;
 
 export const InnerGlowEffect: IPipelineEffect<
-  InnerGlowAdjustmentLayer,
+  InnerGlowEffectLayer,
   InnerGlowOp
 > = {
   id: "inner-glow",

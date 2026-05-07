@@ -1,12 +1,12 @@
-import type { MedianFilterAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { MedianFilterEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MedianFilterPanel } from "./MedianFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type MedianFilterOp = Extract<AdjustmentRenderOp, { kind: "median-filter" }>;
+type MedianFilterOp = Extract<EffectRenderOp, { kind: "median-filter" }>;
 
 export const MedianFilterEffect: IPipelineEffect<
-  MedianFilterAdjustmentLayer,
+  MedianFilterEffectLayer,
   MedianFilterOp
 > = {
   id: "median-filter",

@@ -1,18 +1,18 @@
-import type { PolarCoordinatesAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { PolarCoordinatesEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PolarCoordinatesOptions } from "./PolarCoordinatesOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 type PolarCoordinatesOp = Extract<
-  AdjustmentRenderOp,
+  EffectRenderOp,
   { kind: "polar-coordinates" }
 >;
 
 const EDGE_MAP = { transparent: 0, clamp: 1, mirror: 2 } as const;
 
 export const PolarCoordinatesEffect: IPipelineEffect<
-  PolarCoordinatesAdjustmentLayer,
+  PolarCoordinatesEffectLayer,
   PolarCoordinatesOp
 > = {
   id: "polar-coordinates",

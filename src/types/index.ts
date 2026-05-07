@@ -276,7 +276,7 @@ export interface MaskLayerState {
 
 // ─── Adjustment layers ────────────────────────────────────────────────────────
 
-export type AdjustmentType =
+export type EffectType =
   | "brightness-contrast"
   | "hue-saturation"
   | "color-vibrance"
@@ -410,7 +410,7 @@ export interface AutoMatchStats {
   context: AutoMatchSourceStats;
 }
 
-export interface AdjustmentParamsMap {
+export interface EffectParamsMap {
   "brightness-contrast": { brightness: number; contrast: number };
   "hue-saturation": { hue: number; saturation: number; lightness: number };
   "color-vibrance": { vibrance: number; saturation: number };
@@ -849,7 +849,7 @@ export interface AdjustmentParamsMap {
   };
 }
 
-export type OutlineParams = AdjustmentParamsMap["outline"];
+export type OutlineParams = EffectParamsMap["outline"];
 
 export interface ColorGradingWheelParams {
   r: number;
@@ -858,7 +858,7 @@ export interface ColorGradingWheelParams {
   master: number;
 }
 
-interface AdjustmentLayerBase {
+interface EffectLayerBase {
   id: string;
   name: string;
   visible: boolean;
@@ -866,397 +866,397 @@ interface AdjustmentLayerBase {
   parentId: string;
 }
 
-export interface BrightnessContrastAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "brightness-contrast";
-  params: AdjustmentParamsMap["brightness-contrast"];
+export interface BrightnessContrastEffectLayer extends EffectLayerBase {
+  effectType: "brightness-contrast";
+  params: EffectParamsMap["brightness-contrast"];
   /** True when a selection was active at creation time; baked mask pixels live in Canvas adjustmentMaskMap. */
   hasMask: boolean;
 }
 
-export interface HueSaturationAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "hue-saturation";
-  params: AdjustmentParamsMap["hue-saturation"];
+export interface HueSaturationEffectLayer extends EffectLayerBase {
+  effectType: "hue-saturation";
+  params: EffectParamsMap["hue-saturation"];
   /** True when a selection was active at creation time; baked mask pixels live in Canvas adjustmentMaskMap. */
   hasMask: boolean;
 }
 
-export interface ColorVibranceAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-vibrance";
-  params: AdjustmentParamsMap["color-vibrance"];
+export interface ColorVibranceEffectLayer extends EffectLayerBase {
+  effectType: "color-vibrance";
+  params: EffectParamsMap["color-vibrance"];
   /** True when a selection was active at creation time; baked mask pixels live in Canvas adjustmentMaskMap. */
   hasMask: boolean;
 }
 
-export interface ColorBalanceAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-balance";
-  params: AdjustmentParamsMap["color-balance"];
+export interface ColorBalanceEffectLayer extends EffectLayerBase {
+  effectType: "color-balance";
+  params: EffectParamsMap["color-balance"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface BlackAndWhiteAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "black-and-white";
-  params: AdjustmentParamsMap["black-and-white"];
+export interface BlackAndWhiteEffectLayer extends EffectLayerBase {
+  effectType: "black-and-white";
+  params: EffectParamsMap["black-and-white"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface ColorTemperatureAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-temperature";
-  params: AdjustmentParamsMap["color-temperature"];
+export interface ColorTemperatureEffectLayer extends EffectLayerBase {
+  effectType: "color-temperature";
+  params: EffectParamsMap["color-temperature"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface ColorInvertAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-invert";
-  params: AdjustmentParamsMap["color-invert"];
+export interface ColorInvertEffectLayer extends EffectLayerBase {
+  effectType: "color-invert";
+  params: EffectParamsMap["color-invert"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface SelectiveColorAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "selective-color";
-  params: AdjustmentParamsMap["selective-color"];
+export interface SelectiveColorEffectLayer extends EffectLayerBase {
+  effectType: "selective-color";
+  params: EffectParamsMap["selective-color"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface AutoMatchAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "auto-match";
-  params: AdjustmentParamsMap["auto-match"];
+export interface AutoMatchEffectLayer extends EffectLayerBase {
+  effectType: "auto-match";
+  params: EffectParamsMap["auto-match"];
   hasMask: boolean;
 }
 
-export interface ChannelMixerAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "channel-mixer";
-  params: AdjustmentParamsMap["channel-mixer"];
+export interface ChannelMixerEffectLayer extends EffectLayerBase {
+  effectType: "channel-mixer";
+  params: EffectParamsMap["channel-mixer"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface CurvesAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "curves";
-  params: AdjustmentParamsMap["curves"];
+export interface CurvesEffectLayer extends EffectLayerBase {
+  effectType: "curves";
+  params: EffectParamsMap["curves"];
   /** True when a selection was active at creation time; the baked mask pixels
    *  live in useCanvas.adjustmentMaskMap (not in React state). */
   hasMask: boolean;
 }
 
-export interface ColorGradingAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-grading";
-  params: AdjustmentParamsMap["color-grading"];
+export interface ColorGradingEffectLayer extends EffectLayerBase {
+  effectType: "color-grading";
+  params: EffectParamsMap["color-grading"];
   /** True when a selection was active at creation time; baked mask pixels live
    *  in Canvas adjustmentMaskMap, not in React state. */
   hasMask: boolean;
 }
 
-export interface ReduceColorsAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "reduce-colors";
-  params: AdjustmentParamsMap["reduce-colors"];
+export interface ReduceColorsEffectLayer extends EffectLayerBase {
+  effectType: "reduce-colors";
+  params: EffectParamsMap["reduce-colors"];
   hasMask: boolean;
 }
 
-export interface ColorDitheringAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-dithering";
-  params: AdjustmentParamsMap["color-dithering"];
+export interface ColorDitheringEffectLayer extends EffectLayerBase {
+  effectType: "color-dithering";
+  params: EffectParamsMap["color-dithering"];
   hasMask: boolean;
 }
 
-export interface BloomAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "bloom";
-  params: AdjustmentParamsMap["bloom"];
+export interface BloomEffectLayer extends EffectLayerBase {
+  effectType: "bloom";
+  params: EffectParamsMap["bloom"];
   hasMask: boolean;
 }
 
-export interface ChromaticAberrationAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "chromatic-aberration";
-  params: AdjustmentParamsMap["chromatic-aberration"];
+export interface ChromaticAberrationEffectLayer extends EffectLayerBase {
+  effectType: "chromatic-aberration";
+  params: EffectParamsMap["chromatic-aberration"];
   hasMask: boolean;
 }
 
-export interface HalationAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "halation";
-  params: AdjustmentParamsMap["halation"];
+export interface HalationEffectLayer extends EffectLayerBase {
+  effectType: "halation";
+  params: EffectParamsMap["halation"];
   hasMask: boolean;
 }
 
-export interface ColorKeyAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "color-key";
-  params: AdjustmentParamsMap["color-key"];
+export interface ColorKeyEffectLayer extends EffectLayerBase {
+  effectType: "color-key";
+  params: EffectParamsMap["color-key"];
   hasMask: boolean;
 }
 
-export interface DropShadowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "drop-shadow";
-  params: AdjustmentParamsMap["drop-shadow"];
+export interface DropShadowEffectLayer extends EffectLayerBase {
+  effectType: "drop-shadow";
+  params: EffectParamsMap["drop-shadow"];
   hasMask: boolean;
 }
 
-export interface GlowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "glow";
-  params: AdjustmentParamsMap["glow"];
+export interface GlowEffectLayer extends EffectLayerBase {
+  effectType: "glow";
+  params: EffectParamsMap["glow"];
   hasMask: boolean;
 }
 
-export interface OutlineAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "outline";
-  params: AdjustmentParamsMap["outline"];
+export interface OutlineEffectLayer extends EffectLayerBase {
+  effectType: "outline";
+  params: EffectParamsMap["outline"];
   hasMask: boolean;
 }
 
-export interface HalftoneAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "halftone";
-  params: AdjustmentParamsMap["halftone"];
+export interface HalftoneEffectLayer extends EffectLayerBase {
+  effectType: "halftone";
+  params: EffectParamsMap["halftone"];
   hasMask: boolean;
 }
 
-export interface GaussianBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "gaussian-blur";
-  params: AdjustmentParamsMap["gaussian-blur"];
+export interface GaussianBlurEffectLayer extends EffectLayerBase {
+  effectType: "gaussian-blur";
+  params: EffectParamsMap["gaussian-blur"];
   hasMask: boolean;
 }
 
-export interface BoxBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "box-blur";
-  params: AdjustmentParamsMap["box-blur"];
+export interface BoxBlurEffectLayer extends EffectLayerBase {
+  effectType: "box-blur";
+  params: EffectParamsMap["box-blur"];
   hasMask: boolean;
 }
 
-export interface RadialBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "radial-blur";
-  params: AdjustmentParamsMap["radial-blur"];
+export interface RadialBlurEffectLayer extends EffectLayerBase {
+  effectType: "radial-blur";
+  params: EffectParamsMap["radial-blur"];
   hasMask: boolean;
 }
 
-export interface MotionBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "motion-blur";
-  params: AdjustmentParamsMap["motion-blur"];
+export interface MotionBlurEffectLayer extends EffectLayerBase {
+  effectType: "motion-blur";
+  params: EffectParamsMap["motion-blur"];
   hasMask: boolean;
 }
 
-export interface RemoveMotionBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "remove-motion-blur";
-  params: AdjustmentParamsMap["remove-motion-blur"];
+export interface RemoveMotionBlurEffectLayer extends EffectLayerBase {
+  effectType: "remove-motion-blur";
+  params: EffectParamsMap["remove-motion-blur"];
   hasMask: boolean;
 }
 
-export interface LensBlurAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "lens-blur";
-  params: AdjustmentParamsMap["lens-blur"];
+export interface LensBlurEffectLayer extends EffectLayerBase {
+  effectType: "lens-blur";
+  params: EffectParamsMap["lens-blur"];
   hasMask: boolean;
 }
 
-export interface SharpenAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "sharpen";
-  params: AdjustmentParamsMap["sharpen"];
+export interface SharpenEffectLayer extends EffectLayerBase {
+  effectType: "sharpen";
+  params: EffectParamsMap["sharpen"];
   hasMask: boolean;
 }
 
-export interface SharpenMoreAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "sharpen-more";
-  params: AdjustmentParamsMap["sharpen-more"];
+export interface SharpenMoreEffectLayer extends EffectLayerBase {
+  effectType: "sharpen-more";
+  params: EffectParamsMap["sharpen-more"];
   hasMask: boolean;
 }
 
-export interface UnsharpMaskAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "unsharp-mask";
-  params: AdjustmentParamsMap["unsharp-mask"];
+export interface UnsharpMaskEffectLayer extends EffectLayerBase {
+  effectType: "unsharp-mask";
+  params: EffectParamsMap["unsharp-mask"];
   hasMask: boolean;
 }
 
-export interface SmartSharpenAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "smart-sharpen";
-  params: AdjustmentParamsMap["smart-sharpen"];
+export interface SmartSharpenEffectLayer extends EffectLayerBase {
+  effectType: "smart-sharpen";
+  params: EffectParamsMap["smart-sharpen"];
   hasMask: boolean;
 }
 
-export interface AddNoiseAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "add-noise";
-  params: AdjustmentParamsMap["add-noise"];
+export interface AddNoiseEffectLayer extends EffectLayerBase {
+  effectType: "add-noise";
+  params: EffectParamsMap["add-noise"];
   hasMask: boolean;
 }
 
-export interface FilmGrainAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "film-grain";
-  params: AdjustmentParamsMap["film-grain"];
+export interface FilmGrainEffectLayer extends EffectLayerBase {
+  effectType: "film-grain";
+  params: EffectParamsMap["film-grain"];
   hasMask: boolean;
 }
 
-export interface MedianFilterAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "median-filter";
-  params: AdjustmentParamsMap["median-filter"];
+export interface MedianFilterEffectLayer extends EffectLayerBase {
+  effectType: "median-filter";
+  params: EffectParamsMap["median-filter"];
   hasMask: boolean;
 }
 
-export interface BilateralFilterAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "bilateral-filter";
-  params: AdjustmentParamsMap["bilateral-filter"];
+export interface BilateralFilterEffectLayer extends EffectLayerBase {
+  effectType: "bilateral-filter";
+  params: EffectParamsMap["bilateral-filter"];
   hasMask: boolean;
 }
 
-export interface ReduceNoiseAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "reduce-noise";
-  params: AdjustmentParamsMap["reduce-noise"];
+export interface ReduceNoiseEffectLayer extends EffectLayerBase {
+  effectType: "reduce-noise";
+  params: EffectParamsMap["reduce-noise"];
   hasMask: boolean;
 }
 
-export interface CloudsAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "clouds";
-  params: AdjustmentParamsMap["clouds"];
+export interface CloudsEffectLayer extends EffectLayerBase {
+  effectType: "clouds";
+  params: EffectParamsMap["clouds"];
   hasMask: boolean;
 }
 
-export interface PixelateAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "pixelate";
-  params: AdjustmentParamsMap["pixelate"];
+export interface PixelateEffectLayer extends EffectLayerBase {
+  effectType: "pixelate";
+  params: EffectParamsMap["pixelate"];
   hasMask: boolean;
 }
 
-export interface LensFlareAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "lens-flare";
-  params: AdjustmentParamsMap["lens-flare"];
+export interface LensFlareEffectLayer extends EffectLayerBase {
+  effectType: "lens-flare";
+  params: EffectParamsMap["lens-flare"];
   hasMask: boolean;
 }
 
-export interface BevelAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "bevel";
-  params: AdjustmentParamsMap["bevel"];
+export interface BevelEffectLayer extends EffectLayerBase {
+  effectType: "bevel";
+  params: EffectParamsMap["bevel"];
   hasMask: boolean;
 }
 
-export interface InnerShadowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "inner-shadow";
-  params: AdjustmentParamsMap["inner-shadow"];
+export interface InnerShadowEffectLayer extends EffectLayerBase {
+  effectType: "inner-shadow";
+  params: EffectParamsMap["inner-shadow"];
   hasMask: boolean;
 }
 
-export interface InnerGlowAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "inner-glow";
-  params: AdjustmentParamsMap["inner-glow"];
+export interface InnerGlowEffectLayer extends EffectLayerBase {
+  effectType: "inner-glow";
+  params: EffectParamsMap["inner-glow"];
   hasMask: boolean;
 }
 
-export interface SeamlessTextureAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "seamless-texture";
-  params: AdjustmentParamsMap["seamless-texture"];
+export interface SeamlessTextureEffectLayer extends EffectLayerBase {
+  effectType: "seamless-texture";
+  params: EffectParamsMap["seamless-texture"];
   hasMask: boolean;
 }
 
-export interface VignetteAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "vignette";
-  params: AdjustmentParamsMap["vignette"];
+export interface VignetteEffectLayer extends EffectLayerBase {
+  effectType: "vignette";
+  params: EffectParamsMap["vignette"];
   hasMask: boolean;
 }
 
-export interface LensDistortionAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "lens-distortion";
-  params: AdjustmentParamsMap["lens-distortion"];
+export interface LensDistortionEffectLayer extends EffectLayerBase {
+  effectType: "lens-distortion";
+  params: EffectParamsMap["lens-distortion"];
   hasMask: boolean;
 }
 
-export interface OffsetAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "offset";
-  params: AdjustmentParamsMap["offset"];
+export interface OffsetEffectLayer extends EffectLayerBase {
+  effectType: "offset";
+  params: EffectParamsMap["offset"];
   hasMask: boolean;
 }
 
-export interface PinchAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "pinch";
-  params: AdjustmentParamsMap["pinch"];
+export interface PinchEffectLayer extends EffectLayerBase {
+  effectType: "pinch";
+  params: EffectParamsMap["pinch"];
   hasMask: boolean;
 }
 
-export interface PolarCoordinatesAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "polar-coordinates";
-  params: AdjustmentParamsMap["polar-coordinates"];
+export interface PolarCoordinatesEffectLayer extends EffectLayerBase {
+  effectType: "polar-coordinates";
+  params: EffectParamsMap["polar-coordinates"];
   hasMask: boolean;
 }
 
-export interface RippleAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "ripple";
-  params: AdjustmentParamsMap["ripple"];
+export interface RippleEffectLayer extends EffectLayerBase {
+  effectType: "ripple";
+  params: EffectParamsMap["ripple"];
   hasMask: boolean;
 }
 
-export interface ShearAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "shear";
-  params: AdjustmentParamsMap["shear"];
+export interface ShearEffectLayer extends EffectLayerBase {
+  effectType: "shear";
+  params: EffectParamsMap["shear"];
   hasMask: boolean;
 }
 
-export interface TwirlAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "twirl";
-  params: AdjustmentParamsMap["twirl"];
+export interface TwirlEffectLayer extends EffectLayerBase {
+  effectType: "twirl";
+  params: EffectParamsMap["twirl"];
   hasMask: boolean;
 }
 
-export interface DisplaceAdjustmentLayer extends AdjustmentLayerBase {
-  adjustmentType: "displace";
-  params: AdjustmentParamsMap["displace"];
+export interface DisplaceEffectLayer extends EffectLayerBase {
+  effectType: "displace";
+  params: EffectParamsMap["displace"];
   hasMask: boolean;
 }
 
-export type AdjustmentLayerState =
-  | BrightnessContrastAdjustmentLayer
-  | HueSaturationAdjustmentLayer
-  | ColorVibranceAdjustmentLayer
-  | ColorBalanceAdjustmentLayer
-  | BlackAndWhiteAdjustmentLayer
-  | ColorTemperatureAdjustmentLayer
-  | ColorInvertAdjustmentLayer
-  | SelectiveColorAdjustmentLayer
-  | ChannelMixerAdjustmentLayer
-  | AutoMatchAdjustmentLayer
-  | CurvesAdjustmentLayer
-  | ColorGradingAdjustmentLayer
-  | ReduceColorsAdjustmentLayer
-  | ColorDitheringAdjustmentLayer
-  | BloomAdjustmentLayer
-  | ChromaticAberrationAdjustmentLayer
-  | HalationAdjustmentLayer
-  | ColorKeyAdjustmentLayer
-  | DropShadowAdjustmentLayer
-  | GlowAdjustmentLayer
-  | OutlineAdjustmentLayer
-  | HalftoneAdjustmentLayer
-  | GaussianBlurAdjustmentLayer
-  | BoxBlurAdjustmentLayer
-  | RadialBlurAdjustmentLayer
-  | MotionBlurAdjustmentLayer
-  | RemoveMotionBlurAdjustmentLayer
-  | LensBlurAdjustmentLayer
-  | SharpenAdjustmentLayer
-  | SharpenMoreAdjustmentLayer
-  | UnsharpMaskAdjustmentLayer
-  | SmartSharpenAdjustmentLayer
-  | AddNoiseAdjustmentLayer
-  | FilmGrainAdjustmentLayer
-  | MedianFilterAdjustmentLayer
-  | BilateralFilterAdjustmentLayer
-  | ReduceNoiseAdjustmentLayer
-  | CloudsAdjustmentLayer
-  | PixelateAdjustmentLayer
-  | LensFlareAdjustmentLayer
-  | BevelAdjustmentLayer
-  | InnerShadowAdjustmentLayer
-  | InnerGlowAdjustmentLayer
-  | SeamlessTextureAdjustmentLayer
-  | VignetteAdjustmentLayer
-  | LensDistortionAdjustmentLayer
-  | PinchAdjustmentLayer
-  | PolarCoordinatesAdjustmentLayer
-  | RippleAdjustmentLayer
-  | ShearAdjustmentLayer
-  | TwirlAdjustmentLayer
-  | DisplaceAdjustmentLayer
-  | OffsetAdjustmentLayer;
+export type EffectLayerState =
+  | BrightnessContrastEffectLayer
+  | HueSaturationEffectLayer
+  | ColorVibranceEffectLayer
+  | ColorBalanceEffectLayer
+  | BlackAndWhiteEffectLayer
+  | ColorTemperatureEffectLayer
+  | ColorInvertEffectLayer
+  | SelectiveColorEffectLayer
+  | ChannelMixerEffectLayer
+  | AutoMatchEffectLayer
+  | CurvesEffectLayer
+  | ColorGradingEffectLayer
+  | ReduceColorsEffectLayer
+  | ColorDitheringEffectLayer
+  | BloomEffectLayer
+  | ChromaticAberrationEffectLayer
+  | HalationEffectLayer
+  | ColorKeyEffectLayer
+  | DropShadowEffectLayer
+  | GlowEffectLayer
+  | OutlineEffectLayer
+  | HalftoneEffectLayer
+  | GaussianBlurEffectLayer
+  | BoxBlurEffectLayer
+  | RadialBlurEffectLayer
+  | MotionBlurEffectLayer
+  | RemoveMotionBlurEffectLayer
+  | LensBlurEffectLayer
+  | SharpenEffectLayer
+  | SharpenMoreEffectLayer
+  | UnsharpMaskEffectLayer
+  | SmartSharpenEffectLayer
+  | AddNoiseEffectLayer
+  | FilmGrainEffectLayer
+  | MedianFilterEffectLayer
+  | BilateralFilterEffectLayer
+  | ReduceNoiseEffectLayer
+  | CloudsEffectLayer
+  | PixelateEffectLayer
+  | LensFlareEffectLayer
+  | BevelEffectLayer
+  | InnerShadowEffectLayer
+  | InnerGlowEffectLayer
+  | SeamlessTextureEffectLayer
+  | VignetteEffectLayer
+  | LensDistortionEffectLayer
+  | PinchEffectLayer
+  | PolarCoordinatesEffectLayer
+  | RippleEffectLayer
+  | ShearEffectLayer
+  | TwirlEffectLayer
+  | DisplaceEffectLayer
+  | OffsetEffectLayer;
 
 export interface GroupLayerState {
   id: string;
@@ -1294,7 +1294,7 @@ export type LayerState =
   | ShapeLayerState
   | FrameLayerState
   | MaskLayerState
-  | AdjustmentLayerState
+  | EffectLayerState
   | GroupLayerState
   | CompositeLayerState;
 

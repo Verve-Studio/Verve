@@ -1,11 +1,11 @@
-import type { LensDistortionAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { LensDistortionEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensDistortionOptions } from "./LensDistortionOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 type LensDistortionOp = Extract<
-  AdjustmentRenderOp,
+  EffectRenderOp,
   { kind: "lens-distortion" }
 >;
 
@@ -13,7 +13,7 @@ const TYPE_MAP = { radial: 0, fisheye: 1, mustache: 2, perspective: 3 } as const
 const EDGE_MAP = { transparent: 0, clamp: 1, mirror: 2 } as const;
 
 export const LensDistortionEffect: IPipelineEffect<
-  LensDistortionAdjustmentLayer,
+  LensDistortionEffectLayer,
   LensDistortionOp
 > = {
   id: "lens-distortion",

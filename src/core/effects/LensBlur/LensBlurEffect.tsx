@@ -1,9 +1,9 @@
-import type { LensBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { LensBlurEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensBlurPanel } from "./LensBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type LensBlurOp = Extract<AdjustmentRenderOp, { kind: "lens-blur" }>;
+type LensBlurOp = Extract<EffectRenderOp, { kind: "lens-blur" }>;
 
 function buildKernelEntries(
   radius: number,
@@ -60,7 +60,7 @@ let cachedKernelBuf: GPUBuffer | null = null;
 let cachedKernelCount = 0;
 
 export const LensBlurEffect: IPipelineEffect<
-  LensBlurAdjustmentLayer,
+  LensBlurEffectLayer,
   LensBlurOp
 > = {
   id: "lens-blur",

@@ -1,5 +1,5 @@
-import type { BloomAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { BloomEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BloomOptions } from "./BloomOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
@@ -11,7 +11,7 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-type BloomOp = Extract<AdjustmentRenderOp, { kind: "bloom" }>;
+type BloomOp = Extract<EffectRenderOp, { kind: "bloom" }>;
 
 // Composite binding pattern: srcTex, sampler, glowTex, params, selMask, maskFlags.
 const COMPOSITE_BINDINGS: AdjBinding[] = [
@@ -70,7 +70,7 @@ function ensureTextures(
   return texCache;
 }
 
-export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
+export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
   id: "bloom",
   label: "Bloom…",
   menu: { root: "effects", submenu: "fx-glow" },

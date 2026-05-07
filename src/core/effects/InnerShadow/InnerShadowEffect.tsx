@@ -1,5 +1,5 @@
-import type { InnerShadowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { InnerShadowEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerShadowOptions } from "./InnerShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
-type InnerShadowOp = Extract<AdjustmentRenderOp, { kind: "inner-shadow" }>;
+type InnerShadowOp = Extract<EffectRenderOp, { kind: "inner-shadow" }>;
 
 let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
 let usedThisFrame = false;
@@ -178,7 +178,7 @@ export const innerShadowCache = {
 };
 
 export const InnerShadowEffect: IPipelineEffect<
-  InnerShadowAdjustmentLayer,
+  InnerShadowEffectLayer,
   InnerShadowOp
 > = {
   id: "inner-shadow",

@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ChromaticAberrationAdjustmentLayer } from "@/types";
+import type { ChromaticAberrationEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ChromaticAberrationOptions.module.scss";
 
 interface ChromaticAberrationOptionsProps {
-  layer: ChromaticAberrationAdjustmentLayer;
+  layer: ChromaticAberrationEffectLayer;
   parentLayerName: string;
 }
 

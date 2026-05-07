@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { DropShadowAdjustmentLayer } from "@/types";
+import type { DropShadowEffectLayer } from "@/types";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./DropShadowOptions.module.scss";
@@ -8,7 +8,7 @@ import styles from "./DropShadowOptions.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface DropShadowOptionsProps {
-  layer: DropShadowAdjustmentLayer;
+  layer: DropShadowEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,12 +1,12 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { VignetteAdjustmentLayer } from "@/types";
+import type { VignetteEffectLayer } from "@/types";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./VignetteOptions.module.scss";
 
 interface VignetteOptionsProps {
-  layer: VignetteAdjustmentLayer;
+  layer: VignetteEffectLayer;
   parentLayerName: string;
 }
 

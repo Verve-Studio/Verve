@@ -1,11 +1,11 @@
-import type { SharpenAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { SharpenEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SharpenPanel } from "./SharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type SharpenOp = Extract<AdjustmentRenderOp, { kind: "sharpen" }>;
+type SharpenOp = Extract<EffectRenderOp, { kind: "sharpen" }>;
 
-export const SharpenEffect: IPipelineEffect<SharpenAdjustmentLayer, SharpenOp> =
+export const SharpenEffect: IPipelineEffect<SharpenEffectLayer, SharpenOp> =
   {
     id: "sharpen",
     label: "Sharpen",

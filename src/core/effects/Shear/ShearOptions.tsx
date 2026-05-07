@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ShearAdjustmentLayer } from "@/types";
+import type { ShearEffectLayer } from "@/types";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
@@ -11,14 +11,14 @@ import {
 import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
-  layer: ShearAdjustmentLayer;
+  layer: ShearEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): ShearAdjustmentLayer["params"] =>
-  effectRegistry.get("shear")!.defaultParams as ShearAdjustmentLayer["params"];
+const getDefaultParams = (): ShearEffectLayer["params"] =>
+  effectRegistry.get("shear")!.defaultParams as ShearEffectLayer["params"];
 
-const DIRECTIONS: ShearAdjustmentLayer["params"]["direction"][] = [
+const DIRECTIONS: ShearEffectLayer["params"]["direction"][] = [
   "horizontal",
   "vertical",
 ];
@@ -29,7 +29,7 @@ export function ShearOptions({
 }: Props): React.JSX.Element {
   const { dispatch } = useAppContext();
   const p = layer.params;
-  const update = (patch: Partial<ShearAdjustmentLayer["params"]>): void => {
+  const update = (patch: Partial<ShearEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },

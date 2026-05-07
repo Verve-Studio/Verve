@@ -1,11 +1,11 @@
-import type { ColorDitheringAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { ColorDitheringEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorDitheringPanel } from "./ColorDitheringPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
-type ColorDitheringOp = Extract<AdjustmentRenderOp, { kind: "color-dithering" }>;
+type ColorDitheringOp = Extract<EffectRenderOp, { kind: "color-dithering" }>;
 
 const STYLE_MAP: Record<string, number> = {
   bayer4: 0,
@@ -25,7 +25,7 @@ function srgbByteToLinear(
 }
 
 export const ColorDitheringEffect: IPipelineEffect<
-  ColorDitheringAdjustmentLayer,
+  ColorDitheringEffectLayer,
   ColorDitheringOp
 > = {
   id: "color-dithering",

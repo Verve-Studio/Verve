@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { LensFlareAdjustmentLayer } from "@/types";
+import type { LensFlareEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: LensFlareAdjustmentLayer;
+  layer: LensFlareEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,12 +1,12 @@
-import type { MotionBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { MotionBlurEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MotionBlurPanel } from "./MotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type MotionBlurOp = Extract<AdjustmentRenderOp, { kind: "motion-blur" }>;
+type MotionBlurOp = Extract<EffectRenderOp, { kind: "motion-blur" }>;
 
 export const MotionBlurEffect: IPipelineEffect<
-  MotionBlurAdjustmentLayer,
+  MotionBlurEffectLayer,
   MotionBlurOp
 > = {
   id: "motion-blur",

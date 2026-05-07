@@ -1,18 +1,18 @@
 import type React from "react";
-import type { SharpenMoreAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { SharpenMoreEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SharpenPanel } from "../Sharpen/SharpenPanel";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
-type SharpenMoreOp = Extract<AdjustmentRenderOp, { kind: "sharpen-more" }>;
+type SharpenMoreOp = Extract<EffectRenderOp, { kind: "sharpen-more" }>;
 
 // SharpenPanel is shared — it accepts both sharpen and sharpen-more layers.
 const SharpenMorePanel = SharpenPanel as unknown as React.ComponentType<
-  PanelProps<SharpenMoreAdjustmentLayer>
+  PanelProps<SharpenMoreEffectLayer>
 >;
 
 export const SharpenMoreEffect: IPipelineEffect<
-  SharpenMoreAdjustmentLayer,
+  SharpenMoreEffectLayer,
   SharpenMoreOp
 > = {
   id: "sharpen-more",

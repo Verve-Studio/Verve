@@ -1,12 +1,12 @@
-import type { RadialBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { RadialBlurEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RadialBlurPanel } from "./RadialBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type RadialBlurOp = Extract<AdjustmentRenderOp, { kind: "radial-blur" }>;
+type RadialBlurOp = Extract<EffectRenderOp, { kind: "radial-blur" }>;
 
 export const RadialBlurEffect: IPipelineEffect<
-  RadialBlurAdjustmentLayer,
+  RadialBlurEffectLayer,
   RadialBlurOp
 > = {
   id: "radial-blur",

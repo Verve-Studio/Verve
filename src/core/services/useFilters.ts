@@ -1,8 +1,8 @@
-import type { AdjustmentType, FilterKey } from "@/types";
+import type { EffectType, FilterKey } from "@/types";
 import { useCallback } from "react";
 
 interface UseFiltersOptions {
-  onCreateFilterAdjLayer: (type: AdjustmentType) => void;
+  onCreateFilterAdjLayer: (type: EffectType) => void;
 }
 
 export interface UseFiltersReturn {
@@ -18,7 +18,7 @@ export function useFilters({
 }: UseFiltersOptions): UseFiltersReturn {
   const handleInstantFilter = useCallback(
     (key: FilterKey): void => {
-      onCreateFilterAdjLayer(key as AdjustmentType);
+      onCreateFilterAdjLayer(key as EffectType);
     },
     [onCreateFilterAdjLayer],
   );

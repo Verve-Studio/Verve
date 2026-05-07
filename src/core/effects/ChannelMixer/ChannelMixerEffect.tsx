@@ -1,13 +1,13 @@
-import type { ChannelMixerAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { ChannelMixerEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ChannelMixerPanel } from "./ChannelMixerPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type ChannelMixerOp = Extract<AdjustmentRenderOp, { kind: "channel-mixer" }>;
+type ChannelMixerOp = Extract<EffectRenderOp, { kind: "channel-mixer" }>;
 
 export const ChannelMixerEffect: IPipelineEffect<
-  ChannelMixerAdjustmentLayer,
+  ChannelMixerEffectLayer,
   ChannelMixerOp
 > = {
   id: "channel-mixer",

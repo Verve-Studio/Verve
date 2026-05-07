@@ -1,13 +1,13 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { HueSaturationAdjustmentLayer } from "@/types";
+import type { HueSaturationEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HueSaturationPanel.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface HueSaturationPanelProps {
-  layer: HueSaturationAdjustmentLayer;
+  layer: HueSaturationEffectLayer;
   parentLayerName: string;
 }
 

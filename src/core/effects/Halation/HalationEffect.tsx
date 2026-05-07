@@ -1,5 +1,5 @@
-import type { HalationAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { HalationEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HalationOptions } from "./HalationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
@@ -9,7 +9,7 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-type HalationOp = Extract<AdjustmentRenderOp, { kind: "halation" }>;
+type HalationOp = Extract<EffectRenderOp, { kind: "halation" }>;
 
 let texCache: { glowATex: GPUTexture; glowBTex: GPUTexture } | null = null;
 let usedThisFrame = false;
@@ -36,7 +36,7 @@ function ensureTextures(
 }
 
 export const HalationEffect: IPipelineEffect<
-  HalationAdjustmentLayer,
+  HalationEffectLayer,
   HalationOp
 > = {
   id: "halation",

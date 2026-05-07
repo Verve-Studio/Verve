@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import { effectRegistry } from "@/core/effects";
-import type { AdjustmentLayerState } from "@/types";
+import type { EffectLayerState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { ToolWindow } from "@/ux";
 import styles from "./ToolWindow.module.scss";
@@ -15,9 +15,9 @@ interface ToolWindowProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function toolTitle(layer: AdjustmentLayerState): string {
-  const effect = effectRegistry.get(layer.adjustmentType);
-  return effect ? effect.label.replace(/…$/, "") : layer.adjustmentType;
+function toolTitle(layer: EffectLayerState): string {
+  const effect = effectRegistry.get(layer.effectType);
+  return effect ? effect.label.replace(/…$/, "") : layer.effectType;
 }
 
 const LockClosedIconSvg = (): React.JSX.Element => (
@@ -504,7 +504,7 @@ const ColorKeyHeaderIcon = (): React.JSX.Element => (
 function AdjPanelIcon({
   type,
 }: {
-  type: AdjustmentLayerState["adjustmentType"];
+  type: EffectLayerState["effectType"];
 }): React.JSX.Element {
   if (type === "brightness-contrast") return <BrightnessContrastHeaderIcon />;
   if (type === "hue-saturation") return <HueSaturationHeaderIcon />;
@@ -566,7 +566,7 @@ export function AdjustmentPanel({
 
   if (!layer || !("type" in layer) || layer.type !== "adjustment") return null;
 
-  const adjLayer = layer as AdjustmentLayerState;
+  const adjLayer = layer as EffectLayerState;
   const parentLayer = layers.find((l) => l.id === adjLayer.parentId);
   const parentLayerName = parentLayer?.name ?? "Layer";
   const parentLocked =
@@ -574,7 +574,7 @@ export function AdjustmentPanel({
 
   var panelWidth = 0;
 
-  switch(adjLayer.adjustmentType) {
+  switch(adjLayer.effectType) {
     case "curves":
       panelWidth = 306;
       break;
@@ -591,7 +591,7 @@ export function AdjustmentPanel({
   return (
     <ToolWindow
       title={toolTitle(adjLayer)}
-      icon={<AdjPanelIcon type={adjLayer.adjustmentType} />}
+      icon={<AdjPanelIcon type={adjLayer.effectType} />}
       onClose={onClose}
       width={panelWidth}
     >
@@ -605,7 +605,7 @@ export function AdjustmentPanel({
         className={`${styles.body}${parentLocked ? ` ${styles.bodyLocked}` : ""}`}
       >
         {(() => {
-          const effect = effectRegistry.get(adjLayer.adjustmentType);
+          const effect = effectRegistry.get(adjLayer.effectType);
           if (!effect) return null;
           const Panel = effect.Panel as React.ComponentType<{
             layer: typeof adjLayer;

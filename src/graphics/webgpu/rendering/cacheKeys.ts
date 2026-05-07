@@ -1,11 +1,11 @@
-import type { AdjustmentRenderOp } from "../types";
+import type { EffectRenderOp } from "../types";
 
 /**
- * Produces a stable string key for a single AdjustmentRenderOp, excluding GPU
+ * Produces a stable string key for a single EffectRenderOp, excluding GPU
  * objects (`selMaskLayer`, `luts`) and substituting content-tracked surrogates.
  * Used to detect params changes for the adj-group output cache.
  */
-export function serializeAdjOp(op: AdjustmentRenderOp): string {
+export function serializeAdjOp(op: EffectRenderOp): string {
   const parts: string[] = [`${op.kind}|${op.layerId}|${op.visible ? 1 : 0}`];
   if (op.selMaskLayer) parts.push(`selV:${op.selMaskLayer.contentVersion}`);
   const record = op as Record<string, unknown>;
@@ -35,7 +35,7 @@ export function serializeAdjOp(op: AdjustmentRenderOp): string {
 
 /** Stable key for a list of adjustment ops — used as the params portion of the group cache key. */
 export function computeAdjGroupParamsKey(
-  adjustments: AdjustmentRenderOp[],
+  adjustments: EffectRenderOp[],
 ): string {
   return adjustments.map(serializeAdjOp).join("§");
 }

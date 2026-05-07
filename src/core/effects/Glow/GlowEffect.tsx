@@ -1,12 +1,12 @@
-import type { GlowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { GlowEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GlowOptions } from "./GlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeDropShadowPass } from "../DropShadow/DropShadowEffect";
 
-type GlowOp = Extract<AdjustmentRenderOp, { kind: "glow" }>;
+type GlowOp = Extract<EffectRenderOp, { kind: "glow" }>;
 
-export const GlowEffect: IPipelineEffect<GlowAdjustmentLayer, GlowOp> = {
+export const GlowEffect: IPipelineEffect<GlowEffectLayer, GlowOp> = {
   id: "glow",
   label: "Glow…",
   menu: { root: "effects", submenu: "fx-shadow" },

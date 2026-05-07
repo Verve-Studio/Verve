@@ -1,13 +1,13 @@
-import type { ColorGradingAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { ColorGradingEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorGradingPanel } from "./ColorGradingPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type ColorGradingOp = Extract<AdjustmentRenderOp, { kind: "color-grading" }>;
+type ColorGradingOp = Extract<EffectRenderOp, { kind: "color-grading" }>;
 
 export const ColorGradingEffect: IPipelineEffect<
-  ColorGradingAdjustmentLayer,
+  ColorGradingEffectLayer,
   ColorGradingOp
 > = {
   id: "color-grading",

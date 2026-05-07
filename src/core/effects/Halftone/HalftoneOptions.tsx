@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { HalftoneAdjustmentLayer } from "@/types";
+import type { HalftoneEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HalftoneOptions.module.scss";
 
 interface HalftoneOptionsProps {
-  layer: HalftoneAdjustmentLayer;
+  layer: HalftoneEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,5 +1,5 @@
 import { effectRegistry } from "@/core/effects";
-import type { AdjustmentRenderOp } from "./types";
+import type { EffectRenderOp } from "./types";
 import { EffectRuntime } from "./EffectRuntime";
 
 // Re-export the binding kind + pair types so legacy imports keep working.
@@ -44,7 +44,7 @@ export class EffectEncoder {
    */
   encode(
     encoder: GPUCommandEncoder,
-    entry: AdjustmentRenderOp,
+    entry: EffectRenderOp,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
     format: GPUTextureFormat,
@@ -52,7 +52,7 @@ export class EffectEncoder {
     const effect = effectRegistry.get(entry.kind);
     if (!effect) {
       throw new Error(
-        `[AdjustmentEncoder.encode] no effect registered for kind=${entry.kind}`,
+        `[EffectEncoder.encode] no effect registered for kind=${entry.kind}`,
       );
     }
     effect.encode({ encoder, srcTex, dstTex, format, engine: this }, entry);

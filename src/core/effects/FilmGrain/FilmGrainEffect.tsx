@@ -1,12 +1,12 @@
-import type { FilmGrainAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { FilmGrainEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { FilmGrainPanel } from "./FilmGrainPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type FilmGrainOp = Extract<AdjustmentRenderOp, { kind: "film-grain" }>;
+type FilmGrainOp = Extract<EffectRenderOp, { kind: "film-grain" }>;
 
 export const FilmGrainEffect: IPipelineEffect<
-  FilmGrainAdjustmentLayer,
+  FilmGrainEffectLayer,
   FilmGrainOp
 > = {
   id: "film-grain",

@@ -1,14 +1,14 @@
-import type { AdjustmentParamsMap, PixelFormat } from "@/types";
+import type { EffectParamsMap, PixelFormat } from "@/types";
 import type { CurvesLuts } from "@/core/operations/adjustments/curves";
 
 // ─── Param type aliases ────────────────────────────────────────────────────────
 
-export type ColorBalancePassParams = AdjustmentParamsMap["color-balance"];
-export type BlackAndWhitePassParams = AdjustmentParamsMap["black-and-white"];
-export type SelectiveColorPassParams = AdjustmentParamsMap["selective-color"];
-export type ChannelMixerPassParams = AdjustmentParamsMap["channel-mixer"];
-export type CurvesPassParams = AdjustmentParamsMap["curves"];
-export type ColorGradingPassParams = AdjustmentParamsMap["color-grading"];
+export type ColorBalancePassParams = EffectParamsMap["color-balance"];
+export type BlackAndWhitePassParams = EffectParamsMap["black-and-white"];
+export type SelectiveColorPassParams = EffectParamsMap["selective-color"];
+export type ChannelMixerPassParams = EffectParamsMap["channel-mixer"];
+export type CurvesPassParams = EffectParamsMap["curves"];
+export type ColorGradingPassParams = EffectParamsMap["color-grading"];
 
 // ─── GpuLayer ─────────────────────────────────────────────────────────────────
 
@@ -47,9 +47,9 @@ export const BLEND_MODE_INDEX: Record<string, number> = {
   "color-burn": 11,
 };
 
-// ─── AdjustmentRenderOp ───────────────────────────────────────────────────────
+// ─── EffectRenderOp ───────────────────────────────────────────────────────
 
-export type AdjustmentRenderOp =
+export type EffectRenderOp =
   | {
       kind: "brightness-contrast";
       layerId: string;
@@ -613,7 +613,7 @@ export type RenderPlanEntry =
       parentLayerId: string;
       baseLayer: GpuLayer;
       baseMask?: GpuLayer;
-      adjustments: AdjustmentRenderOp[];
+      adjustments: EffectRenderOp[];
       /** When true the parent pixel layer is locked — the renderer will bake
        *  the composited output once and reuse it on every subsequent frame,
        *  and `planIsFlatLayersOnly` treats it as equivalent to a plain layer. */
@@ -636,13 +636,13 @@ export type RenderPlanEntry =
       blendMode: string;
       visible: boolean;
       children: RenderPlanEntry[];
-      adjustments: AdjustmentRenderOp[];
+      adjustments: EffectRenderOp[];
       /** When true the composite is locked — the renderer bakes its flattened
        *  output once and reuses it on every subsequent frame, and
        *  `planIsFlatLayersOnly` treats it as equivalent to a plain layer. */
       locked?: boolean;
     }
-  | AdjustmentRenderOp;
+  | EffectRenderOp;
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 

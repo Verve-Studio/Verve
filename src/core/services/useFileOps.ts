@@ -440,6 +440,28 @@ export function useFileOps({
         spritesheet?: unknown;
       };
 
+      // ── Legacy field migration ────────────────────────────────────────────
+      // Older .verve files (pre-EffectType rename) tagged adjustment/effect/
+      // filter layers with `adjustmentType` instead of `effectType`. Copy the
+      // legacy field forward in-place so downstream code only ever sees the
+      // new name. Idempotent: if `effectType` is already present we leave it.
+      if (Array.isArray(doc.layers)) {
+        for (const rawLayer of doc.layers as unknown as Array<
+          Record<string, unknown>
+        >) {
+          if (
+            rawLayer &&
+            typeof rawLayer === "object" &&
+            "adjustmentType" in rawLayer
+          ) {
+            if (!("effectType" in rawLayer)) {
+              rawLayer.effectType = rawLayer.adjustmentType;
+            }
+            delete rawLayer.adjustmentType;
+          }
+        }
+      }
+
       const layerData = new Map<string, string>();
       const layers: LayerState[] = doc.layers.map(
         ({

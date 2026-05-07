@@ -1,15 +1,15 @@
-import type { AdjustmentType, FilterKey } from "@/types";
+import type { EffectType, FilterKey } from "@/types";
 // Side-effecting import: registers all IPipelineEffect implementations into
 // `effectRegistry` so the menu lists below see them at module-evaluation time.
 import { effectRegistry } from "@/core/effects";
 
 const adjustmentItems: Array<{
-  type: AdjustmentType;
+  type: EffectType;
   label: string;
   group?: string;
 }> = [];
 const effectsItems: Array<{
-  type: AdjustmentType;
+  type: EffectType;
   label: string;
   group?: string;
 }> = [];
@@ -26,13 +26,13 @@ const filterItems: Array<{
 for (const effect of effectRegistry.all()) {
   if (effect.menu.root === "adjustments") {
     adjustmentItems.push({
-      type: effect.id as AdjustmentType,
+      type: effect.id as EffectType,
       label: effect.label,
       group: effect.menu.submenu,
     });
   } else if (effect.menu.root === "effects") {
     effectsItems.push({
-      type: effect.id as AdjustmentType,
+      type: effect.id as EffectType,
       label: effect.label,
       group: effect.menu.submenu,
     });

@@ -1,5 +1,5 @@
 import type {
-  AdjustmentLayerState,
+  EffectLayerState,
   LayerState,
   RGBAColor,
   PixelFormat,
@@ -8,20 +8,20 @@ import { isGroupLayer, isCompositeLayer, isContainerLayer } from "@/types";
 import { effectRegistry } from "@/core/effects";
 import type {
   GpuLayer,
-  AdjustmentRenderOp,
+  EffectRenderOp,
   RenderPlanEntry,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { buildRootLayerIds } from "@/utils/layerTree";
 
 export function buildAdjustmentEntry(
-  ls: AdjustmentLayerState,
+  ls: EffectLayerState,
   mask: GpuLayer | undefined,
   swatches: RGBAColor[],
-): AdjustmentRenderOp | null {
-  const effect = effectRegistry.get(ls.adjustmentType);
+): EffectRenderOp | null {
+  const effect = effectRegistry.get(ls.effectType);
   if (!effect) {
     throw new Error(
-      `[buildAdjustmentEntry] no effect registered for adjustmentType=${ls.adjustmentType}`,
+      `[buildAdjustmentEntry] no effect registered for effectType=${ls.effectType}`,
     );
   }
   return effect.buildPlanEntry(ls, { mask, swatches });
@@ -50,7 +50,7 @@ export function buildSubPlan(
     // Adjustment layers
     if ("type" in ls && ls.type === "adjustment") {
       if (pixelFormat === "indexed8") continue;
-      const adjLs = ls as AdjustmentLayerState;
+      const adjLs = ls as EffectLayerState;
       const parent = layersById.get(adjLs.parentId);
       // Per-layer attachment (parentId → non-container layer): skip, bundled with pixel parent
       if (parent && !isContainerLayer(parent)) continue;
@@ -96,18 +96,18 @@ export function buildSubPlan(
 
     // Composite layer → flatten children, apply attached adjustments
     if (isCompositeLayer(ls)) {
-      const attachedAdj: AdjustmentRenderOp[] = [];
+      const attachedAdj: EffectRenderOp[] = [];
       if (pixelFormat !== "indexed8") {
         for (const adj of layers) {
           if (
             "type" in adj &&
             adj.type === "adjustment" &&
             adj.visible !== false &&
-            (adj as AdjustmentLayerState).parentId === ls.id &&
+            (adj as EffectLayerState).parentId === ls.id &&
             !bypassedAdjustmentIds.has(adj.id)
           ) {
             const op = buildAdjustmentEntry(
-              adj as AdjustmentLayerState,
+              adj as EffectLayerState,
               adjustmentMaskMap.get(adj.id),
               swatches,
             );
@@ -141,18 +141,18 @@ export function buildSubPlan(
     const baseLayer = glLayers.get(ls.id);
     if (!baseLayer) continue;
 
-    const adjustments: AdjustmentRenderOp[] = [];
+    const adjustments: EffectRenderOp[] = [];
     if (pixelFormat !== "indexed8") {
       for (const adj of layers) {
         if (
           "type" in adj &&
           adj.type === "adjustment" &&
           adj.visible !== false &&
-          (adj as AdjustmentLayerState).parentId === ls.id &&
+          (adj as EffectLayerState).parentId === ls.id &&
           !bypassedAdjustmentIds.has(adj.id)
         ) {
           const op = buildAdjustmentEntry(
-            adj as AdjustmentLayerState,
+            adj as EffectLayerState,
             adjustmentMaskMap.get(adj.id),
             swatches,
           );

@@ -1,12 +1,12 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { InnerGlowAdjustmentLayer } from "@/types";
+import type { InnerGlowEffectLayer } from "@/types";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./InnerGlowOptions.module.scss";
 
 interface InnerGlowOptionsProps {
-  layer: InnerGlowAdjustmentLayer;
+  layer: InnerGlowEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { CloudsAdjustmentLayer } from "@/types";
+import type { CloudsEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: CloudsAdjustmentLayer;
+  layer: CloudsEffectLayer;
   parentLayerName: string;
 }
 

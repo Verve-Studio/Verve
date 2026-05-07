@@ -1,12 +1,12 @@
-import type { AddNoiseAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { AddNoiseEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AddNoisePanel } from "./AddNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type AddNoiseOp = Extract<AdjustmentRenderOp, { kind: "add-noise" }>;
+type AddNoiseOp = Extract<EffectRenderOp, { kind: "add-noise" }>;
 
 export const AddNoiseEffect: IPipelineEffect<
-  AddNoiseAdjustmentLayer,
+  AddNoiseEffectLayer,
   AddNoiseOp
 > = {
   id: "add-noise",

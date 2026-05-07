@@ -1,12 +1,12 @@
-import type { SmartSharpenAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { SmartSharpenEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SmartSharpenPanel } from "./SmartSharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type SmartSharpenOp = Extract<AdjustmentRenderOp, { kind: "smart-sharpen" }>;
+type SmartSharpenOp = Extract<EffectRenderOp, { kind: "smart-sharpen" }>;
 
 export const SmartSharpenEffect: IPipelineEffect<
-  SmartSharpenAdjustmentLayer,
+  SmartSharpenEffectLayer,
   SmartSharpenOp
 > = {
   id: "smart-sharpen",

@@ -1,13 +1,13 @@
-import type { BlackAndWhiteAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { BlackAndWhiteEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type BlackAndWhiteOp = Extract<AdjustmentRenderOp, { kind: "black-and-white" }>;
+type BlackAndWhiteOp = Extract<EffectRenderOp, { kind: "black-and-white" }>;
 
 export const BlackAndWhiteEffect: IPipelineEffect<
-  BlackAndWhiteAdjustmentLayer,
+  BlackAndWhiteEffectLayer,
   BlackAndWhiteOp
 > = {
   id: "black-and-white",

@@ -1,13 +1,13 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BloomAdjustmentLayer } from "@/types";
+import type { BloomEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BloomOptions.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface BloomOptionsProps {
-  layer: BloomAdjustmentLayer;
+  layer: BloomEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,5 +1,5 @@
-import type { BevelAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { BevelEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BevelOptions } from "./BevelOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
@@ -7,7 +7,7 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-type BevelOp = Extract<AdjustmentRenderOp, { kind: "bevel" }>;
+type BevelOp = Extract<EffectRenderOp, { kind: "bevel" }>;
 
 let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
 let usedThisFrame = false;
@@ -34,7 +34,7 @@ function ensureTextures(
   return texCache;
 }
 
-export const BevelEffect: IPipelineEffect<BevelAdjustmentLayer, BevelOp> = {
+export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
   id: "bevel",
   label: "Bevel…",
   menu: { root: "effects", submenu: "fx-shadow" },

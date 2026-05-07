@@ -1,14 +1,14 @@
-import type { TwirlAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { TwirlEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { TwirlOptions } from "./TwirlOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type TwirlOp = Extract<AdjustmentRenderOp, { kind: "twirl" }>;
+type TwirlOp = Extract<EffectRenderOp, { kind: "twirl" }>;
 
 const EDGE_MAP = { transparent: 0, clamp: 1, mirror: 2 } as const;
 
-export const TwirlEffect: IPipelineEffect<TwirlAdjustmentLayer, TwirlOp> = {
+export const TwirlEffect: IPipelineEffect<TwirlEffectLayer, TwirlOp> = {
   id: "twirl",
   label: "Twirl…",
   menu: { root: "effects", submenu: "fx-distortion" },

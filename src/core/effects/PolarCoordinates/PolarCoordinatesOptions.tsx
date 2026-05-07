@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { PolarCoordinatesAdjustmentLayer } from "@/types";
+import type { PolarCoordinatesEffectLayer } from "@/types";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
@@ -11,20 +11,20 @@ import {
 import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
-  layer: PolarCoordinatesAdjustmentLayer;
+  layer: PolarCoordinatesEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): PolarCoordinatesAdjustmentLayer["params"] =>
-  effectRegistry.get("polar-coordinates")!.defaultParams as PolarCoordinatesAdjustmentLayer["params"];
+const getDefaultParams = (): PolarCoordinatesEffectLayer["params"] =>
+  effectRegistry.get("polar-coordinates")!.defaultParams as PolarCoordinatesEffectLayer["params"];
 
-const MODES: PolarCoordinatesAdjustmentLayer["params"]["mode"][] = [
+const MODES: PolarCoordinatesEffectLayer["params"]["mode"][] = [
   "rect-to-polar",
   "polar-to-rect",
 ];
 
 const MODE_LABEL: Record<
-  PolarCoordinatesAdjustmentLayer["params"]["mode"],
+  PolarCoordinatesEffectLayer["params"]["mode"],
   string
 > = {
   "rect-to-polar": "Rect → Polar",
@@ -38,7 +38,7 @@ export function PolarCoordinatesOptions({
   const { dispatch } = useAppContext();
   const p = layer.params;
   const update = (
-    patch: Partial<PolarCoordinatesAdjustmentLayer["params"]>,
+    patch: Partial<PolarCoordinatesEffectLayer["params"]>,
   ): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",

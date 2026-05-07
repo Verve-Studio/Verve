@@ -1,16 +1,16 @@
-import type { ColorTemperatureAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { ColorTemperatureEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorTemperaturePanel } from "./ColorTemperaturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 type ColorTemperatureOp = Extract<
-  AdjustmentRenderOp,
+  EffectRenderOp,
   { kind: "color-temperature" }
 >;
 
 export const ColorTemperatureEffect: IPipelineEffect<
-  ColorTemperatureAdjustmentLayer,
+  ColorTemperatureEffectLayer,
   ColorTemperatureOp
 > = {
   id: "color-temperature",

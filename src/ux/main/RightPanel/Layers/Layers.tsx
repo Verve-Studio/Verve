@@ -3,7 +3,7 @@ import type {
   LayerState,
   BlendMode,
   MaskLayerState,
-  AdjustmentLayerState,
+  EffectLayerState,
   GroupLayerState,
   CompositeLayerState,
 } from "@/types";
@@ -447,7 +447,7 @@ export function Layers({
           (layer.type === "mask" || layer.type === "adjustment")
         ) {
           const parent = layersById.get(
-            (layer as MaskLayerState | AdjustmentLayerState).parentId,
+            (layer as MaskLayerState | EffectLayerState).parentId,
           );
           if (parent && !isGroupLayer(parent)) continue;
         }
@@ -456,7 +456,7 @@ export function Layers({
             (l) =>
               "type" in l &&
               (l.type === "mask" || l.type === "adjustment") &&
-              (l as MaskLayerState | AdjustmentLayerState).parentId ===
+              (l as MaskLayerState | EffectLayerState).parentId ===
                 layer.id,
           );
           result.push({
@@ -488,7 +488,7 @@ export function Layers({
             (l) =>
               "type" in l &&
               (l.type === "mask" || l.type === "adjustment") &&
-              (l as MaskLayerState | AdjustmentLayerState).parentId ===
+              (l as MaskLayerState | EffectLayerState).parentId ===
                 layer.id,
           );
           const isCollapsed = collapsedPixelLayers.has(layer.id);
@@ -547,7 +547,7 @@ export function Layers({
           if (
             "type" in l &&
             (l.type === "mask" || l.type === "adjustment") &&
-            (l as MaskLayerState | AdjustmentLayerState).parentId === group.id
+            (l as MaskLayerState | EffectLayerState).parentId === group.id
           ) {
             visibleIds.add(l.id);
           }
@@ -569,7 +569,7 @@ export function Layers({
           if (
             "type" in l &&
             (l.type === "mask" || l.type === "adjustment") &&
-            (l as MaskLayerState | AdjustmentLayerState).parentId ===
+            (l as MaskLayerState | EffectLayerState).parentId ===
               group.id &&
             nameMatchIds.has(l.id)
           )
@@ -600,7 +600,7 @@ export function Layers({
         "type" in layer &&
         (layer.type === "mask" || layer.type === "adjustment")
       ) {
-        const parentId = (layer as MaskLayerState | AdjustmentLayerState)
+        const parentId = (layer as MaskLayerState | EffectLayerState)
           .parentId;
         if (visibleIds.has(parentId)) visibleIds.add(layer.id);
       }
@@ -622,7 +622,7 @@ export function Layers({
       "type" in activeLayer_ &&
       (activeLayer_.type === "mask" || activeLayer_.type === "adjustment")
     ) {
-      const parentId = (activeLayer_ as MaskLayerState | AdjustmentLayerState)
+      const parentId = (activeLayer_ as MaskLayerState | EffectLayerState)
         .parentId;
       if (collapsedPixelLayers.has(parentId)) return parentId;
     }
@@ -862,7 +862,7 @@ export function Layers({
         (r) =>
           "type" in r.layer &&
           (r.layer.type === "adjustment" || r.layer.type === "mask") &&
-          (r.layer as AdjustmentLayerState).parentId === parentId,
+          (r.layer as EffectLayerState).parentId === parentId,
       )
       .map((r) => r.layer.id);
     if (!siblings.includes(srcId)) return;
@@ -1241,7 +1241,7 @@ export function Layers({
 
             // Parent id for adjustment reorder drops
             const adjParentId = isChild
-              ? (layer as AdjustmentLayerState).parentId
+              ? (layer as EffectLayerState).parentId
               : null;
 
             return (

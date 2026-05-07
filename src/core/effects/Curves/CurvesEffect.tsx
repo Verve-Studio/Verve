@@ -1,5 +1,5 @@
-import type { CurvesAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { CurvesEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import {
   buildCurvesLuts,
   createDefaultCurvesParams,
@@ -14,7 +14,7 @@ import {
 } from "@/core/store/memoryStore";
 import { uploadR8TextureData } from "@/graphics/webgpu/utils";
 
-type CurvesOp = Extract<AdjustmentRenderOp, { kind: "curves" }>;
+type CurvesOp = Extract<EffectRenderOp, { kind: "curves" }>;
 
 const CURVES_BINDINGS: AdjBinding[] = [
   "tex",
@@ -35,9 +35,8 @@ type CurvesLutTextures = {
   blue: GPUTexture;
 };
 
-// Module-level state — per-layer-id LUT cache. Mirrors the previous
-// AdjustmentEncoder fields. Keyed by layerId so multiple curves layers
-// coexist without trampling each other.
+// Module-level state — per-layer-id LUT cache. Keyed by layerId so multiple
+// curves layers coexist without trampling each other.
 const lutTextures = new Map<string, CurvesLutTextures>();
 const lutSignatures = new Map<string, string>();
 const usedThisFrame = new Set<string>();
@@ -81,7 +80,7 @@ function ensureLutTextures(
   return next;
 }
 
-export const CurvesEffect: IPipelineEffect<CurvesAdjustmentLayer, CurvesOp> = {
+export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
   id: "curves",
   label: "Curves…",
   menu: { root: "adjustments", submenu: "color-adjustments" },

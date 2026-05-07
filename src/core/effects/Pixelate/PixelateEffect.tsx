@@ -1,17 +1,17 @@
 import React from "react";
-import type { PixelateAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { PixelateEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { useAppContext } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
-type PixelateOp = Extract<AdjustmentRenderOp, { kind: "pixelate" }>;
+type PixelateOp = Extract<EffectRenderOp, { kind: "pixelate" }>;
 
 function PixelatePanel({
   layer,
   parentLayerName,
-}: PanelProps<PixelateAdjustmentLayer>): React.JSX.Element {
+}: PanelProps<PixelateEffectLayer>): React.JSX.Element {
   const { dispatch } = useAppContext();
   const { blockSize } = layer.params;
   const up = (v: number): void =>
@@ -69,7 +69,7 @@ function PixelatePanel({
   );
 }
 
-export const PixelateEffect: IPipelineEffect<PixelateAdjustmentLayer, PixelateOp> = {
+export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> = {
   id: "pixelate",
   label: "Pixelate…",
   menu: { root: "filters", submenu: "pixelate" },

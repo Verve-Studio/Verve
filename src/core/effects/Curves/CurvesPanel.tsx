@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type {
-  CurvesAdjustmentLayer,
+  CurvesEffectLayer,
   CurvesChannel,
   CurvesControlPoint,
 } from "@/types";
@@ -36,7 +36,7 @@ import styles from "./CurvesPanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CurvesPanelProps {
-  layer: CurvesAdjustmentLayer;
+  layer: CurvesEffectLayer;
   parentLayerName: string;
   canvasHandleRef?: { readonly current: CanvasHandle | null };
 }
@@ -90,7 +90,7 @@ export function CurvesPanel({
           if (ls.id === layer.id) {
             return `${ls.id}:self:${ls.visible ? 1 : 0}:${ls.parentId}`;
           }
-          return `${ls.id}:${ls.adjustmentType}:${ls.visible ? 1 : 0}:${ls.parentId}:${JSON.stringify(ls.params)}`;
+          return `${ls.id}:${ls.effectType}:${ls.visible ? 1 : 0}:${ls.parentId}:${JSON.stringify(ls.params)}`;
         }
         if ("type" in ls && ls.type === "mask") {
           return `${ls.id}:mask:${ls.visible ? 1 : 0}:${ls.parentId}`;

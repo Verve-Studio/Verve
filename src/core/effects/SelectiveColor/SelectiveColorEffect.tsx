@@ -1,15 +1,15 @@
-import type { SelectiveColorAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { SelectiveColorEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SelectiveColorPanel } from "./SelectiveColorPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type SelectiveColorOp = Extract<AdjustmentRenderOp, { kind: "selective-color" }>;
+type SelectiveColorOp = Extract<EffectRenderOp, { kind: "selective-color" }>;
 
 const ZERO_CHANNEL = { cyan: 0, magenta: 0, yellow: 0, black: 0 };
 
 export const SelectiveColorEffect: IPipelineEffect<
-  SelectiveColorAdjustmentLayer,
+  SelectiveColorEffectLayer,
   SelectiveColorOp
 > = {
   id: "selective-color",

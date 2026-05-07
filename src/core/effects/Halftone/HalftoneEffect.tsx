@@ -1,13 +1,13 @@
-import type { HalftoneAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { HalftoneEffectLayer } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HalftoneOptions } from "./HalftoneOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type HalftoneOp = Extract<AdjustmentRenderOp, { kind: "halftone" }>;
+type HalftoneOp = Extract<EffectRenderOp, { kind: "halftone" }>;
 
 export const HalftoneEffect: IPipelineEffect<
-  HalftoneAdjustmentLayer,
+  HalftoneEffectLayer,
   HalftoneOp
 > = {
   id: "halftone",

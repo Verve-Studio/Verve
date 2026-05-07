@@ -33,7 +33,7 @@ import { encodeClearTexture, copyOutsideRect } from "./copyEncoders";
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
 export type {
   GpuLayer,
-  AdjustmentRenderOp,
+  EffectRenderOp,
   RenderPlanEntry,
   ColorBalancePassParams,
   BlackAndWhitePassParams,
@@ -43,7 +43,7 @@ export type {
 } from "../types";
 export { BLEND_MODE_INDEX, WebGPUUnavailableError } from "../types";
 
-import type { GpuLayer, RenderPlanEntry, AdjustmentRenderOp } from "../types";
+import type { GpuLayer, RenderPlanEntry, EffectRenderOp } from "../types";
 import { BLEND_MODE_INDEX, WebGPUUnavailableError } from "../types";
 import type { PixelFormat, RGBAColor } from "@/types";
 
@@ -131,7 +131,7 @@ export class WebGPURenderer {
   // subsequent frame with zero GPU compute. Evicted when the layer is unlocked.
   // Key = parentLayerId.
   private bakedLockedLayers = new Map<string, GPUTexture>();
-  // Per standalone AdjustmentRenderOp (group-scoped effects: bloom, halation, etc.)
+  // Per standalone EffectRenderOp (group-scoped effects: bloom, halation, etc.)
   // output cache. Keyed by op.layerId. The cache hits when the accumulated input
   // (everything composited before this op in the plan) and the op params are
   // both unchanged — in which case we copy from the cached texture instead of
@@ -695,7 +695,7 @@ export class WebGPURenderer {
 
   /** GPU texture format used for the renderer's internal compositing buffers
    *  (rgba8unorm for SDR pipelines, rgba32float for HDR). External callers
-   *  (e.g. AdjustmentEncoder pipelines) need this to build matching pipelines. */
+   *  (e.g. EffectEncoder pipelines) need this to build matching pipelines. */
   get internalTextureFormat(): GPUTextureFormat {
     return this.internalFormat;
   }
@@ -1466,7 +1466,7 @@ export class WebGPURenderer {
         if (entry.adjustments.length > 0) return false;
         continue;
       }
-      // Top-level standalone AdjustmentRenderOp: skipped entirely by
+      // Top-level standalone EffectRenderOp: skipped entirely by
       // encodeSubPlan when previewMode is on, so it doesn't contribute to
       // output and doesn't disable the flat path during a drag.
       if (this.previewMode) continue;
@@ -1545,7 +1545,7 @@ export class WebGPURenderer {
           `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`,
         );
       } else {
-        // AdjustmentRenderOp (standalone effect)
+        // EffectRenderOp (standalone effect)
         if (!entry.visible) continue;
         if (this.previewMode) {
           out.push(`|SKIP:${entry.layerId}`);
@@ -1763,7 +1763,7 @@ export class WebGPURenderer {
   /**
    * Core compositing loop. Walks `plan` in order, dispatching each entry kind
    * (layer / layer-group / composite-layer / adjustment-group / standalone
-   * AdjustmentRenderOp) through its appropriate cache-aware fast paths and
+   * EffectRenderOp) through its appropriate cache-aware fast paths and
    * encoder calls. Maintains the running ping-pong pair (`src` holds the
    * accumulated composite, `dst` is the next write target — they swap after
    * every entry that writes pixels). Returns the final pair plus the
@@ -2315,15 +2315,15 @@ export class WebGPURenderer {
         const l = entry.baseLayer;
         inputFp += `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`;
       } else {
-        // AdjustmentRenderOp — visible guard already handled per-op in AdjustmentEncoder
+        // EffectRenderOp — visible guard already handled per-op in EffectEncoder
         if (!entry.visible) continue;
         // In preview mode (e.g. whole-layer drag), skip expensive standalone effects
         // (bloom, halation, glow, drop-shadow, etc.) — they re-run on pointer-up.
         if (this.previewMode) {
-          inputFp += `|SKIP:${(entry as AdjustmentRenderOp).layerId}`;
+          inputFp += `|SKIP:${(entry as EffectRenderOp).layerId}`;
           continue;
         }
-        const op = entry as AdjustmentRenderOp;
+        const op = entry as EffectRenderOp;
         const opParamsKey = serializeAdjOp(op);
 
         if (this.adjGroupCacheEnabled) {
@@ -2781,7 +2781,7 @@ export class WebGPURenderer {
   /**
    * Release every resource accumulated during the just-submitted command
    * encoder: temporary buffers (`pendingDestroyBuffers`), temporary textures
-   * (`pendingDestroyTextures`), plus the AdjustmentEncoder's own per-frame
+   * (`pendingDestroyTextures`), plus the EffectEncoder's own per-frame
    * trash. Also calls `adjEncoder.endFrame()` to drop per-effect texture
    * caches whose source layer was removed this frame. Must run AFTER
    * `device.queue.submit` so the GPU is done with everything we destroy.
@@ -2801,7 +2801,7 @@ export class WebGPURenderer {
 
   /**
    * Release every long-lived GPU resource owned by the renderer. Destroys
-   * ping-pong textures, the texcoord vertex buffer, the AdjustmentEncoder,
+   * ping-pong textures, the texcoord vertex buffer, the EffectEncoder,
    * every cached adj-group / baked-locked / standalone-op / composite-layer
    * texture, and the pooled composite uniform/vertex buffers. Finally calls
    * `device.destroy()` which invalidates every GPU object derived from it

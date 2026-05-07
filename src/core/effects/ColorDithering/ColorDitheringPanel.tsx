@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorDitheringAdjustmentLayer } from "@/types";
+import type { ColorDitheringEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorDitheringPanel.module.scss";
 
 interface ColorDitheringPanelProps {
-  layer: ColorDitheringAdjustmentLayer;
+  layer: ColorDitheringEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,10 +1,10 @@
 import React from "react";
-import type { ColorInvertAdjustmentLayer } from "@/types";
+import type { ColorInvertEffectLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./InvertPanel.module.scss";
 
 interface InvertPanelProps {
-  layer: ColorInvertAdjustmentLayer;
+  layer: ColorInvertEffectLayer;
   parentLayerName: string;
 }
 
