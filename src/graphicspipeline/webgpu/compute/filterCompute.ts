@@ -61,10 +61,6 @@ import {
   runReduceNoise,
 } from "../shaders/compute/filters/reduce-noise";
 import {
-  FILTER_LENS_FLARE_COMPUTE,
-  runRenderLensFlare,
-} from "../shaders/compute/filters/lens-flare";
-import {
   FILTER_PIXELATE_COMPUTE,
   runPixelate,
 } from "../shaders/compute/filters/pixelate";
@@ -147,7 +143,6 @@ class FilterComputeEngine {
   private readonly medianPipeline: FilterPipelinePair;
   private readonly bilateralPipeline: FilterPipelinePair;
   private readonly reduceNoisePipeline: FilterPipelinePair;
-  private readonly lensFlareRenderPipeline: GPURenderPipeline;
   private readonly pixelatePipeline: FilterPipelinePair;
   private readonly offsetPipeline: FilterPipelinePair;
   private readonly seamlessBreakPipeline: FilterPipelinePair;
@@ -242,12 +237,6 @@ class FilterComputeEngine {
     this.reduceNoisePipeline = this.makePair(
       FILTER_REDUCE_NOISE_COMPUTE,
       "fs_reduce_noise",
-    );
-    this.lensFlareRenderPipeline = createFilterRenderPipeline(
-      device,
-      FILTER_LENS_FLARE_COMPUTE,
-      "fs_lens_flare",
-      "rgba8unorm",
     );
     this.pixelatePipeline = this.makePair(
       FILTER_PIXELATE_COMPUTE,
@@ -648,34 +637,6 @@ class FilterComputeEngine {
       reduceColorNoise,
       sharpenDetails,
       (p, w, h, a, r, t) => this.unsharpMask(p, w, h, a, r, t),
-    );
-  }
-
-  async renderLensFlare(
-    width: number,
-    height: number,
-    centerX: number,
-    centerY: number,
-    brightness: number,
-    lensType: number,
-    ringOpacity: number,
-    streakStrength: number,
-    streakWidth: number,
-    streakRotation: number,
-  ): Promise<Uint8Array> {
-    return runRenderLensFlare(
-      this.device,
-      this.lensFlareRenderPipeline,
-      width,
-      height,
-      centerX,
-      centerY,
-      brightness,
-      lensType,
-      ringOpacity,
-      streakStrength,
-      streakWidth,
-      streakRotation,
     );
   }
 
@@ -1907,31 +1868,6 @@ export async function reduceNoise(
     preserveDetails,
     reduceColorNoise,
     sharpenDetails,
-  );
-}
-export async function renderLensFlare(
-  width: number,
-  height: number,
-  centerX: number,
-  centerY: number,
-  brightness: number,
-  lensType: number,
-  ringOpacity: number,
-  streakStrength: number,
-  streakWidth: number,
-  streakRotation: number,
-): Promise<Uint8Array> {
-  return _engine!.renderLensFlare(
-    width,
-    height,
-    centerX,
-    centerY,
-    brightness,
-    lensType,
-    ringOpacity,
-    streakStrength,
-    streakWidth,
-    streakRotation,
   );
 }
 export async function pixelate(

@@ -92,8 +92,6 @@ export { KeyboardShortcutsDialog } from "./modals/KeyboardShortcutsDialog/Keyboa
 export { SystemInfoDialog } from "./modals/SystemInfoDialog/SystemInfoDialog";
 export { SizeInputs } from "./widgets/SizeInputs/SizeInputs";
 export type { SizeInputsProps } from "./widgets/SizeInputs/SizeInputs";
-export { LensFlareDialog } from "./windows/filters/LensFlareDialog/LensFlareDialog";
-export type { LensFlareDialogProps } from "./windows/filters/LensFlareDialog/LensFlareDialog";
 export { GeneratePaletteDialog } from "./modals/GeneratePaletteDialog/GeneratePaletteDialog";
 export type { GeneratePaletteDialogProps } from "./modals/GeneratePaletteDialog/GeneratePaletteDialog";
 export { ContentAwareFillProgress } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress";

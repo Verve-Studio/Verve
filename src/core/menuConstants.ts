@@ -1,22 +1,51 @@
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
-import type { AdjustmentRegistrationEntry } from "@/core/operations/adjustments/registry";
-import { FILTER_REGISTRY } from "@/core/operations/filters/registry";
+import type { AdjustmentType, FilterKey } from "@/types";
+// Side-effecting import: registers all IPipelineEffect implementations into
+// `effectRegistry` so the menu lists below see them at module-evaluation time.
+import { effectRegistry } from "@/core/effects";
 
-export const ADJUSTMENT_MENU_ITEMS = (
-  ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-)
-  .filter((e) => e.group !== "real-time-effects" && e.group !== "filters")
-  .map((e) => ({ type: e.adjustmentType, label: e.label, group: e.group }));
+const adjustmentItems: Array<{
+  type: AdjustmentType;
+  label: string;
+  group?: string;
+}> = [];
+const effectsItems: Array<{
+  type: AdjustmentType;
+  label: string;
+  group?: string;
+}> = [];
+const filterItems: Array<{
+  key: FilterKey;
+  label: string;
+  instant?: boolean;
+  group?: string;
+}> = [];
 
-export const EFFECTS_MENU_ITEMS = (
-  ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-)
-  .filter((e) => e.group === "real-time-effects")
-  .map((e) => ({ type: e.adjustmentType, label: e.label, group: e.menuGroup }));
+// Build the three menu lists from the central effect registry. Each effect's
+// `menu.root` decides which menu it joins; `menu.submenu` becomes the group
+// (used only for inserting separators between sub-sections).
+for (const effect of effectRegistry.all()) {
+  if (effect.menu.root === "adjustments") {
+    adjustmentItems.push({
+      type: effect.id as AdjustmentType,
+      label: effect.label,
+      group: effect.menu.submenu,
+    });
+  } else if (effect.menu.root === "effects") {
+    effectsItems.push({
+      type: effect.id as AdjustmentType,
+      label: effect.label,
+      group: effect.menu.submenu,
+    });
+  } else if (effect.menu.root === "filters") {
+    filterItems.push({
+      key: effect.id as FilterKey,
+      label: effect.label,
+      instant: effect.menu.instant,
+      group: effect.menu.submenu,
+    });
+  }
+}
 
-export const FILTER_MENU_ITEMS = FILTER_REGISTRY.map((e) => ({
-  key: e.key,
-  label: e.label,
-  instant: e.instant,
-  group: e.group,
-}));
+export const ADJUSTMENT_MENU_ITEMS = adjustmentItems;
+export const EFFECTS_MENU_ITEMS = effectsItems;
+export const FILTER_MENU_ITEMS = filterItems;

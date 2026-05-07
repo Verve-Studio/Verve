@@ -37,7 +37,6 @@ import { PreferencesDialog } from "@/ux/modals/PreferencesDialog/PreferencesDial
 import { HdrLdrExportWarningDialog } from "@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog";
 import { KeyboardShortcutsDialog } from "@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog";
 import { SystemInfoDialog } from "@/ux/modals/SystemInfoDialog/SystemInfoDialog";
-import { LensFlareDialog } from "@/ux/windows/filters/LensFlareDialog/LensFlareDialog";
 import { GeneratePaletteDialog } from "@/ux/modals/GeneratePaletteDialog/GeneratePaletteDialog";
 import { ColorDitheringSetupModal } from "@/ux/modals/ColorDitheringSetupModal/ColorDitheringSetupModal";
 import { ContentAwareFillProgress } from "@/ux";
@@ -137,8 +136,6 @@ export interface MainWindowProps {
   setShowShortcutsDialog: (v: boolean) => void;
   showSystemInfoDialog: boolean;
   setShowSystemInfoDialog: (v: boolean) => void;
-  showLensFlareDialog: boolean;
-  setShowLensFlareDialog: (v: boolean) => void;
   showGeneratePaletteDialog: boolean;
   setShowGeneratePaletteDialog: (v: boolean) => void;
   showColorDitheringSetup: boolean;
@@ -323,8 +320,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     setShowShortcutsDialog,
     showSystemInfoDialog,
     setShowSystemInfoDialog,
-    showLensFlareDialog,
-    setShowLensFlareDialog,
     showGeneratePaletteDialog,
     setShowGeneratePaletteDialog,
     showColorDitheringSetup,
@@ -717,20 +712,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         open={showSystemInfoDialog}
         onClose={() => setShowSystemInfoDialog(false)}
       />
-      {showLensFlareDialog && (
-        <LensFlareDialog
-          isOpen={showLensFlareDialog}
-          canvasHandleRef={canvasHandleRef}
-          activeLayerId={activeLayerId}
-          onApply={(pixels, w, h) => {
-            filters.handleApplyLensFlare(pixels, w, h);
-            setShowLensFlareDialog(false);
-          }}
-          onCancel={() => setShowLensFlareDialog(false)}
-          width={canvasWidth}
-          height={canvasHeight}
-        />
-      )}
       <GeneratePaletteDialog
         open={showGeneratePaletteDialog}
         onClose={() => setShowGeneratePaletteDialog(false)}

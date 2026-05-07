@@ -1,8 +1,7 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type { ChannelMixerAdjustmentLayer } from "@/types";
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
-import type { AdjustmentRegistrationEntry } from "@/core/operations/adjustments/registry";
+import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ChannelMixerPanel.module.scss";
 
@@ -13,10 +12,8 @@ interface ChannelMixerPanelProps {
   parentLayerName: string;
 }
 
-const DEFAULT_PARAMS = (
-  ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-).find((e) => e.adjustmentType === "channel-mixer")!
-  .defaultParams as ChannelMixerAdjustmentLayer["params"];
+const getDefaultParams = (): ChannelMixerAdjustmentLayer["params"] =>
+  effectRegistry.get("channel-mixer")!.defaultParams as ChannelMixerAdjustmentLayer["params"];
 
 type OutputChannel = ChannelMixerAdjustmentLayer["params"]["outputChannel"];
 type SourceKey = "red" | "green" | "blue" | "constant";
@@ -170,7 +167,7 @@ export function ChannelMixerPanel({
           onClick={() =>
             dispatch({
               type: "UPDATE_ADJUSTMENT_LAYER",
-              payload: { ...layer, params: DEFAULT_PARAMS },
+              payload: { ...layer, params: getDefaultParams() },
             })
           }
           title="Reset to defaults"

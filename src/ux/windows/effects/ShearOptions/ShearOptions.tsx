@@ -1,8 +1,7 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type { ShearAdjustmentLayer } from "@/types";
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
-import type { AdjustmentRegistrationEntry } from "@/core/operations/adjustments/registry";
+import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
   DistortionSlider,
@@ -16,10 +15,8 @@ interface Props {
   parentLayerName: string;
 }
 
-const DEFAULT_PARAMS = (
-  ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-).find((e) => e.adjustmentType === "shear")!
-  .defaultParams as ShearAdjustmentLayer["params"];
+const getDefaultParams = (): ShearAdjustmentLayer["params"] =>
+  effectRegistry.get("shear")!.defaultParams as ShearAdjustmentLayer["params"];
 
 const DIRECTIONS: ShearAdjustmentLayer["params"]["direction"][] = [
   "horizontal",
@@ -79,7 +76,7 @@ export function ShearOptions({
           onClick={() =>
             dispatch({
               type: "UPDATE_ADJUSTMENT_LAYER",
-              payload: { ...layer, params: { ...DEFAULT_PARAMS } },
+              payload: { ...layer, params: { ...getDefaultParams() } },
             })
           }
         >

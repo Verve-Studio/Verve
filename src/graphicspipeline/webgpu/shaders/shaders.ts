@@ -60,3 +60,4 @@ export {
 export { HALFTONE_COMPUTE } from "./compute/adjustments/halftone";
 export { BEVEL_COMPOSITE_COMPUTE } from "./compute/adjustments/bevel";
 export { INNER_SHADOW_COMPOSITE_COMPUTE } from "./compute/adjustments/inner-shadow";
+export { FILTER_LENS_FLARE_COMPUTE } from "./compute/filters/lens-flare";

@@ -1,10 +1,7 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type {
-  BlackAndWhiteAdjustmentLayer,
-  AdjustmentParamsMap,
-} from "@/types";
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
+import type { BlackAndWhiteAdjustmentLayer } from "@/types";
+import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BlackAndWhitePanel.module.scss";
 
@@ -17,9 +14,8 @@ interface BlackAndWhitePanelProps {
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_PARAMS = ADJUSTMENT_REGISTRY.find(
-  (e) => e.adjustmentType === "black-and-white",
-)!.defaultParams as AdjustmentParamsMap["black-and-white"];
+const getDefaultParams = (): BlackAndWhiteAdjustmentLayer["params"] =>
+  effectRegistry.get("black-and-white")!.defaultParams as BlackAndWhiteAdjustmentLayer["params"];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -32,7 +28,7 @@ export function BlackAndWhitePanel({
   const pct = (v: number, min: number, max: number): string =>
     String((v - min) / (max - min));
 
-  const update = (key: keyof typeof DEFAULT_PARAMS, value: number): void => {
+  const update = (key: keyof BlackAndWhiteAdjustmentLayer["params"], value: number): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, [key]: value } },
@@ -40,7 +36,7 @@ export function BlackAndWhitePanel({
   };
 
   const rows: Array<{
-    key: keyof typeof DEFAULT_PARAMS;
+    key: keyof BlackAndWhiteAdjustmentLayer["params"];
     label: string;
     labelClass: string;
   }> = [
@@ -98,7 +94,7 @@ export function BlackAndWhitePanel({
           onClick={() =>
             dispatch({
               type: "UPDATE_ADJUSTMENT_LAYER",
-              payload: { ...layer, params: { ...DEFAULT_PARAMS } },
+              payload: { ...layer, params: { ...getDefaultParams() } },
             })
           }
           title="Reset to defaults"

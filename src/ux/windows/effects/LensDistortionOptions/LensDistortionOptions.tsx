@@ -1,8 +1,7 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type { LensDistortionAdjustmentLayer } from "@/types";
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
-import type { AdjustmentRegistrationEntry } from "@/core/operations/adjustments/registry";
+import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./LensDistortionOptions.module.scss";
 
@@ -13,10 +12,8 @@ interface LensDistortionOptionsProps {
   parentLayerName: string;
 }
 
-const DEFAULT_PARAMS = (
-  ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-).find((e) => e.adjustmentType === "lens-distortion")!
-  .defaultParams as LensDistortionAdjustmentLayer["params"];
+const getDefaultParams = (): LensDistortionAdjustmentLayer["params"] =>
+  effectRegistry.get("lens-distortion")!.defaultParams as LensDistortionAdjustmentLayer["params"];
 
 type DistortionType = LensDistortionAdjustmentLayer["params"]["type"];
 type EdgeMode = LensDistortionAdjustmentLayer["params"]["edgeMode"];
@@ -182,7 +179,7 @@ export function LensDistortionOptions({
           onClick={() =>
             dispatch({
               type: "UPDATE_ADJUSTMENT_LAYER",
-              payload: { ...layer, params: { ...DEFAULT_PARAMS } },
+              payload: { ...layer, params: { ...getDefaultParams() } },
             })
           }
           title="Reset to defaults"

@@ -328,7 +328,8 @@ export type AdjustmentType =
   | "shear"
   | "twirl"
   | "displace"
-  | "offset";
+  | "offset"
+  | "lens-flare";
 
 export type FilterKey =
   | "gaussian-blur"
@@ -347,7 +348,6 @@ export type FilterKey =
   | "median-filter"
   | "bilateral-filter"
   | "reduce-noise"
-  | "render-lens-flare"
   | "pixelate"
   | "seamless-texture"
   | "offset";
@@ -766,6 +766,25 @@ export interface AdjustmentParamsMap {
     seed: number;
   };
   pixelate: { blockSize: number };
+  /** Photographic lens flare overlay, additively composited over the layer. */
+  "lens-flare": {
+    /** Flare center X in canvas-pixel coordinates. */
+    centerX: number;
+    /** Flare center Y in canvas-pixel coordinates. */
+    centerY: number;
+    /** Overall brightness multiplier, 10–300%. */
+    brightness: number;
+    /** Lens type preset: 0 = zoom, 1 = 35mm, 2 = 105mm, 3 = movie, 4 = anamorphic. */
+    lensType: number;
+    /** Iris-ring opacity, 0–100%. */
+    ringOpacity: number;
+    /** Streak intensity, 0–100%. */
+    streakStrength: number;
+    /** Streak width, 1–500%. */
+    streakWidth: number;
+    /** Streak rotation, 0–359°. */
+    streakRotation: number;
+  };
   vignette: {
     /** "ellipse" — soft elliptical falloff; "rectangle" — super-ellipse with controllable corners. */
     shape: "ellipse" | "rectangle";
@@ -1100,6 +1119,12 @@ export interface PixelateAdjustmentLayer extends AdjustmentLayerBase {
   hasMask: boolean;
 }
 
+export interface LensFlareAdjustmentLayer extends AdjustmentLayerBase {
+  adjustmentType: "lens-flare";
+  params: AdjustmentParamsMap["lens-flare"];
+  hasMask: boolean;
+}
+
 export interface BevelAdjustmentLayer extends AdjustmentLayerBase {
   adjustmentType: "bevel";
   params: AdjustmentParamsMap["bevel"];
@@ -1218,6 +1243,7 @@ export type AdjustmentLayerState =
   | ReduceNoiseAdjustmentLayer
   | CloudsAdjustmentLayer
   | PixelateAdjustmentLayer
+  | LensFlareAdjustmentLayer
   | BevelAdjustmentLayer
   | InnerShadowAdjustmentLayer
   | InnerGlowAdjustmentLayer

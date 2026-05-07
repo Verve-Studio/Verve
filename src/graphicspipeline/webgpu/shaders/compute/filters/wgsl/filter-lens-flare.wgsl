@@ -30,7 +30,16 @@ struct LensFlareParams {
   _pad1         : u32,
 }
 
-@group(0) @binding(0) var<uniform> params : LensFlareParams;
+struct MaskFlags {
+  hasMask : u32,
+  _pad    : vec3u,
+}
+
+@group(0) @binding(0) var srcTex   : texture_2d<f32>;
+@group(0) @binding(1) var smp      : sampler;
+@group(0) @binding(2) var<uniform> params    : LensFlareParams;
+@group(0) @binding(3) var selMask  : texture_2d<f32>;
+@group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
 
 fn gauss1(d : f32, sigma : f32) -> f32 {
   return exp(-(d * d) / (sigma * sigma));
@@ -180,5 +189,19 @@ fn fs_lens_flare(in: AdjVertOut) -> @location(0) vec4<f32> {
   else if (params.lensType == 2u) { color = flare_prime105(rdx,rdy,dist,diag,ringO,streakS,streakWF); }
   else if (params.lensType == 3u) { color = flare_movie_prime(rdx,rdy,dx,dy,dist,cx,cy,diag,w,h,ringO,streakS,streakWF); }
   else                             { color = flare_anamorphic(rdx,rdy,dx,dy,dist,cx,cy,diag,w,h,ringO,streakS,streakWF); }
-  return clamp(color * brightnessF, vec4f(0.0), vec4f(1.0));
+  let flare = clamp(color * brightnessF, vec4f(0.0), vec4f(1.0));
+
+  // Sample the source layer pixel and additively composite the flare on top.
+  // Lens flare is bright/translucent — additive blending is the photographic
+  // norm; existing transparent regions stay transparent unless the flare
+  // contributes light there.
+  let src = textureSample(srcTex, smp, in.uv);
+  let composited = vec4f(
+    clamp(src.rgb + flare.rgb, vec3f(0.0), vec3f(1.0)),
+    max(src.a, flare.a),
+  );
+
+  var mask = 1.0f;
+  if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }
+  return mix(src, composited, mask);
 }

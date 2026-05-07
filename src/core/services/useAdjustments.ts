@@ -1,5 +1,4 @@
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
-import type { AdjustmentRegistrationEntry } from "@/core/operations/adjustments/registry";
+import { effectRegistry } from "@/core/effects";
 import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
 import type { AppAction } from "@/core/store/AppContext";
 import type {
@@ -117,10 +116,8 @@ export function useAdjustments({
       )
         return;
 
-      const entry = (
-        ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-      ).find((e) => e.adjustmentType === adjustmentType);
-      if (!entry) return;
+      const effect = effectRegistry.get(adjustmentType);
+      if (!effect) return;
 
       const newId = `adj-${Date.now()}`;
       const selPixels = getSelectionPixels ? getSelectionPixels() : null;
@@ -128,19 +125,20 @@ export function useAdjustments({
 
       const newLayer = {
         id: newId,
-        name: entry.label.replace("…", ""),
+        name: effect.label.replace("…", ""),
         visible: true,
         type: "adjustment" as const,
         parentId: effectiveParentId,
-        adjustmentType: entry.adjustmentType,
-        params: { ...entry.defaultParams, ...(paramOverrides ?? {}) },
+        adjustmentType,
+        params: {
+          ...(effect.defaultParams as Record<string, unknown>),
+          ...(paramOverrides ?? {}),
+        },
         hasMask,
       } as AdjustmentLayerState;
 
       dispatch({ type: "ADD_ADJUSTMENT_LAYER", payload: newLayer });
-      if (!entry.noPanel) {
-        dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
-      }
+      dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
 
       if (selPixels && registerAdjMask) {
         registerAdjMask(newId, selPixels);

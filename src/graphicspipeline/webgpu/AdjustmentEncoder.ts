@@ -8,6 +8,7 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+import { effectRegistry } from "@/core/effects";
 import {
   BC_COMPUTE,
   HS_COMPUTE,
@@ -55,6 +56,7 @@ import {
   HALFTONE_COMPUTE,
   BEVEL_COMPOSITE_COMPUTE,
   INNER_SHADOW_COMPOSITE_COMPUTE,
+  FILTER_LENS_FLARE_COMPUTE,
 } from "./shaders/shaders";
 import type {
   GpuLayer,
@@ -65,25 +67,6 @@ import type {
 } from "./types";
 import type { CurvesLuts } from "@/core/operations/adjustments/curves";
 import {
-  encodeGaussianBlur,
-  encodeBoxBlur,
-  encodeRadialBlur,
-  encodeMotionBlur,
-  encodeRemoveMotionBlur,
-  encodeLensBlur,
-  encodeSharpen,
-  encodeSharpenMore,
-  encodeUnsharpMask,
-  encodeSmartSharpen,
-  encodeAddNoise,
-  encodeFilmGrain,
-  encodeMedian,
-  encodeBilateral,
-  encodeReduceNoise,
-  encodeClouds,
-  encodePixelate,
-  encodeOffset,
-  encodeSeamlessTexture,
   flushFilterComputeDestroys,
 } from "./compute/filterCompute";
 
@@ -254,28 +237,28 @@ export class AdjustmentEncoder {
   readonly pixelHeight: number;
 
   // Dual-format render pipeline pairs — write directly to dstTex (format-selectable)
-  private readonly bcPipeline: AdjPipelinePair;
-  private readonly hsPipeline: AdjPipelinePair;
-  private readonly vibPipeline: AdjPipelinePair;
-  private readonly cbPipeline: AdjPipelinePair;
-  private readonly bwPipeline: AdjPipelinePair;
-  private readonly tempPipeline: AdjPipelinePair;
-  private readonly invertPipeline: AdjPipelinePair;
-  private readonly selColorPipeline: AdjPipelinePair;
-  private readonly channelMixerPipeline: AdjPipelinePair;
-  private readonly autoMatchPipeline: AdjPipelinePair;
-  private readonly lensDistortionPipeline: AdjPipelinePair;
-  private readonly pinchPipeline: AdjPipelinePair;
-  private readonly polarPipeline: AdjPipelinePair;
-  private readonly ripplePipeline: AdjPipelinePair;
-  private readonly shearPipeline: AdjPipelinePair;
-  private readonly twirlPipeline: AdjPipelinePair;
-  private readonly displacePipeline: AdjPipelinePair;
-  private readonly curvesPipeline: AdjPipelinePair;
-  private readonly cgPipeline: AdjPipelinePair;
-  private readonly rcPipeline: AdjPipelinePair;
-  private readonly ditherPipeline: AdjPipelinePair;
-  private readonly ckPipeline: AdjPipelinePair;
+  readonly bcPipeline: AdjPipelinePair;
+  readonly hsPipeline: AdjPipelinePair;
+  readonly vibPipeline: AdjPipelinePair;
+  readonly cbPipeline: AdjPipelinePair;
+  readonly bwPipeline: AdjPipelinePair;
+  readonly tempPipeline: AdjPipelinePair;
+  readonly invertPipeline: AdjPipelinePair;
+  readonly selColorPipeline: AdjPipelinePair;
+  readonly channelMixerPipeline: AdjPipelinePair;
+  readonly autoMatchPipeline: AdjPipelinePair;
+  readonly lensDistortionPipeline: AdjPipelinePair;
+  readonly pinchPipeline: AdjPipelinePair;
+  readonly polarPipeline: AdjPipelinePair;
+  readonly ripplePipeline: AdjPipelinePair;
+  readonly shearPipeline: AdjPipelinePair;
+  readonly twirlPipeline: AdjPipelinePair;
+  readonly displacePipeline: AdjPipelinePair;
+  readonly curvesPipeline: AdjPipelinePair;
+  readonly cgPipeline: AdjPipelinePair;
+  readonly rcPipeline: AdjPipelinePair;
+  readonly ditherPipeline: AdjPipelinePair;
+  readonly ckPipeline: AdjPipelinePair;
 
   // Bloom render pipelines — intermediate passes always target rgba8unorm scratch textures
   private readonly bloomExtractPipeline: GPURenderPipeline;
@@ -290,10 +273,10 @@ export class AdjustmentEncoder {
   private readonly halationExtractBGL: GPUBindGroupLayout;
 
   // Render pipeline pair for chromatic aberration (converted from compute)
-  private readonly caPipeline: AdjPipelinePair;
+  readonly caPipeline: AdjPipelinePair;
 
   // Render pipeline pair for vignette
-  private readonly vignettePipeline: AdjPipelinePair;
+  readonly vignettePipeline: AdjPipelinePair;
 
   // Compute pipelines — shaders still use cs_* entry + texture_storage_2d write
   private readonly shadowDilateHPipeline: GPUComputePipeline;
@@ -317,7 +300,10 @@ export class AdjustmentEncoder {
   private readonly innerShadowCompositePipeline: GPUComputePipeline;
 
   // Render pipeline pair for halftone (converted from compute)
-  private readonly halftonePipeline: AdjPipelinePair;
+  readonly halftonePipeline: AdjPipelinePair;
+
+  // Render pipeline pair for lens flare (additive composite over srcTex)
+  readonly lensFlarePipeline: AdjPipelinePair;
 
   // Bloom intermediate texture cache — invalidated when quality changes
   private bloomTexCache: {
@@ -682,6 +668,13 @@ export class AdjustmentEncoder {
       STD,
     );
 
+    this.lensFlarePipeline = createAdjRenderPipelinePair(
+      device,
+      FILTER_LENS_FLARE_COMPUTE,
+      "fs_lens_flare",
+      STD,
+    );
+
     // ── Samplers ────────────────────────────────────────────────────────────────
     this.adjSampler = device.createSampler({
       magFilter: "nearest",
@@ -712,832 +705,13 @@ export class AdjustmentEncoder {
     dstTex: GPUTexture,
     format: GPUTextureFormat,
   ): void {
-    if (entry.kind === "brightness-contrast") {
-      const params = new Float32Array([entry.brightness, entry.contrast, 0, 0]);
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.bcPipeline,
-        srcTex,
-        dstTex,
-        format,
-        params.buffer as ArrayBuffer,
-        entry.selMaskLayer,
+    const effect = effectRegistry.get(entry.kind);
+    if (!effect) {
+      throw new Error(
+        `[AdjustmentEncoder.encode] no effect registered for kind=${entry.kind}`,
       );
-      return;
     }
-    if (entry.kind === "hue-saturation") {
-      const params = new Float32Array([
-        entry.hue,
-        entry.saturation,
-        entry.lightness,
-        0,
-      ]);
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.hsPipeline,
-        srcTex,
-        dstTex,
-        format,
-        params.buffer as ArrayBuffer,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-vibrance") {
-      const params = new Float32Array([entry.vibrance, entry.saturation, 0, 0]);
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.vibPipeline,
-        srcTex,
-        dstTex,
-        format,
-        params.buffer as ArrayBuffer,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-balance") {
-      const p = entry.params;
-      const buf = new ArrayBuffer(48);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = p.shadows.cr;
-      f[1] = p.shadows.mg;
-      f[2] = p.shadows.yb;
-      f[3] = p.midtones.cr;
-      f[4] = p.midtones.mg;
-      f[5] = p.midtones.yb;
-      f[6] = p.highlights.cr;
-      f[7] = p.highlights.mg;
-      f[8] = p.highlights.yb;
-      u[9] = p.preserveLuminosity ? 1 : 0;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.cbPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "black-and-white") {
-      const p = entry.params;
-      const params = new Float32Array([
-        p.reds,
-        p.yellows,
-        p.greens,
-        p.cyans,
-        p.blues,
-        p.magentas,
-        0,
-        0,
-      ]);
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.bwPipeline,
-        srcTex,
-        dstTex,
-        format,
-        params.buffer as ArrayBuffer,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-temperature") {
-      const params = new Float32Array([entry.temperature, entry.tint, 0, 0]);
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.tempPipeline,
-        srcTex,
-        dstTex,
-        format,
-        params.buffer as ArrayBuffer,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-invert") {
-      this.encodeInvertRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "selective-color") {
-      this.encodeSelectiveColorRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.params,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "channel-mixer") {
-      this.encodeChannelMixerRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.params,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "lens-distortion") {
-      // LensDistParams: 48 bytes (12 × 4-byte slots). WGSL rounds the struct
-      // size up to a multiple of 16 for uniform-buffer storage; the pipeline
-      // therefore expects 48 bytes even though the declared members add up to
-      // 44. A 32-byte buffer here silently drops the trailing writes.
-      const buf = new ArrayBuffer(48);
-      const u = new Uint32Array(buf);
-      const f = new Float32Array(buf);
-      u[0] = entry.distType;
-      u[1] = entry.edgeMode;
-      u[2] = 0;
-      u[3] = 0;
-      f[4] = entry.strength;
-      f[5] = entry.secondary;
-      f[6] = entry.centerX;
-      f[7] = entry.centerY;
-      f[8] = entry.zoom;
-      f[9] = entry.tiltX;
-      f[10] = entry.tiltY;
-      f[11] = 0;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.lensDistortionPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "pinch") {
-      // 32-byte UBO (rounded by WGSL): amount, radius, cx, cy, edgeMode, _pad×3
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = entry.amount;
-      f[1] = entry.radius;
-      f[2] = entry.centerX;
-      f[3] = entry.centerY;
-      u[4] = entry.edgeMode;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.pinchPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "polar-coordinates") {
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      u[0] = entry.mode;
-      f[1] = entry.centerX;
-      f[2] = entry.centerY;
-      u[3] = entry.edgeMode;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.polarPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "ripple") {
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = entry.amount;
-      f[1] = entry.wavelengthPx;
-      u[2] = entry.direction;
-      u[3] = entry.edgeMode;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.ripplePipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "shear") {
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = entry.amplitude;
-      u[1] = entry.direction;
-      f[2] = entry.waveFrequency;
-      u[3] = entry.edgeMode;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.shearPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "twirl") {
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = entry.angleRad;
-      f[1] = entry.centerX;
-      f[2] = entry.centerY;
-      f[3] = entry.radius;
-      u[4] = entry.edgeMode;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.twirlPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "displace") {
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = entry.horizontalScale;
-      f[1] = entry.verticalScale;
-      f[2] = entry.noiseFrequency;
-      f[3] = entry.seed;
-      u[4] = entry.edgeMode;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.displacePipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "auto-match") {
-      // AutoMatchParams: 8 × vec4 = 128 bytes
-      const buf = new ArrayBuffer(128);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      // layerStats
-      f[0] = entry.layerMeanL;
-      f[1] = entry.layerStdL;
-      f[2] = entry.layerMinL;
-      f[3] = entry.layerMaxL;
-      // layerColor (.w = valid01)
-      f[4] = entry.layerMeanR;
-      f[5] = entry.layerMeanG;
-      f[6] = entry.layerMeanB;
-      f[7] = entry.layerCount > 0 ? 1 : 0;
-      // contextStats
-      f[8] = entry.contextMeanL;
-      f[9] = entry.contextStdL;
-      f[10] = entry.contextMinL;
-      f[11] = entry.contextMaxL;
-      // contextColor (.w = valid01)
-      f[12] = entry.contextMeanR;
-      f[13] = entry.contextMeanG;
-      f[14] = entry.contextMeanB;
-      f[15] = entry.contextCount > 0 ? 1 : 0;
-      // factors (already pre-divided by 100 in canvasPlan)
-      f[16] = entry.strength;
-      f[17] = entry.brightness;
-      f[18] = entry.contrast;
-      f[19] = entry.gamma;
-      // colorFactor: (color, saturation, _, _)
-      f[20] = entry.color;
-      f[21] = entry.saturation;
-      f[22] = 0;
-      f[23] = 0;
-      // flags
-      u[24] = entry.clampHighlights ? 1 : 0;
-      u[25] = entry.clampShadows ? 1 : 0;
-      u[26] = 0;
-      u[27] = 0;
-      // extraStats: (layerChromaMag, contextChromaMag, _, _)
-      f[28] = entry.layerChromaMag;
-      f[29] = entry.contextChromaMag;
-      f[30] = 0;
-      f[31] = 0;
-
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.autoMatchPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "curves") {
-      this.encodeCurvesRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.layerId,
-        entry.luts,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-grading") {
-      this.encodeColorGradingRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.params,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "reduce-colors") {
-      this.encodeReduceColorsRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.palette,
-        entry.paletteCount,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-dithering") {
-      this.encodeColorDitheringRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.palette,
-        entry.paletteCount,
-        entry.style,
-        entry.opacity,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "bloom") {
-      this.encodeBloomRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.threshold,
-        entry.strength,
-        entry.spread,
-        entry.quality,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "chromatic-aberration") {
-      const buf = new ArrayBuffer(16);
-      const u = new Uint32Array(buf);
-      const f = new Float32Array(buf);
-      u[0] = entry.caType === "radial" ? 0 : 1;
-      f[1] = entry.distance;
-      f[2] = entry.angle;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.caPipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "vignette") {
-      // VignetteParams layout (32 bytes):
-      //   0  shape     u32
-      //   4  spread    f32
-      //   8  softness  f32
-      //  12  opacity   f32
-      //  16  color     vec3f
-      //  28  roundness f32
-      const buf = new ArrayBuffer(32);
-      const u = new Uint32Array(buf);
-      const f = new Float32Array(buf);
-      u[0] = entry.shape === "ellipse" ? 0 : 1;
-      f[1] = entry.spread;
-      f[2] = entry.softness;
-      f[3] = entry.opacity;
-      f[4] = entry.colorR;
-      f[5] = entry.colorG;
-      f[6] = entry.colorB;
-      f[7] = entry.roundness;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.vignettePipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "halation") {
-      this.encodeHalationRenderPass(
-        encoder,
-        srcTex,
-        dstTex,
-        format,
-        entry.threshold,
-        entry.spread,
-        entry.blur,
-        entry.strength,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "color-key") {
-      const params = new Float32Array([
-        entry.keyR,
-        entry.keyG,
-        entry.keyB,
-        entry.tolerance,
-        entry.softness,
-        entry.dilation,
-        0,
-        0,
-      ]);
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.ckPipeline,
-        srcTex,
-        dstTex,
-        format,
-        params.buffer as ArrayBuffer,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "drop-shadow") {
-      this.encodeDropShadowPass(
-        encoder,
-        srcTex,
-        dstTex,
-        entry.colorR,
-        entry.colorG,
-        entry.colorB,
-        entry.colorA,
-        entry.opacity,
-        entry.offsetX,
-        entry.offsetY,
-        entry.spread,
-        entry.softness,
-        entry.blendMode,
-        entry.knockout,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "glow") {
-      this.encodeDropShadowPass(
-        encoder,
-        srcTex,
-        dstTex,
-        entry.colorR,
-        entry.colorG,
-        entry.colorB,
-        entry.colorA,
-        entry.opacity,
-        0,
-        0,
-        entry.spread,
-        entry.softness,
-        entry.blendMode,
-        entry.knockout,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "outline") {
-      this.encodeOutlinePass(
-        encoder,
-        srcTex,
-        dstTex,
-        entry.colorR,
-        entry.colorG,
-        entry.colorB,
-        entry.colorA,
-        entry.opacity,
-        entry.thickness,
-        entry.position,
-        entry.softness,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "halftone") {
-      const buf = new ArrayBuffer(32);
-      const f = new Float32Array(buf);
-      const u = new Uint32Array(buf);
-      f[0] = entry.frequency;
-      f[1] = entry.offsetC;
-      f[2] = entry.offsetM;
-      f[3] = entry.offsetY;
-      f[4] = entry.offsetK;
-      u[5] = entry.mode === "color" ? 0 : 1;
-      this.encodeStdAdjRenderPass(
-        encoder,
-        this.halftonePipeline,
-        srcTex,
-        dstTex,
-        format,
-        buf,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "bevel") {
-      this.encodeBevelPass(
-        encoder,
-        srcTex,
-        dstTex,
-        entry.width,
-        entry.softness,
-        entry.angle,
-        entry.strength,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "inner-shadow") {
-      this.encodeInnerShadowPass(
-        encoder,
-        srcTex,
-        dstTex,
-        entry.colorR,
-        entry.colorG,
-        entry.colorB,
-        entry.colorA,
-        entry.opacity,
-        entry.offsetX,
-        entry.offsetY,
-        entry.spread,
-        entry.softness,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    if (entry.kind === "inner-glow") {
-      this.encodeInnerShadowPass(
-        encoder,
-        srcTex,
-        dstTex,
-        entry.colorR,
-        entry.colorG,
-        entry.colorB,
-        entry.colorA,
-        entry.opacity,
-        0,
-        0,
-        entry.spread,
-        entry.softness,
-        entry.selMaskLayer,
-      );
-      return;
-    }
-    const w = this.pixelWidth;
-    const h = this.pixelHeight;
-    if (entry.kind === "gaussian-blur") {
-      encodeGaussianBlur(encoder, srcTex, dstTex, w, h, entry.radius);
-      return;
-    }
-    if (entry.kind === "box-blur") {
-      encodeBoxBlur(encoder, srcTex, dstTex, w, h, entry.radius);
-      return;
-    }
-    if (entry.kind === "radial-blur") {
-      encodeRadialBlur(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.mode,
-        entry.amount,
-        entry.centerX,
-        entry.centerY,
-        entry.quality,
-      );
-      return;
-    }
-    if (entry.kind === "motion-blur") {
-      encodeMotionBlur(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.angle,
-        entry.distance,
-      );
-      return;
-    }
-    if (entry.kind === "remove-motion-blur") {
-      encodeRemoveMotionBlur(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.angle,
-        entry.distance,
-        entry.noiseReduction,
-      );
-      return;
-    }
-    if (entry.kind === "lens-blur") {
-      encodeLensBlur(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.radius,
-        entry.bladeCount,
-        entry.bladeCurvature,
-        entry.rotation,
-      );
-      return;
-    }
-    if (entry.kind === "sharpen") {
-      encodeSharpen(encoder, srcTex, dstTex, w, h);
-      return;
-    }
-    if (entry.kind === "sharpen-more") {
-      encodeSharpenMore(encoder, srcTex, dstTex, w, h);
-      return;
-    }
-    if (entry.kind === "unsharp-mask") {
-      encodeUnsharpMask(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.amount,
-        entry.radius,
-        entry.threshold,
-      );
-      return;
-    }
-    if (entry.kind === "smart-sharpen") {
-      encodeSmartSharpen(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.amount,
-        entry.radius,
-        entry.reduceNoise,
-        entry.remove,
-      );
-      return;
-    }
-    if (entry.kind === "add-noise") {
-      encodeAddNoise(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.amount,
-        entry.distribution,
-        entry.monochromatic,
-        entry.seed,
-      );
-      return;
-    }
-    if (entry.kind === "film-grain") {
-      encodeFilmGrain(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.grainSize,
-        entry.intensity,
-        entry.roughness,
-        entry.seed,
-      );
-      return;
-    }
-    if (entry.kind === "median-filter") {
-      encodeMedian(encoder, srcTex, dstTex, w, h, entry.radius);
-      return;
-    }
-    if (entry.kind === "bilateral-filter") {
-      encodeBilateral(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.radius,
-        entry.sigmaSpatial,
-        entry.sigmaColor,
-      );
-      return;
-    }
-    if (entry.kind === "reduce-noise") {
-      encodeReduceNoise(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.strength,
-        entry.preserveDetails,
-        entry.reduceColorNoise,
-        entry.sharpenDetails,
-      );
-      return;
-    }
-    if (entry.kind === "clouds") {
-      encodeClouds(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.scale,
-        entry.opacity,
-        entry.colorMode,
-        entry.fgColor,
-        entry.bgColor,
-        entry.seed,
-      );
-      return;
-    }
-    if (entry.kind === "pixelate") {
-      encodePixelate(encoder, srcTex, dstTex, w, h, entry.blockSize);
-      return;
-    }
-    if (entry.kind === "offset") {
-      encodeOffset(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.offsetX,
-        entry.offsetY,
-      );
-      return;
-    }
-    if (entry.kind === "seamless-texture") {
-      encodeSeamlessTexture(
-        encoder,
-        srcTex,
-        dstTex,
-        w,
-        h,
-        entry.breakRepetition,
-        entry.cellSize,
-        entry.blendRadius,
-        entry.seamlessBorders,
-        entry.borderRadius,
-        entry.seed,
-      );
-      return;
-    }
-    const _exhaustive: never = entry;
-    return _exhaustive;
+    effect.encode({ encoder, srcTex, dstTex, format, engine: this }, entry);
   }
 
   /** Destroy per-frame GPU buffers accumulated during encode calls. Call after queue.submit(). */
@@ -1682,7 +856,7 @@ export class AdjustmentEncoder {
   }
 
   // Standard adjustment render pass: binding 0=srcTex, 1=sampler, 2=params, 3=selMask, 4=maskFlags
-  private encodeStdAdjRenderPass(
+  encodeStdAdjRenderPass(
     encoder: GPUCommandEncoder,
     pair: AdjPipelinePair,
     srcTex: GPUTexture,
@@ -1721,7 +895,7 @@ export class AdjustmentEncoder {
 
   // ─── Specialised render pass encoders ────────────────────────────────────────
 
-  private encodeInvertRenderPass(
+  encodeInvertRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -1751,7 +925,7 @@ export class AdjustmentEncoder {
     this.pendingDestroyBuffers.push(maskFlagsBuf);
   }
 
-  private encodeSelectiveColorRenderPass(
+  encodeSelectiveColorRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -1831,7 +1005,7 @@ export class AdjustmentEncoder {
     this.pendingDestroyBuffers.push(paramsBuf, maskFlagsBuf);
   }
 
-  private encodeChannelMixerRenderPass(
+  encodeChannelMixerRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -1907,7 +1081,7 @@ export class AdjustmentEncoder {
     return next;
   }
 
-  private encodeCurvesRenderPass(
+  encodeCurvesRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -1945,7 +1119,7 @@ export class AdjustmentEncoder {
     this.pendingDestroyBuffers.push(maskFlagsBuf);
   }
 
-  private encodeColorGradingRenderPass(
+  encodeColorGradingRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -1996,7 +1170,7 @@ export class AdjustmentEncoder {
     );
   }
 
-  private encodeReduceColorsRenderPass(
+  encodeReduceColorsRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -2036,7 +1210,7 @@ export class AdjustmentEncoder {
     this.pendingDestroyBuffers.push(paramsBuf, palBuf, maskFlagsBuf);
   }
 
-  private encodeColorDitheringRenderPass(
+  encodeColorDitheringRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -2124,7 +1298,7 @@ export class AdjustmentEncoder {
     return this.bloomTexCache;
   }
 
-  private encodeBloomRenderPass(
+  encodeBloomRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -2290,7 +1464,7 @@ export class AdjustmentEncoder {
     return this.halationTexCache;
   }
 
-  private encodeHalationRenderPass(
+  encodeHalationRenderPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -2425,7 +1599,7 @@ export class AdjustmentEncoder {
     return this.shadowTexCache;
   }
 
-  private encodeDropShadowPass(
+  encodeDropShadowPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -2616,7 +1790,7 @@ export class AdjustmentEncoder {
     return this.outlineTexCache;
   }
 
-  private encodeOutlinePass(
+  encodeOutlinePass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -2857,7 +2031,7 @@ export class AdjustmentEncoder {
     return this.bevelTexCache;
   }
 
-  private encodeBevelPass(
+  encodeBevelPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
@@ -3066,7 +2240,7 @@ export class AdjustmentEncoder {
     return this.innerShadowTexCache;
   }
 
-  private encodeInnerShadowPass(
+  encodeInnerShadowPass(
     encoder: GPUCommandEncoder,
     srcTex: GPUTexture,
     dstTex: GPUTexture,

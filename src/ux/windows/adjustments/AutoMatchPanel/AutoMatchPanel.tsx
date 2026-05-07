@@ -7,8 +7,7 @@ import type {
   LayerState,
 } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { ADJUSTMENT_REGISTRY } from "@/core/operations/adjustments/registry";
-import type { AdjustmentRegistrationEntry } from "@/core/operations/adjustments/registry";
+import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./AutoMatchPanel.module.scss";
 
@@ -20,10 +19,8 @@ interface AutoMatchPanelProps {
   canvasHandleRef?: { readonly current: CanvasHandle | null };
 }
 
-const DEFAULT_PARAMS = (
-  ADJUSTMENT_REGISTRY as readonly AdjustmentRegistrationEntry[]
-).find((e) => e.adjustmentType === "auto-match")!
-  .defaultParams as AutoMatchAdjustmentLayer["params"];
+const getDefaultParams = (): AutoMatchAdjustmentLayer["params"] =>
+  effectRegistry.get("auto-match")!.defaultParams as AutoMatchAdjustmentLayer["params"];
 
 // ─── Stats helpers ────────────────────────────────────────────────────────────
 
@@ -510,7 +507,7 @@ export function AutoMatchPanel({
               payload: {
                 ...layer,
                 params: {
-                  ...DEFAULT_PARAMS,
+                  ...getDefaultParams(),
                   // Preserve the cached analysis so the user doesn't lose work.
                   cachedStats: layer.params.cachedStats,
                   statsVersion: layer.params.statsVersion,

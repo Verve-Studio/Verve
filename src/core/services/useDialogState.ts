@@ -9,7 +9,6 @@ export function useDialogState() {
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showSystemInfoDialog, setShowSystemInfoDialog] = useState(false);
-  const [showLensFlareDialog, setShowLensFlareDialog] = useState(false);
   const [showGeneratePaletteDialog, setShowGeneratePaletteDialog] =
     useState(false);
   const [showColorDitheringSetup, setShowColorDitheringSetup] = useState(false);
@@ -37,8 +36,6 @@ export function useDialogState() {
     setShowShortcutsDialog,
     showSystemInfoDialog,
     setShowSystemInfoDialog,
-    showLensFlareDialog,
-    setShowLensFlareDialog,
     showGeneratePaletteDialog,
     setShowGeneratePaletteDialog,
     showColorDitheringSetup,

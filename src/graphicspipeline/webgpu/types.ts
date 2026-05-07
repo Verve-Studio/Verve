@@ -454,6 +454,20 @@ export type AdjustmentRenderOp =
       selMaskLayer?: GpuLayer;
     }
   | {
+      kind: "lens-flare";
+      layerId: string;
+      centerX: number;
+      centerY: number;
+      brightness: number;
+      lensType: number;
+      ringOpacity: number;
+      streakStrength: number;
+      streakWidth: number;
+      streakRotation: number;
+      visible: boolean;
+      selMaskLayer?: GpuLayer;
+    }
+  | {
       kind: "bevel";
       layerId: string;
       width: number; // 1–50 px

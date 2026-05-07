@@ -67,8 +67,6 @@ function AppContent(): React.JSX.Element {
     setShowShortcutsDialog,
     showSystemInfoDialog,
     setShowSystemInfoDialog,
-    showLensFlareDialog,
-    setShowLensFlareDialog,
     showGeneratePaletteDialog,
     setShowGeneratePaletteDialog,
     showColorDitheringSetup,
@@ -426,26 +424,13 @@ function AppContent(): React.JSX.Element {
   const handleOpenFilterDialog = useCallback(
     (key: FilterKey): void => {
       requireTransformDecision(() => {
-        if (key === "render-lens-flare") {
-          setShowLensFlareDialog(true);
-          return;
-        }
         onCreateFilterAdjLayer(key as AdjustmentType);
       });
     },
     [requireTransformDecision, onCreateFilterAdjLayer],
   );
 
-  const filters = useFilters({
-    layers: state.layers,
-    activeLayerId: state.activeLayerId,
-    onOpenFilterDialog: handleOpenFilterDialog,
-    onCreateFilterAdjLayer,
-    canvasHandleRef,
-    captureHistory,
-    dispatch,
-    stateRef,
-  });
+  const filters = useFilters({ onCreateFilterAdjLayer });
 
   // ── Content-Aware Fill / Delete ────────────────────────────────────
   const { runContentAwareFill, runContentAwareDelete } = useContentAwareFill({
@@ -891,8 +876,6 @@ function AppContent(): React.JSX.Element {
         setShowShortcutsDialog={setShowShortcutsDialog}
         showSystemInfoDialog={showSystemInfoDialog}
         setShowSystemInfoDialog={setShowSystemInfoDialog}
-        showLensFlareDialog={showLensFlareDialog}
-        setShowLensFlareDialog={setShowLensFlareDialog}
         showGeneratePaletteDialog={showGeneratePaletteDialog}
         setShowGeneratePaletteDialog={setShowGeneratePaletteDialog}
         showColorDitheringSetup={showColorDitheringSetup}
