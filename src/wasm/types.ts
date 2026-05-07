@@ -9,109 +9,154 @@
 
 export interface PixelOpsModule {
   // Memory management
-  _malloc(size: number): number
-  _free(ptr: number): void
+  _malloc(size: number): number;
+  _free(ptr: number): void;
 
   // Live view of WASM linear memory (re-read after any call that may grow memory)
-  HEAPU8: Uint8Array
-  HEAPF32: Float32Array
+  HEAPU8: Uint8Array;
+  HEAPF32: Float32Array;
 
   // ── Operations ────────────────────────────────────────────────────────────
   _pixelops_flood_fill(
-    pixelsPtr: number, width: number, height: number,
-    startX: number, startY: number,
-    fillR: number, fillG: number, fillB: number, fillA: number,
-    tolerance: number
-  ): void
+    pixelsPtr: number,
+    width: number,
+    height: number,
+    startX: number,
+    startY: number,
+    fillR: number,
+    fillG: number,
+    fillB: number,
+    fillA: number,
+    tolerance: number,
+  ): void;
 
   _pixelops_flood_fill_f32(
-    pixelsPtr: number, width: number, height: number,
-    startX: number, startY: number,
-    fillR: number, fillG: number, fillB: number, fillA: number,
-    tolerance: number
-  ): void
+    pixelsPtr: number,
+    width: number,
+    height: number,
+    startX: number,
+    startY: number,
+    fillR: number,
+    fillG: number,
+    fillB: number,
+    fillA: number,
+    tolerance: number,
+  ): void;
 
   _pixelops_convolve(
-    srcPtr: number, dstPtr: number,
-    width: number, height: number,
-    kernelPtr: number, kernelSize: number
-  ): void
+    srcPtr: number,
+    dstPtr: number,
+    width: number,
+    height: number,
+    kernelPtr: number,
+    kernelSize: number,
+  ): void;
 
   _pixelops_resize_bilinear(
-    srcPtr: number, srcWidth: number, srcHeight: number,
-    dstPtr: number, dstWidth: number, dstHeight: number
-  ): void
+    srcPtr: number,
+    srcWidth: number,
+    srcHeight: number,
+    dstPtr: number,
+    dstWidth: number,
+    dstHeight: number,
+  ): void;
 
   _pixelops_resize_nearest(
-    srcPtr: number, srcWidth: number, srcHeight: number,
-    dstPtr: number, dstWidth: number, dstHeight: number
-  ): void
+    srcPtr: number,
+    srcWidth: number,
+    srcHeight: number,
+    dstPtr: number,
+    dstWidth: number,
+    dstHeight: number,
+  ): void;
 
   _pixelops_dither_bayer(
-    pixelsPtr: number, width: number, height: number, matrixSize: number
-  ): void
+    pixelsPtr: number,
+    width: number,
+    height: number,
+    matrixSize: number,
+  ): void;
 
   /**
    * Returns the actual number of palette entries produced (≤ maxColors).
    * palettePtr must point to a buffer of at least maxColors * 4 bytes.
    */
   _pixelops_quantize(
-    pixelsPtr: number, pixelCount: number,
-    paletteOutPtr: number, maxColors: number
-  ): number
+    pixelsPtr: number,
+    pixelCount: number,
+    paletteOutPtr: number,
+    maxColors: number,
+  ): number;
 
   /**
    * Computes histogram for curves adjustment.
-    * Returns pointer to 4*256 float32 array (rgb, red, green, blue channels).
+   * Returns pointer to 4*256 float32 array (rgb, red, green, blue channels).
    * maskPtr may be null for no selection mask.
    */
   _pixelops_curves_histogram(
-    inputPtr: number, width: number, height: number,
-    maskPtr: number
-  ): number
-
+    inputPtr: number,
+    width: number,
+    height: number,
+    maskPtr: number,
+  ): number;
 
   _pixelops_affine_transform(
-    srcPtr: number, srcW: number, srcH: number,
-    dstPtr: number, dstW: number, dstH: number,
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
+    dstPtr: number,
+    dstW: number,
+    dstH: number,
     invMatrixPtr: number,
-    interp: number
-  ): void
+    interp: number,
+  ): void;
 
   _pixelops_perspective_transform(
-    srcPtr: number, srcW: number, srcH: number,
-    dstPtr: number, dstW: number, dstH: number,
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
+    dstPtr: number,
+    dstW: number,
+    dstH: number,
     invHPtr: number,
-    interp: number
-  ): void
+    interp: number,
+  ): void;
 
   /** Rotate RGBA image. amount: 0=90°CW, 1=180°, 2=270°CW. dst must be pre-allocated. */
   _pixelops_rotate_rgba(
-    srcPtr: number, srcW: number, srcH: number,
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
     dstPtr: number,
-    amount: number
-  ): void
+    amount: number,
+  ): void;
 
   /** Flip RGBA image. axis: 0=horizontal, 1=vertical. dst must be pre-allocated. */
   _pixelops_flip_rgba(
-    srcPtr: number, w: number, h: number,
+    srcPtr: number,
+    w: number,
+    h: number,
     dstPtr: number,
-    axis: number
-  ): void
+    axis: number,
+  ): void;
 
   /** Rotate indexed (1 byte/pixel) image. amount: 0=90°CW, 1=180°, 2=270°CW. */
   _pixelops_rotate_indexed(
-    srcPtr: number, srcW: number, srcH: number,
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
     dstPtr: number,
-    amount: number
-  ): void
+    amount: number,
+  ): void;
 
   /** Flip indexed (1 byte/pixel) image. axis: 0=horizontal, 1=vertical. */
   _pixelops_flip_indexed(
-    srcPtr: number, w: number, h: number,
+    srcPtr: number,
+    w: number,
+    h: number,
     dstPtr: number,
-    axis: number
-  ): void
+    axis: number,
+  ): void;
 
   /**
    * Content-aware inpainting via PatchMatch.
@@ -128,8 +173,8 @@ export interface PixelOpsModule {
     maskPtr: number,
     patchSize: number,
     sourceMaskPtr: number,
-    outPtr: number
-  ): void
+    outPtr: number,
+  ): void;
 
   /**
    * GrabCut segmentation (Rother et al. 2004).
@@ -148,28 +193,43 @@ export interface PixelOpsModule {
     trimapPtr: number,
     alphaPtr: number,
     iterations: number,
-    k: number
-  ): void
+    k: number,
+  ): void;
 
   _pixelops_grabcut_compute_beta(
-    rgbaPtr: number, width: number, height: number
-  ): number
+    rgbaPtr: number,
+    width: number,
+    height: number,
+  ): number;
 
   _pixelops_grabcut_kmeans_init(
-    rgbaPtr: number, width: number, height: number,
-    trimapPtr: number, k: number, paramsOutPtr: number
-  ): void
+    rgbaPtr: number,
+    width: number,
+    height: number,
+    trimapPtr: number,
+    k: number,
+    paramsOutPtr: number,
+  ): void;
 
   _pixelops_grabcut_update_gmms(
-    rgbaPtr: number, width: number, height: number,
-    labelPtr: number, k: number, paramsInOutPtr: number
-  ): void
+    rgbaPtr: number,
+    width: number,
+    height: number,
+    labelPtr: number,
+    k: number,
+    paramsInOutPtr: number,
+  ): void;
 
   _pixelops_grabcut_mincut(
-    capSPtr: number, capTPtr: number,
-    hWPtr: number, vWPtr: number,
-    trimapPtr: number, width: number, height: number, labelOutPtr: number
-  ): void
+    capSPtr: number,
+    capTPtr: number,
+    hWPtr: number,
+    vWPtr: number,
+    trimapPtr: number,
+    width: number,
+    height: number,
+    labelOutPtr: number,
+  ): void;
 
   _matchPaletteIndices(
     rgbaPtr: number,
@@ -177,8 +237,8 @@ export interface PixelOpsModule {
     palettePtr: number,
     paletteSize: number,
     outPtr: number,
-    transparentIdx: number
-  ): void
+    transparentIdx: number,
+  ): void;
 
   /**
    * BFS 4-connected flood fill on a 1-byte-per-pixel indexed buffer.
@@ -191,8 +251,8 @@ export interface PixelOpsModule {
     h: number,
     startX: number,
     startY: number,
-    fillIndex: number
-  ): void
+    fillIndex: number,
+  ): void;
 
   // ── EXR I/O (tinyexr) ─────────────────────────────────────────────────────
   /**
@@ -200,8 +260,8 @@ export interface PixelOpsModule {
    * Returns a pointer to an ExrResult struct { width, height, pixels }.
    * Caller must free with _freeExrResult.
    */
-  _loadExr(srcPtr: number, srcLen: number): number
-  _freeExrResult(resultPtr: number): void
+  _loadExr(srcPtr: number, srcLen: number): number;
+  _freeExrResult(resultPtr: number): void;
 
   /**
    * Encode an RGBA float32 image to EXR.
@@ -215,29 +275,67 @@ export interface PixelOpsModule {
     width: number,
     height: number,
     compression: number,
-    halfFloat: number
-  ): number
-  _freeExrBytes(resultPtr: number): void
+    halfFloat: number,
+  ): number;
+  _freeExrBytes(resultPtr: number): void;
 
   // DDS I/O
-  _pixelops_dds_get_info(dataPtr: number, size: number, outPtr: number): number
-  _pixelops_dds_decode(dataPtr: number, size: number, outPtr: number, outSize: number): number
-  _pixelops_dds_decode_f32(dataPtr: number, size: number, outPtr: number, outSize: number): number
-  _pixelops_dds_get_encoded_size(width: number, height: number, fmt: number, mipLevels: number, headerMode: number): number
-  _pixelops_dds_max_mip_levels(width: number, height: number, minDim: number): number
-  _pixelops_dds_encode(pixelsPtr: number, width: number, height: number, fmt: number, mipLevels: number, headerMode: number, outPtr: number, outSize: number): number
-  _pixelops_dds_encode_f32(pixelsPtr: number, width: number, height: number, fmt: number, mipLevels: number, headerMode: number, outPtr: number, outSize: number): number
+  _pixelops_dds_get_info(dataPtr: number, size: number, outPtr: number): number;
+  _pixelops_dds_decode(
+    dataPtr: number,
+    size: number,
+    outPtr: number,
+    outSize: number,
+  ): number;
+  _pixelops_dds_decode_f32(
+    dataPtr: number,
+    size: number,
+    outPtr: number,
+    outSize: number,
+  ): number;
+  _pixelops_dds_get_encoded_size(
+    width: number,
+    height: number,
+    fmt: number,
+    mipLevels: number,
+    headerMode: number,
+  ): number;
+  _pixelops_dds_max_mip_levels(
+    width: number,
+    height: number,
+    minDim: number,
+  ): number;
+  _pixelops_dds_encode(
+    pixelsPtr: number,
+    width: number,
+    height: number,
+    fmt: number,
+    mipLevels: number,
+    headerMode: number,
+    outPtr: number,
+    outSize: number,
+  ): number;
+  _pixelops_dds_encode_f32(
+    pixelsPtr: number,
+    width: number,
+    height: number,
+    fmt: number,
+    mipLevels: number,
+    headerMode: number,
+    outPtr: number,
+    outSize: number,
+  ): number;
 }
 
 /** Factory function exported by the Emscripten-generated ES module */
 export type PixelOpsFactory = (options: {
-  locateFile: (filename: string) => string
-}) => Promise<PixelOpsModule>
+  locateFile: (filename: string) => string;
+}) => Promise<PixelOpsModule>;
 
 /** Result of histogram computation for curves adjustment */
 export interface CurvesHistogramResult {
-  rgb: Float32Array
-  red: Float32Array
-  green: Float32Array
-  blue: Float32Array
+  rgb: Float32Array;
+  red: Float32Array;
+  green: Float32Array;
+  blue: Float32Array;
 }

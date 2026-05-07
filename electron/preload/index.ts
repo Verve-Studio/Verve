@@ -43,6 +43,16 @@ const api = {
   // ── Pixel Brushes (user-profile storage) ─────────────────────────────────────
   loadUserPixelBrushes: (): Promise<string> => ipcRenderer.invoke('pixelBrushes:load'),
   saveUserPixelBrushes: (data: string): Promise<void> => ipcRenderer.invoke('pixelBrushes:save', data),
+  loadUserBrushes: (): Promise<string> => ipcRenderer.invoke('paintBrushes:load'),
+  saveUserBrushes: (data: string): Promise<void> => ipcRenderer.invoke('paintBrushes:save', data),
+  openPaintBrushFileDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:openPaintBrushFile'),
+  savePaintBrushFileDialog: (defaultPath?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:savePaintBrushFile', defaultPath),
+  readPaintBrushFile: (filePath: string): Promise<string> =>
+    ipcRenderer.invoke('file:readPaintBrushFile', filePath),
+  writePaintBrushFile: (filePath: string, data: string): Promise<void> =>
+    ipcRenderer.invoke('file:writePaintBrushFile', filePath, data),
   openBrushFileDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openBrushFile'),
   saveBrushFileDialog: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveBrushFile', defaultPath),
@@ -56,6 +66,22 @@ const api = {
 
   // ── App lifecycle ─────────────────────────────────────────────────────────────
   exitApp: (): Promise<void> => ipcRenderer.invoke('app:exit'),
+
+  // ── Preferences (persisted to userData/preferences.json) ────────────────
+  loadPreferences: (): Promise<{
+    historyMemoryBytes: number
+    bufferMemoryBytes: number
+    bufferMemoryMaxOut: boolean
+    unifiedMemory?: boolean
+  }> => ipcRenderer.invoke('prefs:load'),
+  savePreferences: (prefs: {
+    historyMemoryBytes: number
+    bufferMemoryBytes: number
+    bufferMemoryMaxOut: boolean
+    unifiedMemory: boolean
+  }): Promise<void> => ipcRenderer.invoke('prefs:save', prefs),
+  getSystemTotalMemoryBytes: (): Promise<number> =>
+    ipcRenderer.invoke('system:totalMemoryBytes'),
 
   // ── Startup file path ─────────────────────────────────────────────────────────
   /** Poll once on mount — returns the file path passed as a CLI arg, or null. */

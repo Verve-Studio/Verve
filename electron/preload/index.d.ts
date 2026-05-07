@@ -29,6 +29,13 @@ declare global {
       // Pixel Brushes (user-profile storage)
       loadUserPixelBrushes: () => Promise<string>
       saveUserPixelBrushes: (data: string) => Promise<void>
+      // Paint Brushes (user-profile storage)
+      loadUserBrushes: () => Promise<string>
+      saveUserBrushes: (data: string) => Promise<void>
+      openPaintBrushFileDialog: () => Promise<string | null>
+      savePaintBrushFileDialog: (defaultPath?: string) => Promise<string | null>
+      readPaintBrushFile: (filePath: string) => Promise<string>
+      writePaintBrushFile: (filePath: string, data: string) => Promise<void>
       openBrushFileDialog: () => Promise<string | null>
       saveBrushFileDialog: (defaultPath?: string) => Promise<string | null>
       readBrushFile: (filePath: string) => Promise<string>
@@ -38,6 +45,20 @@ declare global {
       saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle
       exitApp: () => Promise<void>
+      // Preferences
+      loadPreferences: () => Promise<{
+        historyMemoryBytes: number
+        bufferMemoryBytes: number
+        bufferMemoryMaxOut: boolean
+        unifiedMemory?: boolean
+      }>
+      savePreferences: (prefs: {
+        historyMemoryBytes: number
+        bufferMemoryBytes: number
+        bufferMemoryMaxOut: boolean
+        unifiedMemory: boolean
+      }) => Promise<void>
+      getSystemTotalMemoryBytes: () => Promise<number>
       // Startup file path (CLI arg)
       getStartupFile: () => Promise<string | null>
       onOpenFile: (callback: (path: string) => void) => (() => void)

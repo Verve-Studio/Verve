@@ -1,328 +1,627 @@
-import React, { useState } from 'react'
-import { walkQuadBezier } from './algorithm/brushStroke'
-import type { BrushShape } from './algorithm/brushStroke'
-import { SliderInput } from '@/ux/widgets/SliderInput/SliderInput'
-import type { ToolDefinition, ToolHandler, ToolPointerPos, ToolContext, ToolOptionsStyles } from './types'
+import React, { useEffect, useState } from "react";
+import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
+import { useBrushes } from "@/core/services/useBrushes";
+import { brushPanelStore } from "@/core/store/brushPanelStore";
+import { brushManagerStore } from "@/core/store/brushManagerStore";
+import type { Brush } from "@/types";
+import { makeDefaultBrush } from "@/types";
+import {
+  makeStrokeStampState,
+  stampSegment,
+  stampDot,
+  applyStrokeWetEdges,
+  type StrokeStampState,
+  type StrokePoseInputs,
+} from "./algorithm/stampEngine";
+import { getCachedTipSampler } from "./algorithm/tipSampler";
+import type {
+  ToolDefinition,
+  ToolHandler,
+  ToolPointerPos,
+  ToolContext,
+  ToolOptionsStyles,
+} from "./types";
 
-// ─── Shared options ───────────────────────────────────────────────────────────
+// ─── Synchronous mirror of the active brush ──────────────────────────────────
+//
+// Pointer event handlers run synchronously and cannot read React state, so
+// `activeBrushRef` is the single source of truth the stroke engine reads from.
+// `BrushOptions` keeps it in sync via a useEffect on every brush change.
+
+const activeBrushRef: { current: Brush } = {
+  current: makeDefaultBrush("__bootstrap", "Default"),
+};
 
 export const brushOptions = {
-  size:             20,
-  opacity:          100,
-  hardness:         100,
-  shape:            'round' as BrushShape,
-  antiAlias:        true,
-  smoothing:        50,  // 0 = raw coords, 100 = maximum stabilizer
-  motionBlur:       5,   // 0 = round dabs, 100 = dabs elongated 1× brush-width along stroke
-  velocityTracking: true,
-  pressureSize:     false, // pen pressure scales brush size (off by default; no effect on mouse)
+  size: activeBrushRef.current.tip.size,
+};
+
+function syncFromActiveBrush(b: Brush): void {
+  activeBrushRef.current = b;
+  brushOptions.size = b.tip.size;
 }
 
-/**
- * Map the 0-100 smoothing slider to an EMA alpha (fraction of the *new* sample
- * to mix in each event). alpha=1 → instantaneous (no filter); alpha↓0 → heavy lag.
- * We clamp to 0.05 so the brush never completely stops tracking.
- */
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 function smoothingToAlpha(s: number): number {
-  return Math.max(0.05, 1 - s / 100 * 0.92)
+  return Math.max(0.05, 1 - (s / 100) * 0.92);
 }
 
-// ── Velocity dynamics ─────────────────────────────────────────────────────────
-const MAX_TRACKING_SPEED  = 5    // px/ms — speed at which dynamics hit their floor
-const MIN_SIZE_FACTOR     = 0.55 // fast stroke → 55% of set size
-const MIN_OPACITY_FACTOR  = 0.65 // fast stroke → 65% of set opacity
-const SPEED_SMOOTHING     = 0.25 // EMA weight; higher = snappier but jitterier
-// ── Pressure dynamics ─────────────────────────────────────────────────────────
-const MIN_PRESSURE_FACTOR = 0.05  // lightest pen touch → 5% of set size (prevents disappearing)
-const PRESSURE_SMOOTHING  = 0.15  // EMA weight for pressure — low value = heavy smoothing
-                                   // Wacom tablets are noisy at hardware-poll rate; filter hard.
+const MAX_TRACKING_SPEED = 5;
+const MIN_SIZE_FACTOR = 0.55;
+const MIN_OPACITY_FACTOR = 0.65;
+const SPEED_SMOOTHING = 0.25;
+const MIN_PRESSURE_FACTOR = 0.05;
+const PRESSURE_SMOOTHING = 0.15;
 
-// ─── Midpoint B-spline brush handler ─────────────────────────────────────────
-// Positions are smoothed with an EMA stabilizer feeding into a midpoint
-// B-spline (approximating spline). The rendered path is a series of quadratic
-// Bézier arcs — P0→P1 drawn through the previous stabilised control point —
-// giving true curvature. A per-stroke touched-map prevents opacity accumulation
-// at segment joints without the ring/ball stamp artifacts.
+// ─── Handler ─────────────────────────────────────────────────────────────────
 
-type Point = { x: number; y: number }
+type Point = { x: number; y: number };
 
 function createBrushHandler(): ToolHandler {
-  let lastRendered: Point | null = null  // endpoint of the last drawn Bézier arc
-  let lastCtrl:     Point | null = null  // last stabilised pointer (B-spline ctrl pt)
-  let touched: Map<number, number> | null = null
-  let smoothSpeed = 0
-  let stabX = 0, stabY = 0
-  let prevTime = 0
-  let smoothPressure = 1  // EMA-filtered pressure; initialised to 1 so the first dot is full-size
-  // Track size/opacity at the last rendered point so the next arc can interpolate
-  // from them, producing seamless taper rather than step jumps at segment joints.
-  let prevSize    = brushOptions.size
-  let prevOpacity = brushOptions.opacity
+  // Smoothed input + position state
+  let lastRendered: Point | null = null;
+  let lastCtrl: Point | null = null;
+  let renderedCursor: Point | null = null; // pull-string lagged cursor
+  let strokeState: StrokeStampState | null = null;
+  let smoothSpeed = 0;
+  let stabX = 0,
+    stabY = 0;
+  let prevTime = 0;
+  let smoothPressure = 1;
+  let smoothTilt = 0;
+  let smoothTiltAz = 0;
+  let smoothTwist = 0;
+  let prevSize = activeBrushRef.current.tip.size;
+  let prevOpacity = activeBrushRef.current.opacity;
+  let segDirtyMinX = Infinity,
+    segDirtyMinY = Infinity,
+    segDirtyMaxX = -Infinity,
+    segDirtyMaxY = -Infinity;
+  // Build-up / airbrush timer state
+  let buildUpTimer: ReturnType<typeof setInterval> | null = null;
+  let lastPaintCtx: ToolContext | null = null;
+  let lastBuildUpPoint: Point | null = null;
 
-  /**
-   * Paint a quadratic Bézier arc from (p0x,p0y) to (p1x,p1y) using (cpx,cpy)
-   * as the attractor. Stamps along the arc via walkQuadBezier; the shared
-   * per-stroke touched map ensures no pixel accumulates more alpha than it
-   * should, preventing dark blobs where consecutive arcs share endpoints.
-   */
-  function paint(
-    p0x: number, p0y: number,
-    cpx: number, cpy: number,
-    p1x: number, p1y: number,
-    size0: number, opacity0: number,
-    size1: number, opacity1: number,
-    ctx: ToolContext,
-  ): void {
-    const { renderer, layer, layers, primaryColor, selectionMask, render, growLayerToFit } = ctx
-    // primaryColor is float [0,∞). Keep SDR 0-255 values as fallback; pass srcFloat for rgba32f so HDR values >1 are preserved.
-    const r = Math.round(Math.min(primaryColor.r, 1) * 255)
-    const g = Math.round(Math.min(primaryColor.g, 1) * 255)
-    const b = Math.round(Math.min(primaryColor.b, 1) * 255)
-    const a = Math.round(primaryColor.a * 255)
-    const srcFloat: readonly [number, number, number, number] | undefined =
-      layer.format === 'rgba32f' ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a] : undefined
-    const padR = Math.ceil(Math.max(size0, size1) / 2) + 2
-    growLayerToFit(Math.round(p0x), Math.round(p0y), padR)
-    growLayerToFit(Math.round(cpx),  Math.round(cpy),  padR)
-    growLayerToFit(Math.round(p1x), Math.round(p1y), padR)
-    const sel = selectionMask ? { mask: selectionMask, width: renderer.pixelWidth } : undefined
-    const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined
-    const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined
-    walkQuadBezier(
-      renderer, layer,
-      p0x, p0y, cpx, cpy, p1x, p1y,
-      size0, size1, r, g, b, a, opacity0, opacity1,
-      brushOptions.hardness, brushOptions.shape, brushOptions.antiAlias,
-      brushOptions.motionBlur / 100,
-      touched ?? undefined, sel,
-      tiledW, tiledH,
-      srcFloat,
-    )
-
-    // Expand the accumulated dirty rect so flushLayer only uploads the touched area.
-    // Coordinates are layer-local (origin at layer.offsetX, layer.offsetY).
-    // In tiled mode, blendPixelOver wraps and writes to layer regions far from
-    // the unwrapped p0/cp/p1 bounding box. Tracking a bounded dirtyRect here
-    // would miss those wrapped writes, leaving the GPU texture stale on the
-    // opposing seam. Leave dirtyRect=null to trigger a full-layer upload.
-    if (!ctx.tiledMode) {
-      // padR already reflects the larger of size0/size1, so this rect is conservative.
-      const lx = Math.max(0, Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR)
-      const ly = Math.max(0, Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR)
-      const rx = Math.min(layer.layerWidth,  Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1)
-      const ry = Math.min(layer.layerHeight, Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1)
-      if (layer.dirtyRect === null) {
-        layer.dirtyRect = { lx, ly, rx, ry }
-      } else {
-        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx)
-        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly)
-        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx)
-        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry)
-      }
-    } else {
-      layer.dirtyRect = null
-    }
-
-    renderer.flushLayer(layer)
-    render(layers)
+  function resetSegDirty(): void {
+    segDirtyMinX = Infinity;
+    segDirtyMinY = Infinity;
+    segDirtyMaxX = -Infinity;
+    segDirtyMaxY = -Infinity;
   }
 
-  function resolveStrokeParams(speed: number, pressure: number): { size: number; opacity: number } {
-    let size    = brushOptions.size
-    let opacity = brushOptions.opacity
+  /** Snapshot the pen pose for the current sample. */
+  function makePose(): StrokePoseInputs {
+    const tiltMag = Math.min(1, smoothTilt);
+    return {
+      pressure: smoothPressure,
+      velocity: Math.min(1, smoothSpeed / MAX_TRACKING_SPEED),
+      tilt: tiltMag,
+      tiltAzimuth: smoothTiltAz,
+      rotation: smoothTwist,
+      // Filled in per-segment by the engine.
+      direction: 0,
+    };
+  }
 
-    if (brushOptions.velocityTracking && speed > 0) {
-      const t = Math.min(1, speed / MAX_TRACKING_SPEED)
-      size    = size    * Math.max(MIN_SIZE_FACTOR,    1 - t * (1 - MIN_SIZE_FACTOR))
-      opacity = opacity * Math.max(MIN_OPACITY_FACTOR, 1 - t * (1 - MIN_OPACITY_FACTOR))
+  /** Paint one Bézier segment (or a degenerate point) using the stamp engine. */
+  function paint(
+    p0x: number,
+    p0y: number,
+    cpx: number,
+    cpy: number,
+    p1x: number,
+    p1y: number,
+    size0: number,
+    opacity0: number,
+    size1: number,
+    opacity1: number,
+    ctx: ToolContext,
+  ): void {
+    if (!strokeState) return;
+    const brush = activeBrushRef.current;
+    const sampler = getCachedTipSampler(brush.shape);
+
+    const {
+      renderer,
+      layer,
+      layers,
+      primaryColor,
+      secondaryColor,
+      selectionMask,
+      render,
+      growLayerToFit,
+    } = ctx;
+    // Worst-case stamp bbox extension. Soft brushes (hardness=0) add up to
+    // 0.5 × radius of feathering, and motion blur stretches the stamp along
+    // stroke direction by up to 4× at motionBlur=100. Combined upper bound:
+    //   half ≈ radius × elongMax + radius × 0.5  (= 0.5 size × (elongMax + 0.5))
+    const elongMax = 1 + 3 * Math.max(0, Math.min(100, brush.motionBlur)) / 100;
+    const maxSize = Math.max(size0, size1);
+    const padR = Math.ceil(maxSize * (0.5 * elongMax + 0.25) + 3);
+    if (!ctx.tiledMode) {
+      const minX = Math.min(p0x, cpx, p1x) - padR;
+      const minY = Math.min(p0y, cpy, p1y) - padR;
+      const maxX = Math.max(p0x, cpx, p1x) + padR;
+      const maxY = Math.max(p0y, cpy, p1y) + padR;
+      if (
+        maxX < 0 ||
+        maxY < 0 ||
+        minX >= renderer.pixelWidth ||
+        minY >= renderer.pixelHeight
+      )
+        return;
+    }
+    growLayerToFit(Math.round(p0x), Math.round(p0y), padR);
+    growLayerToFit(Math.round(cpx), Math.round(cpy), padR);
+    growLayerToFit(Math.round(p1x), Math.round(p1y), padR);
+
+    resetSegDirty();
+    const collect = (
+      sx0: number,
+      sy0: number,
+      sx1: number,
+      sy1: number,
+    ): void => {
+      if (sx0 < segDirtyMinX) segDirtyMinX = sx0;
+      if (sy0 < segDirtyMinY) segDirtyMinY = sy0;
+      if (sx1 > segDirtyMaxX) segDirtyMaxX = sx1;
+      if (sy1 > segDirtyMaxY) segDirtyMaxY = sy1;
+    };
+
+    const pose = makePose();
+    const isDot =
+      p0x === p1x && p0y === p1y && p0x === cpx && p0y === cpy;
+    if (isDot) {
+      stampDot(
+        renderer,
+        layer,
+        layers,
+        brush,
+        sampler,
+        p0x,
+        p0y,
+        size0,
+        opacity0,
+        primaryColor,
+        secondaryColor,
+        selectionMask,
+        ctx.tiledMode,
+        strokeState,
+        pose,
+        collect,
+      );
+    } else {
+      stampSegment({
+        renderer,
+        layer,
+        layers,
+        brush,
+        sampler,
+        p0x,
+        p0y,
+        cpx,
+        cpy,
+        p1x,
+        p1y,
+        size0,
+        size1,
+        opacity0,
+        opacity1,
+        primary: primaryColor,
+        secondary: secondaryColor,
+        selectionMask,
+        tiledMode: ctx.tiledMode,
+        state: strokeState,
+        pose,
+        onStampBbox: collect,
+        forceFirst: strokeState.isFirstStamp,
+      });
     }
 
-    if (brushOptions.pressureSize) {
-      // pressure 0..1 from PointerEvent — pen gives true range, mouse always 0.5.
-      // Apply on top of velocity so both dynamics compose naturally.
-      size = size * Math.max(MIN_PRESSURE_FACTOR, pressure)
+    if (!ctx.tiledMode && segDirtyMaxX >= segDirtyMinX) {
+      const lx = Math.max(0, Math.floor(segDirtyMinX - layer.offsetX));
+      const ly = Math.max(0, Math.floor(segDirtyMinY - layer.offsetY));
+      const rx = Math.min(
+        layer.layerWidth,
+        Math.ceil(segDirtyMaxX - layer.offsetX) + 1,
+      );
+      const ry = Math.min(
+        layer.layerHeight,
+        Math.ceil(segDirtyMaxY - layer.offsetY) + 1,
+      );
+      if (layer.dirtyRect === null) {
+        layer.dirtyRect = { lx, ly, rx, ry };
+      } else {
+        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx);
+        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly);
+        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx);
+        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry);
+      }
+    } else {
+      layer.dirtyRect = null;
     }
 
-    return { size, opacity }
+    renderer.flushLayer(layer);
+    render(layers);
+  }
+
+  function resolveStrokeParams(
+    speed: number,
+    pressure: number,
+  ): { size: number; opacity: number } {
+    const brush = activeBrushRef.current;
+    let size = brush.tip.size;
+    let opacity = brush.opacity;
+
+    if (brush.velocityTracking && speed > 0) {
+      const t = Math.min(1, speed / MAX_TRACKING_SPEED);
+      size = size * Math.max(MIN_SIZE_FACTOR, 1 - t * (1 - MIN_SIZE_FACTOR));
+      opacity =
+        opacity *
+        Math.max(MIN_OPACITY_FACTOR, 1 - t * (1 - MIN_OPACITY_FACTOR));
+    }
+
+    if (brush.pressureSize) {
+      size = size * Math.max(MIN_PRESSURE_FACTOR, pressure);
+    }
+
+    return { size, opacity };
+  }
+
+  /** Pull-string smoothing — moves `renderedCursor` toward `target` while
+   *  keeping at most `pullDist` distance behind it. Returns the new rendered
+   *  position so the caller can use it as the input to the curve construction. */
+  function applyPullString(
+    targetX: number,
+    targetY: number,
+    pullDist: number,
+  ): { x: number; y: number } {
+    if (!renderedCursor || pullDist <= 0) {
+      renderedCursor = { x: targetX, y: targetY };
+      return renderedCursor;
+    }
+    const dx = targetX - renderedCursor.x;
+    const dy = targetY - renderedCursor.y;
+    const d = Math.hypot(dx, dy);
+    if (d > pullDist) {
+      const k = (d - pullDist) / d;
+      renderedCursor = {
+        x: renderedCursor.x + dx * k,
+        y: renderedCursor.y + dy * k,
+      };
+    }
+    return renderedCursor;
+  }
+
+  /** Stop the build-up timer if running. */
+  function stopBuildUp(): void {
+    if (buildUpTimer !== null) {
+      clearInterval(buildUpTimer);
+      buildUpTimer = null;
+    }
+  }
+
+  /** Restart the build-up timer with the current brush rate. Each tick clears
+   *  the touched map (so coverage genuinely accumulates) and stamps once at
+   *  the held position. Photoshop calls this "airbrush" behaviour. */
+  function startBuildUp(ctx: ToolContext, x: number, y: number): void {
+    const brush = activeBrushRef.current;
+    if (!brush.buildUp.enabled) return;
+    stopBuildUp();
+    lastPaintCtx = ctx;
+    lastBuildUpPoint = { x, y };
+    const intervalMs = Math.max(8, 1000 / Math.max(1, brush.buildUp.rate));
+    buildUpTimer = setInterval(() => {
+      if (!strokeState || !lastPaintCtx || !lastBuildUpPoint) return;
+      // Each tick is a fresh dose of paint — clear touched so coverage
+      // can climb past previous strokes within this tick.
+      strokeState.touched = new Map();
+      const { size, opacity } = resolveStrokeParams(0, smoothPressure);
+      const px = lastBuildUpPoint.x;
+      const py = lastBuildUpPoint.y;
+      paint(px, py, px, py, px, py, size, opacity, size, opacity, lastPaintCtx);
+    }, intervalMs);
   }
 
   return {
-    onPointerDown({ x, y, pressure, timeStamp }: ToolPointerPos, ctx: ToolContext) {
-      touched        = new Map()
-      smoothSpeed    = 0
-      smoothPressure = pressure  // seed EMA at actual pen-down pressure — no initial lag
-      stabX = x; stabY = y
-      prevTime     = timeStamp
-      lastRendered = { x, y }
-      lastCtrl     = { x, y }
-      const { size, opacity } = resolveStrokeParams(0, smoothPressure)
-      prevSize     = size
-      prevOpacity  = opacity
-      // Initial dot: degenerate Bézier at a single point
-      paint(x, y, x, y, x, y, size, opacity, size, opacity, ctx)
+    onPointerDown(
+      { x, y, pressure, tiltX, tiltY, twist, timeStamp }: ToolPointerPos,
+      ctx: ToolContext,
+    ) {
+      ctx.renderer.strokeStart();
+      strokeState = makeStrokeStampState(ctx.primaryColor);
+      smoothSpeed = 0;
+      smoothPressure = pressure;
+      smoothTilt = Math.hypot(tiltX, tiltY) / 90;
+      smoothTiltAz = Math.atan2(tiltY, tiltX);
+      smoothTwist = (twist * Math.PI) / 180;
+      stabX = x;
+      stabY = y;
+      prevTime = timeStamp;
+      lastRendered = { x, y };
+      lastCtrl = { x, y };
+      renderedCursor = { x, y };
+      const { size, opacity } = resolveStrokeParams(0, smoothPressure);
+      prevSize = size;
+      prevOpacity = opacity;
+      paint(x, y, x, y, x, y, size, opacity, size, opacity, ctx);
+      startBuildUp(ctx, x, y);
     },
 
-    onPointerMove({ x, y, pressure, timeStamp }: ToolPointerPos, ctx: ToolContext) {
-      if (!lastRendered || !lastCtrl) return
-      const now = timeStamp
+    onPointerMove(
+      { x, y, pressure, tiltX, tiltY, twist, timeStamp }: ToolPointerPos,
+      ctx: ToolContext,
+    ) {
+      if (!lastRendered || !lastCtrl) return;
+      const brush = activeBrushRef.current;
+      const now = timeStamp;
+      const alpha = smoothingToAlpha(brush.smoothing.ema);
+      stabX = stabX * (1 - alpha) + x * alpha;
+      stabY = stabY * (1 - alpha) + y * alpha;
 
-      // EMA spatial stabilizer — low-pass filters sub-pixel hardware jitter
-      const alpha = smoothingToAlpha(brushOptions.smoothing)
-      stabX = stabX * (1 - alpha) + x * alpha
-      stabY = stabY * (1 - alpha) + y * alpha
+      // Pull-string lag — renderedCursor follows stabX/stabY at a fixed distance.
+      const pullDist = brush.smoothing.pullString * brush.tip.size;
+      const drawn = applyPullString(stabX, stabY, pullDist);
+      const drawX = drawn.x;
+      const drawY = drawn.y;
 
-      // Velocity (px/ms)
-      const dt = now - prevTime
-      const d  = Math.hypot(stabX - lastCtrl.x, stabY - lastCtrl.y)
-      smoothSpeed    = smoothSpeed    * (1 - SPEED_SMOOTHING)    + (dt > 0 ? d / dt : 0) * SPEED_SMOOTHING
-      smoothPressure = smoothPressure * (1 - PRESSURE_SMOOTHING) + pressure                * PRESSURE_SMOOTHING
-      prevTime = now
+      const dt = now - prevTime;
+      const d = Math.hypot(drawX - lastCtrl.x, drawY - lastCtrl.y);
+      smoothSpeed =
+        smoothSpeed * (1 - SPEED_SMOOTHING) +
+        (dt > 0 ? d / dt : 0) * SPEED_SMOOTHING;
+      smoothPressure =
+        smoothPressure * (1 - PRESSURE_SMOOTHING) +
+        pressure * PRESSURE_SMOOTHING;
+      smoothTilt =
+        smoothTilt * (1 - PRESSURE_SMOOTHING) +
+        (Math.hypot(tiltX, tiltY) / 90) * PRESSURE_SMOOTHING;
+      const az = Math.atan2(tiltY, tiltX);
+      smoothTiltAz =
+        smoothTiltAz * (1 - PRESSURE_SMOOTHING) + az * PRESSURE_SMOOTHING;
+      smoothTwist = (twist * Math.PI) / 180;
+      prevTime = now;
 
-      const { size, opacity } = resolveStrokeParams(smoothSpeed, smoothPressure)
-
-      // Spacing: minimum arc travel before we commit a new Bézier segment.
-      // Use the smaller of prev/current size so a narrowing tip never leaves gaps.
-      const spacing = Math.max(1, Math.min(prevSize, size) * 0.2)
-
-      // Midpoint B-spline: the rendered tip advances to mid(lastCtrl, stab).
-      // lastCtrl becomes the quadratic Bézier control point — the curve is
-      // "attracted" toward the actual pointer without passing through it,
-      // giving automatic rounded corners with zero overshoot.
-      const tipX = (lastCtrl.x + stabX) * 0.5
-      const tipY = (lastCtrl.y + stabY) * 0.5
-
-      if (Math.hypot(tipX - lastRendered.x, tipY - lastRendered.y) >= spacing) {
+      const { size, opacity } = resolveStrokeParams(
+        smoothSpeed,
+        smoothPressure,
+      );
+      const segStep = Math.max(
+        1,
+        Math.min(prevSize, size) * (brush.tip.spacing / 100) * 0.5,
+      );
+      const tipX = (lastCtrl.x + drawX) * 0.5;
+      const tipY = (lastCtrl.y + drawY) * 0.5;
+      if (Math.hypot(tipX - lastRendered.x, tipY - lastRendered.y) >= segStep) {
         paint(
-          lastRendered.x, lastRendered.y,
-          lastCtrl.x, lastCtrl.y,  // B-spline attractor → Bézier control point
-          tipX, tipY,
-          prevSize, prevOpacity, size, opacity, ctx,
-        )
-        lastRendered = { x: tipX, y: tipY }
-        prevSize    = size
-        prevOpacity = opacity
+          lastRendered.x,
+          lastRendered.y,
+          lastCtrl.x,
+          lastCtrl.y,
+          tipX,
+          tipY,
+          prevSize,
+          prevOpacity,
+          size,
+          opacity,
+          ctx,
+        );
+        lastRendered = { x: tipX, y: tipY };
+        prevSize = size;
+        prevOpacity = opacity;
       }
-
-      lastCtrl = { x: stabX, y: stabY }
+      lastCtrl = { x: drawX, y: drawY };
+      // Build-up tracks the latest pointer position so airbrush ticks paint
+      // wherever the pen happens to be hovering when held still.
+      if (buildUpTimer !== null) {
+        lastPaintCtx = ctx;
+        lastBuildUpPoint = { x: drawX, y: drawY };
+      }
     },
 
     onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
+      stopBuildUp();
+      const brush = activeBrushRef.current;
       if (lastRendered && lastCtrl) {
-        const { size, opacity } = resolveStrokeParams(smoothSpeed, smoothPressure)
-        if (Math.hypot(lastCtrl.x - lastRendered.x, lastCtrl.y - lastRendered.y) >= 1) {
-          // Close deferred tail — interpolate from prevSize/Opacity to final values
-          // so the stroke tip tapers smoothly to its last velocity-adjusted state.
+        const { size, opacity } = resolveStrokeParams(
+          smoothSpeed,
+          smoothPressure,
+        );
+        const dist = Math.hypot(
+          lastCtrl.x - lastRendered.x,
+          lastCtrl.y - lastRendered.y,
+        );
+        if (dist >= 1) {
           paint(
-            lastRendered.x, lastRendered.y,
-            lastCtrl.x, lastCtrl.y,
-            lastCtrl.x, lastCtrl.y,
-            prevSize, prevOpacity, size, opacity, ctx,
-          )
+            lastRendered.x,
+            lastRendered.y,
+            lastCtrl.x,
+            lastCtrl.y,
+            lastCtrl.x,
+            lastCtrl.y,
+            prevSize,
+            prevOpacity,
+            size,
+            opacity,
+            ctx,
+          );
+        }
+        // Catch-up: if pull-string left us behind the actual pointer, draw the
+        // remaining gap so the stroke ends at the user's intended position.
+        if (
+          brush.smoothing.catchUp &&
+          renderedCursor &&
+          (Math.abs(stabX - renderedCursor.x) > 0.5 ||
+            Math.abs(stabY - renderedCursor.y) > 0.5)
+        ) {
+          paint(
+            renderedCursor.x,
+            renderedCursor.y,
+            stabX,
+            stabY,
+            stabX,
+            stabY,
+            prevSize,
+            prevOpacity,
+            size,
+            opacity,
+            ctx,
+          );
         }
       }
-      lastRendered = null
-      lastCtrl     = null
-      touched      = null
-      smoothSpeed  = 0
-      prevSize     = brushOptions.size
-      prevOpacity  = brushOptions.opacity
+      // Stroke-level wet edges: a single rim around the entire painted
+      // silhouette, computed from the per-stroke `touched` map. Per-stamp
+      // wet edges produced concentric halos at every dab; this is the
+      // watercolor pooling effect users actually expect.
+      if (strokeState && brush.wetEdges.enabled) {
+        const wet = applyStrokeWetEdges(
+          ctx.renderer,
+          ctx.layer,
+          strokeState.touched,
+          brush,
+        );
+        if (wet.dirty) {
+          if (ctx.layer.dirtyRect === null) {
+            ctx.layer.dirtyRect = { ...wet.dirty };
+          } else {
+            ctx.layer.dirtyRect.lx = Math.min(ctx.layer.dirtyRect.lx, wet.dirty.lx);
+            ctx.layer.dirtyRect.ly = Math.min(ctx.layer.dirtyRect.ly, wet.dirty.ly);
+            ctx.layer.dirtyRect.rx = Math.max(ctx.layer.dirtyRect.rx, wet.dirty.rx);
+            ctx.layer.dirtyRect.ry = Math.max(ctx.layer.dirtyRect.ry, wet.dirty.ry);
+          }
+          ctx.renderer.flushLayer(ctx.layer);
+          ctx.render(ctx.layers);
+        }
+      }
+      lastRendered = null;
+      lastCtrl = null;
+      renderedCursor = null;
+      strokeState = null;
+      lastPaintCtx = null;
+      lastBuildUpPoint = null;
+      smoothSpeed = 0;
+      prevSize = activeBrushRef.current.tip.size;
+      prevOpacity = activeBrushRef.current.opacity;
+      ctx.renderer.strokeEnd();
     },
-  }
+  };
 }
 
+// ─── Options UI ───────────────────────────────────────────────────────────────
 
-// ─── Options UI ────────────────────────────────────────────────────────────────
+function BrushOptions({
+  styles,
+}: {
+  styles: ToolOptionsStyles;
+}): React.JSX.Element {
+  const { activeBrush, allBrushes, selectBrush, updateBrush, createBrush } =
+    useBrushes();
+  useEffect(() => {
+    syncFromActiveBrush(activeBrush);
+  }, [activeBrush]);
 
-const SHAPE_LABELS: { value: BrushShape; label: string }[] = [
-  { value: 'round',   label: 'Round'   },
-  { value: 'square',  label: 'Square'  },
-  { value: 'diamond', label: 'Diamond' },
-]
+  const [size, setSize] = useState(activeBrush.tip.size);
+  const [opacity, setOpacity] = useState(activeBrush.opacity);
+  const [hardness, setHardness] = useState(activeBrush.tip.hardness);
+  useEffect(() => {
+    setSize(activeBrush.tip.size);
+    setOpacity(activeBrush.opacity);
+    setHardness(activeBrush.tip.hardness);
+  }, [activeBrush.id]);
 
-function BrushOptions({ styles }: { styles: ToolOptionsStyles }): React.JSX.Element {
-  const [size,             setSize]             = useState(brushOptions.size)
-  const [opacity,          setOpacity]          = useState(brushOptions.opacity)
-  const [hardness,         setHardness]         = useState(brushOptions.hardness)
-  const [shape,            setShape]            = useState<BrushShape>(brushOptions.shape)
-  const [antiAlias,        setAntiAlias]        = useState(brushOptions.antiAlias)
-  const [smoothing,        setSmoothing]        = useState(brushOptions.smoothing)
-  const [motionBlur,       setMotionBlur]       = useState(brushOptions.motionBlur)
-  const [velocityTracking, setVelocityTracking] = useState(brushOptions.velocityTracking)
-  const [pressureSize,     setPressureSize]     = useState(brushOptions.pressureSize)
-
-  const handleSize      = (v: number): void => { brushOptions.size       = v; setSize(v) }
-  const handleOpacity   = (v: number): void => { brushOptions.opacity    = v; setOpacity(v) }
-  const handleHardness  = (v: number): void => { brushOptions.hardness   = v; setHardness(v) }
-  const handleSmoothing = (v: number): void => { brushOptions.smoothing  = v; setSmoothing(v) }
-  const handleMotionBlur = (v: number): void => { brushOptions.motionBlur = v; setMotionBlur(v) }
-
-  const handleShape = (e: React.ChangeEvent<HTMLSelectElement>): void => {
-    const v = e.target.value as BrushShape
-    brushOptions.shape = v
-    setShape(v)
-  }
-  const handleAntiAlias = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    brushOptions.antiAlias = e.target.checked
-    setAntiAlias(e.target.checked)
-  }
-  const handleVelocity = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    brushOptions.velocityTracking = e.target.checked
-    setVelocityTracking(e.target.checked)
-  }
-  const handlePressure = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    brushOptions.pressureSize = e.target.checked
-    setPressureSize(e.target.checked)
-  }
+  const handleSize = (v: number): void => {
+    setSize(v);
+    void updateBrush({
+      ...activeBrush,
+      tip: { ...activeBrush.tip, size: v },
+    });
+  };
+  const handleOpacity = (v: number): void => {
+    setOpacity(v);
+    void updateBrush({ ...activeBrush, opacity: v });
+  };
+  const handleHardness = (v: number): void => {
+    setHardness(v);
+    void updateBrush({
+      ...activeBrush,
+      tip: { ...activeBrush.tip, hardness: v },
+    });
+  };
 
   return (
     <>
-      <label className={styles.optLabel}>Size:</label>
-      <SliderInput value={size} min={1} max={300} inputWidth={42} onChange={handleSize} />
-      <span className={styles.optSep} />
-      <label className={styles.optLabel}>Opacity:</label>
-      <SliderInput value={opacity} min={1} max={100} suffix="%" inputWidth={42} onChange={handleOpacity} />
-      <span className={styles.optSep} />
-      <label className={styles.optLabel}>Hardness:</label>
-      <SliderInput value={hardness} min={0} max={100} suffix="%" inputWidth={42} onChange={handleHardness} />
-      <span className={styles.optSep} />
-      <label className={styles.optLabel}>Shape:</label>
-      <select className={styles.optSelect} value={shape} onChange={handleShape}>
-        {SHAPE_LABELS.map(({ value, label }) => (
-          <option key={value} value={value}>{label}</option>
+      <label className={styles.optLabel}>Brush:</label>
+      <select
+        className={styles.optSelect}
+        value={activeBrush.id}
+        onChange={(e) => {
+          if (e.target.value === "__new__") {
+            void createBrush({}, "user");
+          } else {
+            selectBrush(e.target.value);
+          }
+        }}
+      >
+        {allBrushes.length === 0 && (
+          <option value={activeBrush.id}>{activeBrush.name}</option>
+        )}
+        {allBrushes.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name} ({b.scope[0].toUpperCase()})
+          </option>
         ))}
+        <option value="__new__">+ New brush</option>
       </select>
       <span className={styles.optSep} />
-      <label className={styles.optLabel} title="Filter out pointer noise — higher values produce cleaner edges at the cost of slight lag">Smoothing:</label>
-      <SliderInput value={smoothing} min={0} max={100} suffix="%" inputWidth={42} onChange={handleSmoothing} />
-      <span className={styles.optSep} />
-      <label className={styles.optLabel} title="Elongates each dab along the stroke direction — higher values give a smeared/calligraphic feel">Motion:</label>
-      <SliderInput value={motionBlur} min={0} max={100} suffix="%" inputWidth={42} onChange={handleMotionBlur} />
-      <span className={styles.optSep} />
-      <label
-        className={styles.optCheckLabel}
-        title="Sub-pixel edge feathering for smoother strokes"
+      <button
+        type="button"
+        className={styles.optSelect}
+        onClick={() => brushPanelStore.toggle()}
+        title="Open brush settings panel"
       >
-        <input type="checkbox" checked={antiAlias} onChange={handleAntiAlias} />
-        Anti-alias
-      </label>
+        Settings…
+      </button>
       <span className={styles.optSep} />
-      <label
-        className={styles.optCheckLabel}
-        title="Fast strokes produce a thinner, lighter line — simulates drawing pressure dynamics"
+      <button
+        type="button"
+        className={styles.optSelect}
+        onClick={() => brushManagerStore.open()}
+        title="Open the Paint Brushes manager (rename, organise, import/export)"
       >
-        <input type="checkbox" checked={velocityTracking} onChange={handleVelocity} />
-        Velocity
-      </label>
+        Manage…
+      </button>
       <span className={styles.optSep} />
-      <label
-        className={styles.optCheckLabel}
-        title="Pen/tablet pressure controls brush size (0 = hairline, 1 = full size). No effect with a mouse."
-      >
-        <input type="checkbox" checked={pressureSize} onChange={handlePressure} />
-        Pressure
-      </label>
+      <label className={styles.optLabel}>Size:</label>
+      <SliderInput
+        value={size}
+        min={1}
+        max={500}
+        inputWidth={42}
+        onChange={handleSize}
+      />
+      <span className={styles.optSep} />
+      <label className={styles.optLabel}>Opacity:</label>
+      <SliderInput
+        value={opacity}
+        min={1}
+        max={100}
+        suffix="%"
+        inputWidth={42}
+        onChange={handleOpacity}
+      />
+      <span className={styles.optSep} />
+      <label className={styles.optLabel}>Hardness:</label>
+      <SliderInput
+        value={hardness}
+        min={0}
+        max={100}
+        suffix="%"
+        inputWidth={42}
+        onChange={handleHardness}
+      />
     </>
-  )
+  );
 }
 
 export const brushTool: ToolDefinition = {
@@ -330,5 +629,4 @@ export const brushTool: ToolDefinition = {
   Options: BrushOptions,
   modifiesPixels: true,
   paintsOntoPixelLayer: true,
-}
-
+};

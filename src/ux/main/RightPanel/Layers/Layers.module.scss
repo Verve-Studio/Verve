@@ -352,9 +352,8 @@
 
 // ─── Mask item ──────────────────────────────────────────────────────────────
 
-// Indented row for mask child layers
+// Indented row for mask/adjustment child layers (indent comes from inline padding-left)
 .maskItem {
-  padding-left: 22px;
   background: rgba(0, 0, 0, 0.12);
 
   &.itemActive {
@@ -412,17 +411,44 @@
   @include m.truncate;
 }
 
-// L-shaped connector for child (mask/adjustment) rows
+// Tree connector lines for child (mask/adjustment) rows.
+// Position is set inline (depends on depth); the element spans the full row height.
+// ::before draws the vertical line, ::after draws the horizontal stub into the row.
 .childConnector {
   position: absolute;
-  left: 15px;
-  top: -8px;
-  height: 18px;
-  width: 10px;
-  border-left: 1px solid #444444;
-  border-bottom: 1px solid #444444;
-  border-bottom-left-radius: 2px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
   pointer-events: none;
+
+  // Vertical line — by default stops at the horizontal stub (last sibling).
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 50%;
+    width: 1px;
+    background: #555;
+  }
+
+  // Horizontal stub from vertical line to layer icons.
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 10px;
+    height: 1px;
+    background: #555;
+  }
+}
+
+// Non-last child: vertical line continues to the next sibling.
+.childConnectorContinues {
+  &::before {
+    height: 100%;
+  }
 }
 
 // "Layer Mask" label in the blend mode row

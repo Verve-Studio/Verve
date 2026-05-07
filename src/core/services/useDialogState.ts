@@ -1,34 +1,50 @@
-import { useState } from 'react'
-import type { PixelFormat } from '@/types'
+import { useState } from "react";
+import type { PixelFormat } from "@/types";
 
 export function useDialogState() {
-  const [showNewImageDialog,               setShowNewImageDialog]               = useState(false)
-  const [showExportDialog,                 setShowExportDialog]                 = useState(false)
-  const [showResizeDialog,                 setShowResizeDialog]                 = useState(false)
-  const [showResizeCanvasDialog,           setShowResizeCanvasDialog]           = useState(false)
-  const [showAboutDialog,                  setShowAboutDialog]                  = useState(false)
-  const [showShortcutsDialog,              setShowShortcutsDialog]              = useState(false)
-  const [showSystemInfoDialog,             setShowSystemInfoDialog]             = useState(false)
-  const [showLensFlareDialog,              setShowLensFlareDialog]              = useState(false)
-  const [showGeneratePaletteDialog,        setShowGeneratePaletteDialog]        = useState(false)
-  const [showColorDitheringSetup,          setShowColorDitheringSetup]          = useState(false)
-  const [showContentAwareFillOptionsDialog, setShowContentAwareFillOptionsDialog] = useState(false)
-  const [contentAwareFillOptionsMode,      setContentAwareFillOptionsMode]      = useState<'fill' | 'delete'>('fill')
-  const [pendingConversion,                setPendingConversion]                = useState<PixelFormat | null>(null)
+  const [showNewImageDialog, setShowNewImageDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showResizeDialog, setShowResizeDialog] = useState(false);
+  const [showResizeCanvasDialog, setShowResizeCanvasDialog] = useState(false);
+  const [showAboutDialog, setShowAboutDialog] = useState(false);
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
+  const [showSystemInfoDialog, setShowSystemInfoDialog] = useState(false);
+  const [showGeneratePaletteDialog, setShowGeneratePaletteDialog] =
+    useState(false);
+  const [showColorDitheringSetup, setShowColorDitheringSetup] = useState(false);
+  const [
+    showContentAwareFillOptionsDialog,
+    setShowContentAwareFillOptionsDialog,
+  ] = useState(false);
+  const [contentAwareFillOptionsMode, setContentAwareFillOptionsMode] =
+    useState<"fill" | "delete">("fill");
+  const [pendingConversion, setPendingConversion] =
+    useState<PixelFormat | null>(null);
 
   return {
-    showNewImageDialog,    setShowNewImageDialog,
-    showExportDialog,      setShowExportDialog,
-    showResizeDialog,      setShowResizeDialog,
-    showResizeCanvasDialog, setShowResizeCanvasDialog,
-    showAboutDialog,        setShowAboutDialog,
-    showShortcutsDialog,    setShowShortcutsDialog,
-    showSystemInfoDialog,   setShowSystemInfoDialog,
-    showLensFlareDialog,    setShowLensFlareDialog,
-    showGeneratePaletteDialog, setShowGeneratePaletteDialog,
-    showColorDitheringSetup,   setShowColorDitheringSetup,
-    showContentAwareFillOptionsDialog, setShowContentAwareFillOptionsDialog,
-    contentAwareFillOptionsMode, setContentAwareFillOptionsMode,
-    pendingConversion, setPendingConversion,
-  }
+    showNewImageDialog,
+    setShowNewImageDialog,
+    showExportDialog,
+    setShowExportDialog,
+    showResizeDialog,
+    setShowResizeDialog,
+    showResizeCanvasDialog,
+    setShowResizeCanvasDialog,
+    showAboutDialog,
+    setShowAboutDialog,
+    showShortcutsDialog,
+    setShowShortcutsDialog,
+    showSystemInfoDialog,
+    setShowSystemInfoDialog,
+    showGeneratePaletteDialog,
+    setShowGeneratePaletteDialog,
+    showColorDitheringSetup,
+    setShowColorDitheringSetup,
+    showContentAwareFillOptionsDialog,
+    setShowContentAwareFillOptionsDialog,
+    contentAwareFillOptionsMode,
+    setContentAwareFillOptionsMode,
+    pendingConversion,
+    setPendingConversion,
+  };
 }

@@ -1,0 +1,178 @@
+import type { BevelAdjustmentLayer } from "@/types";
+import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import { BevelOptions } from "./BevelOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
+import {
+  createTrackedTexture,
+  destroyTrackedTexture,
+} from "@/core/store/memoryStore";
+
+type BevelOp = Extract<AdjustmentRenderOp, { kind: "bevel" }>;
+
+let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
+let usedThisFrame = false;
+
+function ensureTextures(
+  device: GPUDevice,
+  width: number,
+  height: number,
+): { tempA: GPUTexture; tempB: GPUTexture } {
+  usedThisFrame = true;
+  if (texCache) return texCache;
+  const usage =
+    GPUTextureUsage.TEXTURE_BINDING |
+    GPUTextureUsage.STORAGE_BINDING |
+    GPUTextureUsage.COPY_DST |
+    GPUTextureUsage.COPY_SRC;
+  const make = (): GPUTexture =>
+    createTrackedTexture(device, {
+      size: { width, height },
+      format: "rgba8unorm",
+      usage,
+    });
+  texCache = { tempA: make(), tempB: make() };
+  return texCache;
+}
+
+export const BevelEffect: IPipelineEffect<BevelAdjustmentLayer, BevelOp> = {
+  id: "bevel",
+  label: "Bevel…",
+  menu: { root: "effects", submenu: "fx-shadow" },
+  defaultParams: { width: 5, softness: 3, angle: 135, strength: 80 },
+
+  buildPlanEntry(layer, { mask }) {
+    const { width, softness, angle, strength } = layer.params;
+    return {
+      kind: "bevel",
+      layerId: layer.id,
+      width,
+      softness,
+      angle,
+      strength,
+      visible: layer.visible,
+      selMaskLayer: mask,
+    };
+  },
+
+  encode({ engine, encoder, srcTex, dstTex }, entry) {
+    const { runtime } = engine;
+    const { device, pixelWidth: w, pixelHeight: h } = runtime;
+    const { tempA, tempB } = ensureTextures(device, w, h);
+
+    const erodeH = runtime.getComputePipeline(
+      "outline-erode-h",
+      "cs_outline_erode_h",
+    );
+    const erodeV = runtime.getComputePipeline(
+      "outline-erode-v",
+      "cs_outline_erode_v",
+    );
+    const blurH = runtime.getComputePipeline(
+      "drop-shadow-blur-h",
+      "cs_shadow_blur_h",
+    );
+    const blurV = runtime.getComputePipeline(
+      "drop-shadow-blur-v",
+      "cs_shadow_blur_v",
+    );
+    const composite = runtime.getComputePipeline(
+      "bevel-composite",
+      "cs_bevel_composite",
+    );
+
+    const dispatch = (
+      pipeline: GPUComputePipeline,
+      src: GPUTexture,
+      dst: GPUTexture,
+      paramsBuf: GPUBuffer,
+    ): void => {
+      const bg = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: src.createView() },
+          { binding: 1, resource: dst.createView() },
+          { binding: 2, resource: { buffer: paramsBuf } },
+        ],
+      });
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bg);
+      pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+      pass.end();
+    };
+
+    // Pass 1+2: ErodeH/V radius=1 to channel-copy src.a → tempB.r
+    const copyParamsBuf = runtime.makeParamsBuf(
+      new Uint32Array([1, 0, 0, 0]),
+    );
+    dispatch(erodeH, srcTex, tempA, copyParamsBuf);
+    dispatch(erodeV, tempA, tempB, copyParamsBuf);
+
+    // Pass 3+4: Box blur radius = width
+    const heightR = Math.max(1, Math.round(entry.width));
+    const heightParamsBuf = runtime.makeParamsBuf(
+      new Uint32Array([heightR, 0, 0, 0]),
+    );
+    dispatch(blurH, tempB, tempA, heightParamsBuf);
+    dispatch(blurV, tempA, tempB, heightParamsBuf);
+
+    // Pass 5+6: optional softness blur
+    let heightTex: GPUTexture = tempB;
+    if (entry.softness > 0) {
+      const softR = Math.max(1, Math.round(entry.softness / 2));
+      const softParamsBuf = runtime.makeParamsBuf(
+        new Uint32Array([softR, 0, 0, 0]),
+      );
+      dispatch(blurH, tempB, tempA, softParamsBuf);
+      dispatch(blurV, tempA, tempB, softParamsBuf);
+      heightTex = tempB;
+    }
+
+    // Composite pass
+    const compBuf = new ArrayBuffer(16);
+    const cf = new Float32Array(compBuf);
+    cf[0] = entry.strength / 100;
+    cf[1] = entry.angle;
+    cf[2] = 2 * heightR;
+
+    const compParamsBuf = runtime.makeParamsBuf(compBuf);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
+
+    const compBG = device.createBindGroup({
+      layout: composite.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: heightTex.createView() },
+        { binding: 2, resource: dstTex.createView() },
+        { binding: 3, resource: { buffer: compParamsBuf } },
+        { binding: 4, resource: dummyMask.createView() },
+        { binding: 5, resource: { buffer: maskFlagsBuf } },
+      ],
+    });
+    const compPass = encoder.beginComputePass();
+    compPass.setPipeline(composite);
+    compPass.setBindGroup(0, compBG);
+    compPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+    compPass.end();
+  },
+
+  onFrameEnd() {
+    if (!usedThisFrame && texCache) {
+      destroyTrackedTexture(texCache.tempA);
+      destroyTrackedTexture(texCache.tempB);
+      texCache = null;
+    }
+    usedThisFrame = false;
+  },
+
+  onDestroy() {
+    if (texCache) {
+      destroyTrackedTexture(texCache.tempA);
+      destroyTrackedTexture(texCache.tempB);
+      texCache = null;
+    }
+  },
+
+  Panel: BevelOptions,
+};

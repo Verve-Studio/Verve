@@ -4,6 +4,9 @@
 .panelBody {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .actions {
@@ -16,14 +19,16 @@
   flex-shrink: 0;
 }
 
-// 6 rows: 6 × 18px + 5 × 4px gap + 16px vertical padding = 144px
+// fills all available height in the dock row
 .swatchGrid {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 4px;
   padding: 8px;
   padding-right: 4px;
-  max-height: 144px;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 

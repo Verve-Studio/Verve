@@ -6,6 +6,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 // Set the app name early so the macOS menu bar shows "Verve" instead of "Electron".
 app.setName('Verve')
 import { registerIpcHandlers } from './ipc'
+import { registerPreferencesHandlers } from './preferences'
 import { buildAndSetMacMenu, setMacMenuItemEnabled, setMacMenuItemChecked } from './menu'
 import type { MenuBuildPayload } from './menu'
 
@@ -77,6 +78,7 @@ app.whenReady().then(() => {
   })
 
   registerIpcHandlers()
+  registerPreferencesHandlers()
 
   // Detect startup file from CLI args (Windows / Linux); macOS uses open-file event above.
   if (!startupFilePath) startupFilePath = detectStartupFileFromArgs()

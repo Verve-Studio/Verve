@@ -3,7 +3,7 @@
 // Lossless, retains the full alpha channel. Uses UTIF.encodeImage which writes
 // an uncompressed TIFF. No browser API needed.
 
-import * as UTIF from 'utif'
+import * as UTIF from "utif";
 
 /**
  * Encode RGBA pixel data to a TIFF data-URL.
@@ -13,13 +13,19 @@ import * as UTIF from 'utif'
  * @param height  Image height in pixels.
  * @returns       `data:image/tiff;base64,...` string.
  */
-export function exportTiff(pixels: Uint8Array, width: number, height: number): string {
-  const buffer = UTIF.encodeImage(pixels, width, height)
-  const bytes  = new Uint8Array(buffer)
-  let binary   = ''
-  const CHUNK  = 8192
+export function exportTiff(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+): string {
+  const buffer = UTIF.encodeImage(pixels, width, height);
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const CHUNK = 8192;
   for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)))
+    binary += String.fromCharCode(
+      ...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)),
+    );
   }
-  return `data:image/tiff;base64,${btoa(binary)}`
+  return `data:image/tiff;base64,${btoa(binary)}`;
 }

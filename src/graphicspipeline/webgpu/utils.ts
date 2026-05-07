@@ -1,27 +1,30 @@
 // ─── Texture helpers ──────────────────────────────────────────────────────────
 
+import { createTrackedTexture } from "@/core/store/memoryStore";
+
 export function createGpuTexture(
   device: GPUDevice,
   width: number,
   height: number,
   data?: Uint8Array | null,
-  format: GPUTextureFormat = 'rgba8unorm',
-  usage: GPUTextureUsageFlags =
-    GPUTextureUsage.TEXTURE_BINDING |
+  format: GPUTextureFormat = "rgba8unorm",
+  usage: GPUTextureUsageFlags = GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.COPY_DST |
     GPUTextureUsage.COPY_SRC |
     GPUTextureUsage.STORAGE_BINDING |
     GPUTextureUsage.RENDER_ATTACHMENT,
 ): GPUTexture {
-  const texture = device.createTexture({
+  // All renderer textures route through the tracked allocator so the global
+  // buffer-memory cap (Preferences → Memory) is enforced uniformly.
+  const texture = createTrackedTexture(device, {
     size: { width, height },
     format,
     usage,
-  })
+  });
   if (data) {
-    uploadTextureData(device, texture, width, height, data)
+    uploadTextureData(device, texture, width, height, data);
   }
-  return texture
+  return texture;
 }
 
 export function uploadTextureData(
@@ -36,7 +39,7 @@ export function uploadTextureData(
     data as ArrayBufferView<ArrayBuffer>,
     { bytesPerRow: width * 4, rowsPerImage: height },
     { width, height },
-  )
+  );
 }
 
 /**
@@ -48,16 +51,19 @@ export function uploadTexturePatch(
   device: GPUDevice,
   texture: GPUTexture,
   fullWidth: number,
-  x: number, y: number, w: number, h: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
   data: ArrayBufferView,
 ): void {
-  if (w <= 0 || h <= 0) return
+  if (w <= 0 || h <= 0) return;
   device.queue.writeTexture(
     { texture, origin: { x, y } },
     data as ArrayBufferView<ArrayBuffer>,
     { offset: (y * fullWidth + x) * 4, bytesPerRow: fullWidth * 4 },
     { width: w, height: h },
-  )
+  );
 }
 
 export function uploadF32TextureData(
@@ -72,7 +78,7 @@ export function uploadF32TextureData(
     data as unknown as GPUAllowSharedBufferSource,
     { bytesPerRow: width * 16, rowsPerImage: height },
     { width, height },
-  )
+  );
 }
 
 export function uploadF32TexturePatch(
@@ -85,13 +91,13 @@ export function uploadF32TexturePatch(
   h: number,
   data: Float32Array,
 ): void {
-  if (w <= 0 || h <= 0) return
+  if (w <= 0 || h <= 0) return;
   device.queue.writeTexture(
     { texture, origin: { x, y } },
     data as unknown as GPUAllowSharedBufferSource,
     { offset: (y * textureWidth + x) * 16, bytesPerRow: textureWidth * 16 },
     { width: w, height: h },
-  )
+  );
 }
 
 export function uploadR8TextureData(
@@ -106,23 +112,29 @@ export function uploadR8TextureData(
     data as Uint8Array<ArrayBuffer>,
     { bytesPerRow: width, rowsPerImage: height },
     { width, height },
-  )
+  );
 }
 
 // ─── Buffer helpers ───────────────────────────────────────────────────────────
 
-export function createUniformBuffer(device: GPUDevice, size: number): GPUBuffer {
+export function createUniformBuffer(
+  device: GPUDevice,
+  size: number,
+): GPUBuffer {
   return device.createBuffer({
     size,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  })
+  });
 }
 
-export function createStorageBuffer(device: GPUDevice, size: number): GPUBuffer {
+export function createStorageBuffer(
+  device: GPUDevice,
+  size: number,
+): GPUBuffer {
   return device.createBuffer({
     size,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  })
+  });
 }
 
 export function writeUniformBuffer(
@@ -130,32 +142,46 @@ export function writeUniformBuffer(
   buffer: GPUBuffer,
   data: ArrayBuffer | Float32Array | Uint32Array,
 ): void {
-  const src = data instanceof ArrayBuffer ? data : (data.buffer as ArrayBuffer)
-  device.queue.writeBuffer(buffer, 0, src)
+  const src = data instanceof ArrayBuffer ? data : (data.buffer as ArrayBuffer);
+  device.queue.writeBuffer(buffer, 0, src);
 }
 
-export function createVertexBuffer(device: GPUDevice, data: Float32Array): GPUBuffer {
+export function createVertexBuffer(
+  device: GPUDevice,
+  data: Float32Array,
+): GPUBuffer {
   const buffer = device.createBuffer({
     size: data.byteLength,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  })
-  device.queue.writeBuffer(buffer, 0, data as Float32Array<ArrayBuffer>)
-  return buffer
+  });
+  device.queue.writeBuffer(buffer, 0, data as Float32Array<ArrayBuffer>);
+  return buffer;
 }
 
-export function createReadbackBuffer(device: GPUDevice, byteSize: number): GPUBuffer {
+export function createReadbackBuffer(
+  device: GPUDevice,
+  byteSize: number,
+): GPUBuffer {
   return device.createBuffer({
     size: byteSize,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-  })
+  });
 }
 
-export function unpackRows(src: Uint8Array, w: number, h: number, alignedBpr: number): Uint8Array {
-  const packedBpr = w * 4
-  if (alignedBpr === packedBpr) return src.slice()
-  const out = new Uint8Array(packedBpr * h)
+export function unpackRows(
+  src: Uint8Array,
+  w: number,
+  h: number,
+  alignedBpr: number,
+): Uint8Array {
+  const packedBpr = w * 4;
+  if (alignedBpr === packedBpr) return src.slice();
+  const out = new Uint8Array(packedBpr * h);
   for (let row = 0; row < h; row++) {
-    out.set(src.subarray(row * alignedBpr, row * alignedBpr + packedBpr), row * packedBpr)
+    out.set(
+      src.subarray(row * alignedBpr, row * alignedBpr + packedBpr),
+      row * packedBpr,
+    );
   }
-  return out
+  return out;
 }

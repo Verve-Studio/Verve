@@ -1,25 +1,25 @@
-import React from 'react'
-import { DialogButton } from '../../widgets/DialogButton/DialogButton'
-import { ModalDialog } from '../ModalDialog/ModalDialog'
-import type { PixelFormat } from '@/types'
-import styles from './ConvertColorModeDialog.module.scss'
+import React from "react";
+import { DialogButton } from "../../widgets/DialogButton/DialogButton";
+import { ModalDialog } from "../ModalDialog/ModalDialog";
+import type { PixelFormat } from "@/types";
+import styles from "./ConvertColorModeDialog.module.scss";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ConvertColorModeDialogProps {
-  open: boolean
-  fromFormat: PixelFormat
-  toFormat: PixelFormat
-  onConfirm: () => void
-  onCancel: () => void
+  open: boolean;
+  fromFormat: PixelFormat;
+  toFormat: PixelFormat;
+  onConfirm: () => void;
+  onCancel: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatLabel(fmt: PixelFormat): string {
-  if (fmt === 'rgba8')   return 'RGB/8'
-  if (fmt === 'rgba32f') return 'RGB/32 Float'
-  return 'Indexed/8'
+  if (fmt === "rgba8") return "RGB/8";
+  if (fmt === "rgba32f") return "RGB/32 Float";
+  return "Indexed/8";
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -31,15 +31,21 @@ export function ConvertColorModeDialog({
   onConfirm,
   onCancel,
 }: ConvertColorModeDialogProps): React.JSX.Element | null {
-  const showHdrWarning     = fromFormat === 'rgba32f' && toFormat !== 'rgba32f'
-  const showIndexedWarning = toFormat === 'indexed8'
+  const showHdrWarning = fromFormat === "rgba32f" && toFormat !== "rgba32f";
+  const showIndexedWarning = toFormat === "indexed8";
 
   return (
-    <ModalDialog open={open} title="Convert Color Mode" width={400} onClose={onCancel}>
+    <ModalDialog
+      open={open}
+      title="Convert Color Mode"
+      width={400}
+      onClose={onCancel}
+    >
       <div className={styles.body}>
         <p className={styles.message}>
-          Convert all layers from <strong>{formatLabel(fromFormat)}</strong> to{' '}
-          <strong>{formatLabel(toFormat)}</strong>? This operation can be undone.
+          Convert all layers from <strong>{formatLabel(fromFormat)}</strong> to{" "}
+          <strong>{formatLabel(toFormat)}</strong>? This operation can be
+          undone.
         </p>
 
         {showHdrWarning && (
@@ -57,8 +63,10 @@ export function ConvertColorModeDialog({
 
       <div className={styles.footer}>
         <DialogButton onClick={onCancel}>Cancel</DialogButton>
-        <DialogButton onClick={onConfirm} primary>Convert</DialogButton>
+        <DialogButton onClick={onConfirm} primary>
+          Convert
+        </DialogButton>
       </div>
     </ModalDialog>
-  )
+  );
 }

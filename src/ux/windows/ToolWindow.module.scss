@@ -8,6 +8,33 @@
   gap: 8px;
 }
 
+.bodyLocked {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    cursor: not-allowed;
+    z-index: 10;
+  }
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lockedBanner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(vars.$color-text-muted, 0.12);
+  border-radius: 4px;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  margin-bottom: 2px;
+}
+
 .placeholder {
   font-size: vars.$font-size-xs;
   color: vars.$color-text-muted;

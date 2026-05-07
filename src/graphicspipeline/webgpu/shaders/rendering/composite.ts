@@ -1,2 +1,2 @@
-import COMPOSITE_SHADER from './wgsl/composite.wgsl?raw'
-export { COMPOSITE_SHADER }
+import COMPOSITE_SHADER from "./wgsl/composite.wgsl?raw";
+export { COMPOSITE_SHADER };

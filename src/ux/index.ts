@@ -1,93 +1,58 @@
-export { Canvas } from './main/Canvas/Canvas'
-export type { CanvasHandle } from './main/Canvas/Canvas'
-export { HistoryPanel } from './main/RightPanel/History/HistoryPanel'
-export { AdjustmentPanel } from './windows/ToolWindow'
-export { BrightnessContrastPanel } from './windows/adjustments/BrightnessContrastPanel/BrightnessContrastPanel'
-export { HueSaturationPanel } from './windows/adjustments/HueSaturationPanel/HueSaturationPanel'
-export { ColorVibrancePanel } from './windows/adjustments/ColorVibrancePanel/ColorVibrancePanel'
-export { ColorBalancePanel } from './windows/adjustments/ColorBalancePanel/ColorBalancePanel'
-export { BlackAndWhitePanel } from './windows/adjustments/BlackAndWhitePanel/BlackAndWhitePanel'
-export { ColorTemperaturePanel } from './windows/adjustments/ColorTemperaturePanel/ColorTemperaturePanel'
-export { InvertPanel } from './windows/adjustments/InvertPanel/InvertPanel'
-export { SelectiveColorPanel } from './windows/adjustments/SelectiveColorPanel/SelectiveColorPanel'
-export { ColorGradingPanel } from './windows/adjustments/ColorGradingPanel/ColorGradingPanel'
-export { ReduceColorsPanel } from './windows/adjustments/ReduceColorsPanel/ReduceColorsPanel'
-export { ColorDitheringPanel } from './windows/adjustments/ColorDitheringPanel/ColorDitheringPanel'
-export { BloomOptions } from './windows/effects/BloomOptions/BloomOptions'
-export { ChromaticAberrationOptions } from './windows/effects/ChromaticAberrationOptions/ChromaticAberrationOptions'
-export { HalationOptions } from './windows/effects/HalationOptions/HalationOptions'
-export { ColorKeyPanel } from './windows/effects/ColorKeyPanel/ColorKeyPanel'
-export { DropShadowOptions } from './windows/effects/DropShadowOptions/DropShadowOptions'
-export { GlowOptions } from './windows/effects/GlowOptions/GlowOptions'
-export { OutlineOptions } from './windows/effects/OutlineOptions/OutlineOptions'
-export { HalftoneOptions } from './windows/effects/HalftoneOptions/HalftoneOptions'
-export { BevelOptions } from './windows/effects/BevelOptions/BevelOptions'
-export { InnerShadowOptions } from './windows/effects/InnerShadowOptions/InnerShadowOptions'
-export { InnerGlowOptions } from './windows/effects/InnerGlowOptions/InnerGlowOptions'
-export { GaussianBlurPanel } from './windows/filters/GaussianBlurPanel/GaussianBlurPanel'
-export { BoxBlurPanel } from './windows/filters/BoxBlurPanel/BoxBlurPanel'
-export { RadialBlurPanel } from './windows/filters/RadialBlurPanel/RadialBlurPanel'
-export { MotionBlurPanel } from './windows/filters/MotionBlurPanel/MotionBlurPanel'
-export { RemoveMotionBlurPanel } from './windows/filters/RemoveMotionBlurPanel/RemoveMotionBlurPanel'
-export { LensBlurPanel } from './windows/filters/LensBlurPanel/LensBlurPanel'
-export { SharpenPanel } from './windows/filters/SharpenPanel/SharpenPanel'
-export { UnsharpMaskPanel } from './windows/filters/UnsharpMaskPanel/UnsharpMaskPanel'
-export { SmartSharpenPanel } from './windows/filters/SmartSharpenPanel/SmartSharpenPanel'
-export { AddNoisePanel } from './windows/filters/AddNoisePanel/AddNoisePanel'
-export { FilmGrainPanel } from './windows/filters/FilmGrainPanel/FilmGrainPanel'
-export { MedianFilterPanel } from './windows/filters/MedianFilterPanel/MedianFilterPanel'
-export { BilateralFilterPanel } from './windows/filters/BilateralFilterPanel/BilateralFilterPanel'
-export { ReduceNoisePanel } from './windows/filters/ReduceNoisePanel/ReduceNoisePanel'
-export { CloudsPanel } from './windows/filters/CloudsPanel/CloudsPanel'
-export { PixelatePanel } from './windows/filters/PixelatePanel/PixelatePanel'
-export { SeamlessTexturePanel } from './windows/filters/SeamlessTexturePanel/SeamlessTexturePanel'
-export { ColorWheelWidget } from './widgets/ColorWheelWidget/ColorWheelWidget'
-export { SliderInput } from './widgets/SliderInput/SliderInput'
-export { ToolWindow } from './widgets/ToolWindow/ToolWindow'
-export { ColorSwatch } from './widgets/ColorSwatch/ColorSwatch'
-export type { ColorSwatchProps } from './widgets/ColorSwatch/ColorSwatch'
-export { EmbedColorPicker } from './widgets/EmbedColorPicker/EmbedColorPicker'
-export type { EmbedColorPickerProps } from './widgets/EmbedColorPicker/EmbedColorPicker'
-export { IndexedPaletteColorPicker } from './widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker'
-export type { IndexedPaletteColorPickerProps } from './widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker'
-export { ColorPicker } from './main/RightPanel/ColorPicker/ColorPicker'
-export { Layers as LayerPanel } from './main/RightPanel/Layers/Layers'
-export { SwatchPanel } from './main/RightPanel/Swatch/SwatchPanel'
-export { RightPanel } from './main/RightPanel/RightPanel'
-export { StatusBar } from './main/StatusBar/StatusBar'
-export { TabBar } from './main/TabBar/TabBar'
-export type { TabInfo } from './main/TabBar/TabBar'
-export { Toolbar } from './main/Toolbar/Toolbar'
-export { TopBar } from './main/TopBar/TopBar'
-export { DialogButton } from './widgets/DialogButton/DialogButton'
-export { ModalDialog } from './modals/ModalDialog/ModalDialog'
-export type { ModalDialogProps } from './modals/ModalDialog/ModalDialog'
-export { NewImageDialog } from './modals/NewImageDialog/NewImageDialog'
-export { ExportDialog } from './modals/ExportDialog/ExportDialog'
-export type { ExportSettings } from './modals/ExportDialog/ExportDialog'
-export { ResizeImageDialog } from './modals/ResizeImageDialog/ResizeImageDialog'
-export type { ResizeImageSettings } from './modals/ResizeImageDialog/ResizeImageDialog'
-export { ResizeCanvasDialog } from './modals/ResizeCanvasDialog/ResizeCanvasDialog'
-export type { ResizeCanvasSettings } from './modals/ResizeCanvasDialog/ResizeCanvasDialog'
-export { AboutDialog } from './modals/AboutDialog/AboutDialog'
-export { HdrLdrExportWarningDialog } from './modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog'
-export { KeyboardShortcutsDialog } from './modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog'
-export { SystemInfoDialog } from './modals/SystemInfoDialog/SystemInfoDialog'
-export { SizeInputs } from './widgets/SizeInputs/SizeInputs'
-export type { SizeInputsProps } from './widgets/SizeInputs/SizeInputs'
-export { LensFlareDialog } from './windows/filters/LensFlareDialog/LensFlareDialog'
-export type { LensFlareDialogProps } from './windows/filters/LensFlareDialog/LensFlareDialog'
-export { GeneratePaletteDialog } from './modals/GeneratePaletteDialog/GeneratePaletteDialog'
-export type { GeneratePaletteDialogProps } from './modals/GeneratePaletteDialog/GeneratePaletteDialog'
-export { ContentAwareFillProgress } from './modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress'
-export type { ContentAwareFillProgressProps } from './modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress'
-export { ContentAwareFillOptionsDialog } from './modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog'
-export type { ContentAwareFillOptionsDialogProps } from './modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog'
-export { PixelBrushGallery } from './widgets/PixelBrushGallery/PixelBrushGallery'
-export type { PixelBrushGalleryProps } from './widgets/PixelBrushGallery/PixelBrushGallery'
-export { PixelBrushesModal } from './modals/PixelBrushesModal/PixelBrushesModal'
-export { ConvertColorModeDialog } from './modals/ConvertColorModeDialog/ConvertColorModeDialog'
-export type { ConvertColorModeDialogProps } from './modals/ConvertColorModeDialog/ConvertColorModeDialog'
-export type { PixelBrushesModalProps } from './modals/PixelBrushesModal/PixelBrushesModal'
-export { ColorDitheringSetupModal } from './modals/ColorDitheringSetupModal/ColorDitheringSetupModal'
-export type { ColorDitheringSetupModalProps } from './modals/ColorDitheringSetupModal/ColorDitheringSetupModal'
+export { Canvas } from "./main/Canvas/Canvas";
+export type { CanvasHandle } from "./main/Canvas/Canvas";
+export { HistoryPanel } from "./main/RightPanel/History/HistoryPanel";
+export { AdjustmentPanel } from "./windows/ToolWindow";
+export { ColorWheelWidget } from "./widgets/ColorWheelWidget/ColorWheelWidget";
+export { SliderInput } from "./widgets/SliderInput/SliderInput";
+export { ToolWindow } from "./widgets/ToolWindow/ToolWindow";
+export { CurveEditor } from "./widgets/CurveEditor/CurveEditor";
+export {
+  BrushSettingsPanel,
+  BrushSettingsPanelMount,
+} from "./windows/brush/BrushSettingsPanel/BrushSettingsPanel";
+export { PaintBrushesModal } from "./modals/PaintBrushesModal/PaintBrushesModal";
+export { ColorSwatch } from "./widgets/ColorSwatch/ColorSwatch";
+export type { ColorSwatchProps } from "./widgets/ColorSwatch/ColorSwatch";
+export { EmbedColorPicker } from "./widgets/EmbedColorPicker/EmbedColorPicker";
+export type { EmbedColorPickerProps } from "./widgets/EmbedColorPicker/EmbedColorPicker";
+export { IndexedPaletteColorPicker } from "./widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
+export type { IndexedPaletteColorPickerProps } from "./widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
+export { ColorPicker } from "./main/RightPanel/ColorPicker/ColorPicker";
+export { Layers as LayerPanel } from "./main/RightPanel/Layers/Layers";
+export { SwatchPanel } from "./main/RightPanel/Swatch/SwatchPanel";
+export { RightPanel } from "./main/RightPanel/RightPanel";
+export { StatusBar } from "./main/StatusBar/StatusBar";
+export { TabBar } from "./main/TabBar/TabBar";
+export type { TabInfo } from "./main/TabBar/TabBar";
+export { Toolbar } from "./main/Toolbar/Toolbar";
+export { TopBar } from "./main/TopBar/TopBar";
+export { DialogButton } from "./widgets/DialogButton/DialogButton";
+export { ModalDialog } from "./modals/ModalDialog/ModalDialog";
+export type { ModalDialogProps } from "./modals/ModalDialog/ModalDialog";
+export { NewImageDialog } from "./modals/NewImageDialog/NewImageDialog";
+export { ExportDialog } from "./modals/ExportDialog/ExportDialog";
+export type { ExportSettings } from "./modals/ExportDialog/ExportDialog";
+export { ResizeImageDialog } from "./modals/ResizeImageDialog/ResizeImageDialog";
+export type { ResizeImageSettings } from "./modals/ResizeImageDialog/ResizeImageDialog";
+export { ResizeCanvasDialog } from "./modals/ResizeCanvasDialog/ResizeCanvasDialog";
+export type { ResizeCanvasSettings } from "./modals/ResizeCanvasDialog/ResizeCanvasDialog";
+export { AboutDialog } from "./modals/AboutDialog/AboutDialog";
+export { HdrLdrExportWarningDialog } from "./modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog";
+export { KeyboardShortcutsDialog } from "./modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog";
+export { SystemInfoDialog } from "./modals/SystemInfoDialog/SystemInfoDialog";
+export { SizeInputs } from "./widgets/SizeInputs/SizeInputs";
+export type { SizeInputsProps } from "./widgets/SizeInputs/SizeInputs";
+export { GeneratePaletteDialog } from "./modals/GeneratePaletteDialog/GeneratePaletteDialog";
+export type { GeneratePaletteDialogProps } from "./modals/GeneratePaletteDialog/GeneratePaletteDialog";
+export { ContentAwareFillProgress } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress";
+export type { ContentAwareFillProgressProps } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress";
+export { ContentAwareFillOptionsDialog } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog";
+export type { ContentAwareFillOptionsDialogProps } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog";
+export { PixelBrushGallery } from "./widgets/PixelBrushGallery/PixelBrushGallery";
+export type { PixelBrushGalleryProps } from "./widgets/PixelBrushGallery/PixelBrushGallery";
+export { PixelBrushesModal } from "./modals/PixelBrushesModal/PixelBrushesModal";
+export { ConvertColorModeDialog } from "./modals/ConvertColorModeDialog/ConvertColorModeDialog";
+export type { ConvertColorModeDialogProps } from "./modals/ConvertColorModeDialog/ConvertColorModeDialog";
+export type { PixelBrushesModalProps } from "./modals/PixelBrushesModal/PixelBrushesModal";
+export { ColorDitheringSetupModal } from "./modals/ColorDitheringSetupModal/ColorDitheringSetupModal";
+export type { ColorDitheringSetupModalProps } from "./modals/ColorDitheringSetupModal/ColorDitheringSetupModal";

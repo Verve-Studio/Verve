@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react'
-import { ModalDialog } from '@/ux/modals/ModalDialog/ModalDialog'
-import { DialogButton } from '@/ux/widgets/DialogButton/DialogButton'
-import styles from './ContentAwareFillOptionsDialog.module.scss'
+import React, { useState, useEffect } from "react";
+import { ModalDialog } from "@/ux/modals/ModalDialog/ModalDialog";
+import { DialogButton } from "@/ux/widgets/DialogButton/DialogButton";
+import styles from "./ContentAwareFillOptionsDialog.module.scss";
 
 export interface ContentAwareFillOptionsDialogProps {
-  open: boolean
-  mode: 'fill' | 'delete'
-  onConfirm: (samplingRadius: number) => void
-  onCancel: () => void
+  open: boolean;
+  mode: "fill" | "delete";
+  onConfirm: (samplingRadius: number) => void;
+  onCancel: () => void;
 }
 
 export function ContentAwareFillOptionsDialog({
@@ -16,32 +16,27 @@ export function ContentAwareFillOptionsDialog({
   onConfirm,
   onCancel,
 }: ContentAwareFillOptionsDialogProps): React.JSX.Element | null {
-  const [radius, setRadius] = useState(200)
+  const [radius, setRadius] = useState(200);
 
   useEffect(() => {
-    if (open) setRadius(200)
-  }, [open])
+    if (open) setRadius(200);
+  }, [open]);
 
   const handleSubmit = (e: React.FormEvent): void => {
-    e.preventDefault()
-    onConfirm(radius)
-  }
+    e.preventDefault();
+    onConfirm(radius);
+  };
 
-  const title = mode === 'fill' ? 'Content-Aware Fill' : 'Content-Aware Delete'
-  const primaryLabel = mode === 'fill' ? 'Fill' : 'Delete'
+  const title = mode === "fill" ? "Content-Aware Fill" : "Content-Aware Delete";
+  const primaryLabel = mode === "fill" ? "Fill" : "Delete";
 
   return (
-    <ModalDialog
-      open={open}
-      title={title}
-      width={296}
-      onClose={onCancel}
-    >
+    <ModalDialog open={open} title={title} width={296} onClose={onCancel}>
       <form onSubmit={handleSubmit}>
         <div className={styles.body}>
           <p className={styles.description}>
-            Only pixels within this distance of the selection boundary will be used as source material.
-            Set to 0 to sample the entire image.
+            Only pixels within this distance of the selection boundary will be
+            used as source material. Set to 0 to sample the entire image.
           </p>
           <div className={styles.fieldRow}>
             <span className={styles.fieldLabel}>Sampling Radius</span>
@@ -52,7 +47,9 @@ export function ContentAwareFillOptionsDialog({
               min={0}
               step={1}
               value={radius}
-              onChange={e => setRadius(Math.max(0, parseInt(e.target.value, 10) || 0))}
+              onChange={(e) =>
+                setRadius(Math.max(0, parseInt(e.target.value, 10) || 0))
+              }
               autoFocus
             />
             <span className={styles.unit}>px</span>
@@ -62,10 +59,14 @@ export function ContentAwareFillOptionsDialog({
           )}
         </div>
         <div className={styles.footer}>
-          <DialogButton onClick={onCancel} type="button">Cancel</DialogButton>
-          <DialogButton primary type="submit">{primaryLabel}</DialogButton>
+          <DialogButton onClick={onCancel} type="button">
+            Cancel
+          </DialogButton>
+          <DialogButton primary type="submit">
+            {primaryLabel}
+          </DialogButton>
         </div>
       </form>
     </ModalDialog>
-  )
+  );
 }

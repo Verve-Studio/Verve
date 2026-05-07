@@ -1,0 +1,121 @@
+import { effectRegistry } from "./effectRegistry";
+import { PixelateEffect } from "./Pixelate/PixelateEffect";
+import { BrightnessContrastEffect } from "./BrightnessContrast/BrightnessContrastEffect";
+import { BloomEffect } from "./Bloom/BloomEffect";
+import { GaussianBlurEffect } from "./GaussianBlur/GaussianBlurEffect";
+import { BoxBlurEffect } from "./BoxBlur/BoxBlurEffect";
+import { RadialBlurEffect } from "./RadialBlur/RadialBlurEffect";
+import { MotionBlurEffect } from "./MotionBlur/MotionBlurEffect";
+import { RemoveMotionBlurEffect } from "./RemoveMotionBlur/RemoveMotionBlurEffect";
+import { LensBlurEffect } from "./LensBlur/LensBlurEffect";
+import { SharpenEffect } from "./Sharpen/SharpenEffect";
+import { SharpenMoreEffect } from "./SharpenMore/SharpenMoreEffect";
+import { UnsharpMaskEffect } from "./UnsharpMask/UnsharpMaskEffect";
+import { SmartSharpenEffect } from "./SmartSharpen/SmartSharpenEffect";
+import { AddNoiseEffect } from "./AddNoise/AddNoiseEffect";
+import { FilmGrainEffect } from "./FilmGrain/FilmGrainEffect";
+import { MedianFilterEffect } from "./MedianFilter/MedianFilterEffect";
+import { BilateralFilterEffect } from "./BilateralFilter/BilateralFilterEffect";
+import { ReduceNoiseEffect } from "./ReduceNoise/ReduceNoiseEffect";
+import { CloudsEffect } from "./Clouds/CloudsEffect";
+import { OffsetEffect } from "./Offset/OffsetEffect";
+import { SeamlessTextureEffect } from "./SeamlessTexture/SeamlessTextureEffect";
+import { HueSaturationEffect } from "./HueSaturation/HueSaturationEffect";
+import { ColorVibranceEffect } from "./ColorVibrance/ColorVibranceEffect";
+import { ColorBalanceEffect } from "./ColorBalance/ColorBalanceEffect";
+import { BlackAndWhiteEffect } from "./BlackAndWhite/BlackAndWhiteEffect";
+import { ColorTemperatureEffect } from "./ColorTemperature/ColorTemperatureEffect";
+import { HalftoneEffect } from "./Halftone/HalftoneEffect";
+import { ColorKeyEffect } from "./ColorKey/ColorKeyEffect";
+import { ChromaticAberrationEffect } from "./ChromaticAberration/ChromaticAberrationEffect";
+import { VignetteEffect } from "./Vignette/VignetteEffect";
+import { LensDistortionEffect } from "./LensDistortion/LensDistortionEffect";
+import { PinchEffect } from "./Pinch/PinchEffect";
+import { PolarCoordinatesEffect } from "./PolarCoordinates/PolarCoordinatesEffect";
+import { RippleEffect } from "./Ripple/RippleEffect";
+import { ShearEffect } from "./Shear/ShearEffect";
+import { TwirlEffect } from "./Twirl/TwirlEffect";
+import { DisplaceEffect } from "./Displace/DisplaceEffect";
+import { ColorInvertEffect } from "./ColorInvert/ColorInvertEffect";
+import { SelectiveColorEffect } from "./SelectiveColor/SelectiveColorEffect";
+import { ChannelMixerEffect } from "./ChannelMixer/ChannelMixerEffect";
+import { AutoMatchEffect } from "./AutoMatch/AutoMatchEffect";
+import { CurvesEffect } from "./Curves/CurvesEffect";
+import { ColorGradingEffect } from "./ColorGrading/ColorGradingEffect";
+import { ReduceColorsEffect } from "./ReduceColors/ReduceColorsEffect";
+import { ColorDitheringEffect } from "./ColorDithering/ColorDitheringEffect";
+import { HalationEffect } from "./Halation/HalationEffect";
+import { DropShadowEffect } from "./DropShadow/DropShadowEffect";
+import { GlowEffect } from "./Glow/GlowEffect";
+import { OutlineEffect } from "./Outline/OutlineEffect";
+import { BevelEffect } from "./Bevel/BevelEffect";
+import { InnerShadowEffect } from "./InnerShadow/InnerShadowEffect";
+import { InnerGlowEffect } from "./InnerGlow/InnerGlowEffect";
+import { LensFlareEffect } from "./LensFlare/LensFlareEffect";
+
+// Eager registration — importing this module is the single side-effecting step
+// that makes registered effects reachable through the plan builder, encoder,
+// and panel host. Add new effects here.
+effectRegistry.register(PixelateEffect);
+effectRegistry.register(BrightnessContrastEffect);
+effectRegistry.register(BloomEffect);
+effectRegistry.register(GaussianBlurEffect);
+effectRegistry.register(BoxBlurEffect);
+effectRegistry.register(RadialBlurEffect);
+effectRegistry.register(MotionBlurEffect);
+effectRegistry.register(RemoveMotionBlurEffect);
+effectRegistry.register(LensBlurEffect);
+effectRegistry.register(SharpenEffect);
+effectRegistry.register(SharpenMoreEffect);
+effectRegistry.register(UnsharpMaskEffect);
+effectRegistry.register(SmartSharpenEffect);
+effectRegistry.register(AddNoiseEffect);
+effectRegistry.register(FilmGrainEffect);
+effectRegistry.register(MedianFilterEffect);
+effectRegistry.register(BilateralFilterEffect);
+effectRegistry.register(ReduceNoiseEffect);
+effectRegistry.register(CloudsEffect);
+effectRegistry.register(OffsetEffect);
+effectRegistry.register(SeamlessTextureEffect);
+effectRegistry.register(HueSaturationEffect);
+effectRegistry.register(ColorVibranceEffect);
+effectRegistry.register(ColorBalanceEffect);
+effectRegistry.register(BlackAndWhiteEffect);
+effectRegistry.register(ColorTemperatureEffect);
+effectRegistry.register(HalftoneEffect);
+effectRegistry.register(ColorKeyEffect);
+effectRegistry.register(ChromaticAberrationEffect);
+effectRegistry.register(VignetteEffect);
+effectRegistry.register(LensDistortionEffect);
+effectRegistry.register(PinchEffect);
+effectRegistry.register(PolarCoordinatesEffect);
+effectRegistry.register(RippleEffect);
+effectRegistry.register(ShearEffect);
+effectRegistry.register(TwirlEffect);
+effectRegistry.register(DisplaceEffect);
+effectRegistry.register(ColorInvertEffect);
+effectRegistry.register(SelectiveColorEffect);
+effectRegistry.register(ChannelMixerEffect);
+effectRegistry.register(AutoMatchEffect);
+effectRegistry.register(CurvesEffect);
+effectRegistry.register(ColorGradingEffect);
+effectRegistry.register(ReduceColorsEffect);
+effectRegistry.register(ColorDitheringEffect);
+effectRegistry.register(HalationEffect);
+effectRegistry.register(DropShadowEffect);
+effectRegistry.register(GlowEffect);
+effectRegistry.register(OutlineEffect);
+effectRegistry.register(BevelEffect);
+effectRegistry.register(InnerShadowEffect);
+effectRegistry.register(InnerGlowEffect);
+effectRegistry.register(LensFlareEffect);
+
+export { effectRegistry } from "./effectRegistry";
+export type {
+  IPipelineEffect,
+  MenuPlacement,
+  MenuRoot,
+  PanelProps,
+  PlanContext,
+  EncodeContext,
+} from "./IPipelineEffect";

@@ -1,5 +1,5 @@
-import type { GpuLayer } from '@/graphicspipeline/webgpu/rendering/WebGPURenderer'
-import type { RGBAColor } from '@/types'
+import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { RGBAColor } from "@/types";
 
 // ─── Palette resolution ───────────────────────────────────────────────────────
 
@@ -15,22 +15,22 @@ export function resolveNearestPaletteIndex(
   a: number,
   palette: readonly RGBAColor[],
 ): number {
-  if (palette.length === 0) return 255
-  let bestIdx = 0
-  let bestDist = Infinity
+  if (palette.length === 0) return 255;
+  let bestIdx = 0;
+  let bestDist = Infinity;
   for (let i = 0; i < palette.length; i++) {
-    const p = palette[i]
-    const dr = r - p.r
-    const dg = g - p.g
-    const db = b - p.b
-    const da = a - p.a
-    const dist = dr * dr + dg * dg + db * db + da * da
+    const p = palette[i];
+    const dr = r - p.r;
+    const dg = g - p.g;
+    const db = b - p.b;
+    const da = a - p.a;
+    const dist = dr * dr + dg * dg + db * db + da * da;
     if (dist < bestDist) {
-      bestDist = dist
-      bestIdx = i
+      bestDist = dist;
+      bestIdx = i;
     }
   }
-  return bestIdx
+  return bestIdx;
 }
 
 // ─── Pixel write helpers ──────────────────────────────────────────────────────
@@ -50,16 +50,17 @@ export function writeIndexToLayer(
   tiledH?: number,
 ): boolean {
   if (tiledW !== undefined && tiledH !== undefined) {
-    canvasX = ((canvasX % tiledW) + tiledW) % tiledW
-    canvasY = ((canvasY % tiledH) + tiledH) % tiledH
+    canvasX = ((canvasX % tiledW) + tiledW) % tiledW;
+    canvasY = ((canvasY % tiledH) + tiledH) % tiledH;
   }
-  if (canvasX < 0 || canvasY < 0) return false
-  if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return false
-  const lx = canvasX - layer.offsetX
-  const ly = canvasY - layer.offsetY
-  if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight) return false
-  ;(layer.data as Uint8Array)[ly * layer.layerWidth + lx] = index
-  return true
+  if (canvasX < 0 || canvasY < 0) return false;
+  if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return false;
+  const lx = canvasX - layer.offsetX;
+  const ly = canvasY - layer.offsetY;
+  if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)
+    return false;
+  (layer.data as Uint8Array)[ly * layer.layerWidth + lx] = index;
+  return true;
 }
 
 /**
@@ -76,42 +77,45 @@ export function stampIndexedShape(
   cy: number,
   index: number,
   size: number,
-  shape: 'round' | 'square' | 'diamond',
+  shape: "round" | "square" | "diamond",
   touched: Map<number, true>,
   sel?: { mask: Uint8Array; width: number },
   tiledW?: number,
   tiledH?: number,
 ): void {
-  const half = (size - 1) / 2
-  const x0 = Math.floor(cx - half)
-  const x1 = Math.floor(cx + half)
-  const y0 = Math.floor(cy - half)
-  const y1 = Math.floor(cy + half)
+  const half = (size - 1) / 2;
+  const x0 = Math.floor(cx - half);
+  const x1 = Math.floor(cx + half);
+  const y0 = Math.floor(cy - half);
+  const y1 = Math.floor(cy + half);
 
   for (let py = y0; py <= y1; py++) {
     for (let px = x0; px <= x1; px++) {
-      let inside = false
-      if (shape === 'square') {
-        inside = true
-      } else if (shape === 'round') {
-        const dx = px - cx + 0.5, dy = py - cy + 0.5
-        inside = dx * dx + dy * dy <= half * half + half + 0.25
+      let inside = false;
+      if (shape === "square") {
+        inside = true;
+      } else if (shape === "round") {
+        const dx = px - cx + 0.5,
+          dy = py - cy + 0.5;
+        inside = dx * dx + dy * dy <= half * half + half + 0.25;
       } else {
         // diamond: Manhattan distance
-        const dx = Math.abs(px - cx + 0.5), dy = Math.abs(py - cy + 0.5)
-        inside = dx + dy <= half + 0.5
+        const dx = Math.abs(px - cx + 0.5),
+          dy = Math.abs(py - cy + 0.5);
+        inside = dx + dy <= half + 0.5;
       }
-      if (!inside) continue
+      if (!inside) continue;
 
-      let tx = px, ty = py
+      let tx = px,
+        ty = py;
       if (tiledW !== undefined && tiledH !== undefined) {
-        tx = ((tx % tiledW) + tiledW) % tiledW
-        ty = ((ty % tiledH) + tiledH) % tiledH
+        tx = ((tx % tiledW) + tiledW) % tiledW;
+        ty = ((ty % tiledH) + tiledH) % tiledH;
       }
-      const key = ty * 65536 + tx
-      if (touched.has(key)) continue
+      const key = ty * 65536 + tx;
+      if (touched.has(key)) continue;
       if (writeIndexToLayer(layer, px, py, index, sel, tiledW, tiledH)) {
-        touched.set(key, true)
+        touched.set(key, true);
       }
     }
   }
@@ -127,18 +131,18 @@ export function expandIndicesToRgba(
   indexData: Uint8Array,
   palette: readonly RGBAColor[],
 ): Uint8Array {
-  const out = new Uint8Array(indexData.length * 4)
+  const out = new Uint8Array(indexData.length * 4);
   for (let i = 0; i < indexData.length; i++) {
-    const idx = indexData[i]
+    const idx = indexData[i];
     if (idx < palette.length) {
-      const p = palette[idx]
-      const di = i * 4
-      out[di]     = p.r
-      out[di + 1] = p.g
-      out[di + 2] = p.b
-      out[di + 3] = p.a
+      const p = palette[idx];
+      const di = i * 4;
+      out[di] = p.r;
+      out[di + 1] = p.g;
+      out[di + 2] = p.b;
+      out[di + 3] = p.a;
     }
     // else: leaves [0,0,0,0] — transparent for void/out-of-range
   }
-  return out
+  return out;
 }
