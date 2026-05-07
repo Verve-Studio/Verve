@@ -2,7 +2,7 @@ import type { VignetteAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { VignetteOptions } from "./VignetteOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type VignetteOp = Extract<AdjustmentRenderOp, { kind: "vignette" }>;
 

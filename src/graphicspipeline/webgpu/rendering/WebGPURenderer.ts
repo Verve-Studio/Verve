@@ -9,8 +9,7 @@ import {
   createVertexBuffer,
   writeUniformBuffer,
 } from "../utils";
-import { AdjustmentEncoder } from "../AdjustmentEncoder";
-import { initFilterCompute } from "../compute/filterCompute";
+import { EffectEncoder } from "../EffectEncoder";
 import { initGrabCutCompute } from "../compute/grabcutCompute";
 import { displayStore, OPERATOR_SHADER_ID } from "@/core/store/displayStore";
 import {
@@ -64,7 +63,7 @@ export class WebGPURenderer {
   private readonly hdrUniformBuffer: GPUBuffer; // 16 bytes: exposureLinear, isFp32, operator u32, _pad
 
   // Adjustment compute encoder (owns all 25 compute pipelines + texture caches)
-  private readonly adjEncoder: AdjustmentEncoder;
+  private readonly adjEncoder: EffectEncoder;
 
   // Shared vertex/tex-coord buffers
   private readonly texCoordBuffer: GPUBuffer;
@@ -684,14 +683,13 @@ export class WebGPURenderer {
     });
 
     // Adjustment compute encoder (owns all 25 compute pipelines + texture caches)
-    this.adjEncoder = new AdjustmentEncoder(device, pixelWidth, pixelHeight);
-
-    initFilterCompute(
-      this.device,
-      this.pixelWidth,
-      this.pixelHeight,
+    this.adjEncoder = new EffectEncoder(
+      device,
+      pixelWidth,
+      pixelHeight,
       this.internalFormat,
     );
+
     initGrabCutCompute(this.device);
   }
 
@@ -2742,7 +2740,7 @@ export class WebGPURenderer {
   /**
    * Run the full effect chain for an adjustment-group entry: composite the
    * base layer into the shared groupPing/groupPong textures, then iterate
-   * each visible op through the {@link AdjustmentEncoder}, ping-ponging the
+   * each visible op through the {@link EffectEncoder}, ping-ponging the
    * src/dst textures between passes. Returns whichever ping-pong holds the
    * final adjusted output.
    */

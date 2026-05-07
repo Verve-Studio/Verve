@@ -2,7 +2,7 @@ import type { ColorInvertAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { InvertPanel } from "./InvertPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import type { AdjBinding } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import type { AdjBinding } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 const INVERT_BINDINGS: AdjBinding[] = ["tex", "sampler", "tex", "uniform"];
 
@@ -36,12 +36,12 @@ export const ColorInvertEffect: IPipelineEffect<
     const maskFlagsBuf = engine.runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
-    engine.runtime.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
+    engine.runtime.encodeRenderPass(encoder, pipeline, dstTex, [
       { binding: 0, resource: srcTex.createView() },
       { binding: 1, resource: engine.runtime.adjSampler },
       { binding: 2, resource: dummyMask.createView() },
       { binding: 3, resource: { buffer: maskFlagsBuf } },
-    ]);
+    ], pair.bgl);
   },
 
   Panel: InvertPanel,

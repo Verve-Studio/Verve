@@ -2,7 +2,7 @@ import type { BrightnessContrastAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { BrightnessContrastPanel } from "./BrightnessContrastPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type BrightnessContrastOp = Extract<
   AdjustmentRenderOp,

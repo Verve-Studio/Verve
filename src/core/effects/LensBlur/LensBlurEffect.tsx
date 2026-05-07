@@ -1,6 +1,5 @@
 import type { LensBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { LensBlurPanel } from "./LensBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -88,9 +87,9 @@ export const LensBlurEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
-    const pair = rt.getPipelinePair("filter-lens-blur", "fs_lens_blur");
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
+    const pair = rt.getRenderPipelinePair("filter-lens-blur", "fs_lens_blur");
     const key = `${entry.radius}|${entry.bladeCount}|${entry.bladeCurvature}|${entry.rotation}`;
     if (cachedKernelKey !== key) {
       if (cachedKernelBuf) {
@@ -123,12 +122,12 @@ export const LensBlurEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(pair, dstTex),
+      dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: paramsBuf } },
         { binding: 3, resource: { buffer: cachedKernelBuf! } },
       ],
-      dstTex,
     );
   },
 

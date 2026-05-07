@@ -1,6 +1,5 @@
 import type { BilateralFilterAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { BilateralFilterPanel } from "./BilateralFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -31,9 +30,9 @@ export const BilateralFilterEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
-    const pair = rt.getPipelinePair("filter-bilateral", "fs_bilateral");
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
+    const pair = rt.getRenderPipelinePair("filter-bilateral", "fs_bilateral");
     const buf = new ArrayBuffer(16);
     const dv = new DataView(buf);
     dv.setUint32(0, entry.radius, true);
@@ -44,11 +43,11 @@ export const BilateralFilterEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(pair, dstTex),
+      dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: paramsBuf } },
       ],
-      dstTex,
     );
   },
 

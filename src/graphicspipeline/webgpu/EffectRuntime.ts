@@ -1,16 +1,18 @@
-import {
-  createUniformBuffer,
-  writeUniformBuffer,
-} from "./utils";
+import { createUniformBuffer, writeUniformBuffer } from "./utils";
 import { getShader } from "@/core/effects/shaderLoader";
+import {
+  createTrackedTexture,
+  destroyTrackedTexture,
+} from "@/core/store/memoryStore";
 import type { GpuLayer } from "./types";
 
 // ─── Pipeline pair type ──────────────────────────────────────────────────────
 
-export type AdjPipelinePair = {
+export type EffectPipelinePair = {
   s8: GPURenderPipeline;
   f32: GPURenderPipeline;
-  bgl: GPUBindGroupLayout;
+  /** Set only when the pipeline was built with an explicit BGL. */
+  bgl?: GPUBindGroupLayout;
 };
 
 // ─── Binding kinds ───────────────────────────────────────────────────────────
@@ -95,26 +97,31 @@ function buildBGL(
   });
 }
 
-// ─── AdjustmentRuntime ───────────────────────────────────────────────────────
+// ─── EffectRuntime ───────────────────────────────────────────────────────────
 
 /**
- * Generic per-frame service used by adjustment / effect Effects to encode
- * WebGPU work. Owns lazy pipeline caches, samplers, and the pending-destroy
- * list. Effects fetch pipelines by `(shaderName, fragmentEntry, [bindings | format])`
+ * Generic per-frame service shared by every effect (adjustment, real-time
+ * effect, and filter). Owns lazy pipeline / module caches, samplers, a shared
+ * rgba8 scratch texture, and pending-destroy lists for buffers and textures.
+ *
+ * Effects fetch pipelines by `(shaderName, fragmentEntry, [bindings | format])`
  * keys instead of storing them on per-effect fields.
  */
-export class AdjustmentRuntime {
+export class EffectRuntime {
   readonly device: GPUDevice;
   readonly pixelWidth: number;
   readonly pixelHeight: number;
   readonly adjSampler: GPUSampler;
   readonly lutSampler: GPUSampler;
+  readonly intermediate: GPUTexture;
 
   /** Buffers accumulated during command encoding; flushed after submit. */
   pendingDestroyBuffers: GPUBuffer[] = [];
+  /** Textures accumulated during command encoding; flushed after submit. */
+  pendingDestroyTextures: GPUTexture[] = [];
 
   private readonly modules = new Map<string, GPUShaderModule>();
-  private readonly pairs = new Map<string, AdjPipelinePair>();
+  private readonly pairs = new Map<string, EffectPipelinePair>();
   private readonly singlesWithBGL = new Map<
     string,
     { pipeline: GPURenderPipeline; bgl: GPUBindGroupLayout }
@@ -122,7 +129,12 @@ export class AdjustmentRuntime {
   private readonly singlesAuto = new Map<string, GPURenderPipeline>();
   private readonly computes = new Map<string, GPUComputePipeline>();
 
-  constructor(device: GPUDevice, pixelWidth: number, pixelHeight: number) {
+  constructor(
+    device: GPUDevice,
+    pixelWidth: number,
+    pixelHeight: number,
+    intermediateFormat: GPUTextureFormat = "rgba8unorm",
+  ) {
     this.device = device;
     this.pixelWidth = pixelWidth;
     this.pixelHeight = pixelHeight;
@@ -138,6 +150,12 @@ export class AdjustmentRuntime {
       addressModeU: "clamp-to-edge",
       addressModeV: "clamp-to-edge",
     });
+    this.intermediate = createTrackedTexture(device, {
+      size: { width: pixelWidth, height: pixelHeight },
+      format: intermediateFormat,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
   }
 
   destroy(): void {
@@ -147,6 +165,7 @@ export class AdjustmentRuntime {
     this.singlesWithBGL.clear();
     this.singlesAuto.clear();
     this.computes.clear();
+    destroyTrackedTexture(this.intermediate);
   }
 
   // ─── Module / pipeline cache ──────────────────────────────────────────────
@@ -187,25 +206,55 @@ export class AdjustmentRuntime {
     });
   }
 
-  /** Cached s8+f32 render pipeline pair with explicit BGL keyed by `${shaderName}|${fsEntry}|${bindings}`. */
+  /**
+   * Cached s8+f32 render pipeline pair. When `bindings` is omitted the pair is
+   * built with `layout: "auto"` and `bgl` is left unset on the pair. When
+   * provided, an explicit BGL is built and stored on the pair.
+   */
   getRenderPipelinePair(
     shaderName: string,
     fsEntry: string,
-    bindings: AdjBinding[],
-  ): AdjPipelinePair {
-    const key = `${shaderName}|${fsEntry}|${bindings.join(",")}`;
+    bindings?: AdjBinding[],
+  ): EffectPipelinePair {
+    const key = bindings
+      ? `${shaderName}|${fsEntry}|${bindings.join(",")}`
+      : `${shaderName}|${fsEntry}|auto`;
     let pair = this.pairs.get(key);
     if (!pair) {
       const module = this.getModule(shaderName);
-      const bgl = buildBGL(this.device, bindings);
-      pair = {
-        s8: this.buildRenderPipeline(module, fsEntry, "rgba8unorm", bgl),
-        f32: this.buildRenderPipeline(module, fsEntry, "rgba32float", bgl),
-        bgl,
-      };
+      if (bindings) {
+        const bgl = buildBGL(this.device, bindings);
+        pair = {
+          s8: this.buildRenderPipeline(module, fsEntry, "rgba8unorm", bgl),
+          f32: this.buildRenderPipeline(module, fsEntry, "rgba32float", bgl),
+          bgl,
+        };
+      } else {
+        pair = {
+          s8: this.buildRenderPipelineAuto(module, fsEntry, "rgba8unorm"),
+          f32: this.buildRenderPipelineAuto(module, fsEntry, "rgba32float"),
+        };
+      }
       this.pairs.set(key, pair);
     }
     return pair;
+  }
+
+  /**
+   * Cached single-format render pipeline. When `bindings` is provided an
+   * explicit BGL is built; otherwise the pipeline is built with auto layout.
+   */
+  getRenderPipelineSingle(
+    shaderName: string,
+    fsEntry: string,
+    format: GPUTextureFormat,
+    bindings?: AdjBinding[],
+  ): GPURenderPipeline {
+    if (bindings) {
+      return this.getRenderPipelineWithBGL(shaderName, fsEntry, format, bindings)
+        .pipeline;
+    }
+    return this.getRenderPipelineAuto(shaderName, fsEntry, format);
   }
 
   /** Cached single-format render pipeline with explicit BGL. */
@@ -263,11 +312,19 @@ export class AdjustmentRuntime {
     return pipeline;
   }
 
-  /** Pick s8 vs f32 pipeline based on destination format. */
+  /**
+   * Pick s8 vs f32 pipeline based on destination format. Accepts either a
+   * `GPUTexture` (filter call sites) or a `GPUTextureFormat` (adjustment call
+   * sites).
+   */
   selectPipeline(
-    pair: AdjPipelinePair,
-    format: GPUTextureFormat,
+    pair: EffectPipelinePair,
+    dstTexOrFormat: GPUTexture | GPUTextureFormat,
   ): GPURenderPipeline {
+    const format =
+      typeof dstTexOrFormat === "string"
+        ? dstTexOrFormat
+        : dstTexOrFormat.format;
     return format === "rgba32float" ? pair.f32 : pair.s8;
   }
 
@@ -300,17 +357,48 @@ export class AdjustmentRuntime {
     return buf;
   }
 
+  /** Auto-tracked transient rgba8unorm render target. */
+  makeRgba8Tex(w: number, h: number): GPUTexture {
+    const tex = createTrackedTexture(this.device, {
+      size: { width: w, height: h },
+      format: "rgba8unorm",
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.pendingDestroyTextures.push(tex);
+    return tex;
+  }
+
+  /** Auto-tracked transient rgba16float render target. */
+  makeRgba16FloatTex(w: number, h: number): GPUTexture {
+    const tex = createTrackedTexture(this.device, {
+      size: { width: w, height: h },
+      format: "rgba16float",
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.pendingDestroyTextures.push(tex);
+    return tex;
+  }
+
   // ─── Render pass helpers ────────────────────────────────────────────────
 
-  /** Generic fullscreen render pass into dstTex. */
+  /**
+   * Generic fullscreen render pass into dstTex. `bgl` defaults to
+   * `pipeline.getBindGroupLayout(0)` for auto-layout pipelines; pass an
+   * explicit BGL for pipelines built with explicit bindings.
+   */
   encodeRenderPass(
     encoder: GPUCommandEncoder,
     pipeline: GPURenderPipeline,
-    bgl: GPUBindGroupLayout,
     dstTex: GPUTexture,
     entries: GPUBindGroupEntry[],
+    bgl?: GPUBindGroupLayout,
   ): void {
-    const bindGroup = this.device.createBindGroup({ layout: bgl, entries });
+    const bindGroup = this.device.createBindGroup({
+      layout: bgl ?? pipeline.getBindGroupLayout(0),
+      entries,
+    });
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
@@ -330,7 +418,7 @@ export class AdjustmentRuntime {
   /** Standard adj pass — uniforms + selMask + maskFlags + adjSampler. */
   encodeStdAdjRenderPass(
     encoder: GPUCommandEncoder,
-    pair: AdjPipelinePair,
+    pair: EffectPipelinePair,
     srcTex: GPUTexture,
     dstTex: GPUTexture,
     format: GPUTextureFormat,
@@ -342,17 +430,25 @@ export class AdjustmentRuntime {
     const maskFlagsBuf = this.makeMaskFlagsBuf(!!selMaskLayer);
     const dummyMask = selMaskLayer?.texture ?? srcTex;
 
-    this.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
-      { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: this.adjSampler },
-      { binding: 2, resource: { buffer: paramsBuf } },
-      { binding: 3, resource: dummyMask.createView() },
-      { binding: 4, resource: { buffer: maskFlagsBuf } },
-    ]);
+    this.encodeRenderPass(
+      encoder,
+      pipeline,
+      dstTex,
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: this.adjSampler },
+        { binding: 2, resource: { buffer: paramsBuf } },
+        { binding: 3, resource: dummyMask.createView() },
+        { binding: 4, resource: { buffer: maskFlagsBuf } },
+      ],
+      pair.bgl,
+    );
   }
 
   flushPendingDestroys(): void {
     for (const buf of this.pendingDestroyBuffers) buf.destroy();
     this.pendingDestroyBuffers = [];
+    for (const tex of this.pendingDestroyTextures) destroyTrackedTexture(tex);
+    this.pendingDestroyTextures = [];
   }
 }

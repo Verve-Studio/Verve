@@ -1,6 +1,5 @@
 import type { SharpenAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { SharpenPanel } from "./SharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -22,14 +21,14 @@ export const SharpenEffect: IPipelineEffect<SharpenAdjustmentLayer, SharpenOp> =
       };
     },
 
-    encode({ encoder, srcTex, dstTex }) {
-      const rt = getFilterRuntime();
-      const pair = rt.getPipelinePair("filter-sharpen", "fs_sharpen");
+    encode({ engine, encoder, srcTex, dstTex }) {
+      const rt = engine.runtime;
+      const pair = rt.getRenderPipelinePair("filter-sharpen", "fs_sharpen");
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(pair, dstTex),
-        [{ binding: 0, resource: srcTex.createView() }],
         dstTex,
+        [{ binding: 0, resource: srcTex.createView() }],
       );
     },
 

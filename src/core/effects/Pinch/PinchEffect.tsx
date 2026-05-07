@@ -2,7 +2,7 @@ import type { PinchAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { PinchOptions } from "./PinchOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type PinchOp = Extract<AdjustmentRenderOp, { kind: "pinch" }>;
 

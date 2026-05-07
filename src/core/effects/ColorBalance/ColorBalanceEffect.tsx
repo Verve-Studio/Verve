@@ -2,7 +2,7 @@ import type { ColorBalanceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorBalancePanel } from "./ColorBalancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type ColorBalanceOp = Extract<AdjustmentRenderOp, { kind: "color-balance" }>;
 

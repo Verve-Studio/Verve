@@ -1,6 +1,5 @@
 import type { CloudsAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -42,11 +41,11 @@ export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
-    const pair = rt.getPipelinePair("filter-clouds", "fs_clouds");
+    const pair = rt.getRenderPipelinePair("filter-clouds", "fs_clouds");
     const paramsData = new Uint32Array([
       entry.scale,
       entry.opacity,
@@ -77,12 +76,12 @@ export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(pair, dstTex),
+      dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: paramsBuf } },
         { binding: 3, resource: { buffer: permBuf } },
       ],
-      dstTex,
     );
   },
 

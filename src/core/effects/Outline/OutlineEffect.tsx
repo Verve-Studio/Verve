@@ -6,7 +6,7 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { AdjustmentRuntime } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type OutlineOp = Extract<AdjustmentRenderOp, { kind: "outline" }>;
 
@@ -45,7 +45,7 @@ const MODE_MAP = { outside: 0, inside: 1, center: 2 } as const;
  * Get the outline pipelines (also used by Bevel / InnerShadow which reuse
  * the erode pipelines as channel-copy steps).
  */
-export function getOutlinePipelines(runtime: AdjustmentRuntime) {
+export function getOutlinePipelines(runtime: EffectRuntime) {
   return {
     dilateH: runtime.getComputePipeline(
       "outline-dilate-h",

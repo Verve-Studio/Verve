@@ -2,7 +2,7 @@ import type { HalationAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { HalationOptions } from "./HalationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 import { BLOOM_COMPOSITE_BINDINGS } from "../Bloom/BloomEffect";
 import {
   createTrackedTexture,
@@ -79,7 +79,6 @@ export const HalationEffect: IPipelineEffect<
     runtime.encodeRenderPass(
       encoder,
       extract.pipeline,
-      extract.bgl,
       glowATex,
       [
         { binding: 0, resource: srcTex.createView() },
@@ -88,6 +87,7 @@ export const HalationEffect: IPipelineEffect<
         { binding: 3, resource: dummyMask.createView() },
         { binding: 4, resource: { buffer: maskFlagsBuf } },
       ],
+      extract.bgl,
     );
 
     // Passes 2..N: H+V box blur iterations (shared bloom pipelines)
@@ -112,15 +112,15 @@ export const HalationEffect: IPipelineEffect<
     let workingSrc = glowATex;
     let workingDst = glowBTex;
     for (let i = 0; i < iterations; i++) {
-      runtime.encodeRenderPass(encoder, boxH, boxHBGL, workingDst, [
+      runtime.encodeRenderPass(encoder, boxH, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
         { binding: 2, resource: { buffer: blurParamsBuf } },
-      ]);
+      ], boxHBGL);
       [workingSrc, workingDst] = [workingDst, workingSrc];
-      runtime.encodeRenderPass(encoder, boxV, boxVBGL, workingDst, [
+      runtime.encodeRenderPass(encoder, boxV, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
         { binding: 2, resource: { buffer: blurParamsBuf } },
-      ]);
+      ], boxVBGL);
       [workingSrc, workingDst] = [workingDst, workingSrc];
     }
 
@@ -137,7 +137,6 @@ export const HalationEffect: IPipelineEffect<
     runtime.encodeRenderPass(
       encoder,
       compPipeline,
-      compPair.bgl,
       dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
@@ -147,6 +146,7 @@ export const HalationEffect: IPipelineEffect<
         { binding: 4, resource: dummyMask.createView() },
         { binding: 5, resource: { buffer: maskFlagsBuf } },
       ],
+      compPair.bgl,
     );
   },
 

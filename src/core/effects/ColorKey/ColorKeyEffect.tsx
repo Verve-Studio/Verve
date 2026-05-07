@@ -2,7 +2,7 @@ import type { ColorKeyAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorKeyPanel } from "./ColorKeyPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type ColorKeyOp = Extract<AdjustmentRenderOp, { kind: "color-key" }>;
 

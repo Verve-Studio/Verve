@@ -1,6 +1,5 @@
 import type { SeamlessTextureAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -48,8 +47,8 @@ export const SeamlessTextureEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
     const {
@@ -60,11 +59,11 @@ export const SeamlessTextureEffect: IPipelineEffect<
       borderRadius,
       seed,
     } = entry;
-    const breakPair = rt.getPipelinePair(
+    const breakPair = rt.getRenderPipelinePair(
       "filter-seamless-break",
       "fs_seamless_break",
     );
-    const borderPair = rt.getPipelinePair(
+    const borderPair = rt.getRenderPipelinePair(
       "filter-seamless-border",
       "fs_seamless_border",
     );
@@ -73,6 +72,7 @@ export const SeamlessTextureEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(borderPair, dstTex),
+        dstTex,
         [
           { binding: 0, resource: srcTex.createView() },
           {
@@ -82,7 +82,6 @@ export const SeamlessTextureEffect: IPipelineEffect<
             },
           },
         ],
-        dstTex,
       );
       return;
     }
@@ -104,11 +103,11 @@ export const SeamlessTextureEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(breakPair, pass1Dst),
+        pass1Dst,
         [
           { binding: 0, resource: srcTex.createView() },
           { binding: 2, resource: { buffer: p1 } },
         ],
-        pass1Dst,
       );
 
       if (seamlessBorders) {
@@ -118,11 +117,11 @@ export const SeamlessTextureEffect: IPipelineEffect<
         rt.encodeRenderPass(
           encoder,
           rt.selectPipeline(borderPair, dstTex),
+          dstTex,
           [
             { binding: 0, resource: pass1Dst.createView() },
             { binding: 2, resource: { buffer: p2 } },
           ],
-          dstTex,
         );
       }
     } else {
@@ -132,11 +131,11 @@ export const SeamlessTextureEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(borderPair, dstTex),
+        dstTex,
         [
           { binding: 0, resource: srcTex.createView() },
           { binding: 2, resource: { buffer: p2 } },
         ],
-        dstTex,
       );
     }
   },

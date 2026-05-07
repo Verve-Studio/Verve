@@ -1,6 +1,5 @@
 import type { MotionBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { MotionBlurPanel } from "./MotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -26,9 +25,9 @@ export const MotionBlurEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
-    const pair = rt.getPipelinePair("filter-motion-blur", "fs_motion_blur");
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
+    const pair = rt.getRenderPipelinePair("filter-motion-blur", "fs_motion_blur");
     const buf = new ArrayBuffer(16);
     const dv = new DataView(buf);
     dv.setFloat32(0, entry.angle, true);
@@ -39,11 +38,11 @@ export const MotionBlurEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(pair, dstTex),
+      dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: paramsBuf } },
       ],
-      dstTex,
     );
   },
 

@@ -7,7 +7,7 @@ import {
 } from "@/core/operations/adjustments/curves";
 import { CurvesPanel } from "./CurvesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import type { AdjBinding } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import type { AdjBinding } from "@/graphicspipeline/webgpu/EffectRuntime";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
@@ -111,7 +111,7 @@ export const CurvesEffect: IPipelineEffect<CurvesAdjustmentLayer, CurvesOp> = {
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
-    runtime.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
+    runtime.encodeRenderPass(encoder, pipeline, dstTex, [
       { binding: 0, resource: srcTex.createView() },
       { binding: 1, resource: runtime.adjSampler },
       { binding: 2, resource: dummyMask.createView() },
@@ -121,7 +121,7 @@ export const CurvesEffect: IPipelineEffect<CurvesAdjustmentLayer, CurvesOp> = {
       { binding: 6, resource: textures.red.createView() },
       { binding: 7, resource: textures.green.createView() },
       { binding: 8, resource: textures.blue.createView() },
-    ]);
+    ], pair.bgl);
   },
 
   onFrameEnd() {

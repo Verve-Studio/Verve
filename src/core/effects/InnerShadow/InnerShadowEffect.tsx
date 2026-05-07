@@ -6,7 +6,7 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { AdjustmentRuntime } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type InnerShadowOp = Extract<AdjustmentRenderOp, { kind: "inner-shadow" }>;
 
@@ -37,7 +37,7 @@ function ensureTextures(
 
 /** Shared inner-shadow encode used by InnerShadow and InnerGlow effects. */
 export function encodeInnerShadowPass(
-  runtime: AdjustmentRuntime,
+  runtime: EffectRuntime,
   encoder: GPUCommandEncoder,
   srcTex: GPUTexture,
   dstTex: GPUTexture,

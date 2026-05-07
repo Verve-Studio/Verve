@@ -2,7 +2,7 @@ import type { DisplaceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { DisplaceOptions } from "./DisplaceOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type DisplaceOp = Extract<AdjustmentRenderOp, { kind: "displace" }>;
 

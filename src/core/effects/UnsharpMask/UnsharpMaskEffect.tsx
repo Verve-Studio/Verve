@@ -1,6 +1,5 @@
 import type { UnsharpMaskAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { UnsharpMaskPanel } from "./UnsharpMaskPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -28,13 +27,13 @@ export const UnsharpMaskEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
-    const gaussH = rt.getPipelinePair("filter-gaussian-h", "fs_gaussian_h");
-    const gaussV = rt.getPipelinePair("filter-gaussian-v", "fs_gaussian_v");
-    const combine = rt.getPipelinePair(
+    const gaussH = rt.getRenderPipelinePair("filter-gaussian-h", "fs_gaussian_h");
+    const gaussV = rt.getRenderPipelinePair("filter-gaussian-v", "fs_gaussian_v");
+    const combine = rt.getRenderPipelinePair(
       "filter-unsharp-combine",
       "fs_unsharp_combine",
     );
@@ -46,20 +45,20 @@ export const UnsharpMaskEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(gaussH, rt.intermediate),
+      rt.intermediate,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ],
-      rt.intermediate,
     );
     rt.encodeRenderPass(
       encoder,
       gaussV.s8,
+      blurredTex,
       [
         { binding: 0, resource: rt.intermediate.createView() },
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ],
-      blurredTex,
     );
     const combineParamsBuf = rt.makeParamsBuf(
       new Uint32Array([entry.amount, entry.threshold, 0, 0]),
@@ -67,12 +66,12 @@ export const UnsharpMaskEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(combine, dstTex),
+      dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: blurredTex.createView() },
         { binding: 3, resource: { buffer: combineParamsBuf } },
       ],
-      dstTex,
     );
   },
 

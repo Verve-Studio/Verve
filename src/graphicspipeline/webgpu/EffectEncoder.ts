@@ -1,25 +1,33 @@
 import { effectRegistry } from "@/core/effects";
 import type { AdjustmentRenderOp } from "./types";
-import {
-  flushFilterComputeDestroys,
-} from "./compute/filterCompute";
-import { AdjustmentRuntime } from "./AdjustmentRuntime";
+import { EffectRuntime } from "./EffectRuntime";
 
 // Re-export the binding kind + pair types so legacy imports keep working.
-export type { AdjBinding, AdjPipelinePair } from "./AdjustmentRuntime";
-export { STD_BINDINGS } from "./AdjustmentRuntime";
+export type { AdjBinding, EffectPipelinePair } from "./EffectRuntime";
+export { STD_BINDINGS } from "./EffectRuntime";
 
 /**
- * Owns adjustment / effect render+compute pipelines via a generic runtime.
- * Delegates per-effect work to `effectRegistry`. Each effect implementation
- * owns its own pipeline construction (via `runtime.getRenderPipelinePair`
- * etc.) and any cross-frame texture caches it needs.
+ * Owns adjustment / effect / filter render+compute pipelines via a single
+ * shared `EffectRuntime`. Delegates per-effect work to `effectRegistry`. Each
+ * effect implementation owns its own pipeline construction (via
+ * `runtime.getRenderPipelinePair` etc.) and any cross-frame texture caches it
+ * needs.
  */
-export class AdjustmentEncoder {
-  readonly runtime: AdjustmentRuntime;
+export class EffectEncoder {
+  readonly runtime: EffectRuntime;
 
-  constructor(device: GPUDevice, pixelWidth: number, pixelHeight: number) {
-    this.runtime = new AdjustmentRuntime(device, pixelWidth, pixelHeight);
+  constructor(
+    device: GPUDevice,
+    pixelWidth: number,
+    pixelHeight: number,
+    intermediateFormat: GPUTextureFormat = "rgba8unorm",
+  ) {
+    this.runtime = new EffectRuntime(
+      device,
+      pixelWidth,
+      pixelHeight,
+      intermediateFormat,
+    );
   }
 
   get pixelWidth(): number {
@@ -50,10 +58,9 @@ export class AdjustmentEncoder {
     effect.encode({ encoder, srcTex, dstTex, format, engine: this }, entry);
   }
 
-  /** Destroy per-frame GPU buffers accumulated during encode calls. Call after queue.submit(). */
+  /** Destroy per-frame GPU buffers/textures accumulated during encode calls. Call after queue.submit(). */
   flushPendingDestroys(): void {
     this.runtime.flushPendingDestroys();
-    flushFilterComputeDestroys();
   }
 
   /**

@@ -2,7 +2,7 @@ import type { ReduceColorsAdjustmentLayer, RGBAColor } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ReduceColorsPanel } from "./ReduceColorsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphicspipeline/webgpu/utils";
 
 type ReduceColorsOp = Extract<AdjustmentRenderOp, { kind: "reduce-colors" }>;
@@ -99,14 +99,14 @@ export const ReduceColorsEffect: IPipelineEffect<
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
-    runtime.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
+    runtime.encodeRenderPass(encoder, pipeline, dstTex, [
       { binding: 0, resource: srcTex.createView() },
       { binding: 1, resource: runtime.adjSampler },
       { binding: 2, resource: { buffer: paramsBuf } },
       { binding: 3, resource: dummyMask.createView() },
       { binding: 4, resource: { buffer: maskFlagsBuf } },
       { binding: 5, resource: { buffer: palBuf } },
-    ]);
+    ], pair.bgl);
   },
 
   Panel: ReduceColorsPanel,

@@ -1,6 +1,5 @@
 import type { RemoveMotionBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { RemoveMotionBlurPanel } from "./RemoveMotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -31,26 +30,26 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
-    const psfPipeline = rt.getPipelineSingle(
+    const psfPipeline = rt.getRenderPipelineSingle(
       "filter-rmb-psf",
       "fs_rmb_psf",
       "rgba16float",
     );
-    const ratioPipeline = rt.getPipelineSingle(
+    const ratioPipeline = rt.getRenderPipelineSingle(
       "filter-rmb-ratio",
       "fs_rmb_ratio",
       "rgba16float",
     );
-    const updatePipeline = rt.getPipelineSingle(
+    const updatePipeline = rt.getRenderPipelineSingle(
       "filter-rmb-update",
       "fs_rmb_update",
       "rgba16float",
     );
-    const finalPair = rt.getPipelinePair("filter-rmb-final", "fs_rmb_final");
+    const finalPair = rt.getRenderPipelinePair("filter-rmb-final", "fs_rmb_final");
 
     const iterations = 8 + Math.round((100 - entry.noiseReduction) / 14);
     const blendBack = (entry.noiseReduction / 100) * 0.35;
@@ -81,41 +80,41 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         psfPipeline,
+        temp,
         [
           { binding: 0, resource: curEst.createView() },
           { binding: 1, resource: { buffer: psfParamsBuf } },
         ],
-        temp,
       );
 
       rt.encodeRenderPass(
         encoder,
         ratioPipeline,
+        ratio,
         [
           { binding: 0, resource: srcTex.createView() },
           { binding: 1, resource: temp.createView() },
         ],
-        ratio,
       );
 
       rt.encodeRenderPass(
         encoder,
         psfPipeline,
+        temp,
         [
           { binding: 0, resource: ratio.createView() },
           { binding: 1, resource: { buffer: psfParamsBuf } },
         ],
-        temp,
       );
 
       rt.encodeRenderPass(
         encoder,
         updatePipeline,
+        nextEst,
         [
           { binding: 0, resource: curEst.createView() },
           { binding: 1, resource: temp.createView() },
         ],
-        nextEst,
       );
 
       curEst = nextEst;
@@ -124,12 +123,12 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(finalPair, dstTex),
+      dstTex,
       [
         { binding: 0, resource: curEst.createView() },
         { binding: 1, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: finalParamsBuf } },
       ],
-      dstTex,
     );
   },
 

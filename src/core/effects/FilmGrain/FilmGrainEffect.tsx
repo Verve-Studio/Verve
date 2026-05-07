@@ -1,6 +1,5 @@
 import type { FilmGrainAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { FilmGrainPanel } from "./FilmGrainPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -29,22 +28,22 @@ export const FilmGrainEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
     const { grainSize, intensity, roughness, seed } = entry;
     const blurRadius =
       grainSize > 1 ? Math.min(5, Math.floor(grainSize / 10)) : 0;
 
-    const noisePipeline = rt.getPipelineSingle(
+    const noisePipeline = rt.getRenderPipelineSingle(
       "filter-film-grain-noise",
       "fs_film_grain_noise",
       "rgba8unorm",
     );
-    const boxH = rt.getPipelinePair("filter-box-h", "fs_box_h");
-    const boxV = rt.getPipelinePair("filter-box-v", "fs_box_v");
-    const combine = rt.getPipelinePair(
+    const boxH = rt.getRenderPipelinePair("filter-box-h", "fs_box_h");
+    const boxV = rt.getRenderPipelinePair("filter-box-v", "fs_box_v");
+    const combine = rt.getRenderPipelinePair(
       "filter-film-grain-combine",
       "fs_film_grain_combine",
     );
@@ -54,8 +53,8 @@ export const FilmGrainEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       noisePipeline,
-      [{ binding: 0, resource: { buffer: noiseParamsBuf } }],
       noiseTexA,
+      [{ binding: 0, resource: { buffer: noiseParamsBuf } }],
     );
     let finalNoiseTex = noiseTexA;
     if (blurRadius > 0) {
@@ -66,20 +65,20 @@ export const FilmGrainEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(boxH, rt.intermediate),
+        rt.intermediate,
         [
           { binding: 0, resource: noiseTexA.createView() },
           { binding: 2, resource: { buffer: blurParamsBuf } },
         ],
-        rt.intermediate,
       );
       rt.encodeRenderPass(
         encoder,
         boxV.s8,
+        noiseTexB,
         [
           { binding: 0, resource: rt.intermediate.createView() },
           { binding: 2, resource: { buffer: blurParamsBuf } },
         ],
-        noiseTexB,
       );
       finalNoiseTex = noiseTexB;
     }
@@ -89,12 +88,12 @@ export const FilmGrainEffect: IPipelineEffect<
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(combine, dstTex),
+      dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: finalNoiseTex.createView() },
         { binding: 3, resource: { buffer: combineParamsBuf } },
       ],
-      dstTex,
     );
   },
 

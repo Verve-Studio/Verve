@@ -5,7 +5,7 @@ import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   STD_BINDINGS,
   type AdjBinding,
-} from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+} from "@/graphicspipeline/webgpu/EffectRuntime";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
@@ -125,7 +125,6 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     runtime.encodeRenderPass(
       encoder,
       extract.pipeline,
-      extract.bgl,
       extractTex,
       [
         { binding: 0, resource: srcTex.createView() },
@@ -134,6 +133,7 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
         { binding: 3, resource: dummyMask.createView() },
         { binding: 4, resource: { buffer: maskFlagsBuf } },
       ],
+      extract.bgl,
     );
 
     // Pass 2: Downsample (skipped at full quality)
@@ -152,12 +152,12 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
       runtime.encodeRenderPass(
         encoder,
         downsamplePipeline,
-        downsamplePipeline.getBindGroupLayout(0),
         blurATex,
         [
           { binding: 0, resource: extractTex.createView() },
           { binding: 2, resource: { buffer: dsParamsBuf } },
         ],
+        downsamplePipeline.getBindGroupLayout(0),
       );
     } else {
       encoder.copyTextureToTexture(
@@ -184,16 +184,16 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     const boxHBGL = boxH.getBindGroupLayout(0);
     const boxVBGL = boxV.getBindGroupLayout(0);
     for (let i = 0; i < 3; i++) {
-      runtime.encodeRenderPass(encoder, boxH, boxHBGL, workingDst, [
+      runtime.encodeRenderPass(encoder, boxH, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
         { binding: 2, resource: { buffer: blurParamsBuf } },
-      ]);
+      ], boxHBGL);
       [workingSrc, workingDst] = [workingDst, workingSrc];
 
-      runtime.encodeRenderPass(encoder, boxV, boxVBGL, workingDst, [
+      runtime.encodeRenderPass(encoder, boxV, workingDst, [
         { binding: 0, resource: workingSrc.createView() },
         { binding: 2, resource: { buffer: blurParamsBuf } },
-      ]);
+      ], boxVBGL);
       [workingSrc, workingDst] = [workingDst, workingSrc];
     }
 
@@ -210,7 +210,6 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     runtime.encodeRenderPass(
       encoder,
       compPipeline,
-      compPair.bgl,
       dstTex,
       [
         { binding: 0, resource: srcTex.createView() },
@@ -220,6 +219,7 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
         { binding: 4, resource: dummyMask.createView() },
         { binding: 5, resource: { buffer: maskFlagsBuf } },
       ],
+      compPair.bgl,
     );
   },
 

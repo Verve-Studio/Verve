@@ -4,7 +4,7 @@ import type {
   AdjustmentRenderOp,
   GpuLayer,
 } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import type { AdjustmentEncoder } from "@/graphicspipeline/webgpu/AdjustmentEncoder";
+import type { EffectEncoder } from "@/graphicspipeline/webgpu/EffectEncoder";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 
 export type MenuRoot = "adjustments" | "effects" | "filters";
@@ -41,7 +41,7 @@ export interface EncodeContext {
    * a stable, narrower `EncodeServices` interface will be introduced for that
    * use case. Treat any `engine.*` access as private API subject to change.
    */
-  engine: AdjustmentEncoder;
+  engine: EffectEncoder;
 }
 
 export interface PanelProps<L extends AdjustmentLayerState> {

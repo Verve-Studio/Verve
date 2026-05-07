@@ -6,7 +6,7 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { AdjustmentRuntime } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
 
 type DropShadowOp = Extract<AdjustmentRenderOp, { kind: "drop-shadow" }>;
 
@@ -46,7 +46,7 @@ const BLEND_MODE_MAP: Record<"normal" | "multiply" | "screen", number> = {
  * (Glow is drop-shadow with offsetX/offsetY = 0).
  */
 export function encodeDropShadowPass(
-  runtime: AdjustmentRuntime,
+  runtime: EffectRuntime,
   encoder: GPUCommandEncoder,
   srcTex: GPUTexture,
   dstTex: GPUTexture,

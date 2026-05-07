@@ -1,6 +1,5 @@
 import type { ReduceNoiseAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { ReduceNoisePanel } from "./ReduceNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -35,20 +34,20 @@ export const ReduceNoiseEffect: IPipelineEffect<
     };
   },
 
-  encode({ encoder, srcTex, dstTex }, entry) {
-    const rt = getFilterRuntime();
+  encode({ encoder, srcTex, dstTex, engine }, entry) {
+    const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
     const { strength, preserveDetails, reduceColorNoise, sharpenDetails } =
       entry;
 
-    const reducePair = rt.getPipelinePair(
+    const reducePair = rt.getRenderPipelinePair(
       "filter-reduce-noise",
       "fs_reduce_noise",
     );
-    const gaussH = rt.getPipelinePair("filter-gaussian-h", "fs_gaussian_h");
-    const gaussV = rt.getPipelinePair("filter-gaussian-v", "fs_gaussian_v");
-    const unsharpCombine = rt.getPipelinePair(
+    const gaussH = rt.getRenderPipelinePair("filter-gaussian-h", "fs_gaussian_h");
+    const gaussV = rt.getRenderPipelinePair("filter-gaussian-v", "fs_gaussian_v");
+    const unsharpCombine = rt.getRenderPipelinePair(
       "filter-unsharp-combine",
       "fs_unsharp_combine",
     );
@@ -61,31 +60,31 @@ export const ReduceNoiseEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         reducePair.s8,
+        tempTex,
         [
           { binding: 0, resource: srcTex.createView() },
           { binding: 2, resource: { buffer: rndParamsBuf } },
         ],
-        tempTex,
       );
       const gaussParamsBuf = rt.makeParamsBuf(new Uint32Array([1, 0, 0, 0]));
       const blurredTex = rt.makeRgba8Tex(w, h);
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(gaussH, rt.intermediate),
+        rt.intermediate,
         [
           { binding: 0, resource: tempTex.createView() },
           { binding: 2, resource: { buffer: gaussParamsBuf } },
         ],
-        rt.intermediate,
       );
       rt.encodeRenderPass(
         encoder,
         gaussV.s8,
+        blurredTex,
         [
           { binding: 0, resource: rt.intermediate.createView() },
           { binding: 2, resource: { buffer: gaussParamsBuf } },
         ],
-        blurredTex,
       );
       const unsharpParamsBuf = rt.makeParamsBuf(
         new Uint32Array([Math.round(sharpenDetails * 1.5), 0, 0, 0]),
@@ -93,12 +92,12 @@ export const ReduceNoiseEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(unsharpCombine, dstTex),
+        dstTex,
         [
           { binding: 0, resource: tempTex.createView() },
           { binding: 2, resource: blurredTex.createView() },
           { binding: 3, resource: { buffer: unsharpParamsBuf } },
         ],
-        dstTex,
       );
     } else {
       const rndParamsBuf = rt.makeParamsBuf(
@@ -107,11 +106,11 @@ export const ReduceNoiseEffect: IPipelineEffect<
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(reducePair, dstTex),
+        dstTex,
         [
           { binding: 0, resource: srcTex.createView() },
           { binding: 2, resource: { buffer: rndParamsBuf } },
         ],
-        dstTex,
       );
     }
   },
