@@ -18,20 +18,18 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
   defaultParams: { angle: 0, distance: 10, noiseReduction: 10 },
 
   buildPlanEntry(layer, { mask }) {
-    const { angle, distance, noiseReduction } = layer.params;
     return {
       kind: "remove-motion-blur",
       layerId: layer.id,
-      angle,
-      distance,
-      noiseReduction,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
+    const { angle, distance, noiseReduction } = entry.params;
     const w = dstTex.width;
     const h = dstTex.height;
     const psfPipeline = rt.getRenderPipelineSingle(
@@ -51,13 +49,13 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
     );
     const finalPair = rt.getRenderPipelinePair("filter-rmb-final", "fs_rmb_final");
 
-    const iterations = 8 + Math.round((100 - entry.noiseReduction) / 14);
-    const blendBack = (entry.noiseReduction / 100) * 0.35;
+    const iterations = 8 + Math.round((100 - noiseReduction) / 14);
+    const blendBack = (noiseReduction / 100) * 0.35;
 
     const buf = new ArrayBuffer(16);
     const dv = new DataView(buf);
-    dv.setFloat32(0, entry.angle, true);
-    dv.setUint32(4, entry.distance, true);
+    dv.setFloat32(0, angle, true);
+    dv.setUint32(4, distance, true);
     dv.setUint32(8, 0, true);
     dv.setUint32(12, 0, true);
     const psfParamsBuf = rt.makeParamsBuf(buf);

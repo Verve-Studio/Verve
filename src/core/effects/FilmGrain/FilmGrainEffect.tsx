@@ -15,16 +15,12 @@ export const FilmGrainEffect: IPipelineEffect<
   defaultParams: { grainSize: 1, intensity: 25, roughness: 50, seed: 0 },
 
   buildPlanEntry(layer, { mask }) {
-    const { grainSize, intensity, roughness, seed } = layer.params;
     return {
       kind: "film-grain",
       layerId: layer.id,
-      grainSize,
-      intensity,
-      roughness,
-      seed,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -32,7 +28,7 @@ export const FilmGrainEffect: IPipelineEffect<
     const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
-    const { grainSize, intensity, roughness, seed } = entry;
+    const { grainSize, intensity, roughness, seed } = entry.params;
     const blurRadius =
       grainSize > 1 ? Math.min(5, Math.floor(grainSize / 10)) : 0;
 

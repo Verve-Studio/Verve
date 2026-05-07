@@ -71,6 +71,7 @@ export const ReduceColorsEffect: IPipelineEffect<
       layerId: layer.id,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
       palette,
       paletteCount,
     };

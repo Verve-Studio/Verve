@@ -41,16 +41,12 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
   defaultParams: { width: 5, softness: 3, angle: 135, strength: 80 },
 
   buildPlanEntry(layer, { mask }) {
-    const { width, softness, angle, strength } = layer.params;
     return {
       kind: "bevel",
       layerId: layer.id,
-      width,
-      softness,
-      angle,
-      strength,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -109,7 +105,7 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
     dispatch(erodeV, tempA, tempB, copyParamsBuf);
 
     // Pass 3+4: Box blur radius = width
-    const heightR = Math.max(1, Math.round(entry.width));
+    const heightR = Math.max(1, Math.round(entry.params.width));
     const heightParamsBuf = runtime.makeParamsBuf(
       new Uint32Array([heightR, 0, 0, 0]),
     );
@@ -118,8 +114,8 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
 
     // Pass 5+6: optional softness blur
     let heightTex: GPUTexture = tempB;
-    if (entry.softness > 0) {
-      const softR = Math.max(1, Math.round(entry.softness / 2));
+    if (entry.params.softness > 0) {
+      const softR = Math.max(1, Math.round(entry.params.softness / 2));
       const softParamsBuf = runtime.makeParamsBuf(
         new Uint32Array([softR, 0, 0, 0]),
       );
@@ -131,8 +127,8 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
     // Composite pass
     const compBuf = new ArrayBuffer(16);
     const cf = new Float32Array(compBuf);
-    cf[0] = entry.strength / 100;
-    cf[1] = entry.angle;
+    cf[0] = entry.params.strength / 100;
+    cf[1] = entry.params.angle;
     cf[2] = 2 * heightR;
 
     const compParamsBuf = runtime.makeParamsBuf(compBuf);

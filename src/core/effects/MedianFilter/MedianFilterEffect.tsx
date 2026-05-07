@@ -18,9 +18,9 @@ export const MedianFilterEffect: IPipelineEffect<
     return {
       kind: "median-filter",
       layerId: layer.id,
-      radius: layer.params.radius,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -28,7 +28,7 @@ export const MedianFilterEffect: IPipelineEffect<
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-median", "fs_median");
     const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.radius, 0, 0, 0]),
+      new Uint32Array([entry.params.radius, 0, 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

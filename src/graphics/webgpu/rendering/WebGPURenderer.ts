@@ -31,16 +31,7 @@ import { encodeClearTexture, copyOutsideRect } from "./copyEncoders";
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
-export type {
-  GpuLayer,
-  EffectRenderOp,
-  RenderPlanEntry,
-  ColorBalancePassParams,
-  BlackAndWhitePassParams,
-  SelectiveColorPassParams,
-  CurvesPassParams,
-  ColorGradingPassParams,
-} from "../types";
+export type { GpuLayer, EffectRenderOp, RenderPlanEntry } from "../types";
 export { BLEND_MODE_INDEX, WebGPUUnavailableError } from "../types";
 
 import type { GpuLayer, RenderPlanEntry, EffectRenderOp } from "../types";

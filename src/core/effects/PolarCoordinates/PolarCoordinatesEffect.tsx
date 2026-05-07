@@ -26,27 +26,24 @@ export const PolarCoordinatesEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "polar-coordinates",
       layerId: layer.id,
-      mode: p.mode === "rect-to-polar" ? 0 : 1,
-      centerX: p.centerX,
-      centerY: p.centerY,
-      edgeMode: EDGE_MAP[p.edgeMode],
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    u[0] = entry.mode;
-    f[1] = entry.centerX;
-    f[2] = entry.centerY;
-    u[3] = entry.edgeMode;
+    u[0] = p.mode === "rect-to-polar" ? 0 : 1;
+    f[1] = p.centerX;
+    f[2] = p.centerY;
+    u[3] = EDGE_MAP[p.edgeMode];
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("polar-coordinates", "fs_polar", STD_BINDINGS),

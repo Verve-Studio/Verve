@@ -21,29 +21,26 @@ export const RippleEffect: IPipelineEffect<RippleEffectLayer, RippleOp> = {
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
-    // Map the abstract `size` slider (1..100) into a wavelength in pixels.
-    const wavelengthPx = Math.max(2, p.size * 4);
     return {
       kind: "ripple",
       layerId: layer.id,
-      amount: p.amount,
-      wavelengthPx,
-      direction: DIR_MAP[p.direction],
-      edgeMode: EDGE_MAP[p.edgeMode],
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
+    // Map the abstract `size` slider (1..100) into a wavelength in pixels.
+    const wavelengthPx = Math.max(2, p.size * 4);
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    f[0] = entry.amount;
-    f[1] = entry.wavelengthPx;
-    u[2] = entry.direction;
-    u[3] = entry.edgeMode;
+    f[0] = p.amount;
+    f[1] = wavelengthPx;
+    u[2] = DIR_MAP[p.direction];
+    u[3] = EDGE_MAP[p.edgeMode];
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("ripple", "fs_ripple", STD_BINDINGS),

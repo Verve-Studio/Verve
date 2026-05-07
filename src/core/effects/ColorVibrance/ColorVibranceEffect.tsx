@@ -19,15 +19,14 @@ export const ColorVibranceEffect: IPipelineEffect<
     return {
       kind: "color-vibrance",
       layerId: layer.id,
-      vibrance: layer.params.vibrance,
-      saturation: layer.params.saturation,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    const params = new Float32Array([entry.vibrance, entry.saturation, 0, 0]);
+    const params = new Float32Array([entry.params.vibrance, entry.params.saturation, 0, 0]);
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("vib", "fs_color_vibrance", STD_BINDINGS),

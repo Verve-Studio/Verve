@@ -26,27 +26,23 @@ export const HalftoneEffect: IPipelineEffect<
     return {
       kind: "halftone",
       layerId: layer.id,
-      frequency: layer.params.frequency,
-      offsetC: layer.params.offsetC,
-      offsetM: layer.params.offsetM,
-      offsetY: layer.params.offsetY,
-      offsetK: layer.params.offsetK,
-      mode: layer.params.mode,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    f[0] = entry.frequency;
-    f[1] = entry.offsetC;
-    f[2] = entry.offsetM;
-    f[3] = entry.offsetY;
-    f[4] = entry.offsetK;
-    u[5] = entry.mode === "color" ? 0 : 1;
+    f[0] = p.frequency;
+    f[1] = p.offsetC;
+    f[2] = p.offsetM;
+    f[3] = p.offsetY;
+    f[4] = p.offsetK;
+    u[5] = p.mode === "color" ? 0 : 1;
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("halftone", "fs_halftone", STD_BINDINGS),

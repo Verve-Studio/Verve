@@ -22,15 +22,14 @@ export const ColorTemperatureEffect: IPipelineEffect<
     return {
       kind: "color-temperature",
       layerId: layer.id,
-      temperature: layer.params.temperature,
-      tint: layer.params.tint,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    const params = new Float32Array([entry.temperature, entry.tint, 0, 0]);
+    const params = new Float32Array([entry.params.temperature, entry.params.tint, 0, 0]);
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("temp", "fs_color_temperature", STD_BINDINGS),

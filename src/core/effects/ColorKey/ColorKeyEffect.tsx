@@ -21,29 +21,24 @@ export const ColorKeyEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { r, g, b } = layer.params.keyColor;
     return {
       kind: "color-key",
       layerId: layer.id,
-      keyR: r / 255,
-      keyG: g / 255,
-      keyB: b / 255,
-      tolerance: layer.params.tolerance,
-      softness: layer.params.softness,
-      dilation: layer.params.dilation,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const { r, g, b } = entry.params.keyColor;
     const params = new Float32Array([
-      entry.keyR,
-      entry.keyG,
-      entry.keyB,
-      entry.tolerance,
-      entry.softness,
-      entry.dilation,
+      r / 255,
+      g / 255,
+      b / 255,
+      entry.params.tolerance,
+      entry.params.softness,
+      entry.params.dilation,
       0,
       0,
     ]);

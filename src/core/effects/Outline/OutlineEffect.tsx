@@ -83,21 +83,12 @@ export const OutlineEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { color, opacity, thickness, position, softness } =
-      layer.params as OutlineParams;
     return {
       kind: "outline",
       layerId: layer.id,
-      colorR: color.r / 255,
-      colorG: color.g / 255,
-      colorB: color.b / 255,
-      colorA: color.a / 255,
-      opacity: opacity / 100,
-      thickness: Math.round(thickness),
-      position,
-      softness,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params as OutlineParams,
     };
   },
 
@@ -107,11 +98,17 @@ export const OutlineEffect: IPipelineEffect<
     const { tempA, tempB, tempC } = ensureTextures(device, w, h);
     const pipes = getOutlinePipelines(runtime);
 
-    const T = Math.max(1, Math.round(entry.thickness));
-    const dilateR = entry.position === "center" ? Math.ceil(T / 2) : T;
-    const erodeR = entry.position === "center" ? Math.floor(T / 2) : T;
+    const { color, opacity, thickness, position, softness } = entry.params;
+    const colorR = color.r / 255;
+    const colorG = color.g / 255;
+    const colorB = color.b / 255;
+    const colorA = color.a / 255;
+    const opacityN = opacity / 100;
+    const T = Math.max(1, Math.round(thickness));
+    const dilateR = position === "center" ? Math.ceil(T / 2) : T;
+    const erodeR = position === "center" ? Math.floor(T / 2) : T;
     const blurR =
-      entry.softness > 0 ? Math.max(1, Math.round(entry.softness * 0.577)) : 0;
+      softness > 0 ? Math.max(1, Math.round(softness * 0.577)) : 0;
 
     const morphPass = (
       pipeline: GPUComputePipeline,
@@ -138,10 +135,10 @@ export const OutlineEffect: IPipelineEffect<
       new Uint32Array([dilateR, 0, 0, 0]),
     );
 
-    if (entry.position === "outside") {
+    if (position === "outside") {
       morphPass(pipes.dilateH, srcTex, tempA, dilateParamsBuf);
       morphPass(pipes.dilateV, tempA, tempB, dilateParamsBuf);
-    } else if (entry.position === "inside") {
+    } else if (position === "inside") {
       morphPass(pipes.erodeH, srcTex, tempA, dilateParamsBuf);
       morphPass(pipes.erodeV, tempA, tempB, dilateParamsBuf);
     } else {
@@ -155,18 +152,18 @@ export const OutlineEffect: IPipelineEffect<
     }
 
     const maskParamsBuf = runtime.makeParamsBuf(
-      new Uint32Array([MODE_MAP[entry.position], 0, 0, 0]),
+      new Uint32Array([MODE_MAP[position], 0, 0, 0]),
     );
     const morphATex =
-      entry.position === "center"
+      position === "center"
         ? tempC
-        : entry.position === "outside"
+        : position === "outside"
           ? tempB
           : srcTex;
     const morphBTex =
-      entry.position === "center"
+      position === "center"
         ? tempB
-        : entry.position === "inside"
+        : position === "inside"
           ? tempB
           : srcTex;
 
@@ -187,7 +184,7 @@ export const OutlineEffect: IPipelineEffect<
     maskPass.end();
 
     let strokeMaskTex: GPUTexture = tempA;
-    if (entry.softness > 0) {
+    if (softness > 0) {
       const blurParamsBuf = runtime.makeParamsBuf(
         new Uint32Array([blurR, 0, 0, 0]),
       );
@@ -205,11 +202,11 @@ export const OutlineEffect: IPipelineEffect<
     // Composite
     const compBuf = new ArrayBuffer(32);
     const cf = new Float32Array(compBuf);
-    cf[0] = entry.colorR;
-    cf[1] = entry.colorG;
-    cf[2] = entry.colorB;
-    cf[3] = entry.colorA;
-    cf[4] = entry.opacity;
+    cf[0] = colorR;
+    cf[1] = colorG;
+    cf[2] = colorB;
+    cf[3] = colorA;
+    cf[4] = opacityN;
     const compParamsBuf = runtime.makeParamsBuf(compBuf);
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;

@@ -18,9 +18,9 @@ export const GaussianBlurEffect: IPipelineEffect<
     return {
       kind: "gaussian-blur",
       layerId: layer.id,
-      radius: layer.params.radius,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -29,7 +29,7 @@ export const GaussianBlurEffect: IPipelineEffect<
     const hPair = rt.getRenderPipelinePair("filter-gaussian-h", "fs_gaussian_h");
     const vPair = rt.getRenderPipelinePair("filter-gaussian-v", "fs_gaussian_v");
     const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.radius, 0, 0, 0]),
+      new Uint32Array([entry.params.radius, 0, 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

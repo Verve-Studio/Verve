@@ -34,7 +34,6 @@ export const ColorDitheringEffect: IPipelineEffect<
   defaultParams: { style: "bayer4", opacity: 100 },
 
   buildPlanEntry(layer, { mask, swatches }) {
-    const style = STYLE_MAP[layer.params.style] ?? 0;
     const paletteCount = Math.min(swatches.length, 256);
     const palette = new Float32Array(256 * 4);
     for (let i = 0; i < paletteCount; i++) {
@@ -50,10 +49,9 @@ export const ColorDitheringEffect: IPipelineEffect<
       layerId: layer.id,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
       palette,
       paletteCount,
-      style,
-      opacity: layer.params.opacity ?? 100,
     };
   },
 
@@ -66,10 +64,11 @@ export const ColorDitheringEffect: IPipelineEffect<
     );
     const pipeline = runtime.selectPipeline(pair, format);
 
+    const style = STYLE_MAP[entry.params.style] ?? 0;
     const paramsData = new Uint32Array(8);
     paramsData[0] = entry.paletteCount;
-    paramsData[1] = entry.style;
-    paramsData[2] = Math.round(entry.opacity);
+    paramsData[1] = style;
+    paramsData[2] = Math.round(entry.params.opacity ?? 100);
     const paramsBuf = runtime.makeParamsBuf(paramsData);
 
     const palBuf = createStorageBuffer(runtime.device, 256 * 16);

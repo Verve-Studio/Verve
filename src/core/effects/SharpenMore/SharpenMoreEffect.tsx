@@ -26,6 +26,7 @@ export const SharpenMoreEffect: IPipelineEffect<
       layerId: layer.id,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 

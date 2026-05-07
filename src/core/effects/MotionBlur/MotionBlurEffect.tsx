@@ -18,10 +18,9 @@ export const MotionBlurEffect: IPipelineEffect<
     return {
       kind: "motion-blur",
       layerId: layer.id,
-      angle: layer.params.angle,
-      distance: layer.params.distance,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -30,8 +29,8 @@ export const MotionBlurEffect: IPipelineEffect<
     const pair = rt.getRenderPipelinePair("filter-motion-blur", "fs_motion_blur");
     const buf = new ArrayBuffer(16);
     const dv = new DataView(buf);
-    dv.setFloat32(0, entry.angle, true);
-    dv.setUint32(4, entry.distance, true);
+    dv.setFloat32(0, entry.params.angle, true);
+    dv.setUint32(4, entry.params.distance, true);
     dv.setUint32(8, 0, true);
     dv.setUint32(12, 0, true);
     const paramsBuf = rt.makeParamsBuf(buf);

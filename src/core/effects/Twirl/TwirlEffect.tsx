@@ -21,29 +21,25 @@ export const TwirlEffect: IPipelineEffect<TwirlEffectLayer, TwirlOp> = {
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "twirl",
       layerId: layer.id,
-      angleRad: (p.angle * Math.PI) / 180,
-      centerX: p.centerX,
-      centerY: p.centerY,
-      radius: p.radius,
-      edgeMode: EDGE_MAP[p.edgeMode],
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    f[0] = entry.angleRad;
-    f[1] = entry.centerX;
-    f[2] = entry.centerY;
-    f[3] = entry.radius;
-    u[4] = entry.edgeMode;
+    f[0] = (p.angle * Math.PI) / 180;
+    f[1] = p.centerX;
+    f[2] = p.centerY;
+    f[3] = p.radius;
+    u[4] = EDGE_MAP[p.edgeMode];
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("twirl", "fs_twirl", STD_BINDINGS),

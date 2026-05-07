@@ -19,19 +19,17 @@ export const HueSaturationEffect: IPipelineEffect<
     return {
       kind: "hue-saturation",
       layerId: layer.id,
-      hue: layer.params.hue,
-      saturation: layer.params.saturation,
-      lightness: layer.params.lightness,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
     const params = new Float32Array([
-      entry.hue,
-      entry.saturation,
-      entry.lightness,
+      entry.params.hue,
+      entry.params.saturation,
+      entry.params.lightness,
       0,
     ]);
     engine.runtime.encodeStdAdjRenderPass(

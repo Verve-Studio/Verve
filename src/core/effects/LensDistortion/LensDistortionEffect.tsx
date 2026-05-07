@@ -32,39 +32,31 @@ export const LensDistortionEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "lens-distortion",
       layerId: layer.id,
-      distType: TYPE_MAP[p.type],
-      edgeMode: EDGE_MAP[p.edgeMode],
-      strength: p.strength / 100,
-      secondary: p.secondary / 100,
-      centerX: p.centerX,
-      centerY: p.centerY,
-      zoom: p.zoom / 100,
-      tiltX: p.tiltX / 100,
-      tiltY: p.tiltY / 100,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     // LensDistParams: 48 bytes (12 × 4-byte slots). WGSL rounds the struct
     // size up to a multiple of 16 for uniform-buffer storage.
     const buf = new ArrayBuffer(48);
     const u = new Uint32Array(buf);
     const f = new Float32Array(buf);
-    u[0] = entry.distType;
-    u[1] = entry.edgeMode;
-    f[4] = entry.strength;
-    f[5] = entry.secondary;
-    f[6] = entry.centerX;
-    f[7] = entry.centerY;
-    f[8] = entry.zoom;
-    f[9] = entry.tiltX;
-    f[10] = entry.tiltY;
+    u[0] = TYPE_MAP[p.type];
+    u[1] = EDGE_MAP[p.edgeMode];
+    f[4] = p.strength / 100;
+    f[5] = p.secondary / 100;
+    f[6] = p.centerX;
+    f[7] = p.centerY;
+    f[8] = p.zoom / 100;
+    f[9] = p.tiltX / 100;
+    f[10] = p.tiltY / 100;
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("lens-distortion", "fs_lens_distortion", STD_BINDINGS),

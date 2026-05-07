@@ -79,9 +79,9 @@ export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> = 
     return {
       kind: "pixelate",
       layerId: layer.id,
-      blockSize: layer.params.blockSize,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -89,7 +89,7 @@ export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> = 
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-pixelate", "fs_pixelate");
     const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.blockSize, 0, 0, 0]),
+      new Uint32Array([entry.params.blockSize, 0, 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

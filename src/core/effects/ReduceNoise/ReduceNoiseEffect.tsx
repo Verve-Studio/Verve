@@ -20,17 +20,12 @@ export const ReduceNoiseEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { strength, preserveDetails, reduceColorNoise, sharpenDetails } =
-      layer.params;
     return {
       kind: "reduce-noise",
       layerId: layer.id,
-      strength,
-      preserveDetails,
-      reduceColorNoise,
-      sharpenDetails,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -39,7 +34,7 @@ export const ReduceNoiseEffect: IPipelineEffect<
     const w = dstTex.width;
     const h = dstTex.height;
     const { strength, preserveDetails, reduceColorNoise, sharpenDetails } =
-      entry;
+      entry.params;
 
     const reducePair = rt.getRenderPipelinePair(
       "filter-reduce-noise",

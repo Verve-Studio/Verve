@@ -25,25 +25,12 @@ export const SeamlessTextureEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const {
-      breakRepetition,
-      cellSize,
-      blendRadius,
-      seamlessBorders,
-      borderRadius,
-      seed,
-    } = layer.params;
     return {
       kind: "seamless-texture",
       layerId: layer.id,
-      breakRepetition,
-      cellSize,
-      blendRadius,
-      seamlessBorders,
-      borderRadius,
-      seed,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -58,7 +45,7 @@ export const SeamlessTextureEffect: IPipelineEffect<
       seamlessBorders,
       borderRadius,
       seed,
-    } = entry;
+    } = entry.params;
     const breakPair = rt.getRenderPipelinePair(
       "filter-seamless-break",
       "fs_seamless_break",

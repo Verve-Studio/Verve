@@ -48,12 +48,9 @@ export const HalationEffect: IPipelineEffect<
     return {
       kind: "halation",
       layerId: layer.id,
-      threshold: layer.params.threshold,
-      spread: layer.params.spread,
-      blur: layer.params.blur,
-      strength: layer.params.strength,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -74,7 +71,7 @@ export const HalationEffect: IPipelineEffect<
       STD_BINDINGS,
     );
     const extractParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.threshold, 0, 0, 0]),
+      new Float32Array([entry.params.threshold, 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,
@@ -91,8 +88,8 @@ export const HalationEffect: IPipelineEffect<
     );
 
     // Passes 2..N: H+V box blur iterations (shared bloom pipelines)
-    const blurRadius = Math.max(1, Math.round(entry.spread));
-    const iterations = Math.max(1, Math.min(5, Math.round(entry.blur)));
+    const blurRadius = Math.max(1, Math.round(entry.params.spread));
+    const iterations = Math.max(1, Math.min(5, Math.round(entry.params.blur)));
     const boxH = runtime.getRenderPipelineAuto(
       "bloom-blur-h",
       "fs_bloom_blur_h",
@@ -132,7 +129,7 @@ export const HalationEffect: IPipelineEffect<
     );
     const compPipeline = runtime.selectPipeline(compPair, format);
     const compParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.strength, 0, 0, 0]),
+      new Float32Array([entry.params.strength, 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,

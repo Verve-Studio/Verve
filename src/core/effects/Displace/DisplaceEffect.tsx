@@ -24,29 +24,25 @@ export const DisplaceEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "displace",
       layerId: layer.id,
-      horizontalScale: p.horizontalScale,
-      verticalScale: p.verticalScale,
-      noiseFrequency: p.noiseFrequency,
-      seed: p.seed,
-      edgeMode: EDGE_MAP[p.edgeMode],
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    f[0] = entry.horizontalScale;
-    f[1] = entry.verticalScale;
-    f[2] = entry.noiseFrequency;
-    f[3] = entry.seed;
-    u[4] = entry.edgeMode;
+    f[0] = p.horizontalScale;
+    f[1] = p.verticalScale;
+    f[2] = p.noiseFrequency;
+    f[3] = p.seed;
+    u[4] = EDGE_MAP[p.edgeMode];
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("displace", "fs_displace", STD_BINDINGS),

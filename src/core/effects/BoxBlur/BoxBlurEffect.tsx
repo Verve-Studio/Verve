@@ -16,9 +16,9 @@ export const BoxBlurEffect: IPipelineEffect<BoxBlurEffectLayer, BoxBlurOp> =
       return {
         kind: "box-blur",
         layerId: layer.id,
-        radius: layer.params.radius,
         visible: layer.visible,
         selMaskLayer: mask,
+        params: layer.params,
       };
     },
 
@@ -27,7 +27,7 @@ export const BoxBlurEffect: IPipelineEffect<BoxBlurEffectLayer, BoxBlurOp> =
       const hPair = rt.getRenderPipelinePair("filter-box-h", "fs_box_h");
       const vPair = rt.getRenderPipelinePair("filter-box-v", "fs_box_v");
       const paramsBuf = rt.makeParamsBuf(
-        new Uint32Array([entry.radius, 0, 0, 0]),
+        new Uint32Array([entry.params.radius, 0, 0, 0]),
       );
       rt.encodeRenderPass(
         encoder,

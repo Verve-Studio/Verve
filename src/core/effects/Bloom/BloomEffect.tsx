@@ -85,12 +85,9 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     return {
       kind: "bloom",
       layerId: layer.id,
-      threshold: layer.params.threshold,
-      strength: layer.params.strength,
-      spread: layer.params.spread,
-      quality: layer.params.quality,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -102,12 +99,12 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
       runtime.device,
       w,
       h,
-      entry.quality,
+      entry.params.quality,
     );
 
     const scaleFactor =
-      entry.quality === "full" ? 1 : entry.quality === "half" ? 2 : 4;
-    const blurRadius = Math.max(1, Math.round(entry.spread / scaleFactor));
+      entry.params.quality === "full" ? 1 : entry.params.quality === "half" ? 2 : 4;
+    const blurRadius = Math.max(1, Math.round(entry.params.spread / scaleFactor));
 
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
@@ -120,7 +117,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
       STD_BINDINGS,
     );
     const extractParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.threshold, 0, 0, 0]),
+      new Float32Array([entry.params.threshold, 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,
@@ -140,7 +137,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     let workingSrc = blurATex;
     let workingDst = blurBTex;
 
-    if (entry.quality !== "full") {
+    if (entry.params.quality !== "full") {
       const downsamplePipeline = runtime.getRenderPipelineAuto(
         "bloom-downsample",
         "fs_bloom_downsample",
@@ -205,7 +202,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     );
     const compPipeline = runtime.selectPipeline(compPair, format);
     const compParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.strength, 0, 0, 0]),
+      new Float32Array([entry.params.strength, 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,

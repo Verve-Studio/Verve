@@ -22,11 +22,9 @@ export const ChromaticAberrationEffect: IPipelineEffect<
     return {
       kind: "chromatic-aberration",
       layerId: layer.id,
-      caType: layer.params.type,
-      distance: layer.params.distance,
-      angle: layer.params.angle,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -34,9 +32,9 @@ export const ChromaticAberrationEffect: IPipelineEffect<
     const buf = new ArrayBuffer(16);
     const u = new Uint32Array(buf);
     const f = new Float32Array(buf);
-    u[0] = entry.caType === "radial" ? 0 : 1;
-    f[1] = entry.distance;
-    f[2] = entry.angle;
+    u[0] = entry.params.type === "radial" ? 0 : 1;
+    f[1] = entry.params.distance;
+    f[2] = entry.params.angle;
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("chromatic-aberration", "fs_chromatic_aberration", STD_BINDINGS),

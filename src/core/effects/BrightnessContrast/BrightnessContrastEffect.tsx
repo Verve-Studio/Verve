@@ -22,15 +22,14 @@ export const BrightnessContrastEffect: IPipelineEffect<
     return {
       kind: "brightness-contrast",
       layerId: layer.id,
-      brightness: layer.params.brightness,
-      contrast: layer.params.contrast,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    const params = new Float32Array([entry.brightness, entry.contrast, 0, 0]);
+    const params = new Float32Array([entry.params.brightness, entry.params.contrast, 0, 0]);
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("bc", "fs_brightness_contrast", STD_BINDINGS),

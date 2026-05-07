@@ -25,36 +25,29 @@ export const LensFlareEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "lens-flare",
       layerId: layer.id,
-      centerX: p.centerX,
-      centerY: p.centerY,
-      brightness: p.brightness,
-      lensType: p.lensType,
-      ringOpacity: p.ringOpacity,
-      streakStrength: p.streakStrength,
-      streakWidth: p.streakWidth,
-      streakRotation: p.streakRotation,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     // LensFlareParams: 12 × u32 = 48 bytes (matches the WGSL struct, including
     // the trailing `imgWidth`, `imgHeight`, and two padding slots required by
     // WGSL's 16-byte uniform-buffer alignment rules).
     const buf = new Uint32Array(12);
-    buf[0] = Math.round(entry.centerX);
-    buf[1] = Math.round(entry.centerY);
-    buf[2] = entry.brightness;
-    buf[3] = entry.lensType;
-    buf[4] = entry.ringOpacity;
-    buf[5] = entry.streakStrength;
-    buf[6] = entry.streakWidth;
-    buf[7] = entry.streakRotation;
+    buf[0] = Math.round(p.centerX);
+    buf[1] = Math.round(p.centerY);
+    buf[2] = p.brightness;
+    buf[3] = p.lensType;
+    buf[4] = p.ringOpacity;
+    buf[5] = p.streakStrength;
+    buf[6] = p.streakWidth;
+    buf[7] = p.streakRotation;
     buf[8] = dstTex.width;
     buf[9] = dstTex.height;
     engine.runtime.encodeStdAdjRenderPass(

@@ -21,27 +21,24 @@ export const ShearEffect: IPipelineEffect<ShearEffectLayer, ShearOp> = {
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "shear",
       layerId: layer.id,
-      amplitude: p.amplitude,
-      direction: DIR_MAP[p.direction],
-      waveFrequency: p.waveFrequency,
-      edgeMode: EDGE_MAP[p.edgeMode],
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    f[0] = entry.amplitude;
-    u[1] = entry.direction;
-    f[2] = entry.waveFrequency;
-    u[3] = entry.edgeMode;
+    f[0] = p.amplitude;
+    u[1] = DIR_MAP[p.direction];
+    f[2] = p.waveFrequency;
+    u[3] = EDGE_MAP[p.edgeMode];
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("shear", "fs_shear", STD_BINDINGS),

@@ -15,20 +15,18 @@ export const UnsharpMaskEffect: IPipelineEffect<
   defaultParams: { amount: 50, radius: 2, threshold: 0 },
 
   buildPlanEntry(layer, { mask }) {
-    const { amount, radius, threshold } = layer.params;
     return {
       kind: "unsharp-mask",
       layerId: layer.id,
-      amount,
-      radius,
-      threshold,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
+    const { amount, radius, threshold } = entry.params;
     const w = dstTex.width;
     const h = dstTex.height;
     const gaussH = rt.getRenderPipelinePair("filter-gaussian-h", "fs_gaussian_h");
@@ -39,7 +37,7 @@ export const UnsharpMaskEffect: IPipelineEffect<
     );
 
     const gaussParamsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.radius, 0, 0, 0]),
+      new Uint32Array([radius, 0, 0, 0]),
     );
     const blurredTex = rt.makeRgba8Tex(w, h);
     rt.encodeRenderPass(
@@ -61,7 +59,7 @@ export const UnsharpMaskEffect: IPipelineEffect<
       ],
     );
     const combineParamsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.amount, entry.threshold, 0, 0]),
+      new Uint32Array([amount, threshold, 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

@@ -23,38 +23,32 @@ export const VignetteEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { r, g, b } = layer.params.color;
     return {
       kind: "vignette",
       layerId: layer.id,
-      shape: layer.params.shape,
-      spread: layer.params.spread,
-      softness: layer.params.softness,
-      opacity: layer.params.opacity,
-      colorR: r / 255,
-      colorG: g / 255,
-      colorB: b / 255,
-      roundness: layer.params.roundness,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
+    const { r, g, b } = p.color;
     // VignetteParams layout (32 bytes):
     //   0  shape u32; 4 spread f32; 8 softness f32; 12 opacity f32;
     //  16  color vec3f; 28 roundness f32
     const buf = new ArrayBuffer(32);
     const u = new Uint32Array(buf);
     const f = new Float32Array(buf);
-    u[0] = entry.shape === "ellipse" ? 0 : 1;
-    f[1] = entry.spread;
-    f[2] = entry.softness;
-    f[3] = entry.opacity;
-    f[4] = entry.colorR;
-    f[5] = entry.colorG;
-    f[6] = entry.colorB;
-    f[7] = entry.roundness;
+    u[0] = p.shape === "ellipse" ? 0 : 1;
+    f[1] = p.spread;
+    f[2] = p.softness;
+    f[3] = p.opacity;
+    f[4] = r / 255;
+    f[5] = g / 255;
+    f[6] = b / 255;
+    f[7] = p.roundness;
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("vignette", "fs_vignette", STD_BINDINGS),

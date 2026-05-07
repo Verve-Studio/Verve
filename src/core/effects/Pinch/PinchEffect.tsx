@@ -21,29 +21,25 @@ export const PinchEffect: IPipelineEffect<PinchEffectLayer, PinchOp> = {
   },
 
   buildPlanEntry(layer, { mask }) {
-    const p = layer.params;
     return {
       kind: "pinch",
       layerId: layer.id,
-      amount: p.amount / 100,
-      radius: p.radius,
-      centerX: p.centerX,
-      centerY: p.centerY,
-      edgeMode: EDGE_MAP[p.edgeMode],
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     const buf = new ArrayBuffer(32);
     const f = new Float32Array(buf);
     const u = new Uint32Array(buf);
-    f[0] = entry.amount;
-    f[1] = entry.radius;
-    f[2] = entry.centerX;
-    f[3] = entry.centerY;
-    u[4] = entry.edgeMode;
+    f[0] = p.amount / 100;
+    f[1] = p.radius;
+    f[2] = p.centerX;
+    f[3] = p.centerY;
+    u[4] = EDGE_MAP[p.edgeMode];
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("pinch", "fs_pinch", STD_BINDINGS),

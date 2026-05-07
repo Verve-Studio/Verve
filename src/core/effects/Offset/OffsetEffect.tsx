@@ -15,17 +15,21 @@ export const OffsetEffect: IPipelineEffect<OffsetEffectLayer, OffsetOp> = {
     return {
       kind: "offset",
       layerId: layer.id,
-      offsetX: Math.round(layer.params.offsetX),
-      offsetY: Math.round(layer.params.offsetY),
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-offset", "fs_offset");
-    const data = new Int32Array([entry.offsetX | 0, entry.offsetY | 0, 0, 0]);
+    const data = new Int32Array([
+      Math.round(entry.params.offsetX) | 0,
+      Math.round(entry.params.offsetY) | 0,
+      0,
+      0,
+    ]);
     const paramsBuf = rt.makeParamsBuf(
       new Uint32Array(data.buffer, data.byteOffset, data.length),
     );

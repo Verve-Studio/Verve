@@ -194,10 +194,18 @@ export const InnerShadowEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { color, opacity, offsetX, offsetY, spread, softness } = layer.params;
     return {
       kind: "inner-shadow",
       layerId: layer.id,
+      visible: layer.visible,
+      selMaskLayer: mask,
+      params: layer.params,
+    };
+  },
+
+  encode({ engine, encoder, srcTex, dstTex }, entry) {
+    const { color, opacity, offsetX, offsetY, spread, softness } = entry.params;
+    encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
       colorR: color.r / 255,
       colorG: color.g / 255,
       colorB: color.b / 255,
@@ -207,22 +215,6 @@ export const InnerShadowEffect: IPipelineEffect<
       offsetY,
       spread,
       softness,
-      visible: layer.visible,
-      selMaskLayer: mask,
-    };
-  },
-
-  encode({ engine, encoder, srcTex, dstTex }, entry) {
-    encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: entry.colorR,
-      colorG: entry.colorG,
-      colorB: entry.colorB,
-      colorA: entry.colorA,
-      opacity: entry.opacity,
-      offsetX: entry.offsetX,
-      offsetY: entry.offsetY,
-      spread: entry.spread,
-      softness: entry.softness,
       selMaskLayer: entry.selMaskLayer,
     });
   },

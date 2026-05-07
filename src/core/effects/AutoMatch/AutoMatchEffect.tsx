@@ -35,14 +35,9 @@ export const AutoMatchEffect: IPipelineEffect<
     return {
       kind: "auto-match",
       layerId: layer.id,
-      strength: p.strength / 100,
-      brightness: p.brightness / 100,
-      contrast: p.contrast / 100,
-      gamma: p.gamma / 100,
-      color: p.color / 100,
-      saturation: p.saturation / 100,
-      clampHighlights: p.clampHighlights,
-      clampShadows: p.clampShadows,
+      visible: layer.visible,
+      selMaskLayer: mask,
+      params: layer.params,
       layerMeanL: lz?.meanL ?? 0,
       layerStdL: lz?.stdL ?? 0,
       layerMinL: lz?.minL ?? 0,
@@ -62,12 +57,11 @@ export const AutoMatchEffect: IPipelineEffect<
       contextChromaMag: cz?.chromaMag ?? 0,
       contextCount: cz?.count ?? 0,
       statsVersion: p.statsVersion,
-      visible: layer.visible,
-      selMaskLayer: mask,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     // AutoMatchParams: 8 × vec4 = 128 bytes
     const buf = new ArrayBuffer(128);
     const f = new Float32Array(buf);
@@ -88,14 +82,14 @@ export const AutoMatchEffect: IPipelineEffect<
     f[13] = entry.contextMeanG;
     f[14] = entry.contextMeanB;
     f[15] = entry.contextCount > 0 ? 1 : 0;
-    f[16] = entry.strength;
-    f[17] = entry.brightness;
-    f[18] = entry.contrast;
-    f[19] = entry.gamma;
-    f[20] = entry.color;
-    f[21] = entry.saturation;
-    u[24] = entry.clampHighlights ? 1 : 0;
-    u[25] = entry.clampShadows ? 1 : 0;
+    f[16] = p.strength / 100;
+    f[17] = p.brightness / 100;
+    f[18] = p.contrast / 100;
+    f[19] = p.gamma / 100;
+    f[20] = p.color / 100;
+    f[21] = p.saturation / 100;
+    u[24] = p.clampHighlights ? 1 : 0;
+    u[25] = p.clampShadows ? 1 : 0;
     f[28] = entry.layerChromaMag;
     f[29] = entry.contextChromaMag;
     engine.runtime.encodeStdAdjRenderPass(
