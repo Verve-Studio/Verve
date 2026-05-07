@@ -2,6 +2,7 @@ import type { ColorKeyAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorKeyPanel } from "./ColorKeyPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ColorKeyOp = Extract<AdjustmentRenderOp, { kind: "color-key" }>;
 
@@ -46,9 +47,9 @@ export const ColorKeyEffect: IPipelineEffect<
       0,
       0,
     ]);
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.ckPipeline,
+      engine.runtime.getRenderPipelinePair("ck", "fs_color_key", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

@@ -2,6 +2,7 @@ import type { TwirlAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { TwirlOptions } from "./TwirlOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type TwirlOp = Extract<AdjustmentRenderOp, { kind: "twirl" }>;
 
@@ -43,9 +44,9 @@ export const TwirlEffect: IPipelineEffect<TwirlAdjustmentLayer, TwirlOp> = {
     f[2] = entry.centerY;
     f[3] = entry.radius;
     u[4] = entry.edgeMode;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.twirlPipeline,
+      engine.runtime.getRenderPipelinePair("twirl", "fs_twirl", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

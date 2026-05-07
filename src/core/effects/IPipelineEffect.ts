@@ -89,4 +89,19 @@ export interface IPipelineEffect<
 
   /** Right-side panel component shown when this layer is active. */
   readonly Panel: ComponentType<PanelProps<L>>;
+
+  /**
+   * Optional. Called once per frame after encode + submit. Effects with
+   * cross-frame texture caches use this to release entries that weren't
+   * touched during the just-submitted frame (analogous to the previous
+   * `*UsedThisFrame` flags on AdjustmentEncoder).
+   */
+  onFrameEnd?(): void;
+
+  /**
+   * Optional. Called when the owning AdjustmentEncoder is destroyed (canvas
+   * tear-down). Effects with persistent GPU resources (texture caches, LUT
+   * textures) release them here.
+   */
+  onDestroy?(): void;
 }

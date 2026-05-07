@@ -2,6 +2,7 @@ import type { InnerGlowAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { InnerGlowOptions } from "./InnerGlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { encodeInnerShadowPass } from "../InnerShadow/InnerShadowEffect";
 
 type InnerGlowOp = Extract<AdjustmentRenderOp, { kind: "inner-glow" }>;
 
@@ -37,23 +38,22 @@ export const InnerGlowEffect: IPipelineEffect<
   },
 
   encode({ engine, encoder, srcTex, dstTex }, entry) {
-    // Inner glow is inner-shadow with offsetX/offsetY = 0.
-    engine.encodeInnerShadowPass(
-      encoder,
-      srcTex,
-      dstTex,
-      entry.colorR,
-      entry.colorG,
-      entry.colorB,
-      entry.colorA,
-      entry.opacity,
-      0,
-      0,
-      entry.spread,
-      entry.softness,
-      entry.selMaskLayer,
-    );
+    // Inner glow is inner-shadow with offsetX/offsetY = 0; shares texCache.
+    encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
+      colorR: entry.colorR,
+      colorG: entry.colorG,
+      colorB: entry.colorB,
+      colorA: entry.colorA,
+      opacity: entry.opacity,
+      offsetX: 0,
+      offsetY: 0,
+      spread: entry.spread,
+      softness: entry.softness,
+      selMaskLayer: entry.selMaskLayer,
+    });
   },
+
+  // No onFrameEnd / onDestroy — InnerShadowEffect owns the shared cache lifecycle.
 
   Panel: InnerGlowOptions,
 };

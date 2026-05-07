@@ -2,6 +2,7 @@ import type { LensFlareAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { LensFlarePanel } from "./LensFlarePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type LensFlareOp = Extract<AdjustmentRenderOp, { kind: "lens-flare" }>;
 
@@ -56,9 +57,9 @@ export const LensFlareEffect: IPipelineEffect<
     buf[7] = entry.streakRotation;
     buf[8] = dstTex.width;
     buf[9] = dstTex.height;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.lensFlarePipeline,
+      engine.runtime.getRenderPipelinePair("filter-lens-flare", "fs_lens_flare", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

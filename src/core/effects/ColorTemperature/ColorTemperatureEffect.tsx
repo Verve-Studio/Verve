@@ -2,6 +2,7 @@ import type { ColorTemperatureAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorTemperaturePanel } from "./ColorTemperaturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ColorTemperatureOp = Extract<
   AdjustmentRenderOp,
@@ -30,9 +31,9 @@ export const ColorTemperatureEffect: IPipelineEffect<
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
     const params = new Float32Array([entry.temperature, entry.tint, 0, 0]);
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.tempPipeline,
+      engine.runtime.getRenderPipelinePair("temp", "fs_color_temperature", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

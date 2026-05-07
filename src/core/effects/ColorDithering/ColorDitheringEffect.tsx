@@ -2,6 +2,8 @@ import type { ColorDitheringAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorDitheringPanel } from "./ColorDitheringPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { createStorageBuffer } from "@/graphicspipeline/webgpu/utils";
 
 type ColorDitheringOp = Extract<AdjustmentRenderOp, { kind: "color-dithering" }>;
 
@@ -56,17 +58,39 @@ export const ColorDitheringEffect: IPipelineEffect<
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    engine.encodeColorDitheringRenderPass(
-      encoder,
-      srcTex,
-      dstTex,
-      format,
-      entry.palette,
-      entry.paletteCount,
-      entry.style,
-      entry.opacity,
-      entry.selMaskLayer,
+    const { runtime } = engine;
+    const pair = runtime.getRenderPipelinePair(
+      "dither",
+      "fs_color_dithering",
+      [...STD_BINDINGS, "storage"],
     );
+    const pipeline = runtime.selectPipeline(pair, format);
+
+    const paramsData = new Uint32Array(8);
+    paramsData[0] = entry.paletteCount;
+    paramsData[1] = entry.style;
+    paramsData[2] = Math.round(entry.opacity);
+    const paramsBuf = runtime.makeParamsBuf(paramsData);
+
+    const palBuf = createStorageBuffer(runtime.device, 256 * 16);
+    runtime.device.queue.writeBuffer(
+      palBuf,
+      0,
+      entry.palette as Float32Array<ArrayBuffer>,
+    );
+    runtime.pendingDestroyBuffers.push(palBuf);
+
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
+
+    runtime.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: runtime.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+      { binding: 5, resource: { buffer: palBuf } },
+    ]);
   },
 
   Panel: ColorDitheringPanel,

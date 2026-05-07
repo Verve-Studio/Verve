@@ -2,6 +2,7 @@ import type { ColorVibranceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorVibrancePanel } from "./ColorVibrancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ColorVibranceOp = Extract<AdjustmentRenderOp, { kind: "color-vibrance" }>;
 
@@ -27,9 +28,9 @@ export const ColorVibranceEffect: IPipelineEffect<
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
     const params = new Float32Array([entry.vibrance, entry.saturation, 0, 0]);
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.vibPipeline,
+      engine.runtime.getRenderPipelinePair("vib", "fs_color_vibrance", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

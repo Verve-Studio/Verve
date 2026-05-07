@@ -2,6 +2,7 @@ import type { PinchAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { PinchOptions } from "./PinchOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type PinchOp = Extract<AdjustmentRenderOp, { kind: "pinch" }>;
 
@@ -43,9 +44,9 @@ export const PinchEffect: IPipelineEffect<PinchAdjustmentLayer, PinchOp> = {
     f[2] = entry.centerX;
     f[3] = entry.centerY;
     u[4] = entry.edgeMode;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.pinchPipeline,
+      engine.runtime.getRenderPipelinePair("pinch", "fs_pinch", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

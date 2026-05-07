@@ -1,7 +1,7 @@
 import type React from "react";
 import type { SharpenMoreAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodeSharpenMore } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { SharpenPanel } from "../Sharpen/SharpenPanel";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
@@ -31,7 +31,14 @@ export const SharpenMoreEffect: IPipelineEffect<
   },
 
   encode({ encoder, srcTex, dstTex }) {
-    encodeSharpenMore(encoder, srcTex, dstTex, dstTex.width, dstTex.height);
+    const rt = getFilterRuntime();
+    const pair = rt.getPipelinePair("filter-sharpen-more", "fs_sharpen_more");
+    rt.encodeRenderPass(
+      encoder,
+      rt.selectPipeline(pair, dstTex),
+      [{ binding: 0, resource: srcTex.createView() }],
+      dstTex,
+    );
   },
 
   Panel: SharpenMorePanel,

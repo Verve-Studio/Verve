@@ -2,6 +2,7 @@ import type { AutoMatchAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { AutoMatchPanel } from "./AutoMatchPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type AutoMatchOp = Extract<AdjustmentRenderOp, { kind: "auto-match" }>;
 
@@ -97,9 +98,9 @@ export const AutoMatchEffect: IPipelineEffect<
     u[25] = entry.clampShadows ? 1 : 0;
     f[28] = entry.layerChromaMag;
     f[29] = entry.contextChromaMag;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.autoMatchPipeline,
+      engine.runtime.getRenderPipelinePair("auto-match", "fs_auto_match", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

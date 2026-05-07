@@ -1,6 +1,6 @@
 import type { CloudsAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodeClouds } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -43,18 +43,46 @@ export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
   },
 
   encode({ encoder, srcTex, dstTex }, entry) {
-    encodeClouds(
-      encoder,
-      srcTex,
-      dstTex,
-      dstTex.width,
-      dstTex.height,
+    const rt = getFilterRuntime();
+    const w = dstTex.width;
+    const h = dstTex.height;
+    const pair = rt.getPipelinePair("filter-clouds", "fs_clouds");
+    const paramsData = new Uint32Array([
       entry.scale,
       entry.opacity,
       entry.colorMode,
       entry.fgColor,
       entry.bgColor,
-      entry.seed,
+      w,
+      h,
+      0,
+    ]);
+    const paramsBuf = rt.makeParamsBuf(paramsData);
+    const perm = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) perm[i] = i;
+    let s = (entry.seed ^ 0xdeadbeef) >>> 0;
+    for (let i = 255; i > 0; i--) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      const idx = s % (i + 1);
+      const tmp = perm[i];
+      perm[i] = perm[idx];
+      perm[idx] = tmp;
+    }
+    const permBuf = rt.device.createBuffer({
+      size: Math.max(perm.byteLength, 16),
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    rt.device.queue.writeBuffer(permBuf, 0, perm);
+    rt.pendingDestroyBuffers.push(permBuf);
+    rt.encodeRenderPass(
+      encoder,
+      rt.selectPipeline(pair, dstTex),
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+        { binding: 3, resource: { buffer: permBuf } },
+      ],
+      dstTex,
     );
   },
 

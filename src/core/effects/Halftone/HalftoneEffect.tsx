@@ -2,6 +2,7 @@ import type { HalftoneAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { HalftoneOptions } from "./HalftoneOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type HalftoneOp = Extract<AdjustmentRenderOp, { kind: "halftone" }>;
 
@@ -46,9 +47,9 @@ export const HalftoneEffect: IPipelineEffect<
     f[3] = entry.offsetY;
     f[4] = entry.offsetK;
     u[5] = entry.mode === "color" ? 0 : 1;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.halftonePipeline,
+      engine.runtime.getRenderPipelinePair("halftone", "fs_halftone", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

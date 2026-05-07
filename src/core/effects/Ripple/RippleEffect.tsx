@@ -2,6 +2,7 @@ import type { RippleAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { RippleOptions } from "./RippleOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type RippleOp = Extract<AdjustmentRenderOp, { kind: "ripple" }>;
 
@@ -43,9 +44,9 @@ export const RippleEffect: IPipelineEffect<RippleAdjustmentLayer, RippleOp> = {
     f[1] = entry.wavelengthPx;
     u[2] = entry.direction;
     u[3] = entry.edgeMode;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.ripplePipeline,
+      engine.runtime.getRenderPipelinePair("ripple", "fs_ripple", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

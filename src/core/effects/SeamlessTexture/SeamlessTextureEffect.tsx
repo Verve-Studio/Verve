@@ -1,6 +1,6 @@
 import type { SeamlessTextureAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodeSeamlessTexture } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -49,19 +49,96 @@ export const SeamlessTextureEffect: IPipelineEffect<
   },
 
   encode({ encoder, srcTex, dstTex }, entry) {
-    encodeSeamlessTexture(
-      encoder,
-      srcTex,
-      dstTex,
-      dstTex.width,
-      dstTex.height,
-      entry.breakRepetition,
-      entry.cellSize,
-      entry.blendRadius,
-      entry.seamlessBorders,
-      entry.borderRadius,
-      entry.seed,
+    const rt = getFilterRuntime();
+    const w = dstTex.width;
+    const h = dstTex.height;
+    const {
+      breakRepetition,
+      cellSize,
+      blendRadius,
+      seamlessBorders,
+      borderRadius,
+      seed,
+    } = entry;
+    const breakPair = rt.getPipelinePair(
+      "filter-seamless-break",
+      "fs_seamless_break",
     );
+    const borderPair = rt.getPipelinePair(
+      "filter-seamless-border",
+      "fs_seamless_border",
+    );
+
+    if (!breakRepetition && !seamlessBorders) {
+      rt.encodeRenderPass(
+        encoder,
+        rt.selectPipeline(borderPair, dstTex),
+        [
+          { binding: 0, resource: srcTex.createView() },
+          {
+            binding: 2,
+            resource: {
+              buffer: rt.makeParamsBuf(new Uint32Array([w, h, 0, 0])),
+            },
+          },
+        ],
+        dstTex,
+      );
+      return;
+    }
+
+    if (breakRepetition) {
+      const p1 = rt.makeParamsBuf(
+        new Uint32Array([
+          w,
+          h,
+          Math.max(1, cellSize),
+          Math.max(0, blendRadius),
+          seed >>> 0,
+          0,
+          0,
+          0,
+        ]),
+      );
+      const pass1Dst = seamlessBorders ? rt.makeRgba8Tex(w, h) : dstTex;
+      rt.encodeRenderPass(
+        encoder,
+        rt.selectPipeline(breakPair, pass1Dst),
+        [
+          { binding: 0, resource: srcTex.createView() },
+          { binding: 2, resource: { buffer: p1 } },
+        ],
+        pass1Dst,
+      );
+
+      if (seamlessBorders) {
+        const p2 = rt.makeParamsBuf(
+          new Uint32Array([w, h, Math.max(1, borderRadius), 0]),
+        );
+        rt.encodeRenderPass(
+          encoder,
+          rt.selectPipeline(borderPair, dstTex),
+          [
+            { binding: 0, resource: pass1Dst.createView() },
+            { binding: 2, resource: { buffer: p2 } },
+          ],
+          dstTex,
+        );
+      }
+    } else {
+      const p2 = rt.makeParamsBuf(
+        new Uint32Array([w, h, Math.max(1, borderRadius), 0]),
+      );
+      rt.encodeRenderPass(
+        encoder,
+        rt.selectPipeline(borderPair, dstTex),
+        [
+          { binding: 0, resource: srcTex.createView() },
+          { binding: 2, resource: { buffer: p2 } },
+        ],
+        dstTex,
+      );
+    }
   },
 
   Panel: SeamlessTexturePanel,

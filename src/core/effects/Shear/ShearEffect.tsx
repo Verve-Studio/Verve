@@ -2,6 +2,7 @@ import type { ShearAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ShearOptions } from "./ShearOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ShearOp = Extract<AdjustmentRenderOp, { kind: "shear" }>;
 
@@ -41,9 +42,9 @@ export const ShearEffect: IPipelineEffect<ShearAdjustmentLayer, ShearOp> = {
     u[1] = entry.direction;
     f[2] = entry.waveFrequency;
     u[3] = entry.edgeMode;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.shearPipeline,
+      engine.runtime.getRenderPipelinePair("shear", "fs_shear", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

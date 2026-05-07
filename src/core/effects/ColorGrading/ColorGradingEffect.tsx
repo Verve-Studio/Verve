@@ -2,6 +2,7 @@ import type { ColorGradingAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorGradingPanel } from "./ColorGradingPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ColorGradingOp = Extract<AdjustmentRenderOp, { kind: "color-grading" }>;
 
@@ -41,12 +42,49 @@ export const ColorGradingEffect: IPipelineEffect<
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    engine.encodeColorGradingRenderPass(
+    const { lift, gamma, gain, offset } = entry.params;
+    const buf = new ArrayBuffer(128);
+    const f = new Float32Array(buf);
+    f[0] = lift.r;
+    f[1] = lift.g;
+    f[2] = lift.b;
+    f[3] = lift.master;
+    f[4] = gamma.r;
+    f[5] = gamma.g;
+    f[6] = gamma.b;
+    f[7] = gamma.master;
+    f[8] = gain.r;
+    f[9] = gain.g;
+    f[10] = gain.b;
+    f[11] = gain.master;
+    f[12] = offset.r;
+    f[13] = offset.g;
+    f[14] = offset.b;
+    f[15] = offset.master;
+    f[16] = entry.params.temp;
+    f[17] = entry.params.tint;
+    f[18] = entry.params.contrast;
+    f[19] = entry.params.pivot;
+    f[20] = entry.params.midDetail;
+    f[21] = entry.params.colorBoost;
+    f[22] = entry.params.shadows;
+    f[23] = entry.params.highlights;
+    f[24] = entry.params.saturation;
+    f[25] = entry.params.hue;
+    f[26] = entry.params.lumMix;
+    f[27] = 0;
+
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
+      engine.runtime.getRenderPipelinePair(
+        "cg",
+        "fs_color_grading",
+        STD_BINDINGS,
+      ),
       srcTex,
       dstTex,
       format,
-      entry.params,
+      buf,
       entry.selMaskLayer,
     );
   },

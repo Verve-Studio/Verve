@@ -1,7 +1,7 @@
 import React from "react";
 import type { PixelateAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodePixelate } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { useAppContext } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -87,13 +87,19 @@ export const PixelateEffect: IPipelineEffect<PixelateAdjustmentLayer, PixelateOp
   },
 
   encode({ encoder, srcTex, dstTex }, entry) {
-    encodePixelate(
+    const rt = getFilterRuntime();
+    const pair = rt.getPipelinePair("filter-pixelate", "fs_pixelate");
+    const paramsBuf = rt.makeParamsBuf(
+      new Uint32Array([entry.blockSize, 0, 0, 0]),
+    );
+    rt.encodeRenderPass(
       encoder,
-      srcTex,
+      rt.selectPipeline(pair, dstTex),
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
       dstTex,
-      dstTex.width,
-      dstTex.height,
-      entry.blockSize,
     );
   },
 

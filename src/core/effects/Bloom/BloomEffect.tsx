@@ -2,8 +2,73 @@ import type { BloomAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { BloomOptions } from "./BloomOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import {
+  STD_BINDINGS,
+  type AdjBinding,
+} from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import {
+  createTrackedTexture,
+  destroyTrackedTexture,
+} from "@/core/store/memoryStore";
 
 type BloomOp = Extract<AdjustmentRenderOp, { kind: "bloom" }>;
+
+// Composite binding pattern: srcTex, sampler, glowTex, params, selMask, maskFlags.
+const COMPOSITE_BINDINGS: AdjBinding[] = [
+  "tex",
+  "sampler",
+  "tex",
+  "uniform",
+  "tex",
+  "uniform",
+];
+
+type BloomQuality = "full" | "half" | "quarter";
+
+// Module-level texture cache for the bloom intermediate buffers.
+let texCache: {
+  quality: BloomQuality;
+  extractTex: GPUTexture;
+  blurATex: GPUTexture;
+  blurBTex: GPUTexture;
+} | null = null;
+let usedThisFrame = false;
+
+function ensureTextures(
+  device: GPUDevice,
+  width: number,
+  height: number,
+  quality: BloomQuality,
+): { extractTex: GPUTexture; blurATex: GPUTexture; blurBTex: GPUTexture } {
+  usedThisFrame = true;
+  if (texCache && texCache.quality === quality) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.extractTex);
+    destroyTrackedTexture(texCache.blurATex);
+    destroyTrackedTexture(texCache.blurBTex);
+  }
+  const scaleFactor = quality === "full" ? 1 : quality === "half" ? 2 : 4;
+  const bw = Math.ceil(width / scaleFactor);
+  const bh = Math.ceil(height / scaleFactor);
+  const usage =
+    GPUTextureUsage.TEXTURE_BINDING |
+    GPUTextureUsage.RENDER_ATTACHMENT |
+    GPUTextureUsage.COPY_DST |
+    GPUTextureUsage.COPY_SRC;
+  const make = (tw: number, th: number): GPUTexture =>
+    createTrackedTexture(device, {
+      size: { width: tw, height: th },
+      format: "rgba8unorm",
+      usage,
+    });
+  texCache = {
+    quality,
+    extractTex: make(width, height),
+    blurATex: make(bw, bh),
+    blurBTex: make(bw, bh),
+  };
+  return texCache;
+}
 
 export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
   id: "bloom",
@@ -30,18 +95,155 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    engine.encodeBloomRenderPass(
-      encoder,
-      srcTex,
-      dstTex,
-      format,
-      entry.threshold,
-      entry.strength,
-      entry.spread,
+    const { runtime } = engine;
+    const w = runtime.pixelWidth;
+    const h = runtime.pixelHeight;
+    const { extractTex, blurATex, blurBTex } = ensureTextures(
+      runtime.device,
+      w,
+      h,
       entry.quality,
-      entry.selMaskLayer,
     );
+
+    const scaleFactor =
+      entry.quality === "full" ? 1 : entry.quality === "half" ? 2 : 4;
+    const blurRadius = Math.max(1, Math.round(entry.spread / scaleFactor));
+
+    const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+
+    // Pass 1: Extract — needs explicit BGL because srcTex may be rgba32float.
+    const extract = runtime.getRenderPipelineWithBGL(
+      "bloom-extract",
+      "fs_bloom_extract",
+      "rgba8unorm",
+      STD_BINDINGS,
+    );
+    const extractParamsBuf = runtime.makeParamsBuf(
+      new Float32Array([entry.threshold, 0, 0, 0]),
+    );
+    runtime.encodeRenderPass(
+      encoder,
+      extract.pipeline,
+      extract.bgl,
+      extractTex,
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: runtime.adjSampler },
+        { binding: 2, resource: { buffer: extractParamsBuf } },
+        { binding: 3, resource: dummyMask.createView() },
+        { binding: 4, resource: { buffer: maskFlagsBuf } },
+      ],
+    );
+
+    // Pass 2: Downsample (skipped at full quality)
+    let workingSrc = blurATex;
+    let workingDst = blurBTex;
+
+    if (entry.quality !== "full") {
+      const downsamplePipeline = runtime.getRenderPipelineAuto(
+        "bloom-downsample",
+        "fs_bloom_downsample",
+        "rgba8unorm",
+      );
+      const dsParamsBuf = runtime.makeParamsBuf(
+        new Uint32Array([scaleFactor, 0, 0, 0]),
+      );
+      runtime.encodeRenderPass(
+        encoder,
+        downsamplePipeline,
+        downsamplePipeline.getBindGroupLayout(0),
+        blurATex,
+        [
+          { binding: 0, resource: extractTex.createView() },
+          { binding: 2, resource: { buffer: dsParamsBuf } },
+        ],
+      );
+    } else {
+      encoder.copyTextureToTexture(
+        { texture: extractTex },
+        { texture: blurATex },
+        { width: w, height: h },
+      );
+    }
+
+    // Passes 3–8: 3 × H+V box blur (shared with halation)
+    const boxH = runtime.getRenderPipelineAuto(
+      "bloom-blur-h",
+      "fs_bloom_blur_h",
+      "rgba8unorm",
+    );
+    const boxV = runtime.getRenderPipelineAuto(
+      "bloom-blur-v",
+      "fs_bloom_blur_v",
+      "rgba8unorm",
+    );
+    const blurParamsBuf = runtime.makeParamsBuf(
+      new Uint32Array([blurRadius, 0, 0, 0]),
+    );
+    const boxHBGL = boxH.getBindGroupLayout(0);
+    const boxVBGL = boxV.getBindGroupLayout(0);
+    for (let i = 0; i < 3; i++) {
+      runtime.encodeRenderPass(encoder, boxH, boxHBGL, workingDst, [
+        { binding: 0, resource: workingSrc.createView() },
+        { binding: 2, resource: { buffer: blurParamsBuf } },
+      ]);
+      [workingSrc, workingDst] = [workingDst, workingSrc];
+
+      runtime.encodeRenderPass(encoder, boxV, boxVBGL, workingDst, [
+        { binding: 0, resource: workingSrc.createView() },
+        { binding: 2, resource: { buffer: blurParamsBuf } },
+      ]);
+      [workingSrc, workingDst] = [workingDst, workingSrc];
+    }
+
+    // Pass 9: Composite
+    const compPair = runtime.getRenderPipelinePair(
+      "bloom-composite",
+      "fs_bloom_composite",
+      COMPOSITE_BINDINGS,
+    );
+    const compPipeline = runtime.selectPipeline(compPair, format);
+    const compParamsBuf = runtime.makeParamsBuf(
+      new Float32Array([entry.strength, 0, 0, 0]),
+    );
+    runtime.encodeRenderPass(
+      encoder,
+      compPipeline,
+      compPair.bgl,
+      dstTex,
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: runtime.adjSampler },
+        { binding: 2, resource: workingSrc.createView() },
+        { binding: 3, resource: { buffer: compParamsBuf } },
+        { binding: 4, resource: dummyMask.createView() },
+        { binding: 5, resource: { buffer: maskFlagsBuf } },
+      ],
+    );
+  },
+
+  onFrameEnd() {
+    if (!usedThisFrame && texCache) {
+      destroyTrackedTexture(texCache.extractTex);
+      destroyTrackedTexture(texCache.blurATex);
+      destroyTrackedTexture(texCache.blurBTex);
+      texCache = null;
+    }
+    usedThisFrame = false;
+  },
+
+  onDestroy() {
+    if (texCache) {
+      destroyTrackedTexture(texCache.extractTex);
+      destroyTrackedTexture(texCache.blurATex);
+      destroyTrackedTexture(texCache.blurBTex);
+      texCache = null;
+    }
   },
 
   Panel: BloomOptions,
 };
+
+/** Exported so HalationEffect (and friends) can reuse the composite pipeline. */
+export const BLOOM_COMPOSITE_BINDINGS = COMPOSITE_BINDINGS;

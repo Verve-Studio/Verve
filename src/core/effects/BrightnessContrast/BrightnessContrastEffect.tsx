@@ -2,6 +2,7 @@ import type { BrightnessContrastAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { BrightnessContrastPanel } from "./BrightnessContrastPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type BrightnessContrastOp = Extract<
   AdjustmentRenderOp,
@@ -30,9 +31,9 @@ export const BrightnessContrastEffect: IPipelineEffect<
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
     const params = new Float32Array([entry.brightness, entry.contrast, 0, 0]);
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.bcPipeline,
+      engine.runtime.getRenderPipelinePair("bc", "fs_brightness_contrast", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

@@ -2,6 +2,7 @@ import type { ChromaticAberrationAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ChromaticAberrationOptions } from "./ChromaticAberrationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ChromaticAberrationOp = Extract<
   AdjustmentRenderOp,
@@ -36,9 +37,9 @@ export const ChromaticAberrationEffect: IPipelineEffect<
     u[0] = entry.caType === "radial" ? 0 : 1;
     f[1] = entry.distance;
     f[2] = entry.angle;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.caPipeline,
+      engine.runtime.getRenderPipelinePair("chromatic-aberration", "fs_chromatic_aberration", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

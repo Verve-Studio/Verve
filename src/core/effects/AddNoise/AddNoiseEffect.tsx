@@ -1,6 +1,6 @@
 import type { AddNoiseAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodeAddNoise } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { AddNoisePanel } from "./AddNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -35,16 +35,24 @@ export const AddNoiseEffect: IPipelineEffect<
   },
 
   encode({ encoder, srcTex, dstTex }, entry) {
-    encodeAddNoise(
+    const rt = getFilterRuntime();
+    const pair = rt.getPipelinePair("filter-add-noise", "fs_add_noise");
+    const paramsBuf = rt.makeParamsBuf(
+      new Uint32Array([
+        entry.amount,
+        entry.distribution,
+        entry.monochromatic,
+        entry.seed,
+      ]),
+    );
+    rt.encodeRenderPass(
       encoder,
-      srcTex,
+      rt.selectPipeline(pair, dstTex),
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
       dstTex,
-      dstTex.width,
-      dstTex.height,
-      entry.amount,
-      entry.distribution,
-      entry.monochromatic,
-      entry.seed,
     );
   },
 

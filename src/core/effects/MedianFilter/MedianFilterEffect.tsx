@@ -1,6 +1,6 @@
 import type { MedianFilterAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodeMedian } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { MedianFilterPanel } from "./MedianFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -26,13 +26,19 @@ export const MedianFilterEffect: IPipelineEffect<
   },
 
   encode({ encoder, srcTex, dstTex }, entry) {
-    encodeMedian(
+    const rt = getFilterRuntime();
+    const pair = rt.getPipelinePair("filter-median", "fs_median");
+    const paramsBuf = rt.makeParamsBuf(
+      new Uint32Array([entry.radius, 0, 0, 0]),
+    );
+    rt.encodeRenderPass(
       encoder,
-      srcTex,
+      rt.selectPipeline(pair, dstTex),
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
       dstTex,
-      dstTex.width,
-      dstTex.height,
-      entry.radius,
     );
   },
 

@@ -2,6 +2,7 @@ import type { DisplaceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { DisplaceOptions } from "./DisplaceOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type DisplaceOp = Extract<AdjustmentRenderOp, { kind: "displace" }>;
 
@@ -46,9 +47,9 @@ export const DisplaceEffect: IPipelineEffect<
     f[2] = entry.noiseFrequency;
     f[3] = entry.seed;
     u[4] = entry.edgeMode;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.displacePipeline,
+      engine.runtime.getRenderPipelinePair("displace", "fs_displace", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

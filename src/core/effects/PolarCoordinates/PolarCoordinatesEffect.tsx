@@ -2,6 +2,7 @@ import type { PolarCoordinatesAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { PolarCoordinatesOptions } from "./PolarCoordinatesOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type PolarCoordinatesOp = Extract<
   AdjustmentRenderOp,
@@ -46,9 +47,9 @@ export const PolarCoordinatesEffect: IPipelineEffect<
     f[1] = entry.centerX;
     f[2] = entry.centerY;
     u[3] = entry.edgeMode;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.polarPipeline,
+      engine.runtime.getRenderPipelinePair("polar-coordinates", "fs_polar", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

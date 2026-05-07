@@ -2,6 +2,7 @@ import type { VignetteAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { VignetteOptions } from "./VignetteOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type VignetteOp = Extract<AdjustmentRenderOp, { kind: "vignette" }>;
 
@@ -54,9 +55,9 @@ export const VignetteEffect: IPipelineEffect<
     f[5] = entry.colorG;
     f[6] = entry.colorB;
     f[7] = entry.roundness;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.vignettePipeline,
+      engine.runtime.getRenderPipelinePair("vignette", "fs_vignette", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

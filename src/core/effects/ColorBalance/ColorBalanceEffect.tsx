@@ -2,6 +2,7 @@ import type { ColorBalanceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ColorBalancePanel } from "./ColorBalancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type ColorBalanceOp = Extract<AdjustmentRenderOp, { kind: "color-balance" }>;
 
@@ -44,9 +45,9 @@ export const ColorBalanceEffect: IPipelineEffect<
     f[7] = p.highlights.mg;
     f[8] = p.highlights.yb;
     u[9] = p.preserveLuminosity ? 1 : 0;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.cbPipeline,
+      engine.runtime.getRenderPipelinePair("cb", "fs_color_balance", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

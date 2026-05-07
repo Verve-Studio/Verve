@@ -2,6 +2,7 @@ import type { BlackAndWhiteAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type BlackAndWhiteOp = Extract<AdjustmentRenderOp, { kind: "black-and-white" }>;
 
@@ -43,9 +44,9 @@ export const BlackAndWhiteEffect: IPipelineEffect<
       0,
       0,
     ]);
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.bwPipeline,
+      engine.runtime.getRenderPipelinePair("bw", "fs_black_and_white", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

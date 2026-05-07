@@ -2,6 +2,8 @@ import type { ReduceColorsAdjustmentLayer, RGBAColor } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { ReduceColorsPanel } from "./ReduceColorsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
+import { createStorageBuffer } from "@/graphicspipeline/webgpu/utils";
 
 type ReduceColorsOp = Extract<AdjustmentRenderOp, { kind: "reduce-colors" }>;
 
@@ -75,15 +77,36 @@ export const ReduceColorsEffect: IPipelineEffect<
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    engine.encodeReduceColorsRenderPass(
-      encoder,
-      srcTex,
-      dstTex,
-      format,
-      entry.palette,
-      entry.paletteCount,
-      entry.selMaskLayer,
+    const { runtime } = engine;
+    const pair = runtime.getRenderPipelinePair("rc", "fs_reduce_colors", [
+      ...STD_BINDINGS,
+      "storage",
+    ]);
+    const pipeline = runtime.selectPipeline(pair, format);
+
+    const paramsData = new Uint32Array(8);
+    paramsData[0] = entry.paletteCount;
+    const paramsBuf = runtime.makeParamsBuf(paramsData);
+
+    const palBuf = createStorageBuffer(runtime.device, 256 * 16);
+    runtime.device.queue.writeBuffer(
+      palBuf,
+      0,
+      entry.palette as Float32Array<ArrayBuffer>,
     );
+    runtime.pendingDestroyBuffers.push(palBuf);
+
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
+
+    runtime.encodeRenderPass(encoder, pipeline, pair.bgl, dstTex, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: runtime.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: dummyMask.createView() },
+      { binding: 4, resource: { buffer: maskFlagsBuf } },
+      { binding: 5, resource: { buffer: palBuf } },
+    ]);
   },
 
   Panel: ReduceColorsPanel,

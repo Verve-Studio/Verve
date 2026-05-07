@@ -1,6 +1,6 @@
 import type { OffsetAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { encodeOffset } from "@/graphicspipeline/webgpu/compute/filterCompute";
+import { getFilterRuntime } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { OffsetPanel } from "./OffsetPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
@@ -24,14 +24,20 @@ export const OffsetEffect: IPipelineEffect<OffsetAdjustmentLayer, OffsetOp> = {
   },
 
   encode({ encoder, srcTex, dstTex }, entry) {
-    encodeOffset(
+    const rt = getFilterRuntime();
+    const pair = rt.getPipelinePair("filter-offset", "fs_offset");
+    const data = new Int32Array([entry.offsetX | 0, entry.offsetY | 0, 0, 0]);
+    const paramsBuf = rt.makeParamsBuf(
+      new Uint32Array(data.buffer, data.byteOffset, data.length),
+    );
+    rt.encodeRenderPass(
       encoder,
-      srcTex,
+      rt.selectPipeline(pair, dstTex),
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
       dstTex,
-      dstTex.width,
-      dstTex.height,
-      entry.offsetX,
-      entry.offsetY,
     );
   },
 

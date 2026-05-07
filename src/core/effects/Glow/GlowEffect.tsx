@@ -2,6 +2,7 @@ import type { GlowAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { GlowOptions } from "./GlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { encodeDropShadowPass } from "../DropShadow/DropShadowEffect";
 
 type GlowOp = Extract<AdjustmentRenderOp, { kind: "glow" }>;
 
@@ -39,25 +40,24 @@ export const GlowEffect: IPipelineEffect<GlowAdjustmentLayer, GlowOp> = {
   },
 
   encode({ engine, encoder, srcTex, dstTex }, entry) {
-    // Glow is drop-shadow with offsetX/offsetY = 0.
-    engine.encodeDropShadowPass(
-      encoder,
-      srcTex,
-      dstTex,
-      entry.colorR,
-      entry.colorG,
-      entry.colorB,
-      entry.colorA,
-      entry.opacity,
-      0,
-      0,
-      entry.spread,
-      entry.softness,
-      entry.blendMode,
-      entry.knockout,
-      entry.selMaskLayer,
-    );
+    // Glow is drop-shadow with offsetX/offsetY = 0; shares texCache with DropShadow.
+    encodeDropShadowPass(engine.runtime, encoder, srcTex, dstTex, {
+      colorR: entry.colorR,
+      colorG: entry.colorG,
+      colorB: entry.colorB,
+      colorA: entry.colorA,
+      opacity: entry.opacity,
+      offsetX: 0,
+      offsetY: 0,
+      spread: entry.spread,
+      softness: entry.softness,
+      blendMode: entry.blendMode,
+      knockout: entry.knockout,
+      selMaskLayer: entry.selMaskLayer,
+    });
   },
+
+  // No onFrameEnd / onDestroy here — DropShadowEffect owns the shared cache lifecycle.
 
   Panel: GlowOptions,
 };

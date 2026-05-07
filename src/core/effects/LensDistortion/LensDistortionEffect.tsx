@@ -2,6 +2,7 @@ import type { LensDistortionAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { LensDistortionOptions } from "./LensDistortionOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type LensDistortionOp = Extract<
   AdjustmentRenderOp,
@@ -64,9 +65,9 @@ export const LensDistortionEffect: IPipelineEffect<
     f[8] = entry.zoom;
     f[9] = entry.tiltX;
     f[10] = entry.tiltY;
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.lensDistortionPipeline,
+      engine.runtime.getRenderPipelinePair("lens-distortion", "fs_lens_distortion", STD_BINDINGS),
       srcTex,
       dstTex,
       format,

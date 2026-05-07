@@ -2,6 +2,7 @@ import type { HueSaturationAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { HueSaturationPanel } from "./HueSaturationPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { STD_BINDINGS } from "@/graphicspipeline/webgpu/AdjustmentRuntime";
 
 type HueSaturationOp = Extract<AdjustmentRenderOp, { kind: "hue-saturation" }>;
 
@@ -33,9 +34,9 @@ export const HueSaturationEffect: IPipelineEffect<
       entry.lightness,
       0,
     ]);
-    engine.encodeStdAdjRenderPass(
+    engine.runtime.encodeStdAdjRenderPass(
       encoder,
-      engine.hsPipeline,
+      engine.runtime.getRenderPipelinePair("hs", "fs_hue_saturation", STD_BINDINGS),
       srcTex,
       dstTex,
       format,
