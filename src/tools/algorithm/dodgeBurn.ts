@@ -1,7 +1,7 @@
 import type {
   WebGPURenderer,
   GpuLayer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { bresenham, wuLine } from "./primitives";
 import type { SelMask } from "./primitives";
 

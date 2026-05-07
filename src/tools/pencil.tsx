@@ -10,8 +10,8 @@ import { pixelBrushStore } from "@/core/store/pixelBrushStore";
 import { PixelBrushGallery } from "@/ux/widgets/PixelBrushGallery/PixelBrushGallery";
 import { PixelBrushesModal } from "@/ux/modals/PixelBrushesModal/PixelBrushesModal";
 import type { PixelBrush } from "@/types";
-import type { WebGPURenderer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { WebGPURenderer } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
   ToolDefinition,
   ToolHandler,

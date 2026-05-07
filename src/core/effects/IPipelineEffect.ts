@@ -3,8 +3,8 @@ import type { AdjustmentLayerState, RGBAColor } from "@/types";
 import type {
   AdjustmentRenderOp,
   GpuLayer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import type { EffectEncoder } from "@/graphicspipeline/webgpu/EffectEncoder";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { EffectEncoder } from "@/graphics/webgpu/EffectEncoder";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 
 export type MenuRoot = "adjustments" | "effects" | "filters";

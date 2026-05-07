@@ -1,5 +1,5 @@
 import type { TextLayerState } from "@/types";
-import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 
 /** Break a single paragraph into lines that fit within maxWidth canvas pixels.
  *  Matches CSS `white-space: pre-wrap; overflow-wrap: break-word` behaviour:

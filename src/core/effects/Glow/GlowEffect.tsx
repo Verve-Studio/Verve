@@ -1,5 +1,5 @@
 import type { GlowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GlowOptions } from "./GlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeDropShadowPass } from "../DropShadow/DropShadowEffect";

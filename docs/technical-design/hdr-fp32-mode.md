@@ -21,8 +21,8 @@ Eyedropper HDR indicator, status bar `RGB/32F` label with blue accent, pixel-inf
 
 | File | Change summary |
 |---|---|
-| `src/graphicspipeline/webgpu/shaders/rendering/blit.ts` | Add `HDR_BLIT_SHADER` variant with pluggable operator dispatch (Reinhard V1; ACES stub ready for V2); existing `BLIT_SHADER` unchanged |
-| `src/graphicspipeline/webgpu/rendering/WebGPURenderer.ts` | Create second blit pipeline using `HDR_BLIT_SHADER`; update 16-byte uniform buffer (`exposureLinear`, `isFp32`, `operator`, `_pad`) each frame; always uses HDR pipeline (branches internally on `isFp32`) |
+| `src/graphics/webgpu/shaders/rendering/blit.ts` | Add `HDR_BLIT_SHADER` variant with pluggable operator dispatch (Reinhard V1; ACES stub ready for V2); existing `BLIT_SHADER` unchanged |
+| `src/graphics/webgpu/rendering/WebGPURenderer.ts` | Create second blit pipeline using `HDR_BLIT_SHADER`; update 16-byte uniform buffer (`exposureLinear`, `isFp32`, `operator`, `_pad`) each frame; always uses HDR pipeline (branches internally on `isFp32`) |
 | `src/core/store/displayStore.ts` | **New.** Module-level singleton holding `exposureEV` (default `0`) and `toneMappingOperator` (default `'reinhard'`); notify-subscribe pattern identical to `cursorStore` |
 | `src/types/index.ts` | Add `ToneMappingOperator` union type |
 | `src/types/index.ts` | Add `hdrIntensity: number` to `AppState` |
@@ -196,7 +196,7 @@ interface HdrLdrExportWarningDialogProps {
 
 ### Phase 1 — Display Tone-Mapping Shader
 
-**Step 1 — `src/graphicspipeline/webgpu/shaders/rendering/blit.ts`**
+**Step 1 — `src/graphics/webgpu/shaders/rendering/blit.ts`**
 
 Add `HDR_BLIT_SHADER` below the existing `BLIT_SHADER`. The uniform struct is extended with `operator: u32` to select the tone-mapping algorithm. New operators are added as additional `else if` branches in the fragment shader — no pipeline rebuild is required.
 
@@ -272,7 +272,7 @@ fn fs_blit(in: VertexOutput) -> @location(0) vec4f {
 
 The existing `BLIT_SHADER` and `FBO_BLIT_SHADER` are left untouched. The HDR shader is used only for the on-screen display blit.
 
-**Step 2 — `src/graphicspipeline/webgpu/rendering/WebGPURenderer.ts`**
+**Step 2 — `src/graphics/webgpu/rendering/WebGPURenderer.ts`**
 
 a. At construction (in `create()`), create a second blit pipeline using `HDR_BLIT_SHADER` targeting the swap-chain format (`navigator.gpu.getPreferredCanvasFormat()`). Store it as `private hdrBlitPipeline: GPURenderPipeline`.
 

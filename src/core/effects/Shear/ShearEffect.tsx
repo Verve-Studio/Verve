@@ -1,8 +1,8 @@
 import type { ShearAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ShearOptions } from "./ShearOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 type ShearOp = Extract<AdjustmentRenderOp, { kind: "shear" }>;
 

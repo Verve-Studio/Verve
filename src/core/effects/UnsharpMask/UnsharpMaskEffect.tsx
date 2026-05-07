@@ -1,5 +1,5 @@
 import type { UnsharpMaskAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { UnsharpMaskPanel } from "./UnsharpMaskPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 

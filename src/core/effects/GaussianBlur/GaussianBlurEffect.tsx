@@ -1,5 +1,5 @@
 import type { GaussianBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GaussianBlurPanel } from "./GaussianBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 

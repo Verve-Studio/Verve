@@ -1,12 +1,12 @@
 import type { InnerShadowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerShadowOptions } from "./InnerShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
 type InnerShadowOp = Extract<AdjustmentRenderOp, { kind: "inner-shadow" }>;
 

@@ -14,10 +14,10 @@ Structurally, Halftone is a **single-pass** GPU compute effect — no intermedia
 |---|---|
 | `src/types/index.ts` | Add `'halftone'` to `AdjustmentType`; add `HalftoneParams` to `AdjustmentParamsMap`; add `HalftoneAdjustmentLayer` interface; extend `AdjustmentLayerState` union |
 | `src/core/operations/adjustments/registry.ts` | Register `'halftone'` entry with `group: 'real-time-effects'` |
-| `src/graphicspipeline/webgpu/types.ts` | Add `'halftone'` variant to `AdjustmentRenderOp` union |
-| `src/graphicspipeline/webgpu/shaders/compute/adjustments/halftone.ts` | **New file** — WGSL compute shader |
-| `src/graphicspipeline/webgpu/shaders/shaders.ts` | Re-export `HALFTONE_COMPUTE` |
-| `src/graphicspipeline/webgpu/AdjustmentEncoder.ts` | Import shader; declare `halftonePipeline` field; register pipeline in constructor; add dispatch branch in `encode()` |
+| `src/graphics/webgpu/types.ts` | Add `'halftone'` variant to `AdjustmentRenderOp` union |
+| `src/graphics/webgpu/shaders/compute/adjustments/halftone.ts` | **New file** — WGSL compute shader |
+| `src/graphics/webgpu/shaders/shaders.ts` | Re-export `HALFTONE_COMPUTE` |
+| `src/graphics/webgpu/AdjustmentEncoder.ts` | Import shader; declare `halftonePipeline` field; register pipeline in constructor; add dispatch branch in `encode()` |
 | `src/ux/main/Canvas/canvasPlan.ts` | Add `'halftone'` branch in `buildAdjustmentEntry()` |
 | `src/ux/windows/effects/HalftoneOptions/HalftoneOptions.tsx` | **New file** — panel component |
 | `src/ux/windows/effects/HalftoneOptions/HalftoneOptions.module.scss` | **New file** — panel styles |
@@ -106,7 +106,7 @@ Add after the `'outline'` entry (at the bottom of the `ADJUSTMENT_REGISTRY` arra
 
 ## WGSL Shader Design
 
-### File: `src/graphicspipeline/webgpu/shaders/compute/adjustments/halftone.ts`
+### File: `src/graphics/webgpu/shaders/compute/adjustments/halftone.ts`
 
 The shader is a single `@compute @workgroup_size(8, 8)` pass. It uses the same five-binding layout as all other single-pass adjustments (src, dst, params uniform, selMask, maskFlags).
 
@@ -350,7 +350,7 @@ fn cs_halftone(@builtin(global_invocation_id) id: vec3u) {
 
 ## `AdjustmentRenderOp` Changes
 
-### `src/graphicspipeline/webgpu/types.ts`
+### `src/graphics/webgpu/types.ts`
 
 Add the following variant to the `AdjustmentRenderOp` union, after the `'outline'` variant and before the closing semicolon:
 
@@ -373,7 +373,7 @@ Add the following variant to the `AdjustmentRenderOp` union, after the `'outline
 
 ## `AdjustmentEncoder.ts` Changes
 
-### `src/graphicspipeline/webgpu/AdjustmentEncoder.ts`
+### `src/graphics/webgpu/AdjustmentEncoder.ts`
 
 **1. Import** — add `HALFTONE_COMPUTE` to the shader import block:
 
@@ -423,7 +423,7 @@ No texture cache, no intermediate buffers, no multi-pass setup. The `destroy()` 
 
 ## `shaders.ts` Re-export
 
-### `src/graphicspipeline/webgpu/shaders/shaders.ts`
+### `src/graphics/webgpu/shaders/shaders.ts`
 
 Add after the `OUTLINE_COMPOSITE_COMPUTE` export line:
 
@@ -717,7 +717,7 @@ export { HalftoneOptions } from './windows/effects/HalftoneOptions/HalftoneOptio
 
 ## Unified Rasterization
 
-No changes required. The unified rasterization pipeline (`src/graphicspipeline/rasterization/`) dispatches adjustment ops through `AdjustmentEncoder.encode()` for all flatten, merge, and export operations. Because `encode()` will handle `entry.kind === 'halftone'` — using the same single-pass `encodeComputePassRaw` helper used in the interactive preview — the halftone effect is automatically included and identical in all rendering paths.
+No changes required. The unified rasterization pipeline (`src/graphics/rasterization/`) dispatches adjustment ops through `AdjustmentEncoder.encode()` for all flatten, merge, and export operations. Because `encode()` will handle `entry.kind === 'halftone'` — using the same single-pass `encodeComputePassRaw` helper used in the interactive preview — the halftone effect is automatically included and identical in all rendering paths.
 
 The TypeScript exhaustive-type checks (`const _exhaustive: never = entry` in `encode()` and `const _exhaustive: never = ls` in `buildAdjustmentEntry()`) will produce compiler errors if either branch is missing, making it impossible to silently omit the effect.
 
@@ -729,13 +729,13 @@ Follow these steps in order. Each step is independently compilable and verifiabl
 
 1. **`src/types/index.ts`** — Add `'halftone'` to `AdjustmentType`; add `HalftoneParams` to `AdjustmentParamsMap`; add `HalftoneAdjustmentLayer` interface; add `HalftoneAdjustmentLayer` to `AdjustmentLayerState`. Run `npm run typecheck` — the compiler will report `AdjustmentRenderOp` and `buildAdjustmentEntry` as non-exhaustive.
 
-2. **`src/graphicspipeline/webgpu/types.ts`** — Add the `'halftone'` variant to `AdjustmentRenderOp`. Typecheck again — `AdjustmentEncoder.encode()` becomes non-exhaustive.
+2. **`src/graphics/webgpu/types.ts`** — Add the `'halftone'` variant to `AdjustmentRenderOp`. Typecheck again — `AdjustmentEncoder.encode()` becomes non-exhaustive.
 
-3. **`src/graphicspipeline/webgpu/shaders/compute/adjustments/halftone.ts`** — Create the new file with the `HALFTONE_COMPUTE` shader string (full source above). No external dependencies.
+3. **`src/graphics/webgpu/shaders/compute/adjustments/halftone.ts`** — Create the new file with the `HALFTONE_COMPUTE` shader string (full source above). No external dependencies.
 
-4. **`src/graphicspipeline/webgpu/shaders/shaders.ts`** — Add `export { HALFTONE_COMPUTE } from './compute/adjustments/halftone'`.
+4. **`src/graphics/webgpu/shaders/shaders.ts`** — Add `export { HALFTONE_COMPUTE } from './compute/adjustments/halftone'`.
 
-5. **`src/graphicspipeline/webgpu/AdjustmentEncoder.ts`** — Import `HALFTONE_COMPUTE`; declare `halftonePipeline` field; register in constructor; add the `'halftone'` dispatch branch in `encode()`. Typecheck — `encode()` exhaustive check is satisfied.
+5. **`src/graphics/webgpu/AdjustmentEncoder.ts`** — Import `HALFTONE_COMPUTE`; declare `halftonePipeline` field; register in constructor; add the `'halftone'` dispatch branch in `encode()`. Typecheck — `encode()` exhaustive check is satisfied.
 
 6. **`src/core/operations/adjustments/registry.ts`** — Add the registry entry.
 

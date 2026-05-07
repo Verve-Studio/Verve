@@ -4,7 +4,7 @@ import type { Guide, TextLayerState, ShapeLayerState } from "@/types";
 import type {
   GpuLayer,
   WebGPURenderer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
   ToolDefinition,
   ToolHandler,

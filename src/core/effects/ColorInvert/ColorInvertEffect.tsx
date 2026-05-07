@@ -1,8 +1,8 @@
 import type { ColorInvertAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InvertPanel } from "./InvertPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import type { AdjBinding } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
 
 const INVERT_BINDINGS: AdjBinding[] = ["tex", "sampler", "tex", "uniform"];
 

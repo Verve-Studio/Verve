@@ -1,9 +1,9 @@
 import type { ReduceColorsAdjustmentLayer, RGBAColor } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceColorsPanel } from "./ReduceColorsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
-import { createStorageBuffer } from "@/graphicspipeline/webgpu/utils";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
 type ReduceColorsOp = Extract<AdjustmentRenderOp, { kind: "reduce-colors" }>;
 

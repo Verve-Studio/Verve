@@ -10,7 +10,7 @@ import type {
   GpuLayer,
   AdjustmentRenderOp,
   RenderPlanEntry,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { buildRootLayerIds } from "@/utils/layerTree";
 
 export function buildAdjustmentEntry(

@@ -1,7 +1,7 @@
 import type {
   WebGPURenderer,
   GpuLayer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 
 // Selection mask shorthand used by draw/erase helpers.
 export type SelMask = { mask: Uint8Array; width: number };

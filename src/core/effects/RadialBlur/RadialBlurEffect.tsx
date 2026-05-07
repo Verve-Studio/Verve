@@ -1,5 +1,5 @@
 import type { RadialBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RadialBlurPanel } from "./RadialBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 

@@ -1,11 +1,11 @@
 import type { BloomAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BloomOptions } from "./BloomOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   STD_BINDINGS,
   type AdjBinding,
-} from "@/graphicspipeline/webgpu/EffectRuntime";
+} from "@/graphics/webgpu/EffectRuntime";
 import {
   createTrackedTexture,
   destroyTrackedTexture,

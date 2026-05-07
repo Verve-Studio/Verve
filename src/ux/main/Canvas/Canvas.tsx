@@ -13,7 +13,7 @@ import { useCanvasContext } from "@/core/store/CanvasContext";
 import type {
   GpuLayer,
   RenderPlanEntry,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
   TextLayerState,
   ShapeLayerState,

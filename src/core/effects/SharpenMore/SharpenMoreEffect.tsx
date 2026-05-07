@@ -1,6 +1,6 @@
 import type React from "react";
 import type { SharpenMoreAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SharpenPanel } from "../Sharpen/SharpenPanel";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 

@@ -42,7 +42,7 @@ src/
       adjustments/           ← Curves data tables (curves.ts, curvesPresets.ts) only
     services/                ← all business logic hooks (20+)
     store/                   ← AppContext, CanvasContext, module-level singletons, tabTypes
-  graphicspipeline/
+  graphics/
     rasterization/           ← unified flatten/merge/export pipeline
     webgpu/
       AdjustmentEncoder.ts   ← thin dispatcher (~80 lines): looks up effect by id, calls effect.encode()
@@ -144,7 +144,7 @@ Every layer and every document has a `PixelFormat`:
 
 ---
 
-### WebGPU (`src/graphicspipeline/webgpu/`)
+### WebGPU (`src/graphics/webgpu/`)
 
 `rendering/WebGPURenderer.ts` is the GPU pixel read/write layer. It operates on `GpuLayer` objects:
 
@@ -175,7 +175,7 @@ Key methods used by tools and layer operations:
 
 Do not bypass `WebGPURenderer` to manipulate pixel data directly.
 
-The render plan for the on-screen preview is built in `src/ux/main/Canvas/canvasPlan.ts` and consumed by `WebGPURenderer`. Layer compositing for flatten/merge/export goes through the unified rasterization pipeline (`src/graphicspipeline/rasterization/`). Do not add separate compositing implementations for these operations.
+The render plan for the on-screen preview is built in `src/ux/main/Canvas/canvasPlan.ts` and consumed by `WebGPURenderer`. Layer compositing for flatten/merge/export goes through the unified rasterization pipeline (`src/graphics/rasterization/`). Do not add separate compositing implementations for these operations.
 
 ---
 
@@ -232,7 +232,7 @@ Shaders are auto-discovered by `src/core/effects/shaderLoader.ts`, which uses `i
 
 ### Runtime services
 
-Effects don't construct their own pipelines. One shared **`EffectRuntime`** (`src/graphicspipeline/webgpu/EffectRuntime.ts`) provides the cached pipeline / sampler / scratch-texture / render-pass primitives that every effect (adjustment, real-time effect, and filter) uses. Effects access it via `engine.runtime` from their `encode` body. It exposes `getRenderPipelinePair(shaderName, entryPoint, bindings?)`, `getRenderPipelineSingle(shaderName, entryPoint, format, bindings?)`, `getRenderPipelineWithBGL(...)`, `getRenderPipelineAuto(...)`, `getComputePipeline(...)`, `encodeStdAdjRenderPass(...)`, `encodeRenderPass(...)`, samplers (`adjSampler`, `lutSampler`), the shared `intermediate` scratch texture, transient `makeRgba8Tex` / `makeRgba16FloatTex` allocators, params/maskFlags buffer helpers, and pending-destroy tracking. All pipelines are lazily cached by key, so two effects that share a shader share the compiled `GPUShaderModule` and pipeline.
+Effects don't construct their own pipelines. One shared **`EffectRuntime`** (`src/graphics/webgpu/EffectRuntime.ts`) provides the cached pipeline / sampler / scratch-texture / render-pass primitives that every effect (adjustment, real-time effect, and filter) uses. Effects access it via `engine.runtime` from their `encode` body. It exposes `getRenderPipelinePair(shaderName, entryPoint, bindings?)`, `getRenderPipelineSingle(shaderName, entryPoint, format, bindings?)`, `getRenderPipelineWithBGL(...)`, `getRenderPipelineAuto(...)`, `getComputePipeline(...)`, `encodeStdAdjRenderPass(...)`, `encodeRenderPass(...)`, samplers (`adjSampler`, `lutSampler`), the shared `intermediate` scratch texture, transient `makeRgba8Tex` / `makeRgba16FloatTex` allocators, params/maskFlags buffer helpers, and pending-destroy tracking. All pipelines are lazily cached by key, so two effects that share a shader share the compiled `GPUShaderModule` and pipeline.
 
 `AdjustmentEncoder` is the dispatcher that owns the single `EffectRuntime` instance. Its `flushPendingDestroys()` releases the runtime's pending buffers and textures after `device.queue.submit()`. Cross-frame texture caches (e.g. Bloom's downsampled glow buffers) are owned by the effect itself as module-level state and evicted via `onFrameEnd`.
 
@@ -257,7 +257,7 @@ The WGSL uniform struct must match the `Float32Array`/`Uint32Array` packed insid
 
 ### Unified Rasterization Pipeline
 
-- Flatten, merge, and export all run through `src/graphicspipeline/rasterization/`. Do not add ad-hoc compositing paths for one operation.
+- Flatten, merge, and export all run through `src/graphics/rasterization/`. Do not add ad-hoc compositing paths for one operation.
 - The pipeline only supports `RasterBackend = 'gpu'`. There is no CPU fallback.
 - `rasterizeDocument({ plan, width, height, reason, renderer })` is the single entry point. `reason` is one of `'flatten' | 'export' | 'sample' | 'merge'`.
 - Temporary preview-bypass state must never leak into final flatten/export/merge outputs.

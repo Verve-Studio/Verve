@@ -4,7 +4,7 @@ import type {
   GpuLayer,
   WebGPURenderer,
   RenderPlanEntry,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { LayerState, RGBAColor, PixelFormat } from "@/types";
 import { isGroupLayer } from "@/types";
 import {
@@ -17,7 +17,7 @@ import {
   rasterizeDocument,
   type RasterBackend,
   type RasterReason,
-} from "@/graphicspipeline/rasterization";
+} from "@/graphics/rasterization";
 import { matchPaletteIndices } from "@/wasm";
 
 // ─── Public handle type (imported by App.tsx and other callers) ────────────

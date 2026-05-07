@@ -1,5 +1,5 @@
 import type { MotionBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MotionBlurPanel } from "./MotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 

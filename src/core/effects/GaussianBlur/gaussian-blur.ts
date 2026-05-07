@@ -3,7 +3,7 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "@/graphicspipeline/webgpu/utils";
+} from "@/graphics/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,

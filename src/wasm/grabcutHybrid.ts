@@ -2,7 +2,7 @@ import {
   gpuComputeNLinks,
   gpuComputeDataTerms,
   isGrabCutComputeReady,
-} from "@/graphicspipeline/webgpu/compute/grabcutCompute";
+} from "@/graphics/webgpu/compute/grabcutCompute";
 import {
   grabCutComputeBeta,
   grabCutKmeansInit,

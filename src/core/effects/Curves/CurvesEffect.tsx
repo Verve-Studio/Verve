@@ -1,5 +1,5 @@
 import type { CurvesAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import {
   buildCurvesLuts,
   createDefaultCurvesParams,
@@ -7,12 +7,12 @@ import {
 } from "@/core/operations/adjustments/curves";
 import { CurvesPanel } from "./CurvesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import type { AdjBinding } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import { uploadR8TextureData } from "@/graphicspipeline/webgpu/utils";
+import { uploadR8TextureData } from "@/graphics/webgpu/utils";
 
 type CurvesOp = Extract<AdjustmentRenderOp, { kind: "curves" }>;
 

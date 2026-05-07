@@ -1,5 +1,5 @@
 import type { InnerGlowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerGlowOptions } from "./InnerGlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeInnerShadowPass } from "../InnerShadow/InnerShadowEffect";

@@ -2,7 +2,7 @@ import React from "react";
 import type {
   GpuLayer,
   WebGPURenderer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { RGBAColor } from "@/types";
 import type {
   ToolDefinition,

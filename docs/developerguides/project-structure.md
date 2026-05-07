@@ -63,7 +63,7 @@ Verve/
 │   │   ├── services/         ← All business-logic hooks (20+)
 │   │   └── store/            ← AppContext, CanvasContext, all singletons, tabTypes
 │   │
-│   ├── graphicspipeline/
+│   ├── graphics/
 │   │   ├── rasterization/    ← Unified flatten/merge/export pipeline
 │   │   └── webgpu/           ← WebGPURenderer, AdjustmentEncoder, filterCompute, shaders
 │   │
@@ -191,7 +191,7 @@ Every hook in this folder owns exactly **one cohesive concern**. They never hold
 | `useContentAwareFill` | PatchMatch inpainting |
 | `useKeyboardShortcuts` | Global keyboard shortcut bindings |
 
-### `src/graphicspipeline/` — GPU rendering
+### `src/graphics/` — GPU rendering
 
 **`webgpu/rendering/WebGPURenderer.ts`** is the pixel read/write interface. Everything GPU-related goes through it. Key methods:
 

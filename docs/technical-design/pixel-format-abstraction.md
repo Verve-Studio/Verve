@@ -13,16 +13,16 @@ This feature makes the pixel format a first-class, document-wide property with t
 | File | Change summary |
 |---|---|
 | `src/types/index.ts` | Add `PixelFormat` type; add `pixelFormat` to `AppState` |
-| `src/graphicspipeline/webgpu/types.ts` | `GpuLayer.data` → `Uint8Array \| Float32Array`; add `format: PixelFormat` to `GpuLayer` |
+| `src/graphics/webgpu/types.ts` | `GpuLayer.data` → `Uint8Array \| Float32Array`; add `format: PixelFormat` to `GpuLayer` |
 | `src/core/store/AppContext.tsx` | Add `SET_PIXEL_FORMAT` action; thread `pixelFormat` through canvas-resetting actions |
 | `src/core/store/tabTypes.ts` | Add `pixelFormat: PixelFormat` to `TabSnapshot` and `TabRecord` |
-| `src/graphicspipeline/webgpu/utils.ts` | `uploadTextureData` / `uploadTexturePatch` accept `ArrayBufferView`; add `uploadF32TextureData` |
-| `src/graphicspipeline/webgpu/rendering/WebGPURenderer.ts` | Format-aware `create()`, `createLayer()`, `flushLayer()`, ping-pong textures, composite pipeline |
-| `src/graphicspipeline/webgpu/AdjustmentEncoder.ts` | `rgba32float` pipeline variants; format parameter on `encode()` |
-| `src/graphicspipeline/webgpu/compute/filterCompute.ts` | `rgba32float` pipeline variants; format parameter on `run*` dispatch |
-| `src/graphicspipeline/webgpu/shaders/` | Adjustment and filter WGSL shaders need `rgba32float` storage variants |
-| `src/graphicspipeline/rasterization/types.ts` | `RasterizeDocumentResult.data` → `Uint8Array \| Float32Array` |
-| `src/graphicspipeline/rasterization/GpuRasterPipeline.ts` | Return typed array from `readFlattenedPlan` |
+| `src/graphics/webgpu/utils.ts` | `uploadTextureData` / `uploadTexturePatch` accept `ArrayBufferView`; add `uploadF32TextureData` |
+| `src/graphics/webgpu/rendering/WebGPURenderer.ts` | Format-aware `create()`, `createLayer()`, `flushLayer()`, ping-pong textures, composite pipeline |
+| `src/graphics/webgpu/AdjustmentEncoder.ts` | `rgba32float` pipeline variants; format parameter on `encode()` |
+| `src/graphics/webgpu/compute/filterCompute.ts` | `rgba32float` pipeline variants; format parameter on `run*` dispatch |
+| `src/graphics/webgpu/shaders/` | Adjustment and filter WGSL shaders need `rgba32float` storage variants |
+| `src/graphics/rasterization/types.ts` | `RasterizeDocumentResult.data` → `Uint8Array \| Float32Array` |
+| `src/graphics/rasterization/GpuRasterPipeline.ts` | Return typed array from `readFlattenedPlan` |
 | `src/ux/main/Canvas/canvasPlan.ts` | Skip adjustment ops when `pixelFormat === 'indexed8'` |
 | `src/core/services/useFileOps.ts` | Version-5 save/load; format-aware pixel-data serialization/deserialization |
 | `src/core/services/useExportOps.ts` | Clamp `Float32Array` → `Uint8Array` before encoding when document is `rgba32f` |
@@ -57,7 +57,7 @@ export interface AppState {
 }
 ```
 
-### `src/graphicspipeline/webgpu/types.ts`
+### `src/graphics/webgpu/types.ts`
 
 Update `GpuLayer`:
 
@@ -727,25 +727,25 @@ All existing export encoders (`exportPng`, `exportJpeg`, etc.) continue to accep
 
 1. **`src/types/index.ts`** — Add `PixelFormat` type. Add `pixelFormat: PixelFormat` to `AppState`.
 
-2. **`src/graphicspipeline/webgpu/types.ts`** — Update `GpuLayer`: `data: Uint8Array | Float32Array`, add `format: PixelFormat`.
+2. **`src/graphics/webgpu/types.ts`** — Update `GpuLayer`: `data: Uint8Array | Float32Array`, add `format: PixelFormat`.
 
 3. **`src/core/store/tabTypes.ts`** — Add `pixelFormat: PixelFormat` to `TabSnapshot` and `TabRecord`. Update `INITIAL_SNAPSHOT`.
 
 4. **`src/core/store/AppContext.tsx`** — Add `pixelFormat: 'rgba8'` to `initialState`. Add `SET_PIXEL_FORMAT` action and reducer case. Add `pixelFormat` to the payloads of `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB` and set `state.pixelFormat` in each case.
 
-5. **`src/graphicspipeline/webgpu/utils.ts`** — Broaden `uploadTextureData` and `uploadTexturePatch` to accept `ArrayBufferView` instead of `Uint8Array`. Add `uploadF32TextureData` and `uploadF32TexturePatch` helpers that wrap `writeTexture` for `rgba32float` (bytesPerRow = `width * 16`).
+5. **`src/graphics/webgpu/utils.ts`** — Broaden `uploadTextureData` and `uploadTexturePatch` to accept `ArrayBufferView` instead of `Uint8Array`. Add `uploadF32TextureData` and `uploadF32TexturePatch` helpers that wrap `writeTexture` for `rgba32float` (bytesPerRow = `width * 16`).
 
-6. **`src/graphicspipeline/webgpu/rendering/WebGPURenderer.ts`** — Add `pixelFormat` parameter to `create()`. Store `internalFormat`. Update `createPingPongTex` and the composite pipeline target. Update `createLayer()` to accept and store `format`. Update `flushLayer()` for all three format paths. Add `replaceLayerData()`. Update `readLayerPixels()` return type. Update `readFlattenedPlan()` return type and readback for `rgba32float`.
+6. **`src/graphics/webgpu/rendering/WebGPURenderer.ts`** — Add `pixelFormat` parameter to `create()`. Store `internalFormat`. Update `createPingPongTex` and the composite pipeline target. Update `createLayer()` to accept and store `format`. Update `flushLayer()` for all three format paths. Add `replaceLayerData()`. Update `readLayerPixels()` return type. Update `readFlattenedPlan()` return type and readback for `rgba32float`.
 
-7. **`src/graphicspipeline/webgpu/AdjustmentEncoder.ts`** — Convert all adjustment passes from storage-texture compute dispatches to render passes (fullscreen-quad vertex + fragment shader). At construction, create two `GPURenderPipeline` objects per adjustment type — one with `colorFormats: ['rgba8unorm']` and one with `colorFormats: ['rgba32float']` — both compiled from the same WGSL shader source. Add `format: GPUTextureFormat` parameter to `encode()`; select the matching render pipeline based on the format.
+7. **`src/graphics/webgpu/AdjustmentEncoder.ts`** — Convert all adjustment passes from storage-texture compute dispatches to render passes (fullscreen-quad vertex + fragment shader). At construction, create two `GPURenderPipeline` objects per adjustment type — one with `colorFormats: ['rgba8unorm']` and one with `colorFormats: ['rgba32float']` — both compiled from the same WGSL shader source. Add `format: GPUTextureFormat` parameter to `encode()`; select the matching render pipeline based on the format.
 
-8. **`src/graphicspipeline/webgpu/compute/filterCompute.ts`** — Apply the same render-attachment approach: replace storage-texture compute pipelines with render pipelines (fullscreen-quad vertex + fragment shader). Two `GPURenderPipeline` objects per filter type (one per format), identical WGSL source for both. Add `format: GPUTextureFormat` parameter to each `run*` dispatch function.
+8. **`src/graphics/webgpu/compute/filterCompute.ts`** — Apply the same render-attachment approach: replace storage-texture compute pipelines with render pipelines (fullscreen-quad vertex + fragment shader). Two `GPURenderPipeline` objects per filter type (one per format), identical WGSL source for both. Add `format: GPUTextureFormat` parameter to each `run*` dispatch function.
 
-9. **`src/graphicspipeline/webgpu/shaders/`** — Rewrite all adjustment and filter WGSL shaders to use `texture_2d<f32>` + non-filtering sampler for input reads and `@location(0) vec4<f32>` fragment output for writes. Remove all `texture_storage_2d` declarations. The same shader source is compiled into both the `rgba8unorm` and `rgba32float` render pipelines — no per-format shader variants are needed.
+9. **`src/graphics/webgpu/shaders/`** — Rewrite all adjustment and filter WGSL shaders to use `texture_2d<f32>` + non-filtering sampler for input reads and `@location(0) vec4<f32>` fragment output for writes. Remove all `texture_storage_2d` declarations. The same shader source is compiled into both the `rgba8unorm` and `rgba32float` render pipelines — no per-format shader variants are needed.
 
-10. **`src/graphicspipeline/rasterization/types.ts`** — `RasterizeDocumentResult.data: Uint8Array | Float32Array`.
+10. **`src/graphics/rasterization/types.ts`** — `RasterizeDocumentResult.data: Uint8Array | Float32Array`.
 
-11. **`src/graphicspipeline/rasterization/GpuRasterPipeline.ts`** — Return the typed array from `readFlattenedPlan` as-is (the renderer now returns the right type).
+11. **`src/graphics/rasterization/GpuRasterPipeline.ts`** — Return the typed array from `readFlattenedPlan` as-is (the renderer now returns the right type).
 
 12. **`src/ux/main/Canvas/canvasPlan.ts`** — Accept `pixelFormat` parameter. Skip `AdjustmentRenderOp` entries when `pixelFormat === 'indexed8'`. Pass `format` (as `internalFormat`) to `AdjustmentEncoder.encode()` and filter dispatch calls.
 

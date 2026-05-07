@@ -12,10 +12,10 @@ Color Dithering is a non-destructive `color-adjustments` group adjustment layer 
 |------|--------|
 | `src/types/index.ts` | Add `'color-dithering'` to `AdjustmentType`; add `'color-dithering'` entry to `AdjustmentParamsMap`; add `ColorDitheringAdjustmentLayer` interface; extend `AdjustmentLayerState` union |
 | `src/core/operations/adjustments/registry.ts` | Register `'color-dithering'` with `label: 'Color Dithering…'`, default params, `group: 'color-adjustments'` |
-| `src/graphicspipeline/webgpu/types.ts` | Add `'color-dithering'` variant to `AdjustmentRenderOp` |
-| `src/graphicspipeline/webgpu/shaders/adjustments/color-dithering.ts` | **New file.** Export `DITHER_BAYER_COMPUTE` WGSL shader string (Bayer 4×4 and 8×8 ordered dithering) |
-| `src/graphicspipeline/webgpu/shaders/shaders.ts` | Re-export `DITHER_BAYER_COMPUTE` |
-| `src/graphicspipeline/webgpu/AdjustmentEncoder.ts` | Add `bayerDitheringPipeline`; add per-layer error-diffusion texture cache and `scheduleErrorDiffusion()` async helper; add `encodeDitheringPass()` private method; extend `encode()` dispatch and `destroy()` cleanup; accept `onDitherCacheReady` callback in constructor |
+| `src/graphics/webgpu/types.ts` | Add `'color-dithering'` variant to `AdjustmentRenderOp` |
+| `src/graphics/webgpu/shaders/adjustments/color-dithering.ts` | **New file.** Export `DITHER_BAYER_COMPUTE` WGSL shader string (Bayer 4×4 and 8×8 ordered dithering) |
+| `src/graphics/webgpu/shaders/shaders.ts` | Re-export `DITHER_BAYER_COMPUTE` |
+| `src/graphics/webgpu/AdjustmentEncoder.ts` | Add `bayerDitheringPipeline`; add per-layer error-diffusion texture cache and `scheduleErrorDiffusion()` async helper; add `encodeDitheringPass()` private method; extend `encode()` dispatch and `destroy()` cleanup; accept `onDitherCacheReady` callback in constructor |
 | `src/ux/main/Canvas/canvasPlan.ts` | Add `'color-dithering'` case in `buildAdjustmentEntry()` |
 | `src/ux/windows/ToolWindow.tsx` | Add `'color-dithering'` to `toolTitle()`, header icon SVG, icon dispatch, and panel render branch |
 | `src/ux/windows/adjustments/ColorDitheringPanel/ColorDitheringPanel.tsx` | **New file.** Panel with style dropdown, opacity slider, empty-palette warning, and info note |
@@ -121,7 +121,7 @@ Append to `ADJUSTMENT_REGISTRY` (after `'reduce-colors'`, before the `'bloom'` e
 
 ---
 
-### Step 3 — AdjustmentRenderOp (`src/graphicspipeline/webgpu/types.ts`)
+### Step 3 — AdjustmentRenderOp (`src/graphics/webgpu/types.ts`)
 
 Append to the `AdjustmentRenderOp` discriminated union:
 
@@ -173,7 +173,7 @@ This replaces the `_exhaustive` guard as the last pattern before it — do not r
 
 ---
 
-### Step 5 — WGSL Bayer Shader (`src/graphicspipeline/webgpu/shaders/adjustments/color-dithering.ts`)
+### Step 5 — WGSL Bayer Shader (`src/graphics/webgpu/shaders/adjustments/color-dithering.ts`)
 
 **New file.** Export the string constant `DITHER_BAYER_COMPUTE`.
 
@@ -361,7 +361,7 @@ export async function ditherErrorDiffusion(
 
 ---
 
-### Step 7 — AdjustmentEncoder (`src/graphicspipeline/webgpu/AdjustmentEncoder.ts`)
+### Step 7 — AdjustmentEncoder (`src/graphics/webgpu/AdjustmentEncoder.ts`)
 
 #### Constructor signature change
 

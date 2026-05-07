@@ -1,5 +1,5 @@
 import type { BoxBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BoxBlurPanel } from "./BoxBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 

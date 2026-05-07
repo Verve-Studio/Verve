@@ -1,6 +1,6 @@
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState } from "@/types";
-import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { buildClusters, buildRootLayerIds } from "@/utils/layerTree";
 import type { Dispatch, MutableRefObject } from "react";

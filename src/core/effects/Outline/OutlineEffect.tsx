@@ -1,12 +1,12 @@
 import type { OutlineAdjustmentLayer, OutlineParams } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AdjustmentRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OutlineOptions } from "./OutlineOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
 type OutlineOp = Extract<AdjustmentRenderOp, { kind: "outline" }>;
 

@@ -1,7 +1,7 @@
 import type {
   RenderPlanEntry,
   WebGPURenderer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 
 export type RasterBackend = "gpu";
 export type RasterReason = "flatten" | "export" | "sample" | "merge";
