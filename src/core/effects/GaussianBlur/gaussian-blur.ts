@@ -3,16 +3,16 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_GAUSSIAN_H_COMPUTE from "./wgsl/filter-gaussian-h.wgsl?raw";
+import FILTER_GAUSSIAN_H_COMPUTE from "./filter-gaussian-h.wgsl?raw";
 export { FILTER_GAUSSIAN_H_COMPUTE };
 
-import FILTER_GAUSSIAN_V_COMPUTE from "./wgsl/filter-gaussian-v.wgsl?raw";
+import FILTER_GAUSSIAN_V_COMPUTE from "./filter-gaussian-v.wgsl?raw";
 export { FILTER_GAUSSIAN_V_COMPUTE };
 
 export async function runGaussianBlur(

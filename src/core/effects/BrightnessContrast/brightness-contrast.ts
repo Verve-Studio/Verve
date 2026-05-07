@@ -1,2 +1,2 @@
-import BC_COMPUTE from "./wgsl/bc.wgsl?raw";
+import BC_COMPUTE from "./bc.wgsl?raw";
 export { BC_COMPUTE };

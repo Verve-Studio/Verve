@@ -1,7 +1,7 @@
 import type { ChromaticAberrationAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ChromaticAberrationOptions } from "@/ux/windows/effects/ChromaticAberrationOptions/ChromaticAberrationOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ChromaticAberrationOptions } from "./ChromaticAberrationOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ChromaticAberrationOp = Extract<
   AdjustmentRenderOp,

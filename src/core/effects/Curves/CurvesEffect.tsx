@@ -4,8 +4,8 @@ import {
   buildCurvesLuts,
   createDefaultCurvesParams,
 } from "@/core/operations/adjustments/curves";
-import { CurvesPanel } from "@/ux/windows/adjustments/CurvesPanel/CurvesPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { CurvesPanel } from "./CurvesPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type CurvesOp = Extract<AdjustmentRenderOp, { kind: "curves" }>;
 

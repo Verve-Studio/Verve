@@ -1,7 +1,7 @@
 import type { GlowAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { GlowOptions } from "@/ux/windows/effects/GlowOptions/GlowOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { GlowOptions } from "./GlowOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type GlowOp = Extract<AdjustmentRenderOp, { kind: "glow" }>;
 

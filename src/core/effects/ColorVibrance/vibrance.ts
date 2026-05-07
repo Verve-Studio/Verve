@@ -1,2 +1,2 @@
-import VIB_COMPUTE from "./wgsl/vib.wgsl?raw";
+import VIB_COMPUTE from "./vib.wgsl?raw";
 export { VIB_COMPUTE };

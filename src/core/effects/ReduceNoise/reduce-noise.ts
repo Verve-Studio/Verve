@@ -3,13 +3,13 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_REDUCE_NOISE_COMPUTE from "./wgsl/filter-reduce-noise.wgsl?raw";
+import FILTER_REDUCE_NOISE_COMPUTE from "./filter-reduce-noise.wgsl?raw";
 export { FILTER_REDUCE_NOISE_COMPUTE };
 
 export async function runReduceNoise(

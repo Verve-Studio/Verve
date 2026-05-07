@@ -1,2 +1,2 @@
-import VIGNETTE_COMPUTE from "./wgsl/vignette.wgsl?raw";
+import VIGNETTE_COMPUTE from "./vignette.wgsl?raw";
 export { VIGNETTE_COMPUTE };

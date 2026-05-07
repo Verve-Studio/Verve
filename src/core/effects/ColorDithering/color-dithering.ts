@@ -1,2 +1,2 @@
-import DITHER_COMPUTE from "./wgsl/dither.wgsl?raw";
+import DITHER_COMPUTE from "./dither.wgsl?raw";
 export { DITHER_COMPUTE };

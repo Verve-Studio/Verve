@@ -3,16 +3,16 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_FILM_GRAIN_NOISE_COMPUTE from "./wgsl/filter-film-grain-noise.wgsl?raw";
+import FILTER_FILM_GRAIN_NOISE_COMPUTE from "./filter-film-grain-noise.wgsl?raw";
 export { FILTER_FILM_GRAIN_NOISE_COMPUTE };
 
-import FILTER_FILM_GRAIN_COMBINE_COMPUTE from "./wgsl/filter-film-grain-combine.wgsl?raw";
+import FILTER_FILM_GRAIN_COMBINE_COMPUTE from "./filter-film-grain-combine.wgsl?raw";
 export { FILTER_FILM_GRAIN_COMBINE_COMPUTE };
 
 export async function runFilmGrain(

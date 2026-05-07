@@ -1,7 +1,7 @@
 import type { InnerShadowAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { InnerShadowOptions } from "@/ux/windows/effects/InnerShadowOptions/InnerShadowOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { InnerShadowOptions } from "./InnerShadowOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type InnerShadowOp = Extract<AdjustmentRenderOp, { kind: "inner-shadow" }>;
 

@@ -1,7 +1,7 @@
 import type { HalationAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { HalationOptions } from "@/ux/windows/effects/HalationOptions/HalationOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { HalationOptions } from "./HalationOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type HalationOp = Extract<AdjustmentRenderOp, { kind: "halation" }>;
 

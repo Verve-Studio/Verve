@@ -1,7 +1,7 @@
 import type { AutoMatchAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { AutoMatchPanel } from "@/ux/windows/adjustments/AutoMatchPanel/AutoMatchPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { AutoMatchPanel } from "./AutoMatchPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type AutoMatchOp = Extract<AdjustmentRenderOp, { kind: "auto-match" }>;
 

@@ -1,7 +1,7 @@
 import type { ChannelMixerAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ChannelMixerPanel } from "@/ux/windows/adjustments/ChannelMixerPanel/ChannelMixerPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ChannelMixerPanel } from "./ChannelMixerPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ChannelMixerOp = Extract<AdjustmentRenderOp, { kind: "channel-mixer" }>;
 

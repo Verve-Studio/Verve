@@ -3,13 +3,13 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_BILATERAL_COMPUTE from "./wgsl/filter-bilateral.wgsl?raw";
+import FILTER_BILATERAL_COMPUTE from "./filter-bilateral.wgsl?raw";
 export { FILTER_BILATERAL_COMPUTE };
 
 export async function runBilateral(

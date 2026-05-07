@@ -1,7 +1,7 @@
 import type { ReduceColorsAdjustmentLayer, RGBAColor } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ReduceColorsPanel } from "@/ux/windows/adjustments/ReduceColorsPanel/ReduceColorsPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ReduceColorsPanel } from "./ReduceColorsPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ReduceColorsOp = Extract<AdjustmentRenderOp, { kind: "reduce-colors" }>;
 

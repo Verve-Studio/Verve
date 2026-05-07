@@ -1,7 +1,7 @@
 import type { HueSaturationAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { HueSaturationPanel } from "@/ux/windows/adjustments/HueSaturationPanel/HueSaturationPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { HueSaturationPanel } from "./HueSaturationPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type HueSaturationOp = Extract<AdjustmentRenderOp, { kind: "hue-saturation" }>;
 

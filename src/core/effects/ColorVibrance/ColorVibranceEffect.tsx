@@ -1,7 +1,7 @@
 import type { ColorVibranceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ColorVibrancePanel } from "@/ux/windows/adjustments/ColorVibrancePanel/ColorVibrancePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ColorVibrancePanel } from "./ColorVibrancePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ColorVibranceOp = Extract<AdjustmentRenderOp, { kind: "color-vibrance" }>;
 

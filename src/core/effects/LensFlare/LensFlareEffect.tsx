@@ -1,7 +1,7 @@
 import type { LensFlareAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { LensFlarePanel } from "@/ux/windows/filters/LensFlarePanel/LensFlarePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { LensFlarePanel } from "./LensFlarePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type LensFlareOp = Extract<AdjustmentRenderOp, { kind: "lens-flare" }>;
 

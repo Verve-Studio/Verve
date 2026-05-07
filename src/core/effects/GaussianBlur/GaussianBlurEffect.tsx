@@ -1,8 +1,8 @@
 import type { GaussianBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeGaussianBlur } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { GaussianBlurPanel } from "@/ux/windows/filters/GaussianBlurPanel/GaussianBlurPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { GaussianBlurPanel } from "./GaussianBlurPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type GaussianBlurOp = Extract<AdjustmentRenderOp, { kind: "gaussian-blur" }>;
 

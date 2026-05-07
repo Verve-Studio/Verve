@@ -1,8 +1,8 @@
 import type { LensBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeLensBlur } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { LensBlurPanel } from "@/ux/windows/filters/LensBlurPanel/LensBlurPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { LensBlurPanel } from "./LensBlurPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type LensBlurOp = Extract<AdjustmentRenderOp, { kind: "lens-blur" }>;
 

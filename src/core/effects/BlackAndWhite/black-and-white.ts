@@ -1,2 +1,2 @@
-import BW_COMPUTE from "./wgsl/bw.wgsl?raw";
+import BW_COMPUTE from "./bw.wgsl?raw";
 export { BW_COMPUTE };

@@ -1,2 +1,2 @@
-import SHEAR_COMPUTE from "./wgsl/shear.wgsl?raw";
+import SHEAR_COMPUTE from "./shear.wgsl?raw";
 export { SHEAR_COMPUTE };

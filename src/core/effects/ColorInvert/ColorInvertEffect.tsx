@@ -1,7 +1,7 @@
 import type { ColorInvertAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { InvertPanel } from "@/ux/windows/adjustments/InvertPanel/InvertPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { InvertPanel } from "./InvertPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ColorInvertOp = Extract<AdjustmentRenderOp, { kind: "color-invert" }>;
 

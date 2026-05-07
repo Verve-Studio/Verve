@@ -1,2 +1,2 @@
-import CK_COMPUTE from "./wgsl/ck.wgsl?raw";
+import CK_COMPUTE from "./ck.wgsl?raw";
 export { CK_COMPUTE };

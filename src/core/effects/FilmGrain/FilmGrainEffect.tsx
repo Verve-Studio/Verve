@@ -1,8 +1,8 @@
 import type { FilmGrainAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeFilmGrain } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { FilmGrainPanel } from "@/ux/windows/filters/FilmGrainPanel/FilmGrainPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { FilmGrainPanel } from "./FilmGrainPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type FilmGrainOp = Extract<AdjustmentRenderOp, { kind: "film-grain" }>;
 

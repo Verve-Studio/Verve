@@ -1,7 +1,7 @@
 import type { ColorKeyAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ColorKeyPanel } from "@/ux/windows/effects/ColorKeyPanel/ColorKeyPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ColorKeyPanel } from "./ColorKeyPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ColorKeyOp = Extract<AdjustmentRenderOp, { kind: "color-key" }>;
 

@@ -1,8 +1,8 @@
 import type { SeamlessTextureAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeSeamlessTexture } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { SeamlessTexturePanel } from "@/ux/windows/filters/SeamlessTexturePanel/SeamlessTexturePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type SeamlessTextureOp = Extract<
   AdjustmentRenderOp,

@@ -1,8 +1,8 @@
 import type { ReduceNoiseAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeReduceNoise } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { ReduceNoisePanel } from "@/ux/windows/filters/ReduceNoisePanel/ReduceNoisePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ReduceNoisePanel } from "./ReduceNoisePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ReduceNoiseOp = Extract<AdjustmentRenderOp, { kind: "reduce-noise" }>;
 

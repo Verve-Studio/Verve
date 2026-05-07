@@ -1,6 +1,4 @@
 import {
-  createUniformBuffer,
-  writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
 } from "@/graphicspipeline/webgpu/utils";
@@ -9,16 +7,16 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_MEDIAN_COMPUTE from "./filter-median.wgsl?raw";
-export { FILTER_MEDIAN_COMPUTE };
+import FILTER_SHARPEN_MORE_COMPUTE from "./filter-sharpen-more.wgsl?raw";
+export { FILTER_SHARPEN_MORE_COMPUTE };
 
-export async function runMedian(
+export async function runSharpenMore(
   device: GPUDevice,
   pipeline: GPURenderPipeline,
   pixels: Uint8Array,
   w: number,
   h: number,
-  radius: number,
+  _format: GPUTextureFormat = "rgba8unorm",
 ): Promise<Uint8Array> {
   const smp = device.createSampler({
     magFilter: "nearest",
@@ -26,7 +24,6 @@ export async function runMedian(
     addressModeU: "clamp-to-edge",
     addressModeV: "clamp-to-edge",
   });
-
   const srcTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: "rgba8unorm",
@@ -38,24 +35,17 @@ export async function runMedian(
     { bytesPerRow: w * 4, rowsPerImage: h },
     { width: w, height: h },
   );
-
   const outTex = createTrackedTexture(device, {
     size: { width: w, height: h },
     format: "rgba8unorm",
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
-
-  const paramsData = new Uint32Array([radius, 0, 0, 0]);
-  const paramsBuf = createUniformBuffer(device, 16);
-  writeUniformBuffer(device, paramsBuf, paramsData);
-
   const encoder = device.createCommandEncoder();
-  const bindGroup = device.createBindGroup({
+  const bg = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: srcTex.createView() },
       { binding: 1, resource: smp },
-      { binding: 2, resource: { buffer: paramsBuf } },
     ],
   });
   const pass = encoder.beginRenderPass({
@@ -69,10 +59,9 @@ export async function runMedian(
     ],
   });
   pass.setPipeline(pipeline);
-  pass.setBindGroup(0, bindGroup);
+  pass.setBindGroup(0, bg);
   pass.draw(6);
   pass.end();
-
   const alignedBpr = Math.ceil((w * 4) / 256) * 256;
   const readbuf = createReadbackBuffer(device, alignedBpr * h);
   encoder.copyTextureToBuffer(
@@ -80,9 +69,7 @@ export async function runMedian(
     { buffer: readbuf, bytesPerRow: alignedBpr, rowsPerImage: h },
     { width: w, height: h },
   );
-
   device.queue.submit([encoder.finish()]);
-
   await readbuf.mapAsync(GPUMapMode.READ);
   const result = unpackRows(
     new Uint8Array(readbuf.getMappedRange()),
@@ -91,11 +78,8 @@ export async function runMedian(
     alignedBpr,
   );
   readbuf.unmap();
-
   destroyTrackedTexture(srcTex);
   destroyTrackedTexture(outTex);
-  paramsBuf.destroy();
   readbuf.destroy();
-
   return result;
 }

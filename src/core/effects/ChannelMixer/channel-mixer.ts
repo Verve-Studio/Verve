@@ -1,2 +1,2 @@
-import CHANNEL_MIXER_COMPUTE from "./wgsl/channel-mixer.wgsl?raw";
+import CHANNEL_MIXER_COMPUTE from "./channel-mixer.wgsl?raw";
 export { CHANNEL_MIXER_COMPUTE };

@@ -3,7 +3,7 @@ import { useAppContext } from "@/core/store/AppContext";
 import { useCanvasContext } from "@/core/store/CanvasContext";
 import type { RadialBlurAdjustmentLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
-import sharedStyles from "../filterPanel.module.scss";
+import sharedStyles from "@/core/effects/_shared/filterPanel.module.scss";
 import styles from "./RadialBlurPanel.module.scss";
 
 const PREVIEW_MAX_W = 220;

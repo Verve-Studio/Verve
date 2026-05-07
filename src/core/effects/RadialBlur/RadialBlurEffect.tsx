@@ -1,8 +1,8 @@
 import type { RadialBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeRadialBlur } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { RadialBlurPanel } from "@/ux/windows/filters/RadialBlurPanel/RadialBlurPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { RadialBlurPanel } from "./RadialBlurPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type RadialBlurOp = Extract<AdjustmentRenderOp, { kind: "radial-blur" }>;
 

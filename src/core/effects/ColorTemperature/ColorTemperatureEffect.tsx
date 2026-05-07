@@ -1,7 +1,7 @@
 import type { ColorTemperatureAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ColorTemperaturePanel } from "@/ux/windows/adjustments/ColorTemperaturePanel/ColorTemperaturePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ColorTemperaturePanel } from "./ColorTemperaturePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ColorTemperatureOp = Extract<
   AdjustmentRenderOp,

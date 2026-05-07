@@ -3,13 +3,13 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_LENS_BLUR_COMPUTE from "./wgsl/filter-lens-blur.wgsl?raw";
+import FILTER_LENS_BLUR_COMPUTE from "./filter-lens-blur.wgsl?raw";
 export { FILTER_LENS_BLUR_COMPUTE };
 
 export function buildKernelEntries(

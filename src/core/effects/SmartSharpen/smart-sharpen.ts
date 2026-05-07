@@ -3,19 +3,19 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE from "./wgsl/filter-smart-sharpen-gauss-combine.wgsl?raw";
+import FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE from "./filter-smart-sharpen-gauss-combine.wgsl?raw";
 export { FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE };
 
-import FILTER_SMART_SHARPEN_LENS_COMPUTE from "./wgsl/filter-smart-sharpen-lens.wgsl?raw";
+import FILTER_SMART_SHARPEN_LENS_COMPUTE from "./filter-smart-sharpen-lens.wgsl?raw";
 export { FILTER_SMART_SHARPEN_LENS_COMPUTE };
 
-import FILTER_SMART_SHARPEN_BLEND_COMPUTE from "./wgsl/filter-smart-sharpen-blend.wgsl?raw";
+import FILTER_SMART_SHARPEN_BLEND_COMPUTE from "./filter-smart-sharpen-blend.wgsl?raw";
 export { FILTER_SMART_SHARPEN_BLEND_COMPUTE };
 
 export async function runSmartSharpen(

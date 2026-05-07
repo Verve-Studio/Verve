@@ -5,7 +5,7 @@ import { Navigator } from "@/ux/main/RightPanel/Navigator/Navigator";
 import { SwatchPanel } from "@/ux/main/RightPanel/Swatch/SwatchPanel";
 import { HistoryPanel } from "@/ux/main/RightPanel/History/HistoryPanel";
 import { InfoPanel } from "@/ux/main/RightPanel/Info/InfoPanel";
-import { HDRPanel } from "@/ux/windows/HDRPanel/HDRPanel";
+import { HDRPanel } from "@/ux/main/RightPanel/HDRPanel/HDRPanel";
 import { Dock } from "./Dock/Dock";
 import { dockStore } from "./Dock/dockStore";
 import { useDockLayoutLoader } from "./Dock/useDockLayout";

@@ -1,7 +1,7 @@
 import type { PolarCoordinatesAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { PolarCoordinatesOptions } from "@/ux/windows/effects/PolarCoordinatesOptions/PolarCoordinatesOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { PolarCoordinatesOptions } from "./PolarCoordinatesOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type PolarCoordinatesOp = Extract<
   AdjustmentRenderOp,

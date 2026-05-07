@@ -1,7 +1,7 @@
 import type { BlackAndWhiteAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { BlackAndWhitePanel } from "@/ux/windows/adjustments/BlackAndWhitePanel/BlackAndWhitePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type BlackAndWhiteOp = Extract<AdjustmentRenderOp, { kind: "black-and-white" }>;
 

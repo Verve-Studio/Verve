@@ -8,45 +8,45 @@ export {
   HDR_BLIT_SHADER,
 } from "./rendering/blit";
 
-export { BC_COMPUTE } from "./compute/adjustments/brightness-contrast";
-export { HS_COMPUTE } from "./compute/adjustments/hue-saturation";
-export { VIB_COMPUTE } from "./compute/adjustments/vibrance";
-export { CB_COMPUTE } from "./compute/adjustments/color-balance";
-export { BW_COMPUTE } from "./compute/adjustments/black-and-white";
-export { TEMP_COMPUTE } from "./compute/adjustments/temperature";
-export { INVERT_COMPUTE } from "./compute/adjustments/invert";
-export { SEL_COLOR_COMPUTE } from "./compute/adjustments/selective-color";
-export { CHANNEL_MIXER_COMPUTE } from "./compute/adjustments/channel-mixer";
-export { AUTO_MATCH_COMPUTE } from "./compute/adjustments/auto-match";
-export { LENS_DISTORTION_COMPUTE } from "./compute/adjustments/lens-distortion";
-export { PINCH_COMPUTE } from "./compute/adjustments/pinch";
-export { POLAR_COORDINATES_COMPUTE } from "./compute/adjustments/polar-coordinates";
-export { RIPPLE_COMPUTE } from "./compute/adjustments/ripple";
-export { SHEAR_COMPUTE } from "./compute/adjustments/shear";
-export { TWIRL_COMPUTE } from "./compute/adjustments/twirl";
-export { DISPLACE_COMPUTE } from "./compute/adjustments/displace";
-export { CURVES_COMPUTE } from "./compute/adjustments/curves";
-export { CG_COMPUTE } from "./compute/adjustments/color-grading";
-export { RC_COMPUTE } from "./compute/adjustments/reduce-colors";
-export { DITHER_COMPUTE } from "./compute/adjustments/color-dithering";
+export { BC_COMPUTE } from "@/core/effects/BrightnessContrast/brightness-contrast";
+export { HS_COMPUTE } from "@/core/effects/HueSaturation/hue-saturation";
+export { VIB_COMPUTE } from "@/core/effects/ColorVibrance/vibrance";
+export { CB_COMPUTE } from "@/core/effects/ColorBalance/color-balance";
+export { BW_COMPUTE } from "@/core/effects/BlackAndWhite/black-and-white";
+export { TEMP_COMPUTE } from "@/core/effects/ColorTemperature/temperature";
+export { INVERT_COMPUTE } from "@/core/effects/ColorInvert/invert";
+export { SEL_COLOR_COMPUTE } from "@/core/effects/SelectiveColor/selective-color";
+export { CHANNEL_MIXER_COMPUTE } from "@/core/effects/ChannelMixer/channel-mixer";
+export { AUTO_MATCH_COMPUTE } from "@/core/effects/AutoMatch/auto-match";
+export { LENS_DISTORTION_COMPUTE } from "@/core/effects/LensDistortion/lens-distortion";
+export { PINCH_COMPUTE } from "@/core/effects/Pinch/pinch";
+export { POLAR_COORDINATES_COMPUTE } from "@/core/effects/PolarCoordinates/polar-coordinates";
+export { RIPPLE_COMPUTE } from "@/core/effects/Ripple/ripple";
+export { SHEAR_COMPUTE } from "@/core/effects/Shear/shear";
+export { TWIRL_COMPUTE } from "@/core/effects/Twirl/twirl";
+export { DISPLACE_COMPUTE } from "@/core/effects/Displace/displace";
+export { CURVES_COMPUTE } from "@/core/effects/Curves/curves";
+export { CG_COMPUTE } from "@/core/effects/ColorGrading/color-grading";
+export { RC_COMPUTE } from "@/core/effects/ReduceColors/reduce-colors";
+export { DITHER_COMPUTE } from "@/core/effects/ColorDithering/color-dithering";
 export {
   BLOOM_EXTRACT_COMPUTE,
   BLOOM_DOWNSAMPLE_COMPUTE,
   BLOOM_BLUR_H_COMPUTE,
   BLOOM_BLUR_V_COMPUTE,
   BLOOM_COMPOSITE_COMPUTE,
-} from "./compute/adjustments/bloom";
-export { CHROMATIC_ABERRATION_COMPUTE } from "./compute/adjustments/chromatic-aberration";
-export { VIGNETTE_COMPUTE } from "./compute/adjustments/vignette";
-export { HALATION_EXTRACT_COMPUTE } from "./compute/adjustments/halation";
-export { CK_COMPUTE } from "./compute/adjustments/color-key";
+} from "@/core/effects/Bloom/bloom";
+export { CHROMATIC_ABERRATION_COMPUTE } from "@/core/effects/ChromaticAberration/chromatic-aberration";
+export { VIGNETTE_COMPUTE } from "@/core/effects/Vignette/vignette";
+export { HALATION_EXTRACT_COMPUTE } from "@/core/effects/Halation/halation";
+export { CK_COMPUTE } from "@/core/effects/ColorKey/color-key";
 export {
   DROP_SHADOW_DILATE_H_COMPUTE,
   DROP_SHADOW_DILATE_V_COMPUTE,
   DROP_SHADOW_BLUR_H_COMPUTE,
   DROP_SHADOW_BLUR_V_COMPUTE,
   DROP_SHADOW_COMPOSITE_COMPUTE,
-} from "./compute/adjustments/drop-shadow";
+} from "@/core/effects/DropShadow/drop-shadow";
 export {
   OUTLINE_DILATE_H_COMPUTE,
   OUTLINE_DILATE_V_COMPUTE,
@@ -56,8 +56,8 @@ export {
   OUTLINE_BLUR_H_COMPUTE,
   OUTLINE_BLUR_V_COMPUTE,
   OUTLINE_COMPOSITE_COMPUTE,
-} from "./compute/adjustments/outline";
-export { HALFTONE_COMPUTE } from "./compute/adjustments/halftone";
-export { BEVEL_COMPOSITE_COMPUTE } from "./compute/adjustments/bevel";
-export { INNER_SHADOW_COMPOSITE_COMPUTE } from "./compute/adjustments/inner-shadow";
-export { FILTER_LENS_FLARE_COMPUTE } from "./compute/filters/lens-flare";
+} from "@/core/effects/Outline/outline";
+export { HALFTONE_COMPUTE } from "@/core/effects/Halftone/halftone";
+export { BEVEL_COMPOSITE_COMPUTE } from "@/core/effects/Bevel/bevel";
+export { INNER_SHADOW_COMPOSITE_COMPUTE } from "@/core/effects/InnerShadow/inner-shadow";
+export { FILTER_LENS_FLARE_COMPUTE } from "@/core/effects/LensFlare/lens-flare";

@@ -1,2 +1,2 @@
-import DISPLACE_COMPUTE from "./wgsl/displace.wgsl?raw";
+import DISPLACE_COMPUTE from "./displace.wgsl?raw";
 export { DISPLACE_COMPUTE };

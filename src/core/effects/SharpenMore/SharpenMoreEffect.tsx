@@ -2,8 +2,8 @@ import type React from "react";
 import type { SharpenMoreAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeSharpenMore } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { SharpenPanel } from "@/ux/windows/filters/SharpenPanel/SharpenPanel";
-import type { IPipelineEffect, PanelProps } from "./IPipelineEffect";
+import { SharpenPanel } from "../Sharpen/SharpenPanel";
+import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
 type SharpenMoreOp = Extract<AdjustmentRenderOp, { kind: "sharpen-more" }>;
 

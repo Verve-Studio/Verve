@@ -1,7 +1,7 @@
 import type { InnerGlowAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { InnerGlowOptions } from "@/ux/windows/effects/InnerGlowOptions/InnerGlowOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { InnerGlowOptions } from "./InnerGlowOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type InnerGlowOp = Extract<AdjustmentRenderOp, { kind: "inner-glow" }>;
 

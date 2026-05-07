@@ -2,73 +2,77 @@ import {
   FILTER_GAUSSIAN_H_COMPUTE,
   FILTER_GAUSSIAN_V_COMPUTE,
   runGaussianBlur,
-} from "../shaders/compute/filters/gaussian-blur";
+} from "@/core/effects/GaussianBlur/gaussian-blur";
 import {
   FILTER_BOX_H_COMPUTE,
   FILTER_BOX_V_COMPUTE,
   runBoxBlur,
-} from "../shaders/compute/filters/box-blur";
+} from "@/core/effects/BoxBlur/box-blur";
 import {
   FILTER_RADIAL_BLUR_COMPUTE,
   runRadialBlur,
-} from "../shaders/compute/filters/radial-blur";
+} from "@/core/effects/RadialBlur/radial-blur";
 import {
   FILTER_MOTION_BLUR_COMPUTE,
   runMotionBlur,
-} from "../shaders/compute/filters/motion-blur";
+} from "@/core/effects/MotionBlur/motion-blur";
 import {
   FILTER_LENS_BLUR_COMPUTE,
   buildKernelEntries,
   runLensBlur,
-} from "../shaders/compute/filters/lens-blur";
+} from "@/core/effects/LensBlur/lens-blur";
 import {
   FILTER_SHARPEN_COMPUTE,
-  FILTER_SHARPEN_MORE_COMPUTE,
-  FILTER_UNSHARP_COMBINE_COMPUTE,
   runSharpen,
+} from "@/core/effects/Sharpen/sharpen";
+import {
+  FILTER_SHARPEN_MORE_COMPUTE,
   runSharpenMore,
+} from "@/core/effects/SharpenMore/sharpen-more";
+import {
+  FILTER_UNSHARP_COMBINE_COMPUTE,
   runUnsharpMask,
-} from "../shaders/compute/filters/sharpen";
+} from "@/core/effects/UnsharpMask/unsharp-mask";
 import {
   FILTER_SMART_SHARPEN_GAUSS_COMBINE_COMPUTE,
   FILTER_SMART_SHARPEN_LENS_COMPUTE,
   FILTER_SMART_SHARPEN_BLEND_COMPUTE,
   runSmartSharpen,
-} from "../shaders/compute/filters/smart-sharpen";
+} from "@/core/effects/SmartSharpen/smart-sharpen";
 import {
   FILTER_ADD_NOISE_COMPUTE,
   runAddNoise,
-} from "../shaders/compute/filters/add-noise";
+} from "@/core/effects/AddNoise/add-noise";
 import {
   FILTER_FILM_GRAIN_NOISE_COMPUTE,
   FILTER_FILM_GRAIN_COMBINE_COMPUTE,
   runFilmGrain,
-} from "../shaders/compute/filters/film-grain";
+} from "@/core/effects/FilmGrain/film-grain";
 import {
   FILTER_CLOUDS_COMPUTE,
   runClouds,
-} from "../shaders/compute/filters/clouds";
+} from "@/core/effects/Clouds/clouds";
 import {
   FILTER_MEDIAN_COMPUTE,
   runMedian,
-} from "../shaders/compute/filters/median";
+} from "@/core/effects/MedianFilter/median";
 import {
   FILTER_BILATERAL_COMPUTE,
   runBilateral,
-} from "../shaders/compute/filters/bilateral";
+} from "@/core/effects/BilateralFilter/bilateral";
 import {
   FILTER_REDUCE_NOISE_COMPUTE,
   runReduceNoise,
-} from "../shaders/compute/filters/reduce-noise";
+} from "@/core/effects/ReduceNoise/reduce-noise";
 import {
   FILTER_PIXELATE_COMPUTE,
   runPixelate,
-} from "../shaders/compute/filters/pixelate";
-import { FILTER_OFFSET_COMPUTE } from "../shaders/compute/filters/offset";
+} from "@/core/effects/Pixelate/pixelate";
+import { FILTER_OFFSET_COMPUTE } from "@/core/effects/Offset/offset";
 import {
   FILTER_SEAMLESS_BREAK_COMPUTE,
   FILTER_SEAMLESS_BORDER_COMPUTE,
-} from "../shaders/compute/filters/seamless-texture";
+} from "@/core/effects/SeamlessTexture/seamless-texture";
 import { createUniformBuffer, writeUniformBuffer } from "../utils";
 import {
   createTrackedTexture,
@@ -79,7 +83,7 @@ import {
   FILTER_RMB_RATIO_COMPUTE,
   FILTER_RMB_UPDATE_COMPUTE,
   FILTER_RMB_FINAL_COMPUTE,
-} from "../shaders/compute/filters/remove-motion-blur";
+} from "@/core/effects/RemoveMotionBlur/remove-motion-blur";
 
 // ─── Pipeline pair type ───────────────────────────────────────────────────────
 

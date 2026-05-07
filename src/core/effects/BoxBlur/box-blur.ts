@@ -3,16 +3,16 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_BOX_H_COMPUTE from "./wgsl/filter-box-h.wgsl?raw";
+import FILTER_BOX_H_COMPUTE from "./filter-box-h.wgsl?raw";
 export { FILTER_BOX_H_COMPUTE };
 
-import FILTER_BOX_V_COMPUTE from "./wgsl/filter-box-v.wgsl?raw";
+import FILTER_BOX_V_COMPUTE from "./filter-box-v.wgsl?raw";
 export { FILTER_BOX_V_COMPUTE };
 
 export async function runBoxBlur(

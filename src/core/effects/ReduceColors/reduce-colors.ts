@@ -1,2 +1,2 @@
-import RC_COMPUTE from "./wgsl/rc.wgsl?raw";
+import RC_COMPUTE from "./rc.wgsl?raw";
 export { RC_COMPUTE };

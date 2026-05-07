@@ -1,2 +1,2 @@
-import CG_COMPUTE from "./wgsl/cg.wgsl?raw";
+import CG_COMPUTE from "./cg.wgsl?raw";
 export { CG_COMPUTE };

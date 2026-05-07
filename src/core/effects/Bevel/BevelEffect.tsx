@@ -1,7 +1,7 @@
 import type { BevelAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { BevelOptions } from "@/ux/windows/effects/BevelOptions/BevelOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { BevelOptions } from "./BevelOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type BevelOp = Extract<AdjustmentRenderOp, { kind: "bevel" }>;
 

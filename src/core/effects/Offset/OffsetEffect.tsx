@@ -1,8 +1,8 @@
 import type { OffsetAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeOffset } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { OffsetPanel } from "@/ux/windows/filters/OffsetPanel/OffsetPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { OffsetPanel } from "./OffsetPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type OffsetOp = Extract<AdjustmentRenderOp, { kind: "offset" }>;
 

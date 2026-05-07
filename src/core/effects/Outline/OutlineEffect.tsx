@@ -1,7 +1,7 @@
 import type { OutlineAdjustmentLayer, OutlineParams } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { OutlineOptions } from "@/ux/windows/effects/OutlineOptions/OutlineOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { OutlineOptions } from "./OutlineOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type OutlineOp = Extract<AdjustmentRenderOp, { kind: "outline" }>;
 

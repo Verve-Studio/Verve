@@ -1,2 +1,2 @@
-import TWIRL_COMPUTE from "./wgsl/twirl.wgsl?raw";
+import TWIRL_COMPUTE from "./twirl.wgsl?raw";
 export { TWIRL_COMPUTE };

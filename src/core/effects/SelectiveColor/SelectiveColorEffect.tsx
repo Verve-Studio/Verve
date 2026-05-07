@@ -1,7 +1,7 @@
 import type { SelectiveColorAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { SelectiveColorPanel } from "@/ux/windows/adjustments/SelectiveColorPanel/SelectiveColorPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { SelectiveColorPanel } from "./SelectiveColorPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type SelectiveColorOp = Extract<AdjustmentRenderOp, { kind: "selective-color" }>;
 

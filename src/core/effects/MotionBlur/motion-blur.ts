@@ -3,13 +3,13 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_MOTION_BLUR_COMPUTE from "./wgsl/filter-motion-blur.wgsl?raw";
+import FILTER_MOTION_BLUR_COMPUTE from "./filter-motion-blur.wgsl?raw";
 export { FILTER_MOTION_BLUR_COMPUTE };
 
 export async function runMotionBlur(

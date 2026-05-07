@@ -1,7 +1,7 @@
 import type { DisplaceAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { DisplaceOptions } from "@/ux/windows/effects/DisplaceOptions/DisplaceOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { DisplaceOptions } from "./DisplaceOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type DisplaceOp = Extract<AdjustmentRenderOp, { kind: "displace" }>;
 

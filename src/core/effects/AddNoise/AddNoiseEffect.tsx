@@ -1,8 +1,8 @@
 import type { AddNoiseAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeAddNoise } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { AddNoisePanel } from "@/ux/windows/filters/AddNoisePanel/AddNoisePanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { AddNoisePanel } from "./AddNoisePanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type AddNoiseOp = Extract<AdjustmentRenderOp, { kind: "add-noise" }>;
 

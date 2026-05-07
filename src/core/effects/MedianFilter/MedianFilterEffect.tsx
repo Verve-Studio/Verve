@@ -1,8 +1,8 @@
 import type { MedianFilterAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeMedian } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { MedianFilterPanel } from "@/ux/windows/filters/MedianFilterPanel/MedianFilterPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { MedianFilterPanel } from "./MedianFilterPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type MedianFilterOp = Extract<AdjustmentRenderOp, { kind: "median-filter" }>;
 

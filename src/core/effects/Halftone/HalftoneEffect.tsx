@@ -1,7 +1,7 @@
 import type { HalftoneAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { HalftoneOptions } from "@/ux/windows/effects/HalftoneOptions/HalftoneOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { HalftoneOptions } from "./HalftoneOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type HalftoneOp = Extract<AdjustmentRenderOp, { kind: "halftone" }>;
 

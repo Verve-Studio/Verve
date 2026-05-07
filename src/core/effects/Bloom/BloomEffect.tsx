@@ -1,7 +1,7 @@
 import type { BloomAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { BloomOptions } from "@/ux/windows/effects/BloomOptions/BloomOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { BloomOptions } from "./BloomOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type BloomOp = Extract<AdjustmentRenderOp, { kind: "bloom" }>;
 

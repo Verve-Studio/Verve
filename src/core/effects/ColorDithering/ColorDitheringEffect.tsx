@@ -1,7 +1,7 @@
 import type { ColorDitheringAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ColorDitheringPanel } from "@/ux/windows/adjustments/ColorDitheringPanel/ColorDitheringPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ColorDitheringPanel } from "./ColorDitheringPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ColorDitheringOp = Extract<AdjustmentRenderOp, { kind: "color-dithering" }>;
 

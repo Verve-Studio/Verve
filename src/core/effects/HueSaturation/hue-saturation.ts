@@ -1,2 +1,2 @@
-import HS_COMPUTE from "./wgsl/hs.wgsl?raw";
+import HS_COMPUTE from "./hs.wgsl?raw";
 export { HS_COMPUTE };

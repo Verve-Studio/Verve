@@ -1,7 +1,7 @@
 import type { DropShadowAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { DropShadowOptions } from "@/ux/windows/effects/DropShadowOptions/DropShadowOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { DropShadowOptions } from "./DropShadowOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type DropShadowOp = Extract<AdjustmentRenderOp, { kind: "drop-shadow" }>;
 

@@ -1,7 +1,7 @@
 import type { ColorGradingAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { ColorGradingPanel } from "@/ux/windows/adjustments/ColorGradingPanel/ColorGradingPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { ColorGradingPanel } from "./ColorGradingPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type ColorGradingOp = Extract<AdjustmentRenderOp, { kind: "color-grading" }>;
 

@@ -1,7 +1,7 @@
 import type { VignetteAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { VignetteOptions } from "@/ux/windows/effects/VignetteOptions/VignetteOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { VignetteOptions } from "./VignetteOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type VignetteOp = Extract<AdjustmentRenderOp, { kind: "vignette" }>;
 

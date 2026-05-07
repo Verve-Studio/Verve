@@ -7,8 +7,8 @@ import {
   DistortionSlider,
   DistortionSegmented,
   EDGE_MODES,
-} from "../distortionShared";
-import styles from "../distortionPanel.module.scss";
+} from "@/core/effects/_shared/distortionShared";
+import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
   layer: TwirlAdjustmentLayer;

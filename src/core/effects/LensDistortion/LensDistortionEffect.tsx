@@ -1,7 +1,7 @@
 import type { LensDistortionAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { LensDistortionOptions } from "@/ux/windows/effects/LensDistortionOptions/LensDistortionOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { LensDistortionOptions } from "./LensDistortionOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type LensDistortionOp = Extract<
   AdjustmentRenderOp,

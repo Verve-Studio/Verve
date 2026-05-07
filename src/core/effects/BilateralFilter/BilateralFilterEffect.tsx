@@ -1,8 +1,8 @@
 import type { BilateralFilterAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeBilateral } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { BilateralFilterPanel } from "@/ux/windows/filters/BilateralFilterPanel/BilateralFilterPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { BilateralFilterPanel } from "./BilateralFilterPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type BilateralFilterOp = Extract<
   AdjustmentRenderOp,

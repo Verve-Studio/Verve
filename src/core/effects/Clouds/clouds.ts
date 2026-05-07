@@ -3,13 +3,13 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_CLOUDS_COMPUTE from "./wgsl/filter-clouds.wgsl?raw";
+import FILTER_CLOUDS_COMPUTE from "./filter-clouds.wgsl?raw";
 export { FILTER_CLOUDS_COMPUTE };
 
 export async function runClouds(

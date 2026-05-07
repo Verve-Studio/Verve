@@ -4,8 +4,8 @@ import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/Web
 import { encodePixelate } from "@/graphicspipeline/webgpu/compute/filterCompute";
 import { useAppContext } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
-import styles from "@/ux/windows/filters/filterPanel.module.scss";
-import type { IPipelineEffect, PanelProps } from "./IPipelineEffect";
+import styles from "@/core/effects/_shared/filterPanel.module.scss";
+import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
 type PixelateOp = Extract<AdjustmentRenderOp, { kind: "pixelate" }>;
 

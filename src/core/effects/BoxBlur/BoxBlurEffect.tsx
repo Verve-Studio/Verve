@@ -1,8 +1,8 @@
 import type { BoxBlurAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeBoxBlur } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { BoxBlurPanel } from "@/ux/windows/filters/BoxBlurPanel/BoxBlurPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { BoxBlurPanel } from "./BoxBlurPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type BoxBlurOp = Extract<AdjustmentRenderOp, { kind: "box-blur" }>;
 

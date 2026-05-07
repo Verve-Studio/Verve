@@ -3,13 +3,13 @@ import {
   writeUniformBuffer,
   createReadbackBuffer,
   unpackRows,
-} from "../../../utils";
+} from "@/graphicspipeline/webgpu/utils";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-import FILTER_PIXELATE_COMPUTE from "./wgsl/filter-pixelate.wgsl?raw";
+import FILTER_PIXELATE_COMPUTE from "./filter-pixelate.wgsl?raw";
 export { FILTER_PIXELATE_COMPUTE };
 
 export async function runPixelate(

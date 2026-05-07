@@ -1,8 +1,8 @@
 import type { UnsharpMaskAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeUnsharpMask } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { UnsharpMaskPanel } from "@/ux/windows/filters/UnsharpMaskPanel/UnsharpMaskPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { UnsharpMaskPanel } from "./UnsharpMaskPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type UnsharpMaskOp = Extract<AdjustmentRenderOp, { kind: "unsharp-mask" }>;
 

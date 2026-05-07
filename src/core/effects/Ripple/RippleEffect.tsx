@@ -1,7 +1,7 @@
 import type { RippleAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { RippleOptions } from "@/ux/windows/effects/RippleOptions/RippleOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { RippleOptions } from "./RippleOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type RippleOp = Extract<AdjustmentRenderOp, { kind: "ripple" }>;
 

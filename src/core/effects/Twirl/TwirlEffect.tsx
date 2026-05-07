@@ -1,7 +1,7 @@
 import type { TwirlAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import { TwirlOptions } from "@/ux/windows/effects/TwirlOptions/TwirlOptions";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { TwirlOptions } from "./TwirlOptions";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type TwirlOp = Extract<AdjustmentRenderOp, { kind: "twirl" }>;
 

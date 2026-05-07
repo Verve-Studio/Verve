@@ -1,8 +1,8 @@
 import type { CloudsAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeClouds } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { CloudsPanel } from "@/ux/windows/filters/CloudsPanel/CloudsPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { CloudsPanel } from "./CloudsPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type CloudsOp = Extract<AdjustmentRenderOp, { kind: "clouds" }>;
 

@@ -2,7 +2,7 @@ import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type { OffsetAdjustmentLayer } from "@/types";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
-import styles from "../filterPanel.module.scss";
+import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
   layer: OffsetAdjustmentLayer;

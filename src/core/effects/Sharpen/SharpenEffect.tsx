@@ -1,8 +1,8 @@
 import type { SharpenAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeSharpen } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { SharpenPanel } from "@/ux/windows/filters/SharpenPanel/SharpenPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { SharpenPanel } from "./SharpenPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type SharpenOp = Extract<AdjustmentRenderOp, { kind: "sharpen" }>;
 

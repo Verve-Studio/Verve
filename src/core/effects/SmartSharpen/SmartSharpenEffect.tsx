@@ -1,8 +1,8 @@
 import type { SmartSharpenAdjustmentLayer } from "@/types";
 import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
 import { encodeSmartSharpen } from "@/graphicspipeline/webgpu/compute/filterCompute";
-import { SmartSharpenPanel } from "@/ux/windows/filters/SmartSharpenPanel/SmartSharpenPanel";
-import type { IPipelineEffect } from "./IPipelineEffect";
+import { SmartSharpenPanel } from "./SmartSharpenPanel";
+import type { IPipelineEffect } from "../IPipelineEffect";
 
 type SmartSharpenOp = Extract<AdjustmentRenderOp, { kind: "smart-sharpen" }>;
 
