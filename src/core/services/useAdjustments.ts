@@ -1,13 +1,8 @@
 import { effectRegistry } from "@/core/effects";
 import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
 import type { AppAction } from "@/core/store/AppContext";
-import type {
-  EffectLayerState,
-  EffectParamsMap,
-  EffectType,
-  AppState,
-  LayerState,
-} from "@/types";
+import type { AppState, LayerState } from "@/types";
+import type { EffectLayerState, EffectParamsMap, EffectType } from "@/core/effects/effectTypes";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useMemo } from "react";
 

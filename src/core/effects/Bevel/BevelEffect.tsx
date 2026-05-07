@@ -1,4 +1,4 @@
-import type { BevelEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BevelOptions } from "./BevelOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -6,6 +6,20 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+
+
+export interface BevelParams {
+    /** Dilation radius in pixels (1–50). Controls bevel width. */
+    width: number;
+    /** Blur radius in pixels (0–50). Controls softness of bevel edges. */
+    softness: number;
+    /** Light direction in degrees (0–360). 0° = right, 90° = down. */
+    angle: number;
+    /** Bevel intensity, 0–100 (%). */
+    strength: number;
+}
+
+export type BevelEffectLayer = EffectLayerOf<"bevel", BevelParams>;
 
 type BevelOp = Extract<EffectRenderOp, { kind: "bevel" }>;
 

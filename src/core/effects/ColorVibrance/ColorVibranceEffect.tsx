@@ -1,8 +1,15 @@
-import type { ColorVibranceEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorVibrancePanel } from "./ColorVibrancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ColorVibranceParams {
+ vibrance: number; saturation: number
+}
+
+export type ColorVibranceEffectLayer = EffectLayerOf<"color-vibrance", ColorVibranceParams>;
 
 type ColorVibranceOp = Extract<EffectRenderOp, { kind: "color-vibrance" }>;
 

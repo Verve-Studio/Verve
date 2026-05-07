@@ -1,8 +1,22 @@
-import type { InnerGlowEffectLayer } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerGlowOptions } from "./InnerGlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeInnerShadowPass } from "../InnerShadow/InnerShadowEffect";
+
+
+export interface InnerGlowParams {
+    /** Glow color including alpha. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
+    color: RGBAColor;
+    /** Overall glow opacity, 0–100 (%). Default: 75 */
+    opacity: number;
+    /** Erosion radius in pixels, 0–100. Controls how far the glow spreads inward. Default: 0 */
+    spread: number;
+    /** Blur radius in pixels, 0–100. Controls softness of glow edges. Default: 15 */
+    softness: number;
+}
+
+export type InnerGlowEffectLayer = EffectLayerOf<"inner-glow", InnerGlowParams>;
 
 type InnerGlowOp = Extract<EffectRenderOp, { kind: "inner-glow" }>;
 

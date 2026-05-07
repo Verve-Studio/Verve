@@ -6,11 +6,8 @@ import React, {
   useState,
 } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type {
-  CurvesEffectLayer,
-  CurvesChannel,
-  CurvesControlPoint,
-} from "@/types";
+import type { CurvesChannel, CurvesControlPoint } from "@/types";
+import type { CurvesEffectLayer } from "@/core/effects/Curves/CurvesEffect";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { useCurvesHistogram } from "@/core/services/useCurvesHistogram";
 import {

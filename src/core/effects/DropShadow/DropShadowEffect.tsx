@@ -1,4 +1,4 @@
-import type { DropShadowEffectLayer } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DropShadowOptions } from "./DropShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -7,6 +7,28 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface DropShadowParams {
+    /** Shadow color including alpha channel. r/g/b/a are 0–255. Default: { r:0, g:0, b:0, a:255 } */
+    color: RGBAColor;
+    /** Overall shadow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
+    opacity: number;
+    /** Horizontal offset in canvas pixels, −200 to +200. Default: 5 */
+    offsetX: number;
+    /** Vertical offset in canvas pixels, −200 to +200. Default: 5 */
+    offsetY: number;
+    /** Morphological dilation radius in pixels, 0–100. Default: 0 */
+    spread: number;
+    /** Gaussian blur radius in pixels, 0–100. Default: 10 */
+    softness: number;
+    /** How the shadow composites with layers beneath it. Default: 'multiply' */
+    blendMode: "normal" | "multiply" | "screen";
+    /** When true, the shadow is masked by the inverse of the source alpha. Default: true */
+    knockout: boolean;
+}
+
+export type DropShadowEffectLayer = EffectLayerOf<"drop-shadow", DropShadowParams>;
 
 type DropShadowOp = Extract<EffectRenderOp, { kind: "drop-shadow" }>;
 

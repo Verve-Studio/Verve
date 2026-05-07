@@ -1,8 +1,43 @@
-import type { AutoMatchEffectLayer } from "@/types";
+import type { AutoMatchStats, EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AutoMatchPanel } from "./AutoMatchPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /**
+   * Per-source statistics captured by the Auto Match analysis pass. Each
+   * value is in linear-display units of 0..1 (luma channels) or raw 0..1
+   * sRGB byte/255 (mean R/G/B). `count` is the number of opaque pixels that
+   * contributed; when 0 the stats are invalid and the apply pass becomes a
+   * pass-through.
+   */
+export interface AutoMatchParams {
+    /** Pixel radius around the parent layer's bounding box used to gather
+     *  context (rest-of-image) statistics. */
+    samplingDistance: number;
+    /** Overall match strength (0..100). 0 = pass-through, 100 = full match. */
+    strength: number;
+    /** Per-component micro-adjustments (0..200, default 100 = match exactly). */
+    brightness: number;
+    contrast: number;
+    gamma: number;
+    color: number;
+    /** Saturation match (0..200). Scales the layer's chroma magnitude toward
+     *  the surroundings'. 100 = match exactly, 0 = leave saturation alone,
+     *  200 = double the match strength (clamped at the per-axis caps). */
+    saturation: number;
+    /** When true, clamps output luma to the surroundings' max luma. */
+    clampHighlights: boolean;
+    /** When true, clamps output luma below the surroundings' min luma. */
+    clampShadows: boolean;
+    /** Cached statistics produced by the analysis pass. Null until first analyze. */
+    cachedStats: AutoMatchStats | null;
+    /** Bumped every time analysis finishes; forces render-plan recomputation. */
+    statsVersion: number;
+}
+
+export type AutoMatchEffectLayer = EffectLayerOf<"auto-match", AutoMatchParams>;
 
 type AutoMatchOp = Extract<EffectRenderOp, { kind: "auto-match" }>;
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { LensDistortionEffectLayer } from "@/types";
+import type { LensDistortionEffectLayer } from "@/core/effects/LensDistortion/LensDistortionEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./LensDistortionOptions.module.scss";

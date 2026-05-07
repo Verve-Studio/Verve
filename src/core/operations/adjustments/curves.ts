@@ -1,10 +1,5 @@
-import type {
-  CurvesChannel,
-  CurvesChannelCurve,
-  CurvesControlPoint,
-  EffectParamsMap,
-  CurvesPresetRef,
-} from "@/types";
+import type { CurvesChannel, CurvesChannelCurve, CurvesControlPoint, CurvesPresetRef } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 
 export interface CurvesLuts {
   rgb: Uint8Array;

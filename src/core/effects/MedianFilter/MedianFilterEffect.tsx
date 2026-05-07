@@ -1,7 +1,14 @@
-import type { MedianFilterEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MedianFilterPanel } from "./MedianFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface MedianFilterParams {
+ radius: number
+}
+
+export type MedianFilterEffectLayer = EffectLayerOf<"median-filter", MedianFilterParams>;
 
 type MedianFilterOp = Extract<EffectRenderOp, { kind: "median-filter" }>;
 

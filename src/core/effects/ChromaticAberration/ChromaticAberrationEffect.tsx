@@ -1,8 +1,17 @@
-import type { ChromaticAberrationEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ChromaticAberrationOptions } from "./ChromaticAberrationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ChromaticAberrationParams {
+    type: "radial" | "directional";
+    distance: number; // 0–50 px
+    angle: number; // 0–360 degrees (used only when type === 'directional')
+}
+
+export type ChromaticAberrationEffectLayer = EffectLayerOf<"chromatic-aberration", ChromaticAberrationParams>;
 
 type ChromaticAberrationOp = Extract<
   EffectRenderOp,

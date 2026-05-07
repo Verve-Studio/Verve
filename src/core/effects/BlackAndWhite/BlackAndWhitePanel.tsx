@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BlackAndWhiteEffectLayer } from "@/types";
+import type { BlackAndWhiteEffectLayer } from "@/core/effects/BlackAndWhite/BlackAndWhiteEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BlackAndWhitePanel.module.scss";

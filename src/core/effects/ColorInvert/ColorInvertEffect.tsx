@@ -1,8 +1,13 @@
-import type { ColorInvertEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InvertPanel } from "./InvertPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
+
+
+export type ColorInvertParams = Record<never, never>;
+
+export type ColorInvertEffectLayer = EffectLayerOf<"color-invert", ColorInvertParams>;
 
 const INVERT_BINDINGS: AdjBinding[] = ["tex", "sampler", "tex", "uniform"];
 

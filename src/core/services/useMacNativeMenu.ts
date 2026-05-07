@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { EffectType, FilterKey, PixelFormat } from "@/types";
+import type { FilterKey, PixelFormat } from "@/types";
+import type { EffectType } from "@/core/effects/effectTypes";
 import type { GuidePreset } from "./useViewActions";
 import { selectionStore } from "@/core/store/selectionStore";
 import {

@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { LensFlareEffectLayer } from "@/types";
+import type { LensFlareEffectLayer } from "@/core/effects/LensFlare/LensFlareEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 

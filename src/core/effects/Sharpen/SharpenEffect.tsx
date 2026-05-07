@@ -1,7 +1,12 @@
-import type { SharpenEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SharpenPanel } from "./SharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export type SharpenParams = Record<string, never>;
+
+export type SharpenEffectLayer = EffectLayerOf<"sharpen", SharpenParams>;
 
 type SharpenOp = Extract<EffectRenderOp, { kind: "sharpen" }>;
 

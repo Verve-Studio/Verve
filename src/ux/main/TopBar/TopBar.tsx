@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import { MenuBar } from "../MenuBar/MenuBar";
 import type { MenuDef } from "../MenuBar/MenuBar";
-import type { EffectType, FilterKey, PixelFormat } from "@/types";
+import type { FilterKey, PixelFormat } from "@/types";
+import type { EffectType } from "@/core/effects/effectTypes";
 import type { GuidePreset } from "@/core/services/useViewActions";
 import type {
   AlignEdge,

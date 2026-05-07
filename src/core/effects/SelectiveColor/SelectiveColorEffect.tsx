@@ -1,8 +1,24 @@
-import type { SelectiveColorEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SelectiveColorPanel } from "./SelectiveColorPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface SelectiveColorParams {
+    reds: { cyan: number; magenta: number; yellow: number; black: number };
+    yellows: { cyan: number; magenta: number; yellow: number; black: number };
+    greens: { cyan: number; magenta: number; yellow: number; black: number };
+    cyans: { cyan: number; magenta: number; yellow: number; black: number };
+    blues: { cyan: number; magenta: number; yellow: number; black: number };
+    magentas: { cyan: number; magenta: number; yellow: number; black: number };
+    whites: { cyan: number; magenta: number; yellow: number; black: number };
+    neutrals: { cyan: number; magenta: number; yellow: number; black: number };
+    blacks: { cyan: number; magenta: number; yellow: number; black: number };
+    mode: "relative" | "absolute";
+}
+
+export type SelectiveColorEffectLayer = EffectLayerOf<"selective-color", SelectiveColorParams>;
 
 type SelectiveColorOp = Extract<EffectRenderOp, { kind: "selective-color" }>;
 

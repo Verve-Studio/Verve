@@ -1,8 +1,26 @@
-import type { VignetteEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { VignetteOptions } from "./VignetteOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface VignetteParams {
+    /** "ellipse" — soft elliptical falloff; "rectangle" — super-ellipse with controllable corners. */
+    shape: "ellipse" | "rectangle";
+    /** Where the vignette begins. 0 = at the center, 1 = at the corner (no vignette). */
+    spread: number;
+    /** Width of the falloff band. 0 = hard edge, 1 = very soft. */
+    softness: number;
+    /** Overall opacity of the vignette overlay. 0–1. */
+    opacity: number;
+    /** Vignette colour as sRGB bytes (0–255). */
+    color: { r: number; g: number; b: number };
+    /** Corner roundness for `shape: "rectangle"`. 0 = sharp rectangle, 1 = ellipse. */
+    roundness: number;
+}
+
+export type VignetteEffectLayer = EffectLayerOf<"vignette", VignetteParams>;
 
 type VignetteOp = Extract<EffectRenderOp, { kind: "vignette" }>;
 

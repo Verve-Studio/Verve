@@ -1,8 +1,20 @@
-import type { HalftoneEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HalftoneOptions } from "./HalftoneOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface HalftoneParams {
+    mode: "color" | "bw";
+    frequency: number;
+    offsetC: number;
+    offsetM: number;
+    offsetY: number;
+    offsetK: number;
+}
+
+export type HalftoneEffectLayer = EffectLayerOf<"halftone", HalftoneParams>;
 
 type HalftoneOp = Extract<EffectRenderOp, { kind: "halftone" }>;
 

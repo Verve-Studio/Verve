@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BevelEffectLayer } from "@/types";
+import type { BevelEffectLayer } from "@/core/effects/Bevel/BevelEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BevelOptions.module.scss";
 

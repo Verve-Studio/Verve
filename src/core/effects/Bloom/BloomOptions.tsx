@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BloomEffectLayer } from "@/types";
+import type { BloomEffectLayer } from "@/core/effects/Bloom/BloomEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BloomOptions.module.scss";
 

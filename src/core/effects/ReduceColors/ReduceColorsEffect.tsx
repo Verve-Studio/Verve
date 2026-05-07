@@ -1,9 +1,18 @@
-import type { ReduceColorsEffectLayer, RGBAColor } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceColorsPanel } from "./ReduceColorsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
+
+
+export interface ReduceColorsParams {
+    mode: "reduce" | "palette";
+    colorCount: number;
+    derivedPalette: RGBAColor[] | null;
+}
+
+export type ReduceColorsEffectLayer = EffectLayerOf<"reduce-colors", ReduceColorsParams>;
 
 type ReduceColorsOp = Extract<EffectRenderOp, { kind: "reduce-colors" }>;
 

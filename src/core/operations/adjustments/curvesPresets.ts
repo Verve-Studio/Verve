@@ -1,8 +1,5 @@
-import type {
-  CurvesChannel,
-  CurvesChannelCurve,
-  EffectParamsMap,
-} from "@/types";
+import type { CurvesChannel, CurvesChannelCurve } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 import { curvesChannelsSignature, makeIdentityCurve } from "./curves";
 
 export interface BuiltinCurvesPreset {

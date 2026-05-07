@@ -1,8 +1,29 @@
-import type { ColorGradingEffectLayer } from "@/types";
+import type { ColorGradingWheelParams, EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorGradingPanel } from "./ColorGradingPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ColorGradingParams {
+    lift: ColorGradingWheelParams;
+    gamma: ColorGradingWheelParams;
+    gain: ColorGradingWheelParams;
+    offset: ColorGradingWheelParams;
+    temp: number;
+    tint: number;
+    contrast: number;
+    pivot: number;
+    midDetail: number;
+    colorBoost: number;
+    shadows: number;
+    highlights: number;
+    saturation: number;
+    hue: number;
+    lumMix: number;
+}
+
+export type ColorGradingEffectLayer = EffectLayerOf<"color-grading", ColorGradingParams>;
 
 type ColorGradingOp = Extract<EffectRenderOp, { kind: "color-grading" }>;
 

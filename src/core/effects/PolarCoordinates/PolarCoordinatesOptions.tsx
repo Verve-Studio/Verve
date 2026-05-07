@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { PolarCoordinatesEffectLayer } from "@/types";
+import type { PolarCoordinatesEffectLayer } from "@/core/effects/PolarCoordinates/PolarCoordinatesEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {

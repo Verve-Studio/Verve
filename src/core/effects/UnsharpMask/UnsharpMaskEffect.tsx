@@ -1,7 +1,14 @@
-import type { UnsharpMaskEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { UnsharpMaskPanel } from "./UnsharpMaskPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface UnsharpMaskParams {
+ amount: number; radius: number; threshold: number
+}
+
+export type UnsharpMaskEffectLayer = EffectLayerOf<"unsharp-mask", UnsharpMaskParams>;
 
 type UnsharpMaskOp = Extract<EffectRenderOp, { kind: "unsharp-mask" }>;
 

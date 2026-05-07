@@ -1,8 +1,23 @@
-import type { PinchEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PinchOptions } from "./PinchOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Photoshop-style Pinch — pulls pixels toward (positive amount) or pushes
+   *  them away from (negative) a centre point with a smooth radial falloff. */
+export interface PinchParams {
+    /** −100..100. Positive pinches inward, negative spherises outward. */
+    amount: number;
+    /** Falloff radius as a fraction of the image's half-diagonal (0..1). */
+    radius: number;
+    centerX: number;
+    centerY: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type PinchEffectLayer = EffectLayerOf<"pinch", PinchParams>;
 
 type PinchOp = Extract<EffectRenderOp, { kind: "pinch" }>;
 

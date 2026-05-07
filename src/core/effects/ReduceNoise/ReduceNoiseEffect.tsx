@@ -1,7 +1,17 @@
-import type { ReduceNoiseEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceNoisePanel } from "./ReduceNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface ReduceNoiseParams {
+    strength: number;
+    preserveDetails: number;
+    reduceColorNoise: number;
+    sharpenDetails: number;
+}
+
+export type ReduceNoiseEffectLayer = EffectLayerOf<"reduce-noise", ReduceNoiseParams>;
 
 type ReduceNoiseOp = Extract<EffectRenderOp, { kind: "reduce-noise" }>;
 

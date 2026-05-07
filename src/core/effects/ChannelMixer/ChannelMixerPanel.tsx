@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ChannelMixerEffectLayer } from "@/types";
+import type { ChannelMixerEffectLayer } from "@/core/effects/ChannelMixer/ChannelMixerEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ChannelMixerPanel.module.scss";

@@ -1,8 +1,22 @@
-import type { ChannelMixerEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ChannelMixerPanel } from "./ChannelMixerPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ChannelMixerParams {
+    monochrome: boolean;
+    /** Output channel currently shown in the panel UI. */
+    outputChannel: "red" | "green" | "blue" | "gray";
+    /** Source-channel multipliers (-200..+200, expressed as percent) and constant offset. */
+    red: { red: number; green: number; blue: number; constant: number };
+    green: { red: number; green: number; blue: number; constant: number };
+    blue: { red: number; green: number; blue: number; constant: number };
+    gray: { red: number; green: number; blue: number; constant: number };
+}
+
+export type ChannelMixerEffectLayer = EffectLayerOf<"channel-mixer", ChannelMixerParams>;
 
 type ChannelMixerOp = Extract<EffectRenderOp, { kind: "channel-mixer" }>;
 

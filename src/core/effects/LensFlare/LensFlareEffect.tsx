@@ -1,8 +1,31 @@
-import type { LensFlareEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensFlarePanel } from "./LensFlarePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Photographic lens flare overlay, additively composited over the layer. */
+export interface LensFlareParams {
+    /** Flare center X in canvas-pixel coordinates. */
+    centerX: number;
+    /** Flare center Y in canvas-pixel coordinates. */
+    centerY: number;
+    /** Overall brightness multiplier, 10–300%. */
+    brightness: number;
+    /** Lens type preset: 0 = zoom, 1 = 35mm, 2 = 105mm, 3 = movie, 4 = anamorphic. */
+    lensType: number;
+    /** Iris-ring opacity, 0–100%. */
+    ringOpacity: number;
+    /** Streak intensity, 0–100%. */
+    streakStrength: number;
+    /** Streak width, 1–500%. */
+    streakWidth: number;
+    /** Streak rotation, 0–359°. */
+    streakRotation: number;
+}
+
+export type LensFlareEffectLayer = EffectLayerOf<"lens-flare", LensFlareParams>;
 
 type LensFlareOp = Extract<EffectRenderOp, { kind: "lens-flare" }>;
 

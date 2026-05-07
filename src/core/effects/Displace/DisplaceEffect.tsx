@@ -1,8 +1,26 @@
-import type { DisplaceEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DisplaceOptions } from "./DisplaceOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Displace — procedural noise-driven pixel displacement. Photoshop's
+   *  Displace uses a .psd map; we use Perlin-style noise as a built-in
+   *  source so the effect runs without an additional layer pick. */
+export interface DisplaceParams {
+    /** Horizontal displacement scale in pixels at noise peak (−200..200). */
+    horizontalScale: number;
+    /** Vertical displacement scale in pixels at noise peak. */
+    verticalScale: number;
+    /** Noise frequency (1..200, higher = finer-grained noise). */
+    noiseFrequency: number;
+    /** Random seed so users can vary the displacement pattern. */
+    seed: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type DisplaceEffectLayer = EffectLayerOf<"displace", DisplaceParams>;
 
 type DisplaceOp = Extract<EffectRenderOp, { kind: "displace" }>;
 

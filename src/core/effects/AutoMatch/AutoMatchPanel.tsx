@@ -1,11 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type {
-  AutoMatchEffectLayer,
-  AutoMatchSourceStats,
-  AutoMatchStats,
-  LayerState,
-} from "@/types";
+import type { AutoMatchSourceStats, AutoMatchStats, LayerState } from "@/types";
+import type { AutoMatchEffectLayer } from "@/core/effects/AutoMatch/AutoMatchEffect";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";

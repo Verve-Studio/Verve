@@ -1,7 +1,18 @@
-import type { RadialBlurEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RadialBlurPanel } from "./RadialBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface RadialBlurParams {
+    mode: 0 | 1;
+    amount: number;
+    centerX: number;
+    centerY: number;
+    quality: 0 | 1 | 2;
+}
+
+export type RadialBlurEffectLayer = EffectLayerOf<"radial-blur", RadialBlurParams>;
 
 type RadialBlurOp = Extract<EffectRenderOp, { kind: "radial-blur" }>;
 

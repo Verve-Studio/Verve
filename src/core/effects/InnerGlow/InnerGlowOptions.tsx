@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { InnerGlowEffectLayer } from "@/types";
+import type { InnerGlowEffectLayer } from "@/core/effects/InnerGlow/InnerGlowEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./InnerGlowOptions.module.scss";

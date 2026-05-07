@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorBalanceEffectLayer } from "@/types";
+import type { ColorBalanceEffectLayer } from "@/core/effects/ColorBalance/ColorBalanceEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorBalancePanel.module.scss";
 

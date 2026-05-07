@@ -1,10 +1,5 @@
-import type {
-  LayerState,
-  GroupLayerState,
-  CompositeLayerState,
-  MaskLayerState,
-  EffectLayerState,
-} from "@/types";
+import type { LayerState, GroupLayerState, CompositeLayerState, MaskLayerState } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isContainerLayer, isCompositeLayer } from "@/types";
 
 // ─── Root layer IDs ───────────────────────────────────────────────────────────

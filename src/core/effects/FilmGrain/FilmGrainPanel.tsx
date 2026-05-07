@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { FilmGrainEffectLayer } from "@/types";
+import type { FilmGrainEffectLayer } from "@/core/effects/FilmGrain/FilmGrainEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 

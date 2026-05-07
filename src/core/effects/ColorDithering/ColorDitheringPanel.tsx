@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorDitheringEffectLayer } from "@/types";
+import type { ColorDitheringEffectLayer } from "@/core/effects/ColorDithering/ColorDitheringEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorDitheringPanel.module.scss";
 

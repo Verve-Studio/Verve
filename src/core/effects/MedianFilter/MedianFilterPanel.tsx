@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { MedianFilterEffectLayer } from "@/types";
+import type { MedianFilterEffectLayer } from "@/core/effects/MedianFilter/MedianFilterEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 

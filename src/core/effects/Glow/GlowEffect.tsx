@@ -1,8 +1,26 @@
-import type { GlowEffectLayer } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GlowOptions } from "./GlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeDropShadowPass } from "../DropShadow/DropShadowEffect";
+
+
+export interface GlowParams {
+    /** Glow color including alpha channel. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
+    color: RGBAColor;
+    /** Overall glow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
+    opacity: number;
+    /** Morphological dilation radius in pixels, 0–100. Default: 0 */
+    spread: number;
+    /** Gaussian blur radius in pixels, 0–100. Default: 15 */
+    softness: number;
+    /** How the glow composites with layers beneath it. Default: 'normal' */
+    blendMode: "normal" | "multiply" | "screen";
+    /** When true, the glow is masked by the inverse of the source alpha (outer glow only). Default: true */
+    knockout: boolean;
+}
+
+export type GlowEffectLayer = EffectLayerOf<"glow", GlowParams>;
 
 type GlowOp = Extract<EffectRenderOp, { kind: "glow" }>;
 

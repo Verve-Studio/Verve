@@ -1,8 +1,16 @@
-import type { ColorTemperatureEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorTemperaturePanel } from "./ColorTemperaturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ColorTemperatureParams {
+    temperature: number;
+    tint: number;
+}
+
+export type ColorTemperatureEffectLayer = EffectLayerOf<"color-temperature", ColorTemperatureParams>;
 
 type ColorTemperatureOp = Extract<
   EffectRenderOp,

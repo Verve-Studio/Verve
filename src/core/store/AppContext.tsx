@@ -1,27 +1,6 @@
 import React, { createContext, useContext, useReducer } from "react";
-import type {
-  AppState,
-  Tool,
-  ShapeType,
-  RGBAColor,
-  LayerState,
-  TextLayerState,
-  ShapeLayerState,
-  FrameLayerState,
-  MaskLayerState,
-  EffectLayerState,
-  GroupLayerState,
-  CompositeLayerState,
-  BlendMode,
-  BackgroundFill,
-  GridType,
-  SwatchGroup,
-  PixelBrush,
-  Brush,
-  PixelFormat,
-  AnimationDef,
-  AnimationFrame,
-} from "@/types";
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isContainerLayer, isCompositeLayer } from "@/types";
 import {
   getDescendantIds,

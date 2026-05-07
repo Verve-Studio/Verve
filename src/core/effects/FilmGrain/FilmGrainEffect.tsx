@@ -1,7 +1,17 @@
-import type { FilmGrainEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { FilmGrainPanel } from "./FilmGrainPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface FilmGrainParams {
+    grainSize: number;
+    intensity: number;
+    roughness: number;
+    seed: number;
+}
+
+export type FilmGrainEffectLayer = EffectLayerOf<"film-grain", FilmGrainParams>;
 
 type FilmGrainOp = Extract<EffectRenderOp, { kind: "film-grain" }>;
 

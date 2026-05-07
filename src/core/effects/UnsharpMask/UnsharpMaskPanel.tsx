@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { UnsharpMaskEffectLayer } from "@/types";
+import type { UnsharpMaskEffectLayer } from "@/core/effects/UnsharpMask/UnsharpMaskEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 

@@ -1,7 +1,17 @@
-import type { SmartSharpenEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SmartSharpenPanel } from "./SmartSharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface SmartSharpenParams {
+    amount: number;
+    radius: number;
+    reduceNoise: number;
+    remove: "gaussian" | "lens-blur";
+}
+
+export type SmartSharpenEffectLayer = EffectLayerOf<"smart-sharpen", SmartSharpenParams>;
 
 type SmartSharpenOp = Extract<EffectRenderOp, { kind: "smart-sharpen" }>;
 

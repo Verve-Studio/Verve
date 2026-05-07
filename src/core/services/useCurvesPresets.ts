@@ -1,4 +1,5 @@
-import type { EffectParamsMap, CurvesPreset } from "@/types";
+import type { CurvesPreset } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 import { useCallback, useEffect, useState } from "react";
 
 interface UseCurvesPresetsState {

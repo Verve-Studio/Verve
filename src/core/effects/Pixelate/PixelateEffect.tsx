@@ -1,10 +1,17 @@
 import React from "react";
-import type { PixelateEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { useAppContext } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
+
+
+export interface PixelateParams {
+ blockSize: number
+}
+
+export type PixelateEffectLayer = EffectLayerOf<"pixelate", PixelateParams>;
 
 type PixelateOp = Extract<EffectRenderOp, { kind: "pixelate" }>;
 

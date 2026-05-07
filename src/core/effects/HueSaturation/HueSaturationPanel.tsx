@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { HueSaturationEffectLayer } from "@/types";
+import type { HueSaturationEffectLayer } from "@/core/effects/HueSaturation/HueSaturationEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HueSaturationPanel.module.scss";
 

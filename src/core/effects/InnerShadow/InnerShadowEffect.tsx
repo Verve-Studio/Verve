@@ -1,4 +1,4 @@
-import type { InnerShadowEffectLayer } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerShadowOptions } from "./InnerShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -7,6 +7,24 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface InnerShadowParams {
+    /** Shadow color including alpha. r/g/b/a are 0–255. */
+    color: RGBAColor;
+    /** Overall shadow opacity, 0–100 (%). */
+    opacity: number;
+    /** Horizontal offset in pixels, −200 to +200. */
+    offsetX: number;
+    /** Vertical offset in pixels, −200 to +200. */
+    offsetY: number;
+    /** Erosion radius in pixels, 0–100. Controls spread of shadow inside shape. */
+    spread: number;
+    /** Blur radius in pixels, 0–100. Controls softness of shadow edges. */
+    softness: number;
+}
+
+export type InnerShadowEffectLayer = EffectLayerOf<"inner-shadow", InnerShadowParams>;
 
 type InnerShadowOp = Extract<EffectRenderOp, { kind: "inner-shadow" }>;
 

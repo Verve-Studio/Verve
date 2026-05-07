@@ -1,8 +1,24 @@
-import type { ShearEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ShearOptions } from "./ShearOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Shear — sinusoidal or linear horizontal/vertical pixel shifting. */
+export interface ShearParams {
+    /** Total pixel shift across the axis (−500..500). */
+    amplitude: number;
+    /** Axis the shift acts on. `horizontal` shifts pixels along X by an
+     *  amount that varies with Y; `vertical` is the opposite. */
+    direction: "horizontal" | "vertical";
+    /** 0 = pure linear shear, >0 introduces sine-wave shape (Photoshop's
+     *  free-form curve approximated via a frequency control). 0..10. */
+    waveFrequency: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type ShearEffectLayer = EffectLayerOf<"shear", ShearParams>;
 
 type ShearOp = Extract<EffectRenderOp, { kind: "shear" }>;
 

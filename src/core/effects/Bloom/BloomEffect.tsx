@@ -1,4 +1,4 @@
-import type { BloomEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BloomOptions } from "./BloomOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -10,6 +10,16 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+
+
+export interface BloomParams {
+    threshold: number;
+    strength: number;
+    spread: number;
+    quality: "full" | "half" | "quarter";
+}
+
+export type BloomEffectLayer = EffectLayerOf<"bloom", BloomParams>;
 
 type BloomOp = Extract<EffectRenderOp, { kind: "bloom" }>;
 

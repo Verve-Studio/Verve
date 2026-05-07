@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
-import type { EffectLayerState, RGBAColor } from "@/types";
+import type { RGBAColor } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import type {
   EffectRenderOp,
   GpuLayer,

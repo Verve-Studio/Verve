@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BoxBlurEffectLayer } from "@/types";
+import type { BoxBlurEffectLayer } from "@/core/effects/BoxBlur/BoxBlurEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 

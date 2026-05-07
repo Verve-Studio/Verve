@@ -1,4 +1,4 @@
-import type { EffectParamsMap } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 
 export type AdjustmentClipboardData = {
   kind: "curves-settings";

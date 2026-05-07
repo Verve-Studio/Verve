@@ -1,8 +1,22 @@
-import type { TwirlEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { TwirlOptions } from "./TwirlOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Twirl — angular rotation that decays from a centre point. */
+export interface TwirlParams {
+    /** Twirl angle in degrees (−1080..1080, multi-rev allowed). */
+    angle: number;
+    centerX: number;
+    centerY: number;
+    /** Effective twirl radius as fraction of the image half-diagonal (0..1). */
+    radius: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type TwirlEffectLayer = EffectLayerOf<"twirl", TwirlParams>;
 
 type TwirlOp = Extract<EffectRenderOp, { kind: "twirl" }>;
 

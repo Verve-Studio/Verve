@@ -1,8 +1,38 @@
-import type { LensDistortionEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensDistortionOptions } from "./LensDistortionOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface LensDistortionParams {
+    /** Distortion model. `radial` covers barrel/pincushion via signed strength;
+     *  `fisheye` is an equidistant fisheye projection; `mustache` adds a
+     *  fourth-order term for the classic wave/moustache lens defect;
+     *  `perspective` is a keystone-style projective transform. */
+    type: "radial" | "fisheye" | "mustache" | "perspective";
+    /** Primary distortion strength. −100 = max pincushion, +100 = max barrel.
+     *  For fisheye, magnitude controls the field-of-view; sign is ignored. */
+    strength: number;
+    /** Secondary (4th-order) distortion term, used only by `mustache`. */
+    secondary: number;
+    /** Distortion centre in normalised image coords (0..1, default 0.5). */
+    centerX: number;
+    centerY: number;
+    /** Post-distortion zoom (50..200%, 100 = no zoom). Used to crop barrel
+     *  shrinkage or compensate for the empty corners pincushion produces. */
+    zoom: number;
+    /** Perspective tilt around the vertical axis (−100..100). */
+    tiltX: number;
+    /** Perspective tilt around the horizontal axis (−100..100). */
+    tiltY: number;
+    /** What to sample when the distorted UV falls outside the source image:
+     *  `transparent` leaves it empty, `clamp` repeats the edge, `mirror`
+     *  reflects. */
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type LensDistortionEffectLayer = EffectLayerOf<"lens-distortion", LensDistortionParams>;
 
 type LensDistortionOp = Extract<
   EffectRenderOp,

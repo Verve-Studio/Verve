@@ -1,7 +1,17 @@
-import type { AddNoiseEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AddNoisePanel } from "./AddNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface AddNoiseParams {
+    amount: number;
+    distribution: "uniform" | "gaussian";
+    monochromatic: boolean;
+    seed: number;
+}
+
+export type AddNoiseEffectLayer = EffectLayerOf<"add-noise", AddNoiseParams>;
 
 type AddNoiseOp = Extract<EffectRenderOp, { kind: "add-noise" }>;
 

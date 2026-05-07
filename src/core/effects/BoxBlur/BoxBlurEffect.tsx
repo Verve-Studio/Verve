@@ -1,7 +1,14 @@
-import type { BoxBlurEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BoxBlurPanel } from "./BoxBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface BoxBlurParams {
+ radius: number
+}
+
+export type BoxBlurEffectLayer = EffectLayerOf<"box-blur", BoxBlurParams>;
 
 type BoxBlurOp = Extract<EffectRenderOp, { kind: "box-blur" }>;
 

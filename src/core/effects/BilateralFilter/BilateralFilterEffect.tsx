@@ -1,7 +1,16 @@
-import type { BilateralFilterEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BilateralFilterPanel } from "./BilateralFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface BilateralFilterParams {
+    radius: number;
+    sigmaSpatial: number;
+    sigmaColor: number;
+}
+
+export type BilateralFilterEffectLayer = EffectLayerOf<"bilateral-filter", BilateralFilterParams>;
 
 type BilateralFilterOp = Extract<
   EffectRenderOp,

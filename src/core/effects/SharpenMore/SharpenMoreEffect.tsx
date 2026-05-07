@@ -1,8 +1,13 @@
 import type React from "react";
-import type { SharpenMoreEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SharpenPanel } from "../Sharpen/SharpenPanel";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
+
+
+export type SharpenMoreParams = Record<string, never>;
+
+export type SharpenMoreEffectLayer = EffectLayerOf<"sharpen-more", SharpenMoreParams>;
 
 type SharpenMoreOp = Extract<EffectRenderOp, { kind: "sharpen-more" }>;
 

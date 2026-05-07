@@ -1,8 +1,20 @@
-import type { BlackAndWhiteEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface BlackAndWhiteParams {
+    reds: number;
+    yellows: number;
+    greens: number;
+    cyans: number;
+    blues: number;
+    magentas: number;
+}
+
+export type BlackAndWhiteEffectLayer = EffectLayerOf<"black-and-white", BlackAndWhiteParams>;
 
 type BlackAndWhiteOp = Extract<EffectRenderOp, { kind: "black-and-white" }>;
 

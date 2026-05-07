@@ -1,0 +1,121 @@
+import type { EffectLayerOf } from "@/types";
+
+import type { BrightnessContrastParams } from "./BrightnessContrast/BrightnessContrastEffect";
+import type { HueSaturationParams } from "./HueSaturation/HueSaturationEffect";
+import type { ColorVibranceParams } from "./ColorVibrance/ColorVibranceEffect";
+import type { ColorBalanceParams } from "./ColorBalance/ColorBalanceEffect";
+import type { BlackAndWhiteParams } from "./BlackAndWhite/BlackAndWhiteEffect";
+import type { ColorTemperatureParams } from "./ColorTemperature/ColorTemperatureEffect";
+import type { ColorInvertParams } from "./ColorInvert/ColorInvertEffect";
+import type { SelectiveColorParams } from "./SelectiveColor/SelectiveColorEffect";
+import type { ChannelMixerParams } from "./ChannelMixer/ChannelMixerEffect";
+import type { AutoMatchParams } from "./AutoMatch/AutoMatchEffect";
+import type { CurvesParams } from "./Curves/CurvesEffect";
+import type { ColorGradingParams } from "./ColorGrading/ColorGradingEffect";
+import type { ReduceColorsParams } from "./ReduceColors/ReduceColorsEffect";
+import type { ColorDitheringParams } from "./ColorDithering/ColorDitheringEffect";
+import type { BloomParams } from "./Bloom/BloomEffect";
+import type { ChromaticAberrationParams } from "./ChromaticAberration/ChromaticAberrationEffect";
+import type { HalationParams } from "./Halation/HalationEffect";
+import type { ColorKeyParams } from "./ColorKey/ColorKeyEffect";
+import type { DropShadowParams } from "./DropShadow/DropShadowEffect";
+import type { GlowParams } from "./Glow/GlowEffect";
+import type { OutlineParams } from "./Outline/OutlineEffect";
+import type { HalftoneParams } from "./Halftone/HalftoneEffect";
+import type { GaussianBlurParams } from "./GaussianBlur/GaussianBlurEffect";
+import type { BoxBlurParams } from "./BoxBlur/BoxBlurEffect";
+import type { RadialBlurParams } from "./RadialBlur/RadialBlurEffect";
+import type { MotionBlurParams } from "./MotionBlur/MotionBlurEffect";
+import type { RemoveMotionBlurParams } from "./RemoveMotionBlur/RemoveMotionBlurEffect";
+import type { LensBlurParams } from "./LensBlur/LensBlurEffect";
+import type { SharpenParams } from "./Sharpen/SharpenEffect";
+import type { SharpenMoreParams } from "./SharpenMore/SharpenMoreEffect";
+import type { UnsharpMaskParams } from "./UnsharpMask/UnsharpMaskEffect";
+import type { SmartSharpenParams } from "./SmartSharpen/SmartSharpenEffect";
+import type { AddNoiseParams } from "./AddNoise/AddNoiseEffect";
+import type { FilmGrainParams } from "./FilmGrain/FilmGrainEffect";
+import type { MedianFilterParams } from "./MedianFilter/MedianFilterEffect";
+import type { BilateralFilterParams } from "./BilateralFilter/BilateralFilterEffect";
+import type { ReduceNoiseParams } from "./ReduceNoise/ReduceNoiseEffect";
+import type { CloudsParams } from "./Clouds/CloudsEffect";
+import type { PixelateParams } from "./Pixelate/PixelateEffect";
+import type { LensFlareParams } from "./LensFlare/LensFlareEffect";
+import type { VignetteParams } from "./Vignette/VignetteEffect";
+import type { BevelParams } from "./Bevel/BevelEffect";
+import type { InnerShadowParams } from "./InnerShadow/InnerShadowEffect";
+import type { InnerGlowParams } from "./InnerGlow/InnerGlowEffect";
+import type { SeamlessTextureParams } from "./SeamlessTexture/SeamlessTextureEffect";
+import type { LensDistortionParams } from "./LensDistortion/LensDistortionEffect";
+import type { OffsetParams } from "./Offset/OffsetEffect";
+import type { PinchParams } from "./Pinch/PinchEffect";
+import type { PolarCoordinatesParams } from "./PolarCoordinates/PolarCoordinatesEffect";
+import type { RippleParams } from "./Ripple/RippleEffect";
+import type { ShearParams } from "./Shear/ShearEffect";
+import type { TwirlParams } from "./Twirl/TwirlEffect";
+import type { DisplaceParams } from "./Displace/DisplaceEffect";
+
+/** Type-level twin of `effectRegistry`: every registered effect contributes a
+ *  params shape here. Adding a new effect = one import line + one map entry. */
+export interface EffectParamsMap {
+  "brightness-contrast": BrightnessContrastParams;
+  "hue-saturation": HueSaturationParams;
+  "color-vibrance": ColorVibranceParams;
+  "color-balance": ColorBalanceParams;
+  "black-and-white": BlackAndWhiteParams;
+  "color-temperature": ColorTemperatureParams;
+  "color-invert": ColorInvertParams;
+  "selective-color": SelectiveColorParams;
+  "channel-mixer": ChannelMixerParams;
+  "auto-match": AutoMatchParams;
+  "curves": CurvesParams;
+  "color-grading": ColorGradingParams;
+  "reduce-colors": ReduceColorsParams;
+  "color-dithering": ColorDitheringParams;
+  "bloom": BloomParams;
+  "chromatic-aberration": ChromaticAberrationParams;
+  "halation": HalationParams;
+  "color-key": ColorKeyParams;
+  "drop-shadow": DropShadowParams;
+  "glow": GlowParams;
+  "outline": OutlineParams;
+  "halftone": HalftoneParams;
+  "gaussian-blur": GaussianBlurParams;
+  "box-blur": BoxBlurParams;
+  "radial-blur": RadialBlurParams;
+  "motion-blur": MotionBlurParams;
+  "remove-motion-blur": RemoveMotionBlurParams;
+  "lens-blur": LensBlurParams;
+  "sharpen": SharpenParams;
+  "sharpen-more": SharpenMoreParams;
+  "unsharp-mask": UnsharpMaskParams;
+  "smart-sharpen": SmartSharpenParams;
+  "add-noise": AddNoiseParams;
+  "film-grain": FilmGrainParams;
+  "median-filter": MedianFilterParams;
+  "bilateral-filter": BilateralFilterParams;
+  "reduce-noise": ReduceNoiseParams;
+  "clouds": CloudsParams;
+  "pixelate": PixelateParams;
+  "lens-flare": LensFlareParams;
+  "vignette": VignetteParams;
+  "bevel": BevelParams;
+  "inner-shadow": InnerShadowParams;
+  "inner-glow": InnerGlowParams;
+  "seamless-texture": SeamlessTextureParams;
+  "lens-distortion": LensDistortionParams;
+  "offset": OffsetParams;
+  "pinch": PinchParams;
+  "polar-coordinates": PolarCoordinatesParams;
+  "ripple": RippleParams;
+  "shear": ShearParams;
+  "twirl": TwirlParams;
+  "displace": DisplaceParams;
+}
+
+/** Union of every registered effect's id literal. */
+export type EffectType = keyof EffectParamsMap;
+
+/** Discriminated union of every effect's layer state. */
+export type EffectLayerState = {
+  [K in EffectType]: EffectLayerOf<K, EffectParamsMap[K]>;
+}[EffectType];

@@ -36,7 +36,8 @@ import { makeDefaultBrush } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
-import type { Tool, LayerState, EffectType, PixelFormat } from "@/types";
+import type { Tool, LayerState, PixelFormat } from "@/types";
+import type { EffectType } from "@/core/effects/effectTypes";
 import type { FilterKey } from "@/types";
 import { selectionStore } from "@/core/store/selectionStore";
 import {

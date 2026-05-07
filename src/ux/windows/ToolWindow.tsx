@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import { effectRegistry } from "@/core/effects";
-import type { EffectLayerState } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { ToolWindow } from "@/ux";
 import styles from "./ToolWindow.module.scss";

@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorTemperatureEffectLayer } from "@/types";
+import type { ColorTemperatureEffectLayer } from "@/core/effects/ColorTemperature/ColorTemperatureEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorTemperaturePanel.module.scss";
 

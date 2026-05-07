@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ReduceNoiseEffectLayer } from "@/types";
+import type { ReduceNoiseEffectLayer } from "@/core/effects/ReduceNoise/ReduceNoiseEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 

@@ -1,7 +1,25 @@
-import type { SeamlessTextureEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface SeamlessTextureParams {
+    /** Enable the Voronoi island break-repetition pass. Default: true */
+    breakRepetition: boolean;
+    /** Cell/island size in pixels (1–512). Default: 128 */
+    cellSize: number;
+    /** Blend/feather radius in pixels at island borders (0–128). Default: 16 */
+    blendRadius: number;
+    /** Enable the seamless border blending pass. Default: true */
+    seamlessBorders: boolean;
+    /** Border blend radius in pixels (1–256). Default: 32 */
+    borderRadius: number;
+    /** Random seed. */
+    seed: number;
+}
+
+export type SeamlessTextureEffectLayer = EffectLayerOf<"seamless-texture", SeamlessTextureParams>;
 
 type SeamlessTextureOp = Extract<
   EffectRenderOp,

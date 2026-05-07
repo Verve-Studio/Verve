@@ -1,12 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type {
-  LayerState,
-  BlendMode,
-  MaskLayerState,
-  EffectLayerState,
-  GroupLayerState,
-  CompositeLayerState,
-} from "@/types";
+import type { LayerState, BlendMode, MaskLayerState, GroupLayerState, CompositeLayerState } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isCompositeLayer, isContainerLayer } from "@/types";
 import { useAppContext } from "@/core/store/AppContext";
 import {

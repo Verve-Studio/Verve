@@ -1,7 +1,23 @@
-import type { CloudsEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface CloudsParams {
+    scale: number;
+    opacity: number;
+    colorMode: "grayscale" | "color";
+    fgR: number;
+    fgG: number;
+    fgB: number;
+    bgR: number;
+    bgG: number;
+    bgB: number;
+    seed: number;
+}
+
+export type CloudsEffectLayer = EffectLayerOf<"clouds", CloudsParams>;
 
 type CloudsOp = Extract<EffectRenderOp, { kind: "clouds" }>;
 

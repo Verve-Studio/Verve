@@ -1,7 +1,14 @@
-import type { GaussianBlurEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GaussianBlurPanel } from "./GaussianBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface GaussianBlurParams {
+ radius: number
+}
+
+export type GaussianBlurEffectLayer = EffectLayerOf<"gaussian-blur", GaussianBlurParams>;
 
 type GaussianBlurOp = Extract<EffectRenderOp, { kind: "gaussian-blur" }>;
 

@@ -1,7 +1,14 @@
-import type { MotionBlurEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MotionBlurPanel } from "./MotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface MotionBlurParams {
+ angle: number; distance: number
+}
+
+export type MotionBlurEffectLayer = EffectLayerOf<"motion-blur", MotionBlurParams>;
 
 type MotionBlurOp = Extract<EffectRenderOp, { kind: "motion-blur" }>;
 

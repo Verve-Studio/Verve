@@ -1,4 +1,4 @@
-import type { HalationEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HalationOptions } from "./HalationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -8,6 +8,16 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+
+
+export interface HalationParams {
+    threshold: number; // 0–1: luminance level above which halation activates
+    spread: number; // 0–100 px: blur radius
+    blur: number; // 1–5: number of H+V blur iterations (more = softer)
+    strength: number; // 0–1: composite intensity
+}
+
+export type HalationEffectLayer = EffectLayerOf<"halation", HalationParams>;
 
 type HalationOp = Extract<EffectRenderOp, { kind: "halation" }>;
 

@@ -1,4 +1,4 @@
-import type { OutlineEffectLayer, OutlineParams } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OutlineOptions } from "./OutlineOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -7,6 +7,22 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface OutlineParams {
+    /** Stroke color including alpha. r/g/b/a are 0–255. Default: { r:255, g:0, b:0, a:255 } */
+    color: RGBAColor;
+    /** Overall stroke opacity, 0–100 (%). Applied on top of color.a. Default: 100 */
+    opacity: number;
+    /** Stroke width in pixels, 1–100. Integer values only. Default: 3 */
+    thickness: number;
+    /** Controls which side of the silhouette boundary the stroke occupies. Default: 'outside' */
+    position: "outside" | "inside" | "center";
+    /** Gaussian-approximation blur radius for the stroke mask, 0–50 px. Default: 0 */
+    softness: number;
+}
+
+export type OutlineEffectLayer = EffectLayerOf<"outline", OutlineParams>;
 
 type OutlineOp = Extract<EffectRenderOp, { kind: "outline" }>;
 

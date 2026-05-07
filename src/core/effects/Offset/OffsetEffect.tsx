@@ -1,7 +1,20 @@
-import type { OffsetEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OffsetPanel } from "./OffsetPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+  /** Wrap-around pixel offset (Photoshop's Filter > Other > Offset). */
+export interface OffsetParams {
+    /** Horizontal shift in pixels. Positive = image moves right; pixels
+     *  pushed off the right edge reappear on the left. */
+    offsetX: number;
+    /** Vertical shift in pixels. Positive = image moves down; pixels pushed
+     *  off the bottom reappear on the top. */
+    offsetY: number;
+}
+
+export type OffsetEffectLayer = EffectLayerOf<"offset", OffsetParams>;
 
 type OffsetOp = Extract<EffectRenderOp, { kind: "offset" }>;
 

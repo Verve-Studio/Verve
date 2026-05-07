@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import { useCanvasContext } from "@/core/store/CanvasContext";
-import type { RadialBlurEffectLayer } from "@/types";
+import type { RadialBlurEffectLayer } from "@/core/effects/RadialBlur/RadialBlurEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import sharedStyles from "@/core/effects/_shared/filterPanel.module.scss";
 import styles from "./RadialBlurPanel.module.scss";

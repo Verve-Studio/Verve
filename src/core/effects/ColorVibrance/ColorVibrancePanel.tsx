@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorVibranceEffectLayer } from "@/types";
+import type { ColorVibranceEffectLayer } from "@/core/effects/ColorVibrance/ColorVibranceEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorVibrancePanel.module.scss";
 

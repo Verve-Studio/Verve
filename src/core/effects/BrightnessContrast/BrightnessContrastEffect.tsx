@@ -1,8 +1,15 @@
-import type { BrightnessContrastEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BrightnessContrastPanel } from "./BrightnessContrastPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface BrightnessContrastParams {
+ brightness: number; contrast: number
+}
+
+export type BrightnessContrastEffectLayer = EffectLayerOf<"brightness-contrast", BrightnessContrastParams>;
 
 type BrightnessContrastOp = Extract<
   EffectRenderOp,

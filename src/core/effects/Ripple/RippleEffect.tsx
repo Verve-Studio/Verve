@@ -1,8 +1,22 @@
-import type { RippleEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RippleOptions } from "./RippleOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Sinusoidal Ripple displacement (Photoshop's Distort → Ripple). */
+export interface RippleParams {
+    /** Wave amplitude, −500..500 (≈px peak displacement). */
+    amount: number;
+    /** Wavelength control (1..100, larger = bigger waves). */
+    size: number;
+    /** Which axes ripple along. `both` produces a cross-pattern. */
+    direction: "horizontal" | "vertical" | "both";
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type RippleEffectLayer = EffectLayerOf<"ripple", RippleParams>;
 
 type RippleOp = Extract<EffectRenderOp, { kind: "ripple" }>;
 

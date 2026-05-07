@@ -1,4 +1,5 @@
-import type { EffectType, FilterKey } from "@/types";
+import type { FilterKey } from "@/types";
+import type { EffectType } from "@/core/effects/effectTypes";
 // Side-effecting import: registers all IPipelineEffect implementations into
 // `effectRegistry` so the menu lists below see them at module-evaluation time.
 import { effectRegistry } from "@/core/effects";

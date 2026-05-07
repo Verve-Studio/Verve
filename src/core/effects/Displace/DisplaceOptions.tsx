@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { DisplaceEffectLayer } from "@/types";
+import type { DisplaceEffectLayer } from "@/core/effects/Displace/DisplaceEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {

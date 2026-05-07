@@ -1,4 +1,4 @@
-import type { CurvesEffectLayer } from "@/types";
+import type { CurvesChannel, CurvesChannelCurve, CurvesPresetRef, CurvesVisualAids, EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import {
   buildCurvesLuts,
@@ -13,6 +13,19 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import { uploadR8TextureData } from "@/graphics/webgpu/utils";
+
+
+export interface CurvesParams {
+    version: 1;
+    channels: Record<CurvesChannel, CurvesChannelCurve>;
+    ui: {
+      selectedChannel: CurvesChannel;
+      visualAids: CurvesVisualAids;
+      presetRef: CurvesPresetRef | null;
+    };
+}
+
+export type CurvesEffectLayer = EffectLayerOf<"curves", CurvesParams>;
 
 type CurvesOp = Extract<EffectRenderOp, { kind: "curves" }>;
 

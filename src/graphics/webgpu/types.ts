@@ -1,4 +1,5 @@
-import type { EffectParamsMap, PixelFormat } from "@/types";
+import type { PixelFormat } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 import type { CurvesLuts } from "@/core/operations/adjustments/curves";
 
 // ─── GpuLayer ─────────────────────────────────────────────────────────────────

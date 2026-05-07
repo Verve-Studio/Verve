@@ -1,4 +1,5 @@
-import type { EffectType, FilterKey } from "@/types";
+import type { FilterKey } from "@/types";
+import type { EffectType } from "@/core/effects/effectTypes";
 import { useCallback } from "react";
 
 interface UseFiltersOptions {

@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { VignetteEffectLayer } from "@/types";
+import type { VignetteEffectLayer } from "@/core/effects/Vignette/VignetteEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./VignetteOptions.module.scss";

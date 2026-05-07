@@ -1,9 +1,5 @@
-import type {
-  EffectLayerState,
-  LayerState,
-  RGBAColor,
-  PixelFormat,
-} from "@/types";
+import type { LayerState, RGBAColor, PixelFormat } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isCompositeLayer, isContainerLayer } from "@/types";
 import { effectRegistry } from "@/core/effects";
 import type {

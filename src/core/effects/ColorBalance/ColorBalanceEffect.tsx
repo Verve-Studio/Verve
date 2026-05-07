@@ -1,8 +1,18 @@
-import type { ColorBalanceEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorBalancePanel } from "./ColorBalancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ColorBalanceParams {
+    shadows: { cr: number; mg: number; yb: number };
+    midtones: { cr: number; mg: number; yb: number };
+    highlights: { cr: number; mg: number; yb: number };
+    preserveLuminosity: boolean;
+}
+
+export type ColorBalanceEffectLayer = EffectLayerOf<"color-balance", ColorBalanceParams>;
 
 type ColorBalanceOp = Extract<EffectRenderOp, { kind: "color-balance" }>;
 

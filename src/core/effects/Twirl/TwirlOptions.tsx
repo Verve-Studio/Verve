@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { TwirlEffectLayer } from "@/types";
+import type { TwirlEffectLayer } from "@/core/effects/Twirl/TwirlEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {

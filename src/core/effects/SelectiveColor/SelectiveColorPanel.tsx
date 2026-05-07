@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { SelectiveColorEffectLayer } from "@/types";
+import type { SelectiveColorEffectLayer } from "@/core/effects/SelectiveColor/SelectiveColorEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./SelectiveColorPanel.module.scss";
 

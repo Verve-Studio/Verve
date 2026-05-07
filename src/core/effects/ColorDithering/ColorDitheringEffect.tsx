@@ -1,9 +1,17 @@
-import type { ColorDitheringEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorDitheringPanel } from "./ColorDitheringPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
+
+
+export interface ColorDitheringParams {
+    style: "bayer4" | "bayer8";
+    opacity: number;
+}
+
+export type ColorDitheringEffectLayer = EffectLayerOf<"color-dithering", ColorDitheringParams>;
 
 type ColorDitheringOp = Extract<EffectRenderOp, { kind: "color-dithering" }>;
 

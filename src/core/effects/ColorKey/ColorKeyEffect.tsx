@@ -1,8 +1,22 @@
-import type { ColorKeyEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorKeyPanel } from "./ColorKeyPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface ColorKeyParams {
+    /** Key color as sRGB bytes (0–255). */
+    keyColor: { r: number; g: number; b: number };
+    /** Pixels with HSV distance ≤ tolerance are fully transparent. Range 0–100. */
+    tolerance: number;
+    /** Width of the soft-edge transition zone beyond the tolerance boundary. Range 0–100. */
+    softness: number;
+    /** Expand the keyed-out region by this many pixels. Range 0–20. */
+    dilation: number;
+}
+
+export type ColorKeyEffectLayer = EffectLayerOf<"color-key", ColorKeyParams>;
 
 type ColorKeyOp = Extract<EffectRenderOp, { kind: "color-key" }>;
 

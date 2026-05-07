@@ -1,8 +1,15 @@
-import type { HueSaturationEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HueSaturationPanel } from "./HueSaturationPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+export interface HueSaturationParams {
+ hue: number; saturation: number; lightness: number
+}
+
+export type HueSaturationEffectLayer = EffectLayerOf<"hue-saturation", HueSaturationParams>;
 
 type HueSaturationOp = Extract<EffectRenderOp, { kind: "hue-saturation" }>;
 

@@ -1,8 +1,19 @@
-import type { PolarCoordinatesEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PolarCoordinatesOptions } from "./PolarCoordinatesOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+
+
+  /** Photoshop's Polar Coordinates: rect↔polar coordinate conversion. */
+export interface PolarCoordinatesParams {
+    mode: "rect-to-polar" | "polar-to-rect";
+    centerX: number;
+    centerY: number;
+    edgeMode: "transparent" | "clamp" | "mirror";
+}
+
+export type PolarCoordinatesEffectLayer = EffectLayerOf<"polar-coordinates", PolarCoordinatesParams>;
 
 type PolarCoordinatesOp = Extract<
   EffectRenderOp,

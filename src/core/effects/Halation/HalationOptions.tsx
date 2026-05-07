@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { HalationEffectLayer } from "@/types";
+import type { HalationEffectLayer } from "@/core/effects/Halation/HalationEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HalationOptions.module.scss";
 

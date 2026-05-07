@@ -1,7 +1,17 @@
-import type { LensBlurEffectLayer } from "@/types";
+import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensBlurPanel } from "./LensBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+
+
+export interface LensBlurParams {
+    radius: number;
+    bladeCount: number;
+    bladeCurvature: number;
+    rotation: number;
+}
+
+export type LensBlurEffectLayer = EffectLayerOf<"lens-blur", LensBlurParams>;
 
 type LensBlurOp = Extract<EffectRenderOp, { kind: "lens-blur" }>;
 
