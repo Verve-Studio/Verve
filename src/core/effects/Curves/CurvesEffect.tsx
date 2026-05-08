@@ -4,7 +4,7 @@ import {
   buildCurvesLuts,
   createDefaultCurvesParams,
   type CurvesLuts,
-} from "@/core/operations/adjustments/curves";
+} from "./curves";
 import { CurvesPanel } from "./CurvesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";

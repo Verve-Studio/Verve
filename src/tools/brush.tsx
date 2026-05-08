@@ -576,7 +576,7 @@ function BrushOptions({
       <span className={styles.optSep} />
       <button
         type="button"
-        className={styles.optSelect}
+        className={styles.optBtn}
         onClick={() => brushPanelStore.toggle()}
         title="Open brush settings panel"
       >
@@ -585,7 +585,7 @@ function BrushOptions({
       <span className={styles.optSep} />
       <button
         type="button"
-        className={styles.optSelect}
+        className={styles.optBtn}
         onClick={() => brushManagerStore.open()}
         title="Open the Paint Brushes manager (rename, organise, import/export)"
       >
