@@ -1550,6 +1550,7 @@ function PencilOptions({
           type="checkbox"
           checked={pixelPerfect}
           onChange={handlePixelPerfect}
+          className={styles.optCheckbox}
         />
         Pixel perfect
       </label>

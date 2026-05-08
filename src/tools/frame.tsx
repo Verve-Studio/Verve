@@ -16,6 +16,7 @@ import type {
   ToolContext,
   ToolOptionsStyles,
 } from "./types";
+import { resizeCursorForHandle } from "./algorithm/resizeCursor";
 
 // ─── Module-level defaults for new frames ─────────────────────────────────────
 
@@ -347,6 +348,22 @@ function createFrameHandler(): ToolHandler {
   }
 
   return {
+    onActivate(ctx: ToolContext): void {
+      // Draw handles for the active frame immediately so the user lands in
+      // edit mode (e.g. after double-clicking the frame via the pick tool).
+      const active = getActive(ctx);
+      if (active && ctx.overlayCanvas) {
+        drawHandles(ctx.overlayCanvas, active, ctx.zoom);
+      } else if (ctx.overlayCanvas) {
+        const c2d = ctx.overlayCanvas.getContext("2d");
+        c2d?.clearRect(
+          0,
+          0,
+          ctx.overlayCanvas.width,
+          ctx.overlayCanvas.height,
+        );
+      }
+    },
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext): void {
       const active = getActive(ctx);
       if (active) {
@@ -504,16 +521,31 @@ function createFrameHandler(): ToolHandler {
       mode = { t: "idle" };
     },
 
-    onHover(_pos: ToolPointerPos, ctx: ToolContext): void {
+    onHover(pos: ToolPointerPos, ctx: ToolContext): void {
+      // Skip hover handling while in an interactive drag — onPointerMove owns
+      // the overlay during move/resize/rotate and a stale getActive() here
+      // would flash the handles at the pre-drag position.
+      if (mode.t !== "idle" && mode.t !== "draw") return;
       const active = getActive(ctx);
       if (ctx.overlayCanvas) {
         if (active) drawHandles(ctx.overlayCanvas, active, ctx.zoom);
         else clearOverlay(ctx.overlayCanvas);
       }
+      // Direction-aware resize cursor when hovering a handle.
+      let cursor = "";
+      if (active) {
+        const hi = hitTestHandles(active, pos.x, pos.y, ctx.zoom);
+        if (hi !== null) {
+          if (hi === 8) cursor = "grab";
+          else cursor = resizeCursorForHandle(hi, active.rotation) ?? "";
+        }
+      }
+      ctx.setCursor(cursor);
     },
 
     onLeave(ctx: ToolContext): void {
       if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
+      ctx.setCursor("");
     },
   };
 }

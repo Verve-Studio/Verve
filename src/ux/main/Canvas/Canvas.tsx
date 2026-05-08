@@ -29,6 +29,7 @@ import {
   getPencilShapePreviewDataUrl,
 } from "@/tools/pencil";
 import { eraserOptions } from "@/tools/eraser";
+import { liquifyOptions } from "@/tools/liquify";
 import { cloneStampOptions } from "@/tools/cloneStamp";
 import { dodgeOptions, burnOptions } from "@/tools/dodge";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
@@ -1256,6 +1257,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, state.activeTool]);
 
+  // Move tool: show the OS 4-direction move cursor over the canvas.
+  useEffect(() => {
+    if (!isActive || state.activeTool !== "move") return;
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.cursor = "move";
+    return () => {
+      if (canvas) canvas.style.cursor = "";
+    };
+  }, [isActive, state.activeTool]);
+
   // Cursor updates for polygonal selection (drawing handled by useMarchingAnts)
   useEffect(() => {
     if (!isActive || state.activeTool !== "polygonal-selection") return;
@@ -1396,7 +1407,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     if (sel !== "object-selection") objectSelectionStore.reset();
     // Hide brush cursor when switching away from a circle-cursor tool
     if (brushCursorRef.current) {
-      if (sel !== "brush" && sel !== "eraser" && sel !== "clone-stamp") {
+      if (
+        sel !== "brush" &&
+        sel !== "eraser" &&
+        sel !== "clone-stamp" &&
+        sel !== "dodge" &&
+        sel !== "burn" &&
+        sel !== "liquify"
+      ) {
         brushCursorRef.current.style.display = "none";
       }
       // Always reset the class so brushCursorCrossHair doesn't linger when switching between circle-cursor tools
@@ -1412,12 +1430,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const activeId = state.activeLayerId;
     let activeLayer = activeId ? glLayersRef.current.get(activeId) : undefined;
 
-    // Text/shape/frame tools don't need an existing pixel layer — they create their own
+    // Text/shape/frame tools create their own; pick/hand/zoom don't touch
+    // pixels so they're fine without an active pixel layer.
     if (
       !activeLayer &&
       state.activeTool !== "text" &&
       state.activeTool !== "shape" &&
-      state.activeTool !== "frame"
+      state.activeTool !== "frame" &&
+      state.activeTool !== "pick" &&
+      state.activeTool !== "hand" &&
+      state.activeTool !== "zoom"
     )
       return null;
     // Block pixel-modifying tools on locked layers and on non-pixel layers (text, shape, group, adjustment).
@@ -1586,8 +1608,64 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       guides: state.canvas.guides,
       maskMap: buildMaskMap(),
       selectedLayerIds: state.selectedLayerIds,
+      setActiveLayer: (id: string) => {
+        dispatch({ type: "SET_ACTIVE_LAYER", payload: id });
+      },
+      setActiveTool: (t) => {
+        dispatch({ type: "SET_TOOL", payload: t });
+      },
+      setCursor: (cursor: string) => {
+        const c = canvasRef.current;
+        if (c) c.style.cursor = cursor;
+      },
+      panViewport: (dxCss: number, dyCss: number) => {
+        const vp = viewportRef.current;
+        if (!vp) return;
+        vp.scrollLeft += dxCss;
+        vp.scrollTop += dyCss;
+      },
+      setZoom: (
+        nextZoom: number,
+        focus?: { canvasX: number; canvasY: number },
+      ) => {
+        const clamped = parseFloat(
+          Math.max(0.05, Math.min(32, nextZoom)).toFixed(4),
+        );
+        const vp = viewportRef.current;
+        const oldZoom = state.canvas.zoom;
+        if (vp && focus && oldZoom > 0 && clamped !== oldZoom) {
+          // Anchor the supplied canvas-space point so it stays at the same
+          // viewport CSS-px location. Mirrors useScrollZoom's wheel formula.
+          const dpr = window.devicePixelRatio;
+          const anchorX =
+            (width * oldZoom) / dpr +
+            (focus.canvasX * oldZoom) / dpr -
+            vp.scrollLeft;
+          const anchorY =
+            (height * oldZoom) / dpr +
+            (focus.canvasY * oldZoom) / dpr -
+            vp.scrollTop;
+          const r = clamped / oldZoom;
+          pendingScrollRef.current = {
+            scrollLeft: (vp.scrollLeft + anchorX) * r - anchorX,
+            scrollTop: (vp.scrollTop + anchorY) * r - anchorY,
+          };
+        }
+        dispatch({ type: "SET_ZOOM", payload: clamped });
+      },
     };
   };
+
+  // Fire onActivate on the current tool whenever the active tool or active
+  // layer changes — gives tools like shape/frame a chance to draw their edit
+  // overlay immediately (e.g. so double-clicking a shape via the pick tool
+  // drops straight into edit mode without an extra click).
+  useEffect(() => {
+    if (!isActive) return;
+    const ctx = buildCtx();
+    if (ctx) toolHandlerRef.current.onActivate?.(ctx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.activeTool, state.activeLayerId, isActive]);
 
   const {
     handlePointerDown,
@@ -1702,14 +1780,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     },
     onHover: (pos) => {
       if (isActive) cursorStore.setPosition(pos.x, pos.y);
-      // Update circle cursor for brush / eraser / clone-stamp / dodge / burn
+      // Update circle cursor for brush / eraser / clone-stamp / dodge / burn / liquify
       const tool = state.activeTool;
       if (
         (tool === "brush" ||
           tool === "eraser" ||
           tool === "clone-stamp" ||
           tool === "dodge" ||
-          tool === "burn") &&
+          tool === "burn" ||
+          tool === "liquify") &&
         brushCursorRef.current
       ) {
         const dpr = window.devicePixelRatio;
@@ -1723,7 +1802,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                 ? dodgeOptions.size
                 : tool === "burn"
                   ? burnOptions.size
-                  : cloneStampOptions.size;
+                  : tool === "liquify"
+                    ? liquifyOptions.size
+                    : cloneStampOptions.size;
         const r = Math.max(1, ((size / 2) * zoom) / dpr);
         const cx = (pos.x * zoom) / dpr;
         const cy = (pos.y * zoom) / dpr;
@@ -1857,7 +1938,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           tool === "eraser" ||
           tool === "clone-stamp" ||
           tool === "dodge" ||
-          tool === "burn") &&
+          tool === "burn" ||
+          tool === "liquify") &&
         brushCursorRef.current
       ) {
         const dpr = window.devicePixelRatio;
@@ -1871,7 +1953,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                 ? dodgeOptions.size
                 : tool === "burn"
                   ? burnOptions.size
-                  : cloneStampOptions.size;
+                  : tool === "liquify"
+                    ? liquifyOptions.size
+                    : cloneStampOptions.size;
         const r = Math.max(1, ((size / 2) * zoom) / dpr);
         // In tiled mode, coordinates are in [-W, 2W). Map to wrapper-space:
         const cx = ((pos.x + width) * zoom) / dpr;

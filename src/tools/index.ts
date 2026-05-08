@@ -13,14 +13,16 @@ import { eyedropperTool } from "./eyedropper";
 import { zoomTool } from "./zoom";
 import { cropTool } from "./crop";
 import { moveTool } from "./move";
+import { pickTool } from "./pick";
 import { gradientTool } from "./gradient";
 import { dodgeTool, burnTool } from "./dodge";
 import { textTool } from "./text";
 import { shapeTool } from "./shape";
-import { noopTool } from "./noop";
 import { transformTool } from "./transform";
 import { cloneStampTool } from "./cloneStamp";
 import { frameTool } from "./frame";
+import { liquifyTool } from "./liquify";
+import { handTool } from "./hand";
 
 export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   pencil: pencilTool,
@@ -37,6 +39,7 @@ export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   zoom: zoomTool,
   // ── Not yet implemented ────────────────────────────────────────────────────
   move: moveTool,
+  pick: pickTool,
   crop: cropTool,
   frame: frameTool,
   gradient: gradientTool,
@@ -44,7 +47,8 @@ export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   burn: burnTool,
   text: textTool,
   shape: shapeTool,
-  hand: noopTool,
+  liquify: liquifyTool,
+  hand: handTool,
   transform: transformTool,
 };
 

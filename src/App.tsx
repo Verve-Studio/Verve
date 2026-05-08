@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppProvider, useAppContext } from "@/core/store/AppContext";
 import { CanvasProvider } from "@/core/store/CanvasContext";
 import { historyStore } from "@/core/store/historyStore";
+import { viewportCommands } from "@/core/store/viewportCommands";
 import { MemoryLimitError } from "@/core/store/memoryStore";
 import {
   notificationStore,
@@ -498,6 +499,15 @@ function AppContent(): React.JSX.Element {
     handleDeselectLayers,
     handleFindLayers,
   } = useViewActions({ dispatch, stateRef, canvasHandleRef });
+
+  // Expose Fit-to-Window to the global viewport command bus so non-prop-drilled
+  // surfaces (e.g. the zoom tool's options bar) can trigger it.
+  useEffect(() => {
+    viewportCommands.fitToWindow = handleFitToWindow;
+    return () => {
+      viewportCommands.fitToWindow = null;
+    };
+  }, [handleFitToWindow]);
 
   // ── Playback state ────────────────────────────────────────────────
   const playback = useAnimationPlayback(state, dispatch);

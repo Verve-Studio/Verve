@@ -7,6 +7,7 @@ import type {
   TransformInterpolation,
 } from "@/types";
 import styles from "./transform.module.scss";
+import { resizeCursorForHandle } from "./algorithm/resizeCursor";
 import type {
   ToolDefinition,
   ToolHandler,
@@ -256,10 +257,15 @@ function hitTestHandle(
   px: number,
   py: number,
   zoom: number,
+  handleMode: "scale" | "perspective" | "shear" = "scale",
 ): number | null {
   const dpr = window.devicePixelRatio;
   const r = Math.max(5, (6 * dpr) / zoom);
   for (let i = 0; i < handles.length; i++) {
+    // In perspective mode, the perspective-corner handles (10-13) sit on top
+    // of the scale corner handles (0,2,5,7). Disable scale + rotation + pivot
+    // so the corners 10-13 win the hit-test and the user can drag them.
+    if (handleMode === "perspective" && i >= 0 && i <= 9) continue;
     if ((px - handles[i].x) ** 2 + (py - handles[i].y) ** 2 <= r * r) return i;
   }
   return null;
@@ -414,6 +420,66 @@ function applyPivotDrag(
   return { ...params, pivotX: currentPos.x, pivotY: currentPos.y };
 }
 
+/**
+ * Strict-convexity test for the 4 perspective corners. All four signed
+ * cross-products at each vertex must share the same sign — any zero crossing
+ * (three collinear points) or sign flip (concave / self-intersecting) fails.
+ */
+function isStrictlyConvexQuad(corners: readonly Point[]): boolean {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const p = corners[(i + 3) % 4];
+    const c = corners[i];
+    const n = corners[(i + 1) % 4];
+    const cr = (c.x - p.x) * (n.y - c.y) - (c.y - p.y) * (n.x - c.x);
+    if (cr === 0) return false;
+    if (sign === 0) sign = Math.sign(cr);
+    else if (Math.sign(cr) !== sign) return false;
+  }
+  return true;
+}
+
+/**
+ * Clamp the dragged-to position so the resulting quadrilateral stays strictly
+ * convex. If the user tries to push the corner past the point where three
+ * vertices become collinear, we walk backward along the drag vector until
+ * convexity is regained — i.e. we pin the corner at the "straight line"
+ * boundary rather than letting it cross over.
+ */
+function clampPerspectiveCornerToConvex(
+  otherCorners: readonly [Point, Point, Point, Point],
+  cornerIdx: number,
+  startPos: Point,
+  targetPos: Point,
+): Point {
+  const trial: [Point, Point, Point, Point] = [
+    otherCorners[0],
+    otherCorners[1],
+    otherCorners[2],
+    otherCorners[3],
+  ];
+  trial[cornerIdx] = targetPos;
+  if (isStrictlyConvexQuad(trial)) return targetPos;
+
+  // Binary-search the largest t in [0, 1] along (startPos → targetPos) for
+  // which the quad is still strictly convex.
+  let lo = 0;
+  let hi = 1;
+  for (let iter = 0; iter < 24; iter++) {
+    const mid = (lo + hi) / 2;
+    trial[cornerIdx] = {
+      x: startPos.x + (targetPos.x - startPos.x) * mid,
+      y: startPos.y + (targetPos.y - startPos.y) * mid,
+    };
+    if (isStrictlyConvexQuad(trial)) lo = mid;
+    else hi = mid;
+  }
+  return {
+    x: startPos.x + (targetPos.x - startPos.x) * lo,
+    y: startPos.y + (targetPos.y - startPos.y) * lo,
+  };
+}
+
 function applyPerspectiveDrag(
   params: TransformParams,
   cornerIdx: number, // 0-3 within perspectiveCorners
@@ -437,7 +503,16 @@ function applyPerspectiveDrag(
     if (dx > dy) ny = start.y;
     else nx = start.x;
   }
-  corners[cornerIdx] = { x: nx, y: ny };
+  // Convexity clamp: prevent the user from making the quad concave (or
+  // self-intersecting). At worst the dragged corner sits on the line through
+  // the two non-moved neighbours — i.e. three points become collinear.
+  const clamped = clampPerspectiveCornerToConvex(
+    corners,
+    cornerIdx,
+    start,
+    { x: nx, y: ny },
+  );
+  corners[cornerIdx] = clamped;
   return { ...params, perspectiveCorners: corners };
 }
 
@@ -830,7 +905,13 @@ export function createTransformHandler(): ToolHandler {
         return;
 
       const handles = getHandleWorldPositions(transformStore.params);
-      const hit = hitTestHandle(handles, pos.x, pos.y, ctx.zoom);
+      const hit = hitTestHandle(
+        handles,
+        pos.x,
+        pos.y,
+        ctx.zoom,
+        transformStore.handleMode,
+      );
 
       if (hit !== null) {
         activeHandle = hit;
@@ -922,22 +1003,31 @@ export function createTransformHandler(): ToolHandler {
     onHover(pos: ToolPointerPos, ctx: ToolContext): void {
       if (!transformStore.isActive || !ctx.overlayCanvas) return;
       const handles = getHandleWorldPositions(transformStore.params);
-      const hit = hitTestHandle(handles, pos.x, pos.y, ctx.zoom);
+      const hit = hitTestHandle(
+        handles,
+        pos.x,
+        pos.y,
+        ctx.zoom,
+        transformStore.handleMode,
+      );
       const inside = isInsideBox(transformStore.params, pos.x, pos.y);
       let cursor = "default";
       if (hit !== null) {
         if (hit === 8) cursor = "grab";
         else if (hit === 9) cursor = "move";
         else if (hit >= 10) cursor = "move";
-        else cursor = "nwse-resize";
+        else
+          cursor =
+            resizeCursorForHandle(hit, transformStore.params.rotation) ??
+            "nwse-resize";
       } else if (inside) {
         cursor = "move";
       }
-      ctx.overlayCanvas.style.cursor = cursor;
+      ctx.setCursor(cursor);
     },
 
     onLeave(ctx: ToolContext): void {
-      if (ctx.overlayCanvas) ctx.overlayCanvas.style.cursor = "default";
+      ctx.setCursor("");
     },
   };
 }

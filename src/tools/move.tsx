@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { selectionStore } from "@/core/store/selectionStore";
-import type { Guide, TextLayerState, ShapeLayerState } from "@/types";
+import type {
+  Guide,
+  TextLayerState,
+  ShapeLayerState,
+  FrameLayerState,
+} from "@/types";
 import type {
   GpuLayer,
   WebGPURenderer,
@@ -238,6 +243,8 @@ function createMoveHandler(): ToolHandler {
   let textLayerOrigY = 0;
   // For shape layer move: track original parametric coords
   let shapeLayerSnapshot: ShapeLayerState | null = null;
+  // For frame layer move: track original parametric center
+  let frameLayerSnapshot: FrameLayerState | null = null;
   // For whole-layer move: snapshot of the mask pixel data at pointer-down
   let originalMaskData: Uint8Array | null = null;
   let isDown = false;
@@ -356,6 +363,8 @@ function createMoveHandler(): ToolHandler {
         ctx.textLayers.find((t) => t.id === ctx.layer.id) ?? null;
       shapeLayerSnapshot =
         ctx.shapeLayers.find((s) => s.id === ctx.layer.id) ?? null;
+      frameLayerSnapshot =
+        ctx.frameLayers.find((f) => f.id === ctx.layer.id) ?? null;
 
       if (selectionStore.mask) {
         // Selection move: pixel-copy approach (selection moves pixels, offset unchanged)
@@ -468,6 +477,16 @@ function createMoveHandler(): ToolHandler {
         ctx.layer.offsetX = dx;
         ctx.layer.offsetY = dy;
         ctx.render(ctx.layers);
+      } else if (frameLayerSnapshot) {
+        // Frame layer: live-preview the move by translating the parametric
+        // center so both the rasterized content AND the bounding-box overlay
+        // (which is drawn from cx/cy by the frame tool) stay in lock-step.
+        ctx.renderer.setPreviewMode(true);
+        ctx.previewFrameLayer({
+          ...frameLayerSnapshot,
+          cx: frameLayerSnapshot.cx + dx,
+          cy: frameLayerSnapshot.cy + dy,
+        });
       } else {
         // Update offset in-place (no pixel data change).
         // Enable preview mode so expensive standalone effects (bloom, halation, etc.)
@@ -554,6 +573,16 @@ function createMoveHandler(): ToolHandler {
         ctx.previewShapeLayer(moved);
         ctx.updateShapeLayer(moved);
         shapeLayerSnapshot = null;
+      } else if (frameLayerSnapshot) {
+        const moved: FrameLayerState = {
+          ...frameLayerSnapshot,
+          cx: frameLayerSnapshot.cx + dx,
+          cy: frameLayerSnapshot.cy + dy,
+        };
+        ctx.renderer.setPreviewMode(false);
+        ctx.previewFrameLayer(moved);
+        ctx.updateFrameLayer(moved);
+        frameLayerSnapshot = null;
       } else {
         const finalDx = dx !== lastDx || dy !== lastDy ? dx : lastDx;
         const finalDy = dx !== lastDx || dy !== lastDy ? dy : lastDy;

@@ -10,6 +10,7 @@ import type {
   FrameLayerState,
   PixelFormat,
   Guide,
+  Tool,
 } from "@/types";
 
 // ─── Runtime context passed to tool handlers on each pointer event ────────────
@@ -111,6 +112,32 @@ export interface ToolContext {
    * to move all selected layers together.
    */
   selectedLayerIds: readonly string[];
+  /** Set the active layer in app state (used by the pick tool to select what was clicked). */
+  setActiveLayer: (id: string) => void;
+  /** Switch the active tool (used by the pick tool to enter the appropriate edit mode for the picked layer). */
+  setActiveTool: (tool: Tool) => void;
+  /**
+   * Set the canvas cursor (CSS cursor string, e.g. `"ns-resize"`, `"grab"`,
+   * or `""` to revert to the tool's default). The tool overlay element has
+   * `pointer-events: none`, so cursors must be applied to the underlying
+   * canvas — this helper does that without exposing the canvas ref to tools.
+   */
+  setCursor: (cursor: string) => void;
+  /**
+   * Pan the viewport by `dxCss`/`dyCss` CSS pixels (scrolls the viewport
+   * inner). Used by the hand tool to drag the canvas around.
+   */
+  panViewport: (dxCss: number, dyCss: number) => void;
+  /**
+   * Set the document zoom level. If `focus` is given, the supplied
+   * canvas-space point stays at the same viewport position before/after the
+   * zoom (matching Photoshop's "zoom into where you click" behaviour). Used
+   * by the zoom tool.
+   */
+  setZoom: (
+    zoom: number,
+    focus?: { canvasX: number; canvasY: number },
+  ) => void;
 }
 
 // ─── Pointer position passed to tool handlers ─────────────────────────────────
@@ -140,6 +167,14 @@ export interface ToolHandler {
   onHover?(pos: ToolPointerPos, ctx: ToolContext): void;
   /** Called when the pointer leaves the canvas — clean up any hover UI. */
   onLeave?(ctx: ToolContext): void;
+  /**
+   * Called when this tool becomes active OR when the active layer changes
+   * while this tool is already active. Used by tools like shape/frame to draw
+   * their edit overlay (handles, dashed bounds) for the active layer the
+   * moment they become available — e.g. so double-clicking a shape from the
+   * pick tool drops the user straight into edit mode without an extra click.
+   */
+  onActivate?(ctx: ToolContext): void;
 }
 
 // ─── CSS module classes passed to each Options component ──────────────────────
@@ -148,6 +183,7 @@ export interface ToolOptionsStyles {
   optLabel: string;
   optText: string;
   optInput: string;
+  optCheckbox: string;
   optSelect: string;
   optCheckLabel: string;
   optSep: string;

@@ -4,9 +4,9 @@
 .bar {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 8px;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
   background-color: vars.$color-surface;
   border-bottom: 1px solid vars.$color-border;
   flex-shrink: 0;
@@ -31,6 +31,10 @@
   text-align: right;
 }
 
+.optCheckbox {
+  @include m.ps-checkbox;
+}
+
 .optSelect {
   @include m.ps-dropdown;
   width: 90px;
@@ -47,16 +51,17 @@
 
   input[type='checkbox'] {
     accent-color: vars.$color-accent-blue;
+
     cursor: pointer;
   }
 }
 
 .optSep {
   width: 1px;
-  height: 16px;
+  height: 20px;
   background: vars.$color-border-light;
   flex-shrink: 0;
-  margin: 0 2px;
+  margin: 0 4px;
 }
 
 .optBtn {

@@ -21,6 +21,7 @@ export type FrameContentFit = "fill" | "fit" | "stretch" | "center";
 
 export type Tool =
   | "move"
+  | "pick"
   | "select"
   | "lasso"
   | "polygonal-selection"
@@ -39,6 +40,7 @@ export type Tool =
   | "burn"
   | "text"
   | "shape"
+  | "liquify"
   | "hand"
   | "zoom"
   | "transform";

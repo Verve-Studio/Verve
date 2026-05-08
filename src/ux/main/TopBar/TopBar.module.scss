@@ -86,6 +86,10 @@
   text-align: right;
 }
 
+.optCheckbox {
+  @include m.ps-checkbox;
+}
+
 .optSelect {
   @include m.ps-dropdown;
   width: 90px;

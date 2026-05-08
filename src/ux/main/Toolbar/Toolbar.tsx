@@ -59,6 +59,101 @@ const Icon = {
   text: <SvgIcon src={textIcon} />,
   shape: <SvgIcon src={shapeIcon} />,
   cloneStamp: <SvgIcon src={cloneStampIcon} />,
+  // Hand (pan): outline of an open hand.
+  hand: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M5 8 V4.2 a1 1 0 0 1 2 0 V7.5 M7 4 V3 a1 1 0 0 1 2 0 V7.5 M9 3.5 V3 a1 1 0 0 1 2 0 V8 M11 5 V4.2 a1 1 0 0 1 2 0 V10 a4 4 0 0 1 -8 0 V7"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  ),
+  // Zoom: magnifying glass with plus.
+  zoom: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <circle
+          cx="7"
+          cy="7"
+          r="4.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M10 10 L13.5 13.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+        <path
+          d="M5 7 L9 7 M7 5 L7 9"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  ),
+  // Liquify: stylised swirl indicating distortion.
+  liquify: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M3 11 C 3 6, 13 6, 13 11"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <path
+          d="M3 8 C 3 4, 13 4, 13 8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          opacity="0.5"
+        />
+        <circle cx="8" cy="11" r="1.3" fill="currentColor" />
+      </svg>
+    </span>
+  ),
+  // Pick (universal select): black-and-white arrow cursor.
+  pick: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M2.5 2 L2.5 12.5 L5.2 9.8 L7.0 13.6 L8.6 12.8 L6.8 9.0 L10.5 9.0 Z"
+          fill="currentColor"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1"
+        />
+      </svg>
+    </span>
+  ),
 };
 
 // ─── Shape picker definitions ─────────────────────────────────────────────────
@@ -174,7 +269,10 @@ type ToolGrid = (ToolDef | null)[][];
 
 const TOOL_GRID: ToolGrid = [
   // group 1
-  [{ id: "move", label: "Move", shortcut: "V", icon: Icon.move }, null],
+  [
+    { id: "move", label: "Move", shortcut: "V", icon: Icon.move },
+    { id: "pick", label: "Pick", shortcut: "A", icon: Icon.pick },
+  ],
   // group 2 – selection
   [
     { id: "select", label: "Marquee", shortcut: "M", icon: Icon.select },
@@ -244,6 +342,13 @@ const TOOL_GRID: ToolGrid = [
     { id: "text", label: "Type", shortcut: "T", icon: Icon.text },
     { id: "shape", label: "Shape", shortcut: "U", icon: Icon.shape },
   ],
+  // group 8 – distortion
+  [{ id: "liquify", label: "Liquify", shortcut: "Q", icon: Icon.liquify }, null],
+  // group 9 – navigation
+  [
+    { id: "hand", label: "Hand", shortcut: "H", icon: Icon.hand },
+    { id: "zoom", label: "Zoom", shortcut: "Z", icon: Icon.zoom },
+  ],
 ];
 
 /** Tools that can only operate on a pixel layer. */
@@ -256,6 +361,7 @@ const PIXEL_ONLY_TOOLS = new Set<Tool>([
   "gradient",
   "dodge",
   "burn",
+  "liquify",
 ]);
 
 /** Tools that have no indexed8 implementation. */

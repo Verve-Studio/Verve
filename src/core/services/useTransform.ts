@@ -195,8 +195,81 @@ export function useTransform({
       handle.writeLayerPixels(layerId, result);
     }
     captureHistory("Free Transform");
-    dispatch({ type: "SET_TOOL", payload: transformStore.previousTool });
-    transformStore.clear();
+
+    // Stay on the transform tool with a fresh baseline so the user can chain
+    // transformations. Re-bootstrap the store from the just-committed pixels.
+    const committedPixels = handle.getLayerPixels(layerId);
+    const previousTool = transformStore.previousTool;
+    const wasSelectionMode = transformStore.isSelectionMode;
+    const savedSelectionMask = transformStore.savedSelectionMask;
+
+    if (!committedPixels) {
+      dispatch({ type: "SET_TOOL", payload: previousTool });
+      transformStore.clear();
+      return;
+    }
+
+    let nextRect: { x: number; y: number; w: number; h: number };
+    let nextFloatBuffer: Uint8Array;
+    if (wasSelectionMode && savedSelectionMask) {
+      // After applying a selection-mode transform, the selection itself moved
+      // to wherever the user dragged it. Re-fit on the committed pixels' bbox.
+      nextRect = findBoundingRect(committedPixels, cw, ch);
+      if (nextRect.w <= 0 || nextRect.h <= 0) {
+        dispatch({ type: "SET_TOOL", payload: previousTool });
+        transformStore.clear();
+        return;
+      }
+      nextFloatBuffer = cropPixels(committedPixels, cw, nextRect, null);
+    } else {
+      nextRect = findBoundingRect(committedPixels, cw, ch);
+      if (nextRect.w <= 0 || nextRect.h <= 0) {
+        dispatch({ type: "SET_TOOL", payload: previousTool });
+        transformStore.clear();
+        return;
+      }
+      nextFloatBuffer = cropPixels(committedPixels, cw, nextRect, null);
+    }
+
+    const { w: nW, h: nH } = nextRect;
+    const nextFloatCanvas = new OffscreenCanvas(nW, nH);
+    const nfc = nextFloatCanvas.getContext("2d")!;
+    nfc.putImageData(
+      new ImageData(new Uint8ClampedArray(nextFloatBuffer), nW, nH),
+      0,
+      0,
+    );
+
+    const nextSavedLayerPixels = committedPixels.slice();
+
+    // Clear the layer so the WebGL composite doesn't show the committed pixels
+    // underneath the next overlay preview (mirrors the initial-entry behavior).
+    handle.writeLayerPixels(layerId, new Uint8Array(cw * ch * 4));
+
+    transformStore.enter({
+      layerId,
+      previousTool,
+      isSelectionMode: false,
+      originalW: nW,
+      originalH: nH,
+      originalRect: nextRect,
+      floatBuffer: nextFloatBuffer,
+      floatCanvas: nextFloatCanvas,
+      savedLayerPixels: nextSavedLayerPixels,
+      savedSelectionMask: null,
+      params: {
+        x: nextRect.x,
+        y: nextRect.y,
+        w: nW,
+        h: nH,
+        rotation: 0,
+        pivotX: nextRect.x + nW / 2,
+        pivotY: nextRect.y + nH / 2,
+        shearX: 0,
+        shearY: 0,
+        perspectiveCorners: null,
+      },
+    });
   }, [canvasHandleRef, stateRef, dispatch, captureHistory]);
 
   const handleCancel = useCallback((): void => {

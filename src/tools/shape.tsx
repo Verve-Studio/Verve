@@ -11,6 +11,7 @@ import type {
   ToolContext,
   ToolOptionsStyles,
 } from "./types";
+import { resizeCursorForHandle } from "./algorithm/resizeCursor";
 
 // ─── Module-level defaults for new shapes ────────────────────────────────────
 
@@ -471,6 +472,22 @@ function createShapeHandler(): ToolHandler {
   }
 
   return {
+    onActivate(ctx: ToolContext): void {
+      // Draw handles for the active shape immediately so the user lands in
+      // edit mode (e.g. after double-clicking the shape via the pick tool).
+      const active = getActive(ctx);
+      if (active && ctx.overlayCanvas) {
+        drawHandles(ctx.overlayCanvas, active, ctx.zoom);
+      } else if (ctx.overlayCanvas) {
+        const c2d = ctx.overlayCanvas.getContext("2d");
+        c2d?.clearRect(
+          0,
+          0,
+          ctx.overlayCanvas.width,
+          ctx.overlayCanvas.height,
+        );
+      }
+    },
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext): void {
       const active = getActive(ctx);
       if (active) {
@@ -686,16 +703,45 @@ function createShapeHandler(): ToolHandler {
       mode = { t: "idle", id: "" };
     },
 
-    onHover(_pos: ToolPointerPos, ctx: ToolContext): void {
+    onHover(pos: ToolPointerPos, ctx: ToolContext): void {
+      // Skip hover handling while in an interactive drag — onPointerMove owns
+      // the overlay during move/resize/rotate/endpoint and a stale getActive()
+      // here would flash the handles at the pre-drag position.
+      if (mode.t !== "idle" && mode.t !== "draw") return;
       const active = getActive(ctx);
       if (ctx.overlayCanvas) {
         if (active) drawHandles(ctx.overlayCanvas, active, ctx.zoom);
         else clearOverlay(ctx.overlayCanvas);
       }
+      // Direction-aware resize cursor when hovering a handle.
+      let cursor = "";
+      if (active && active.shapeType !== "line") {
+        const hi = hitTestHandles(active, pos.x, pos.y, ctx.zoom);
+        if (hi !== null) {
+          if (hi === 8) cursor = "grab";
+          else cursor = resizeCursorForHandle(hi, active.rotation) ?? "";
+        }
+      } else if (active && active.shapeType === "line") {
+        // Lines have only two endpoints (handles 0 and 1) — match the angle
+        // along the line for the resize cursor direction.
+        const hi = hitTestHandles(active, pos.x, pos.y, ctx.zoom);
+        if (hi !== null) {
+          const dx = active.x2 - active.x1;
+          const dy = active.y2 - active.y1;
+          const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+          const a = (((angle % 180) + 180) % 180);
+          if (a < 22.5 || a >= 157.5) cursor = "ew-resize";
+          else if (a < 67.5) cursor = "nwse-resize";
+          else if (a < 112.5) cursor = "ns-resize";
+          else cursor = "nesw-resize";
+        }
+      }
+      ctx.setCursor(cursor);
     },
 
     onLeave(ctx: ToolContext): void {
       if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
+      ctx.setCursor("");
     },
   };
 }
