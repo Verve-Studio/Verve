@@ -16,7 +16,7 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'avif', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -37,10 +37,10 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['verve', 'psd', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'All Supported',       extensions: ['verve', 'psd', 'png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'Verve Document',  extensions: ['verve'] },
         { name: 'Photoshop Document',  extensions: ['psd'] },
-        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
     })
