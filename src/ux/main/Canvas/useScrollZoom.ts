@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { viewportCommands } from "@/core/store/viewportCommands";
 
 /**
  * Manages zoom-to-cursor (Ctrl+scroll) and scroll-position save/restore.
@@ -93,6 +94,7 @@ export function useScrollZoom(
     const onScroll = (): void => {
       if (isActiveRef.current) {
         scrollPosRef.current = { left: vp.scrollLeft, top: vp.scrollTop };
+        viewportCommands.setScroll(vp.scrollLeft, vp.scrollTop);
       }
     };
     vp.addEventListener("scroll", onScroll, { passive: true });

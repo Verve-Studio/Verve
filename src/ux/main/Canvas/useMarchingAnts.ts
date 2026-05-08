@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { selectionStore } from "@/core/store/selectionStore";
 import { cropStore } from "@/core/store/cropStore";
 import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
+import { measureStore } from "@/core/store/measureStore";
 
 /**
  * Drives the marching-ants / crop-overlay / polygonal-selection RAF animation
@@ -61,7 +62,8 @@ export function useMarchingAnts(
       const isPolyTool = activeToolRef.current === "polygonal-selection";
       const hasPolyVerts =
         isPolyTool && polygonalSelectionStore.vertices.length > 0;
-      if (!mask && !pending && !hasCrop && !hasPolyVerts) return;
+      const hasMeasure = !!(measureStore.start && measureStore.end);
+      if (!mask && !pending && !hasCrop && !hasPolyVerts && !hasMeasure) return;
 
       // Map from image-pixel coordinates to overlay physical-pixel coordinates.
       // getBoundingClientRect returns CSS pixels; multiply by dpr for physical px.
@@ -163,6 +165,46 @@ export function useMarchingAnts(
           ctx2d.strokeStyle = color;
           ctx2d.lineDashOffset = dashOffset + extra;
           ctx2d.strokeRect(toX(cr.x), toY(cr.y), cr.w * zoom, cr.h * zoom);
+        }
+      }
+
+      // ── Measure tool overlay ─────────────────────────────────────────────
+      if (hasMeasure) {
+        const { start, end, protractorEnd } = measureStore;
+        if (start && end) {
+          const dpr2 = dpr;
+          const handleR = Math.max(3, (3.5 * dpr2));
+          const drawLine = (a: typeof start, b: typeof start): void => {
+            // Black under-stroke for legibility on light backgrounds.
+            ctx2d.lineWidth = 3;
+            ctx2d.strokeStyle = "rgba(0,0,0,0.7)";
+            ctx2d.setLineDash([]);
+            ctx2d.beginPath();
+            ctx2d.moveTo(toX(a.x), toY(a.y));
+            ctx2d.lineTo(toX(b.x), toY(b.y));
+            ctx2d.stroke();
+            // White top stroke.
+            ctx2d.lineWidth = 1;
+            ctx2d.strokeStyle = "#ffffff";
+            ctx2d.beginPath();
+            ctx2d.moveTo(toX(a.x), toY(a.y));
+            ctx2d.lineTo(toX(b.x), toY(b.y));
+            ctx2d.stroke();
+          };
+          const drawHandle = (p: typeof start): void => {
+            ctx2d.beginPath();
+            ctx2d.arc(toX(p.x), toY(p.y), handleR, 0, Math.PI * 2);
+            ctx2d.fillStyle = "#ffffff";
+            ctx2d.fill();
+            ctx2d.lineWidth = 1;
+            ctx2d.strokeStyle = "#000000";
+            ctx2d.stroke();
+          };
+          drawLine(start, end);
+          if (protractorEnd) drawLine(start, protractorEnd);
+          drawHandle(start);
+          drawHandle(end);
+          if (protractorEnd) drawHandle(protractorEnd);
         }
       }
 

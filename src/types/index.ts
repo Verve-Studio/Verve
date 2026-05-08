@@ -26,6 +26,7 @@ export type Tool =
   | "lasso"
   | "polygonal-selection"
   | "object-selection"
+  | "quick-select"
   | "magic-wand"
   | "crop"
   | "frame"
@@ -46,6 +47,7 @@ export type Tool =
   | "smudge"
   | "patch"
   | "healing-brush"
+  | "measure"
   | "hand"
   | "zoom"
   | "transform";

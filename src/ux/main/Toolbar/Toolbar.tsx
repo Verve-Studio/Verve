@@ -151,6 +151,65 @@ const Icon = {
       </svg>
     </span>
   ),
+  // Quick Select: brush + dashed-selection arc, evoking the PS quick select
+  // tool icon (a wand-like brush over a marquee curve).
+  quickSelect: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        {/* Dashed selection-style arc */}
+        <path
+          d="M2 11 C 4 6, 12 6, 14 11"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+          strokeDasharray="1.6 1.6"
+        />
+        {/* Brush stroke */}
+        <path
+          d="M9 3 L13 7"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        {/* Brush tip */}
+        <circle cx="9" cy="3" r="1.4" fill="currentColor" />
+      </svg>
+    </span>
+  ),
+  // Measure / Ruler: classic ruler with tick marks.
+  measure: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <g transform="rotate(-30 8 8)">
+          <rect
+            x="1.5"
+            y="6.2"
+            width="13"
+            height="3.6"
+            rx="0.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.1"
+          />
+          {/* Ticks */}
+          <path
+            d="M3 6.2 L3 8 M5 6.2 L5 7.4 M7 6.2 L7 8 M9 6.2 L9 7.4 M11 6.2 L11 8 M13 6.2 L13 7.4"
+            stroke="currentColor"
+            strokeWidth="0.9"
+          />
+        </g>
+      </svg>
+    </span>
+  ),
   // Healing Brush: classic band-aid (PS-style).
   healingBrush: (
     <span style={{ display: "block", width: "100%", height: "100%" }}>
@@ -413,105 +472,129 @@ interface ToolDef {
   icon: React.JSX.Element;
 }
 
-type ToolGrid = (ToolDef | null)[][];
+type ToolRow = (ToolDef | null)[];
+type ToolGroup = ToolRow[];
 
-const TOOL_GRID: ToolGrid = [
-  // group 1
-  [
+/**
+ * Toolbar layout: a list of groups, each group a list of 2-column rows.
+ * Visual separators are drawn between groups by the renderer; a group's rows
+ * sit flush against each other. Order roughly mirrors Photoshop.
+ */
+const TOOL_GROUPS: ToolGroup[] = [
+  // ── Move & Pick ────────────────────────────────────────────
+  [[
     { id: "move", label: "Move", shortcut: "V", icon: Icon.move },
     { id: "pick", label: "Pick", shortcut: "A", icon: Icon.pick },
-  ],
-  // group 2 – selection
+  ]],
+  // ── Selection tools (marquee / lasso / smart-selection) ────
   [
-    { id: "select", label: "Marquee", shortcut: "M", icon: Icon.select },
-    { id: "lasso", label: "Lasso", shortcut: "L", icon: Icon.lasso },
+    [
+      { id: "select", label: "Marquee", shortcut: "M", icon: Icon.select },
+      { id: "lasso", label: "Lasso", shortcut: "L", icon: Icon.lasso },
+    ],
+    [
+      {
+        id: "polygonal-selection",
+        label: "Polygonal Lasso",
+        shortcut: "L",
+        icon: Icon.polygonalLasso,
+      },
+      {
+        id: "quick-select",
+        label: "Quick Selection",
+        shortcut: "W",
+        icon: Icon.quickSelect,
+      },
+    ],
+    [
+      {
+        id: "magic-wand",
+        label: "Magic Wand",
+        shortcut: "W",
+        icon: Icon.magicWand,
+      },
+      {
+        id: "object-selection",
+        label: "Object Selection",
+        shortcut: "W",
+        icon: Icon.objectSelection,
+      },
+    ],
   ],
+  // ── Painting (brush / pencil / eraser) ─────────────────────
   [
-    {
-      id: "polygonal-selection",
-      label: "Polygonal Lasso",
-      shortcut: "L",
-      icon: Icon.polygonalLasso,
-    },
-    {
-      id: "object-selection",
-      label: "Object Selection",
-      shortcut: "W",
-      icon: Icon.objectSelection,
-    },
+    [
+      { id: "brush", label: "Brush", shortcut: "B", icon: Icon.brush },
+      { id: "pencil", label: "Pencil", shortcut: "N", icon: Icon.pencil },
+    ],
+    [{ id: "eraser", label: "Eraser", shortcut: "E", icon: Icon.eraser }, null],
   ],
-  [
-    {
-      id: "magic-wand",
-      label: "Magic Wand",
-      shortcut: "W",
-      icon: Icon.magicWand,
-    },
-    null,
-  ],
-  [{ id: "crop", label: "Crop", shortcut: "C", icon: Icon.crop }, null],
-  // group 3 – sampling
-  [
+  // ── Fills (bucket / gradient) ──────────────────────────────
+  [[
+    { id: "fill", label: "Paint Bucket", shortcut: "G", icon: Icon.fill },
+    { id: "gradient", label: "Gradient", shortcut: "G", icon: Icon.gradient },
+  ]],
+  // ── Type & Shape (vector) ──────────────────────────────────
+  [[
+    { id: "text", label: "Type", shortcut: "T", icon: Icon.text },
+    { id: "shape", label: "Shape", shortcut: "U", icon: Icon.shape },
+  ]],
+  // ── Crop & Frame ───────────────────────────────────────────
+  [[
+    { id: "crop", label: "Crop", shortcut: "C", icon: Icon.crop },
+    { id: "frame", label: "Frame", shortcut: "K", icon: Icon.frame },
+  ]],
+  // ── Sampling & Measurement ─────────────────────────────────
+  [[
     {
       id: "eyedropper",
       label: "Eyedropper",
       shortcut: "I",
       icon: Icon.eyedropper,
     },
-    { id: "frame", label: "Frame", shortcut: "K", icon: Icon.frame },
-  ],
-  // group 4 – painting
+    { id: "measure", label: "Measure", shortcut: "I", icon: Icon.measure },
+  ]],
+  // ── Retouching (clone / heal / patch) ──────────────────────
   [
-    { id: "brush", label: "Brush", shortcut: "B", icon: Icon.brush },
-    { id: "pencil", label: "Pencil", shortcut: "N", icon: Icon.pencil },
+    [
+      {
+        id: "clone-stamp",
+        label: "Clone Stamp",
+        shortcut: "S",
+        icon: Icon.cloneStamp,
+      },
+      {
+        id: "healing-brush",
+        label: "Healing Brush",
+        shortcut: "J",
+        icon: Icon.healingBrush,
+      },
+    ],
+    [{ id: "patch", label: "Patch", shortcut: "J", icon: Icon.patch }, null],
   ],
-  [{ id: "eraser", label: "Eraser", shortcut: "E", icon: Icon.eraser }, null],
-  [
-    {
-      id: "clone-stamp",
-      label: "Clone Stamp",
-      shortcut: "S",
-      icon: Icon.cloneStamp,
-    },
-    {
-      id: "healing-brush",
-      label: "Healing Brush",
-      shortcut: "J",
-      icon: Icon.healingBrush,
-    },
-  ],
-  [{ id: "patch", label: "Patch", shortcut: "J", icon: Icon.patch }, null],
-  // group 5 – fills
-  [
-    { id: "fill", label: "Paint Bucket", shortcut: "G", icon: Icon.fill },
-    { id: "gradient", label: "Gradient", shortcut: "G", icon: Icon.gradient },
-  ],
-  // group 6 – toning
-  [
+  // ── Tonal brushes (dodge / burn) ───────────────────────────
+  [[
     { id: "dodge", label: "Dodge", shortcut: "O", icon: Icon.dodge },
     { id: "burn", label: "Burn", shortcut: "O", icon: Icon.burn },
-  ],
-  // group 6b – local effect brushes
+  ]],
+  // ── Local-effect brushes (blur / sharpen / smudge) ─────────
   [
-    { id: "blur", label: "Blur", shortcut: "R", icon: Icon.blur },
-    { id: "sharpen", label: "Sharpen", shortcut: "R", icon: Icon.sharpen },
+    [
+      { id: "blur", label: "Blur", shortcut: "R", icon: Icon.blur },
+      { id: "sharpen", label: "Sharpen", shortcut: "R", icon: Icon.sharpen },
+    ],
+    [{ id: "smudge", label: "Smudge", shortcut: "R", icon: Icon.smudge }, null],
   ],
-  [
-    { id: "smudge", label: "Smudge", shortcut: "R", icon: Icon.smudge },
+  // ── Distortion ─────────────────────────────────────────────
+  [[
+    { id: "liquify", label: "Liquify", shortcut: "Q", icon: Icon.liquify },
     null,
-  ],
-  // group 7 – vector
-  [
-    { id: "text", label: "Type", shortcut: "T", icon: Icon.text },
-    { id: "shape", label: "Shape", shortcut: "U", icon: Icon.shape },
-  ],
-  // group 8 – distortion
-  [{ id: "liquify", label: "Liquify", shortcut: "Q", icon: Icon.liquify }, null],
-  // group 9 – navigation
-  [
+  ]],
+  // ── Navigation (hand / zoom) ───────────────────────────────
+  [[
     { id: "hand", label: "Hand", shortcut: "H", icon: Icon.hand },
     { id: "zoom", label: "Zoom", shortcut: "Z", icon: Icon.zoom },
-  ],
+  ]],
 ];
 
 /** Tools that can only operate on a pixel layer. */
@@ -680,22 +763,13 @@ export function Toolbar({
     <>
       <nav className={styles.toolbar} aria-label="Drawing tools">
         <ul className={styles.grid} role="list">
-          {TOOL_GRID.map((row, rowIdx) => {
-            const isFirstInGroup =
-              rowIdx === 0 ||
-              rowIdx === 1 ||
-              rowIdx === 4 ||
-              rowIdx === 5 ||
-              rowIdx === 8 ||
-              rowIdx === 9 ||
-              rowIdx === 10;
-
-            return (
-              <React.Fragment key={rowIdx}>
-                {isFirstInGroup && rowIdx !== 0 && (
-                  <li className={styles.separator} aria-hidden="true" />
-                )}
-                <li className={styles.row}>
+          {TOOL_GROUPS.map((group, groupIdx) => (
+            <React.Fragment key={`g-${groupIdx}`}>
+              {groupIdx !== 0 && (
+                <li className={styles.separator} aria-hidden="true" />
+              )}
+              {group.map((row, rowIdx) => (
+                <li className={styles.row} key={`g-${groupIdx}-r-${rowIdx}`}>
                   {row.map((tool, colIdx) =>
                     tool ? (
                       tool.id === "shape" ? (
@@ -773,9 +847,9 @@ export function Toolbar({
                     ),
                   )}
                 </li>
-              </React.Fragment>
-            );
-          })}
+              ))}
+            </React.Fragment>
+          ))}
         </ul>
 
         {/* ── Foreground / Background color swatches ───────────────────── */}

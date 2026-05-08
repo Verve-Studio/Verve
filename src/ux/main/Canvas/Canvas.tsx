@@ -34,6 +34,7 @@ import { blurOptions } from "@/tools/blur";
 import { sharpenOptions } from "@/tools/sharpen";
 import { smudgeOptions } from "@/tools/smudge";
 import { healingBrushOptions } from "@/tools/healingBrush";
+import { quickSelectOptions } from "@/tools/quickSelect";
 import { cloneStampOptions } from "@/tools/cloneStamp";
 import { dodgeOptions, burnOptions } from "@/tools/dodge";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
@@ -41,6 +42,7 @@ import { drawCloneStampOverlay } from "./cloneStampOverlay";
 import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
 import { objectSelectionStore } from "@/core/store/objectSelectionStore";
 import { selectionStore } from "@/core/store/selectionStore";
+import { measureStore } from "@/core/store/measureStore";
 import { cursorStore } from "@/core/store/cursorStore";
 import { transformStore } from "@/core/store/transformStore";
 import { drawTransformOverlay } from "@/tools/transform";
@@ -521,6 +523,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     selectionStore.setDimensions(width, height);
     return () => {
       selectionStore.clear();
+      measureStore.clear();
     };
   }, [width, height, isActive]);
 
@@ -1427,7 +1430,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         sel !== "blur" &&
         sel !== "sharpen" &&
         sel !== "smudge" &&
-        sel !== "healing-brush"
+        sel !== "healing-brush" &&
+        sel !== "quick-select"
       ) {
         brushCursorRef.current.style.display = "none";
       }
@@ -1453,7 +1457,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       state.activeTool !== "frame" &&
       state.activeTool !== "pick" &&
       state.activeTool !== "hand" &&
-      state.activeTool !== "zoom"
+      state.activeTool !== "zoom" &&
+      state.activeTool !== "measure"
     )
       return null;
     // Block pixel-modifying tools on locked layers and on non-pixel layers (text, shape, group, adjustment).
@@ -1806,7 +1811,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           tool === "blur" ||
           tool === "sharpen" ||
           tool === "smudge" ||
-          tool === "healing-brush") &&
+          tool === "healing-brush" ||
+          tool === "quick-select") &&
         brushCursorRef.current
       ) {
         const dpr = window.devicePixelRatio;
@@ -1830,7 +1836,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                           ? smudgeOptions.size
                           : tool === "healing-brush"
                             ? healingBrushOptions.size
-                            : cloneStampOptions.size;
+                            : tool === "quick-select"
+                              ? quickSelectOptions.size
+                              : cloneStampOptions.size;
         const r = Math.max(1, ((size / 2) * zoom) / dpr);
         const cx = (pos.x * zoom) / dpr;
         const cy = (pos.y * zoom) / dpr;
@@ -1969,7 +1977,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           tool === "blur" ||
           tool === "sharpen" ||
           tool === "smudge" ||
-          tool === "healing-brush") &&
+          tool === "healing-brush" ||
+          tool === "quick-select") &&
         brushCursorRef.current
       ) {
         const dpr = window.devicePixelRatio;
@@ -1993,7 +2002,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                           ? smudgeOptions.size
                           : tool === "healing-brush"
                             ? healingBrushOptions.size
-                            : cloneStampOptions.size;
+                            : tool === "quick-select"
+                              ? quickSelectOptions.size
+                              : cloneStampOptions.size;
         const r = Math.max(1, ((size / 2) * zoom) / dpr);
         // In tiled mode, coordinates are in [-W, 2W). Map to wrapper-space:
         const cx = ((pos.x + width) * zoom) / dpr;

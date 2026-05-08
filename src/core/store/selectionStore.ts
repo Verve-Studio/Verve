@@ -389,6 +389,14 @@ export class SelectionStore {
     }
   }
 
+  /** Merge a caller-built canvas-sized mask into the live selection. Used by
+   *  brush-style selection tools (e.g. Quick Select) that compute their own
+   *  per-stamp mask and want to OR/subtract it into the running selection. */
+  mergeMask(newMask: Uint8Array, mode: SelectionMode): void {
+    this.applyMask(newMask, mode);
+    this.notify();
+  }
+
   private applyMask(newMask: Uint8Array, mode: SelectionMode): void {
     if (mode === "set" || !this.mask) {
       this.mask = newMask;

@@ -514,8 +514,23 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_OPEN_ADJUSTMENT":
       return { ...state, openAdjustmentLayerId: action.payload };
-    case "SET_ACTIVE_LAYER":
-      return { ...state, activeLayerId: action.payload, selectedLayerIds: [] };
+    case "SET_ACTIVE_LAYER": {
+      // If the open adjustment panel belongs to a layer that is no longer
+      // the active one (or to a layer at all), auto-close it. Keeps the panel
+      // tied to the active selection, matching the user's mental model of
+      // "select the adjustment layer to edit it".
+      const nextOpenAdj =
+        state.openAdjustmentLayerId !== null &&
+        state.openAdjustmentLayerId !== action.payload
+          ? null
+          : state.openAdjustmentLayerId;
+      return {
+        ...state,
+        activeLayerId: action.payload,
+        selectedLayerIds: [],
+        openAdjustmentLayerId: nextOpenAdj,
+      };
+    }
 
     case "SET_SELECTED_LAYERS":
       return { ...state, selectedLayerIds: action.payload };

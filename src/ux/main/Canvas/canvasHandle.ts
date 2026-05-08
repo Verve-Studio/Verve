@@ -60,6 +60,19 @@ export interface CanvasHandle {
   }>;
   /** Return a copy of a layer's raw RGBA pixel data IN CANVAS-SIZE buffer (pixels outside layer bounds are transparent). */
   getLayerPixels: (layerId: string) => Uint8Array | null;
+  /** Return a layer's raw RGBA pixel data in **layer-local** size (always 8-bit
+   *  RGBA, even for rgba32f layers — converted on read), plus its offset on
+   *  the canvas. Used by exporters (e.g. PSD) that preserve per-layer geometry
+   *  rather than working off a flattened buffer. */
+  getLayerExportData: (
+    layerId: string,
+  ) => {
+    pixels: Uint8Array;
+    width: number;
+    height: number;
+    offsetX: number;
+    offsetY: number;
+  } | null;
   /**
    * Create a new GL layer, fill it with data, and render.
    * data is canvas-size RGBA. Call BEFORE dispatching ADD_LAYER so the sync effect is a no-op.
@@ -311,6 +324,26 @@ export function useCanvasHandle({
           png,
           layerWidth: layer.layerWidth,
           layerHeight: layer.layerHeight,
+          offsetX: layer.offsetX,
+          offsetY: layer.offsetY,
+        };
+      },
+
+      getLayerExportData: (layerId) => {
+        const renderer = rendererRef.current;
+        const layer = glLayersRef.current.get(layerId);
+        if (!renderer || !layer) return null;
+        const raw = renderer.readLayerPixels(layer);
+        const u8 =
+          raw instanceof Float32Array
+            ? new Uint8Array(raw.length).map((_, i) =>
+                Math.round(Math.min(raw[i], 1) * 255),
+              )
+            : (raw as Uint8Array);
+        return {
+          pixels: u8,
+          width: layer.layerWidth,
+          height: layer.layerHeight,
           offsetX: layer.offsetX,
           offsetY: layer.offsetY,
         };

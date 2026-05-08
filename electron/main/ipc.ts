@@ -37,8 +37,9 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'All Supported',       extensions: ['verve', 'psd', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'Verve Document',  extensions: ['verve'] },
+        { name: 'Photoshop Document',  extensions: ['psd'] },
         { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
@@ -72,6 +73,7 @@ export function registerIpcHandlers(): void {
       ext === 'exr'    ? [{ name: 'OpenEXR Image',     extensions: ['exr']         }] :
       ext === 'hdr'    ? [{ name: 'Radiance HDR',      extensions: ['hdr']         }] :
       ext === 'dds'    ? [{ name: 'DDS Texture',        extensions: ['dds']         }] :
+      ext === 'psd'    ? [{ name: 'Photoshop Document', extensions: ['psd']         }] :
                          [{ name: 'JPEG Image',        extensions: ['jpg', 'jpeg'] }]
     const { canceled, filePath } = await dialog.showSaveDialog({ filters })
     return canceled ? null : filePath

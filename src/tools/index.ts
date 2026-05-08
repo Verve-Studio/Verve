@@ -28,6 +28,8 @@ import { sharpenTool } from "./sharpen";
 import { smudgeTool } from "./smudge";
 import { patchTool } from "./patch";
 import { healingBrushTool } from "./healingBrush";
+import { measureTool } from "./measure";
+import { quickSelectTool } from "./quickSelect";
 
 export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   pencil: pencilTool,
@@ -58,6 +60,8 @@ export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   smudge: smudgeTool,
   patch: patchTool,
   "healing-brush": healingBrushTool,
+  measure: measureTool,
+  "quick-select": quickSelectTool,
   hand: handTool,
   transform: transformTool,
 };

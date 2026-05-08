@@ -229,6 +229,186 @@ export function useFileOps({
     async (path: string): Promise<void> => {
       // ── Image file import ──────────────────────────────────────────────────
       const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+      if (ext === ".psd") {
+        const { loadPsdLayers } = await import("@/core/io/psdLoader");
+        const base64 = await window.api.readFileBase64(path);
+        const bin = atob(base64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        const psd = loadPsdLayers(buf.buffer);
+        const hasAnyLeaf = (
+          ns: import("@/core/io/psdLoader").PsdImportedNode[],
+        ): boolean =>
+          ns.some(
+            (n) =>
+              n.kind === "layer" ||
+              (n.kind === "group" && hasAnyLeaf(n.children)),
+          );
+        if (!hasAnyLeaf(psd.nodes)) {
+          showOperationError(
+            "Could not open file.",
+            "The PSD has no supported pixel layers.",
+          );
+          return;
+        }
+        const newId = makeTabId();
+        const layerData = new Map<string, string>();
+        const layers: LayerState[] = [];
+        // Recursively flatten the PSD tree into Verve's flat layer array.
+        // Groups become GroupLayerState entries with childIds that mirror
+        // PSD folder structure. Mask layers stay flat (parentId-linked) and
+        // are NOT added to any parent group's childIds — they're attached
+        // to a pixel layer regardless of where that layer is nested, which
+        // matches the rest of Verve's mask handling.
+        const flatten = (
+          nodes: import("@/core/io/psdLoader").PsdImportedNode[],
+          parentChildIds: string[] | null,
+        ): void => {
+          for (const node of nodes) {
+            if (node.kind === "group") {
+              const childIds: string[] = [];
+              flatten(node.children, childIds);
+              layers.push({
+                id: node.id,
+                name: node.name,
+                visible: node.visible,
+                opacity: 1,
+                locked: false,
+                blendMode: "normal",
+                type: "group",
+                collapsed: node.collapsed,
+                childIds,
+              });
+              if (parentChildIds) parentChildIds.push(node.id);
+              continue;
+            }
+            const psdLayer = node;
+            const storeKey = `${newId}:${psdLayer.id}`;
+            u8TransferStore.set(storeKey, psdLayer.pixels);
+            layerData.set(psdLayer.id, `data:raw/rgba8-ref;id=${storeKey}`);
+            layerData.set(
+              `${psdLayer.id}:geo`,
+              JSON.stringify({
+                layerWidth: psdLayer.layerWidth,
+                layerHeight: psdLayer.layerHeight,
+                offsetX: psdLayer.offsetX,
+                offsetY: psdLayer.offsetY,
+              }),
+            );
+            layers.push({
+              id: psdLayer.id,
+              name: psdLayer.name,
+              visible: psdLayer.visible,
+              opacity: psdLayer.opacity,
+              locked: false,
+              blendMode: psdLayer.blendMode,
+            });
+            if (parentChildIds) parentChildIds.push(psdLayer.id);
+            // Optional mask child. Mask pixel data is single-channel — encode
+            // it as 4-channel grey RGBA (tools downstream still expect RGBA).
+            if (psdLayer.mask) {
+              const maskId = `${psdLayer.id}-mask`;
+              const m = psdLayer.mask;
+              const rgba = new Uint8Array(m.width * m.height * 4);
+              for (let p = 0; p < m.width * m.height; p++) {
+                const v = m.pixels[p];
+                const j = p * 4;
+                rgba[j] = v;
+                rgba[j + 1] = v;
+                rgba[j + 2] = v;
+                rgba[j + 3] = 255;
+              }
+              const maskStoreKey = `${newId}:${maskId}`;
+              u8TransferStore.set(maskStoreKey, rgba);
+              layerData.set(
+                maskId,
+                `data:raw/rgba8-ref;id=${maskStoreKey}`,
+              );
+              layerData.set(
+                `${maskId}:geo`,
+                JSON.stringify({
+                  layerWidth: m.width,
+                  layerHeight: m.height,
+                  offsetX: m.offsetX,
+                  offsetY: m.offsetY,
+                }),
+              );
+              layers.push({
+                id: maskId,
+                name: "Mask",
+                visible: true,
+                type: "mask",
+                parentId: psdLayer.id,
+              });
+            }
+          }
+        };
+        flatten(psd.nodes, null);
+        const title = fileTitle(path);
+        const newSnapshot: TabSnapshot = {
+          canvasWidth: psd.width,
+          canvasHeight: psd.height,
+          backgroundFill: "transparent",
+          layers,
+          activeLayerId: layers[layers.length - 1]?.id ?? null,
+          zoom: 1,
+          swatches: DEFAULT_SWATCHES,
+          swatchGroups: [],
+          pixelBrushes: [],
+          pixelFormat: "rgba8",
+        };
+        const snapshot = captureActiveSnapshot();
+        const savedHistory = historyStore.detach();
+        const savedLayerData = serializeActiveTabPixels();
+        const updated: TabRecord[] = [
+          ...tabs.map((t) =>
+            t.id === activeTabId
+              ? { ...t, snapshot, savedHistory, savedLayerData }
+              : t,
+          ),
+          {
+            id: newId,
+            title,
+            filePath: path,
+            snapshot: newSnapshot,
+            savedLayerData: layerData,
+            savedHistory: null,
+            canvasKey: 1,
+            tiledMode: false,
+            showTileGrid: false,
+            pixelFormat: "rgba8" as PixelFormat,
+            exposureEV: 0,
+            toneMappingOperator: "reinhard",
+            animationMode: false,
+          },
+        ];
+        setTabs(updated);
+        setActiveTabId(newId);
+        historyStore.clear({ recaptureSnapshot: false });
+        setPendingLayerData(null);
+        dispatch({
+          type: "SWITCH_TAB",
+          payload: {
+            width: psd.width,
+            height: psd.height,
+            backgroundFill: "transparent",
+            layers,
+            activeLayerId: newSnapshot.activeLayerId,
+            zoom: 1,
+            tiledMode: false,
+            showTileGrid: false,
+          },
+        });
+        const updatedRecent = await window.api.addRecentFile(path);
+        onRecentFilesUpdated?.(updatedRecent);
+        if (psd.hadUnsupportedLayers) {
+          showOperationError(
+            "Some PSD content was skipped.",
+            "Verve only imports rasterized pixel layers + masks. Text, shape, smart object, and adjustment layers in this PSD have been omitted.",
+          );
+        }
+        return;
+      }
       if (IMAGE_EXTENSIONS.has(ext)) {
         const base64 = await window.api.readFileBase64(path);
         const mime = EXT_TO_MIME[ext] ?? "image/png";

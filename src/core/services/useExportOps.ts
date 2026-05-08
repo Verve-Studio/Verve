@@ -12,6 +12,7 @@ import { displayStore } from "@/core/store/displayStore";
 import type { AppState, ToneMappingOperator } from "@/types";
 import { showOperationError } from "@/utils/userFeedback";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
+import { buildRootLayerIds, getDescendantIds } from "@/utils/layerTree";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { ExportSettings } from "@/ux/modals/ExportDialog/ExportDialog";
 import { useCallback, useState, type MutableRefObject } from "react";
@@ -83,6 +84,192 @@ export function useExportOps({
         throw new Error(
           "Canvas renderer is not ready yet. Please try export again.",
         );
+
+      // PSD — preserves per-layer pixel data + masks. Each emitted layer is
+      // rasterized through the unified flatten-then-encode pipeline on its
+      // own (with attached adjustment/effect/filter children) so non-
+      // destructive effects are baked into the exported pixels, while layer
+      // opacity / blend mode / visibility stay at the PSD layer level.
+      if (settings.format === "psd") {
+        const { exportPsd } = await import("@/core/io/exportPsd");
+        type PsdExportNodeT =
+          import("@/core/io/exportPsd").PsdExportNode;
+        type PsdExportLayerT =
+          import("@/core/io/exportPsd").PsdExportLayer;
+        const layers = stateRef.current.layers;
+        const cw = stateRef.current.canvas.width;
+        const ch = stateRef.current.canvas.height;
+
+        // Rasterize a single pixel-bearing layer (pixel/text/shape/frame or
+        // a composite — composites bring their descendants along) through
+        // the unified flatten-then-encode pipeline so attached
+        // adjustment/effect/filter children bake into the exported pixels.
+        // Layer-level opacity/blend/visibility are kept on the PSD entry
+        // and neutralized during rasterization. Returns null if the layer
+        // produced no opaque pixels.
+        const buildPixelNode = async (
+          ls: AppState["layers"][number],
+        ): Promise<PsdExportLayerT | null> => {
+          const isComposite =
+            "type" in ls && (ls as { type: string }).type === "composite";
+          const adjChildren = layers.filter(
+            (l) =>
+              "type" in l &&
+              (l as { type: string }).type === "adjustment" &&
+              (l as { parentId?: string }).parentId === ls.id,
+          );
+          const lsForRaster = {
+            ...ls,
+            opacity: 1,
+            visible: true,
+            blendMode: "normal",
+          } as typeof ls;
+          const adjForRaster = adjChildren.map(
+            (a) => ({ ...a, visible: true }) as typeof a,
+          );
+          let subset: AppState["layers"][number][];
+          if (isComposite) {
+            const descIds = new Set(getDescendantIds(layers, ls.id));
+            const descendants = layers.filter((l) => descIds.has(l.id));
+            const descAttachments = layers.filter((l) => {
+              if (!("type" in l)) return false;
+              const t = (l as { type: string }).type;
+              if (t !== "mask" && t !== "adjustment") return false;
+              const pid = (l as { parentId?: string }).parentId;
+              return pid !== undefined && descIds.has(pid);
+            });
+            subset = [
+              lsForRaster,
+              ...descendants,
+              ...adjForRaster,
+              ...descAttachments,
+            ];
+          } else {
+            subset = [lsForRaster, ...adjForRaster];
+          }
+          const flatLayer = await handle.rasterizeLayers(subset, "export");
+          const fullPixels: Uint8Array =
+            flatLayer.data instanceof Float32Array
+              ? clampF32ToUint8(flatLayer.data)
+              : flatLayer.data;
+          const fw = flatLayer.width;
+          const fh = flatLayer.height;
+          let minX = fw,
+            minY = fh,
+            maxX = -1,
+            maxY = -1;
+          for (let y = 0; y < fh; y++) {
+            for (let x = 0; x < fw; x++) {
+              if (fullPixels[(y * fw + x) * 4 + 3] !== 0) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+          if (maxX < 0) return null;
+          const bw = maxX - minX + 1;
+          const bh = maxY - minY + 1;
+          const cropped = new Uint8Array(bw * bh * 4);
+          for (let y = 0; y < bh; y++) {
+            const srcRow = ((minY + y) * fw + minX) * 4;
+            cropped.set(
+              fullPixels.subarray(srcRow, srcRow + bw * 4),
+              y * bw * 4,
+            );
+          }
+          const maskLs = layers.find(
+            (l) =>
+              "type" in l &&
+              l.type === "mask" &&
+              (l as { parentId: string }).parentId === ls.id,
+          );
+          let mask: PsdExportLayerT["mask"];
+          if (maskLs) {
+            const m = handle.getLayerExportData(maskLs.id);
+            if (m) {
+              const single = new Uint8Array(m.width * m.height);
+              for (let p = 0; p < m.width * m.height; p++)
+                single[p] = m.pixels[p * 4];
+              mask = {
+                pixels: single,
+                width: m.width,
+                height: m.height,
+                offsetX: m.offsetX,
+                offsetY: m.offsetY,
+              };
+            }
+          }
+          return {
+            kind: "layer",
+            name: ls.name,
+            visible: ls.visible,
+            opacity: "opacity" in ls ? ls.opacity : 1,
+            blendMode: "blendMode" in ls ? ls.blendMode : "normal",
+            pixels: cropped,
+            layerWidth: bw,
+            layerHeight: bh,
+            offsetX: minX,
+            offsetY: minY,
+            mask,
+          };
+        };
+
+        // Recursively walk the layer tree, mirroring Verve's group structure
+        // as PSD folders. Mask/adjustment layers are skipped (they're
+        // bundled into their parent at rasterization time). Composites are
+        // emitted as a single rasterized layer — we never recurse into a
+        // composite's children because the composite already represents
+        // their merged result.
+        const buildNodes = async (
+          ids: readonly string[],
+        ): Promise<PsdExportNodeT[]> => {
+          const out: PsdExportNodeT[] = [];
+          for (const id of ids) {
+            const ls = layers.find((l) => l.id === id);
+            if (!ls) continue;
+            if ("type" in ls) {
+              const t = (ls as { type: string }).type;
+              if (t === "mask" || t === "adjustment") continue;
+              if (t === "group") {
+                const g = ls as { name: string; visible: boolean; opacity: number; blendMode: import("@/types").BlendMode; collapsed: boolean; childIds: string[] };
+                const children = await buildNodes(g.childIds);
+                out.push({
+                  kind: "group",
+                  name: g.name,
+                  visible: g.visible,
+                  opacity: g.opacity,
+                  blendMode: g.blendMode,
+                  opened: !g.collapsed,
+                  children,
+                });
+                continue;
+              }
+            }
+            const node = await buildPixelNode(ls);
+            if (node) out.push(node);
+          }
+          return out;
+        };
+
+        const psdNodes = await buildNodes(buildRootLayerIds(layers));
+        const hasLeaf = (nodes: PsdExportNodeT[]): boolean =>
+          nodes.some(
+            (n) =>
+              n.kind === "layer" || (n.kind === "group" && hasLeaf(n.children)),
+          );
+        if (!hasLeaf(psdNodes)) {
+          throw new Error(
+            "PSD export needs at least one pixel layer. Rasterize text/shape/frame layers first.",
+          );
+        }
+        const bytes = exportPsd({ width: cw, height: ch, layers: psdNodes });
+        const b64 = bytesToBase64(bytes);
+        await window.api.exportImage(settings.filePath, b64);
+        return;
+      }
+
       const flat = await handle.rasterizeLayers(
         stateRef.current.layers,
         "export",

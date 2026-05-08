@@ -14,7 +14,8 @@ export type ExportFormat =
   | "exr"
   | "hdr"
   | "tiff32"
-  | "dds";
+  | "dds"
+  | "psd";
 export type DdsCompression = "bc1" | "bc3" | "bc7" | "bc6h" | "rgba32f";
 
 export interface ExportSettings {
@@ -60,9 +61,11 @@ function applyExtension(filePath: string, format: ExportFormat): string {
                   ? ".tiff"
                   : format === "dds"
                     ? ".dds"
-                    : ".jpg";
+                    : format === "psd"
+                      ? ".psd"
+                      : ".jpg";
   return (
-    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds)$/i, "") + ext
+    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds|psd)$/i, "") + ext
   );
 }
 
@@ -208,6 +211,7 @@ export function ExportDialog({
             <option value="tga">TGA</option>
             <option value="tiff">TIFF</option>
             <option value="dds">DDS</option>
+            <option value="psd">PSD (Photoshop)</option>
             {isHdrDocument && (
               <>
                 <option disabled>──────────</option>
@@ -485,6 +489,21 @@ export function ExportDialog({
                     ),
                   )}
                 </select>
+              </div>
+            </>
+          )}
+
+          {format === "psd" && (
+            <>
+              <p className={styles.sectionTitle}>PSD OPTIONS</p>
+              <div className={styles.fieldRow}>
+                <label className={styles.fieldLabel}>Rasterization</label>
+                <span className={styles.staticNote}>
+                  Text, shape, frame, and composite layers — along with all
+                  attached adjustments, effects, and filters — are rasterized
+                  to plain pixel data on export. Group folders, layer masks,
+                  opacity, blend modes, and visibility are preserved.
+                </span>
               </div>
             </>
           )}

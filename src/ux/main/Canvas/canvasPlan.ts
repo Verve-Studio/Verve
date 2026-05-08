@@ -133,7 +133,9 @@ export function buildSubPlan(
       continue;
     }
 
-    // Pixel, text, or shape layer — collect attached per-layer adjustments
+    // Pixel-bearing leaf layer (pixel, text, shape, frame) — collect any
+    // attached per-layer adjustments and either bundle them into an
+    // adjustment-group or emit a plain layer entry.
     const baseLayer = glLayers.get(ls.id);
     if (!baseLayer) continue;
 

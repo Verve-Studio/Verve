@@ -1,6 +1,7 @@
 import React from "react";
 import type { ShapeLayerState, TextLayerState, Tool } from "@/types";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import { useAppContext } from "@/core/store/AppContext";
 import type {
   ToolDefinition,
   ToolHandler,
@@ -189,8 +190,23 @@ function createPickHandler(): ToolHandler {
 
 // ─── Options UI ───────────────────────────────────────────────────────────────
 
-function PickOptions(_props: { styles: ToolOptionsStyles }): React.JSX.Element {
-  return <></>;
+function PickOptions({
+  styles,
+}: {
+  styles: ToolOptionsStyles;
+}): React.JSX.Element {
+  const { state } = useAppContext();
+  const activeLayer = state.activeLayerId
+    ? state.layers.find((l) => l.id === state.activeLayerId)
+    : null;
+  const message = activeLayer
+    ? `${activeLayer.name} selected`
+    : "Please select an object…";
+  return (
+    <span className={styles.optText} style={{ fontStyle: "italic" }}>
+      {message}
+    </span>
+  );
 }
 
 // ─── Export ───────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { viewportCommands } from "@/core/store/viewportCommands";
 import type {
   ToolDefinition,
   ToolHandler,
@@ -52,10 +53,33 @@ function createHandHandler(): ToolHandler {
 
 // ─── Options UI ───────────────────────────────────────────────────────────────
 
-function HandOptions(_props: {
+function HandOptions({
+  styles,
+}: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  return <></>;
+  const [{ x, y }, setOffset] = useState({
+    x: viewportCommands.scrollLeft,
+    y: viewportCommands.scrollTop,
+  });
+  useEffect(() => {
+    const sync = (): void =>
+      setOffset({
+        x: viewportCommands.scrollLeft,
+        y: viewportCommands.scrollTop,
+      });
+    viewportCommands.subscribeScroll(sync);
+    sync();
+    return () => viewportCommands.unsubscribeScroll(sync);
+  }, []);
+  return (
+    <>
+      <label className={styles.optLabel}>Pan X:</label>
+      <span className={styles.optText}>{Math.round(x)}</span>
+      <label className={styles.optLabel}>Pan Y:</label>
+      <span className={styles.optText}>{Math.round(y)}</span>
+    </>
+  );
 }
 
 // ─── Export ───────────────────────────────────────────────────────────────────
