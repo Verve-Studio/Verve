@@ -8,6 +8,30 @@ import {
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
+const DropShadowIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="7" height="7" rx="0.5" />
+    <rect
+      x="3.5"
+      y="3.5"
+      width="7"
+      height="7"
+      rx="0.5"
+      fill="currentColor"
+      fillOpacity="0.25"
+      strokeOpacity="0.4"
+    />
+  </svg>
+);
+
 
 export interface DropShadowParams {
     /** Shadow color including alpha channel. r/g/b/a are 0–255. Default: { r:0, g:0, b:0, a:255 } */
@@ -308,4 +332,5 @@ export const DropShadowEffect: IPipelineEffect<
   onDestroy: dropShadowCache.onDestroy,
 
   Panel: DropShadowOptions,
+  icon: DropShadowIcon,
 };

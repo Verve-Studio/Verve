@@ -23,6 +23,11 @@ import { cloneStampTool } from "./cloneStamp";
 import { frameTool } from "./frame";
 import { liquifyTool } from "./liquify";
 import { handTool } from "./hand";
+import { blurTool } from "./blur";
+import { sharpenTool } from "./sharpen";
+import { smudgeTool } from "./smudge";
+import { patchTool } from "./patch";
+import { healingBrushTool } from "./healingBrush";
 
 export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   pencil: pencilTool,
@@ -48,6 +53,11 @@ export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
   text: textTool,
   shape: shapeTool,
   liquify: liquifyTool,
+  blur: blurTool,
+  sharpen: sharpenTool,
+  smudge: smudgeTool,
+  patch: patchTool,
+  "healing-brush": healingBrushTool,
   hand: handTool,
   transform: transformTool,
 };

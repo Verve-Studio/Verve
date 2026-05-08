@@ -4,6 +4,22 @@ import { SelectiveColorPanel } from "./SelectiveColorPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const SelectiveColorIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    aria-hidden="true"
+  >
+    <circle cx="4.5" cy="4.5" r="2.8" stroke="#ff6060" />
+    <circle cx="7.5" cy="4.5" r="2.8" stroke="#60d060" />
+    <circle cx="6" cy="7" r="2.8" stroke="#6060ff" />
+  </svg>
+);
+
 
 export interface SelectiveColorParams {
     reds: { cyan: number; magenta: number; yellow: number; black: number };
@@ -110,4 +126,5 @@ export const SelectiveColorEffect: IPipelineEffect<
   },
 
   Panel: SelectiveColorPanel,
+  icon: SelectiveColorIcon,
 };

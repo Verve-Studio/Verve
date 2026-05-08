@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { LensDistortionOptions } from "./LensDistortionOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
 export interface LensDistortionParams {
@@ -99,4 +100,5 @@ export const LensDistortionEffect: IPipelineEffect<
   },
 
   Panel: LensDistortionOptions,
+  icon: DistortionIcon,
 };

@@ -4,6 +4,21 @@ import { ColorVibrancePanel } from "./ColorVibrancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const ColorVibranceIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="1.8" />
+    <circle cx="6" cy="6" r="4" />
+  </svg>
+);
+
 
 export interface ColorVibranceParams {
  vibrance: number; saturation: number
@@ -46,4 +61,5 @@ export const ColorVibranceEffect: IPipelineEffect<
   },
 
   Panel: ColorVibrancePanel,
+  icon: ColorVibranceIcon,
 };

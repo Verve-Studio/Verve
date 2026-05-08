@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { PolarCoordinatesOptions } from "./PolarCoordinatesOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
   /** Photoshop's Polar Coordinates: rect↔polar coordinate conversion. */
@@ -67,4 +68,5 @@ export const PolarCoordinatesEffect: IPipelineEffect<
   },
 
   Panel: PolarCoordinatesOptions,
+  icon: DistortionIcon,
 };

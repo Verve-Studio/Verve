@@ -109,6 +109,154 @@ const Icon = {
       </svg>
     </span>
   ),
+  // Blur: water-droplet shape.
+  blur: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M8 2.5 C 5 6.5, 4 8.5, 4 11 a4 4 0 0 0 8 0 c 0 -2.5 -1 -4.5 -4 -8.5 z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  ),
+  // Sharpen: triangular cone (point up).
+  sharpen: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M8 2.5 L4.5 13.5 L11.5 13.5 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M6.5 9 L9.5 9"
+          stroke="currentColor"
+          strokeWidth="1"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  ),
+  // Healing Brush: classic band-aid (PS-style).
+  healingBrush: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <g transform="rotate(-45 8 8)">
+          {/* Bandage body */}
+          <rect
+            x="2.2"
+            y="6.2"
+            width="11.6"
+            height="3.6"
+            rx="1.2"
+            ry="1.2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          {/* Pad in the middle */}
+          <rect
+            x="6"
+            y="6.6"
+            width="4"
+            height="2.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="0.8"
+            opacity="0.6"
+          />
+          {/* Dots on each end */}
+          <circle cx="3.6" cy="7.4" r="0.4" fill="currentColor" />
+          <circle cx="3.6" cy="8.6" r="0.4" fill="currentColor" />
+          <circle cx="12.4" cy="7.4" r="0.4" fill="currentColor" />
+          <circle cx="12.4" cy="8.6" r="0.4" fill="currentColor" />
+        </g>
+      </svg>
+    </span>
+  ),
+  // Patch: dashed-outline patch shape (selection rect with stitched edge).
+  patch: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M3 5 L3 13 L11 13 L13 11 L13 3 L5 3 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+          strokeDasharray="1.6 1.6"
+        />
+        <path
+          d="M5 3 L3 5 M11 13 L13 11"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  ),
+  // Smudge: hand with extended pointing finger pushing leftward (PS-style).
+  smudge: (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        {/* Extended index finger pointing up-left */}
+        <path
+          d="M2 7.5 L7 5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          fill="none"
+        />
+        {/* Hand body */}
+        <path
+          d="M7 5
+             C 7 3.6, 8 3, 8.7 3
+             C 9.4 3, 10 3.6, 10 4.3
+             L 10 6.5
+             C 10.6 6.3, 11.2 6.6, 11.3 7.2
+             L 11.5 8
+             C 12.1 7.9, 12.7 8.3, 12.7 8.9
+             L 12.7 11.5
+             C 12.7 12.6, 11.8 13.5, 10.7 13.5
+             L 8.5 13.5
+             C 7.4 13.5, 6.5 12.6, 6.5 11.5
+             L 6.5 7.5
+             C 6.5 6.5, 6.7 5.7, 7 5
+             Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  ),
   // Liquify: stylised swirl indicating distortion.
   liquify: (
     <span style={{ display: "block", width: "100%", height: "100%" }}>
@@ -325,8 +473,14 @@ const TOOL_GRID: ToolGrid = [
       shortcut: "S",
       icon: Icon.cloneStamp,
     },
-    null,
+    {
+      id: "healing-brush",
+      label: "Healing Brush",
+      shortcut: "J",
+      icon: Icon.healingBrush,
+    },
   ],
+  [{ id: "patch", label: "Patch", shortcut: "J", icon: Icon.patch }, null],
   // group 5 – fills
   [
     { id: "fill", label: "Paint Bucket", shortcut: "G", icon: Icon.fill },
@@ -336,6 +490,15 @@ const TOOL_GRID: ToolGrid = [
   [
     { id: "dodge", label: "Dodge", shortcut: "O", icon: Icon.dodge },
     { id: "burn", label: "Burn", shortcut: "O", icon: Icon.burn },
+  ],
+  // group 6b – local effect brushes
+  [
+    { id: "blur", label: "Blur", shortcut: "R", icon: Icon.blur },
+    { id: "sharpen", label: "Sharpen", shortcut: "R", icon: Icon.sharpen },
+  ],
+  [
+    { id: "smudge", label: "Smudge", shortcut: "R", icon: Icon.smudge },
+    null,
   ],
   // group 7 – vector
   [
@@ -362,6 +525,11 @@ const PIXEL_ONLY_TOOLS = new Set<Tool>([
   "dodge",
   "burn",
   "liquify",
+  "blur",
+  "sharpen",
+  "smudge",
+  "patch",
+  "healing-brush",
 ]);
 
 /** Tools that have no indexed8 implementation. */
@@ -374,6 +542,12 @@ const INDEXED8_UNSUPPORTED_TOOLS = new Set<Tool>([
   "text",
   "shape",
   "frame",
+  "blur",
+  "sharpen",
+  "smudge",
+  "liquify",
+  "patch",
+  "healing-brush",
 ]);
 
 // ─── Component ────────────────────────────────────────────────────────────────

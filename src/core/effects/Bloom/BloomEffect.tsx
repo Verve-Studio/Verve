@@ -11,6 +11,22 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
+const BloomIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="6" r="3" opacity="0.6" />
+    <circle cx="6" cy="6" r="4.5" opacity="0.3" />
+  </svg>
+);
+
 
 export interface BloomParams {
     threshold: number;
@@ -250,6 +266,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
   },
 
   Panel: BloomOptions,
+  icon: BloomIcon,
 };
 
 /** Exported so HalationEffect (and friends) can reuse the composite pipeline. */

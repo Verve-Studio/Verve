@@ -4,6 +4,22 @@ import { BrightnessContrastPanel } from "./BrightnessContrastPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const BrightnessContrastIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="2" />
+    <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+  </svg>
+);
+
 
 export interface BrightnessContrastParams {
  brightness: number; contrast: number
@@ -49,4 +65,5 @@ export const BrightnessContrastEffect: IPipelineEffect<
   },
 
   Panel: BrightnessContrastPanel,
+  icon: BrightnessContrastIcon,
 };

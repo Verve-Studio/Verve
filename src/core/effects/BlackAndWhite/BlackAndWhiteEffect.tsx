@@ -4,6 +4,20 @@ import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const BlackAndWhiteIcon = (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+    <path d="M6 1.5 A4.5 4.5 0 0 0 6 10.5 Z" fill="currentColor" />
+    <circle
+      cx="6"
+      cy="6"
+      r="4.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+  </svg>
+);
+
 
 export interface BlackAndWhiteParams {
     reds: number;
@@ -68,4 +82,5 @@ export const BlackAndWhiteEffect: IPipelineEffect<
   },
 
   Panel: BlackAndWhitePanel,
+  icon: BlackAndWhiteIcon,
 };

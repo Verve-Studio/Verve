@@ -8,6 +8,24 @@ import {
 import { CurvesPanel } from "./CurvesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
+
+const CurvesIcon = (
+  <svg
+    viewBox="0 0 12 12"
+    fill="none"
+    width="12"
+    height="12"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M1.5 9.5 C3.2 9.5 3.9 5.8 5.7 5.8 C7 5.8 7.2 7.4 8.7 7.4 C10 7.4 10.5 3.2 10.5 2.2" />
+    <circle cx="1.5" cy="9.5" r="0.8" fill="currentColor" stroke="none" />
+    <circle cx="10.5" cy="2.2" r="0.8" fill="currentColor" stroke="none" />
+  </svg>
+);
 import {
   createTrackedTexture,
   destroyTrackedTexture,
@@ -162,4 +180,5 @@ export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
   },
 
   Panel: CurvesPanel,
+  icon: CurvesIcon,
 };

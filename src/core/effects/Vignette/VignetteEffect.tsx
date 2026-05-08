@@ -4,6 +4,41 @@ import { VignetteOptions } from "./VignetteOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const VignetteIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    aria-hidden="true"
+  >
+    <defs>
+      <radialGradient id="vignette-grad" cx="0.5" cy="0.5" r="0.55">
+        <stop offset="0.45" stopColor="#d4d4d4" stopOpacity="0" />
+        <stop offset="1" stopColor="#000000" stopOpacity="0.95" />
+      </radialGradient>
+    </defs>
+    <rect
+      x="1"
+      y="1"
+      width="10"
+      height="10"
+      rx="1.5"
+      stroke="currentColor"
+      strokeWidth="1"
+      fill="#d4d4d4"
+    />
+    <rect
+      x="1"
+      y="1"
+      width="10"
+      height="10"
+      rx="1.5"
+      fill="url(#vignette-grad)"
+    />
+  </svg>
+);
+
 
 export interface VignetteParams {
     /** "ellipse" — soft elliptical falloff; "rectangle" — super-ellipse with controllable corners. */
@@ -79,4 +114,5 @@ export const VignetteEffect: IPipelineEffect<
   },
 
   Panel: VignetteOptions,
+  icon: VignetteIcon,
 };

@@ -8,6 +8,21 @@ import {
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
+const OutlineIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <rect x="3" y="3" width="6" height="6" />
+    <rect x="1" y="1" width="10" height="10" />
+  </svg>
+);
+
 
 export interface OutlineParams {
     /** Stroke color including alpha. r/g/b/a are 0–255. Default: { r:255, g:0, b:0, a:255 } */
@@ -265,4 +280,5 @@ export const OutlineEffect: IPipelineEffect<
   },
 
   Panel: OutlineOptions,
+  icon: OutlineIcon,
 };

@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { RippleOptions } from "./RippleOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
   /** Sinusoidal Ripple displacement (Photoshop's Distort → Ripple). */
@@ -67,4 +68,5 @@ export const RippleEffect: IPipelineEffect<RippleEffectLayer, RippleOp> = {
   },
 
   Panel: RippleOptions,
+  icon: DistortionIcon,
 };

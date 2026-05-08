@@ -5,6 +5,21 @@ import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
+const ReduceColorsIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="4" height="4" rx="0.5" />
+    <rect x="6.5" y="1.5" width="4" height="4" rx="0.5" />
+    <rect x="1.5" y="6.5" width="4" height="4" rx="0.5" />
+    <rect x="6.5" y="6.5" width="4" height="4" rx="0.5" />
+  </svg>
+);
+
 
 export interface ReduceColorsParams {
     mode: "reduce" | "palette";
@@ -120,4 +135,5 @@ export const ReduceColorsEffect: IPipelineEffect<
   },
 
   Panel: ReduceColorsPanel,
+  icon: ReduceColorsIcon,
 };

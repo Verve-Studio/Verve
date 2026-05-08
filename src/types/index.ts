@@ -41,6 +41,11 @@ export type Tool =
   | "text"
   | "shape"
   | "liquify"
+  | "blur"
+  | "sharpen"
+  | "smudge"
+  | "patch"
+  | "healing-brush"
   | "hand"
   | "zoom"
   | "transform";

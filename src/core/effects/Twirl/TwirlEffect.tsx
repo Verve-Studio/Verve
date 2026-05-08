@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { TwirlOptions } from "./TwirlOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
   /** Twirl — angular rotation that decays from a centre point. */
@@ -66,4 +67,5 @@ export const TwirlEffect: IPipelineEffect<TwirlEffectLayer, TwirlOp> = {
   },
 
   Panel: TwirlOptions,
+  icon: DistortionIcon,
 };

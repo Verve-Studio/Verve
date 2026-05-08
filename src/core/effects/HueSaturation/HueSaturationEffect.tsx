@@ -4,6 +4,18 @@ import { HueSaturationPanel } from "./HueSaturationPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const HueSaturationIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="4.5" />
+  </svg>
+);
+
 
 export interface HueSaturationParams {
  hue: number; saturation: number; lightness: number
@@ -51,4 +63,5 @@ export const HueSaturationEffect: IPipelineEffect<
   },
 
   Panel: HueSaturationPanel,
+  icon: HueSaturationIcon,
 };

@@ -4,6 +4,26 @@ import { HalftoneOptions } from "./HalftoneOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const HalftoneIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <circle cx="2.5" cy="2.5" r="1.5" />
+    <circle cx="6" cy="2" r="1" />
+    <circle cx="9.5" cy="2.5" r="1.5" />
+    <circle cx="2" cy="6" r="1" />
+    <circle cx="6" cy="6" r="2" />
+    <circle cx="10" cy="6" r="1" />
+    <circle cx="2.5" cy="9.5" r="1.5" />
+    <circle cx="6" cy="10" r="1" />
+    <circle cx="9.5" cy="9.5" r="1.5" />
+  </svg>
+);
+
 
 export interface HalftoneParams {
     mode: "color" | "bw";
@@ -67,4 +87,5 @@ export const HalftoneEffect: IPipelineEffect<
   },
 
   Panel: HalftoneOptions,
+  icon: HalftoneIcon,
 };

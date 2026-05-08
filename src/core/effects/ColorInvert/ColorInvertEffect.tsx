@@ -4,6 +4,26 @@ import { InvertPanel } from "./InvertPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
 
+const ColorInvertIcon = (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+    <path d="M6 1.5 A4.5 4.5 0 0 1 6 10.5 Z" fill="currentColor" />
+    <path
+      d="M6 1.5 A4.5 4.5 0 0 0 6 10.5 Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+    <circle
+      cx="6"
+      cy="6"
+      r="4.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+  </svg>
+);
+
 
 export type ColorInvertParams = Record<never, never>;
 
@@ -51,4 +71,5 @@ export const ColorInvertEffect: IPipelineEffect<
   },
 
   Panel: InvertPanel,
+  icon: ColorInvertIcon,
 };

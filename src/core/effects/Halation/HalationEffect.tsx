@@ -9,6 +9,34 @@ import {
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
+const HalationIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="1.8" fill="#e05a20" />
+    <circle
+      cx="6"
+      cy="6"
+      r="3.4"
+      stroke="#e05a20"
+      strokeWidth="0.9"
+      opacity="0.55"
+    />
+    <circle
+      cx="6"
+      cy="6"
+      r="5"
+      stroke="#e05a20"
+      strokeWidth="0.7"
+      opacity="0.25"
+    />
+  </svg>
+);
+
 
 export interface HalationParams {
     threshold: number; // 0–1: luminance level above which halation activates
@@ -175,4 +203,5 @@ export const HalationEffect: IPipelineEffect<
   },
 
   Panel: HalationOptions,
+  icon: HalationIcon,
 };

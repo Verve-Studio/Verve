@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { DisplaceOptions } from "./DisplaceOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
   /** Displace — procedural noise-driven pixel displacement. Photoshop's
@@ -73,4 +74,5 @@ export const DisplaceEffect: IPipelineEffect<
   },
 
   Panel: DisplaceOptions,
+  icon: DistortionIcon,
 };

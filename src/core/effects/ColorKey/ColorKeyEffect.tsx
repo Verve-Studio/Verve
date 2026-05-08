@@ -4,6 +4,23 @@ import { ColorKeyPanel } from "./ColorKeyPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const ColorKeyIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="2.5" width="9" height="7" rx="0.5" />
+    <circle cx="6" cy="6" r="2" />
+    <line x1="1.5" y1="6" x2="4" y2="6" strokeOpacity="0.5" />
+    <line x1="8" y1="6" x2="10.5" y2="6" strokeOpacity="0.5" />
+  </svg>
+);
+
 
 export interface ColorKeyParams {
     /** Key color as sRGB bytes (0–255). */
@@ -68,4 +85,5 @@ export const ColorKeyEffect: IPipelineEffect<
   },
 
   Panel: ColorKeyPanel,
+  icon: ColorKeyIcon,
 };

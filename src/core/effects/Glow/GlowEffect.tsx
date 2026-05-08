@@ -4,6 +4,29 @@ import { GlowOptions } from "./GlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { encodeDropShadowPass } from "../DropShadow/DropShadowEffect";
 
+const GlowIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    aria-hidden="true"
+  >
+    <circle
+      cx="6"
+      cy="6"
+      r="1.5"
+      fill="currentColor"
+      stroke="none"
+      opacity="0.9"
+    />
+    <circle cx="6" cy="6" r="3" opacity="0.55" />
+    <circle cx="6" cy="6" r="4.8" opacity="0.25" />
+  </svg>
+);
+
 
 export interface GlowParams {
     /** Glow color including alpha channel. r/g/b/a are 0–255. Default: { r:255, g:255, b:153, a:255 } */
@@ -70,4 +93,5 @@ export const GlowEffect: IPipelineEffect<GlowEffectLayer, GlowOp> = {
   // No onFrameEnd / onDestroy here — DropShadowEffect owns the shared cache lifecycle.
 
   Panel: GlowOptions,
+  icon: GlowIcon,
 };

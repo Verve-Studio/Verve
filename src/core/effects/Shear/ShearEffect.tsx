@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { ShearOptions } from "./ShearOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
   /** Shear — sinusoidal or linear horizontal/vertical pixel shifting. */
@@ -67,4 +68,5 @@ export const ShearEffect: IPipelineEffect<ShearEffectLayer, ShearOp> = {
   },
 
   Panel: ShearOptions,
+  icon: DistortionIcon,
 };

@@ -30,6 +30,10 @@ import {
 } from "@/tools/pencil";
 import { eraserOptions } from "@/tools/eraser";
 import { liquifyOptions } from "@/tools/liquify";
+import { blurOptions } from "@/tools/blur";
+import { sharpenOptions } from "@/tools/sharpen";
+import { smudgeOptions } from "@/tools/smudge";
+import { healingBrushOptions } from "@/tools/healingBrush";
 import { cloneStampOptions } from "@/tools/cloneStamp";
 import { dodgeOptions, burnOptions } from "@/tools/dodge";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
@@ -1398,7 +1402,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   useEffect(() => {
     if (!isActive) return;
     const sel = state.activeTool;
-    if (sel !== "select" && sel !== "lasso" && sel !== "magic-wand") {
+    if (
+      sel !== "select" &&
+      sel !== "lasso" &&
+      sel !== "magic-wand" &&
+      sel !== "patch" &&
+      sel !== "healing-brush"
+    ) {
       selectionStore.setPending(null);
     }
     toolHandlerRef.current = TOOL_REGISTRY[state.activeTool].createHandler();
@@ -1413,7 +1423,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         sel !== "clone-stamp" &&
         sel !== "dodge" &&
         sel !== "burn" &&
-        sel !== "liquify"
+        sel !== "liquify" &&
+        sel !== "blur" &&
+        sel !== "sharpen" &&
+        sel !== "smudge" &&
+        sel !== "healing-brush"
       ) {
         brushCursorRef.current.style.display = "none";
       }
@@ -1780,7 +1794,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     },
     onHover: (pos) => {
       if (isActive) cursorStore.setPosition(pos.x, pos.y);
-      // Update circle cursor for brush / eraser / clone-stamp / dodge / burn / liquify
+      // Update circle cursor for brush / eraser / clone-stamp / dodge / burn / liquify / blur / sharpen / smudge
       const tool = state.activeTool;
       if (
         (tool === "brush" ||
@@ -1788,7 +1802,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           tool === "clone-stamp" ||
           tool === "dodge" ||
           tool === "burn" ||
-          tool === "liquify") &&
+          tool === "liquify" ||
+          tool === "blur" ||
+          tool === "sharpen" ||
+          tool === "smudge" ||
+          tool === "healing-brush") &&
         brushCursorRef.current
       ) {
         const dpr = window.devicePixelRatio;
@@ -1804,7 +1822,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                   ? burnOptions.size
                   : tool === "liquify"
                     ? liquifyOptions.size
-                    : cloneStampOptions.size;
+                    : tool === "blur"
+                      ? blurOptions.size
+                      : tool === "sharpen"
+                        ? sharpenOptions.size
+                        : tool === "smudge"
+                          ? smudgeOptions.size
+                          : tool === "healing-brush"
+                            ? healingBrushOptions.size
+                            : cloneStampOptions.size;
         const r = Math.max(1, ((size / 2) * zoom) / dpr);
         const cx = (pos.x * zoom) / dpr;
         const cy = (pos.y * zoom) / dpr;
@@ -1939,7 +1965,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           tool === "clone-stamp" ||
           tool === "dodge" ||
           tool === "burn" ||
-          tool === "liquify") &&
+          tool === "liquify" ||
+          tool === "blur" ||
+          tool === "sharpen" ||
+          tool === "smudge" ||
+          tool === "healing-brush") &&
         brushCursorRef.current
       ) {
         const dpr = window.devicePixelRatio;
@@ -1955,7 +1985,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                   ? burnOptions.size
                   : tool === "liquify"
                     ? liquifyOptions.size
-                    : cloneStampOptions.size;
+                    : tool === "blur"
+                      ? blurOptions.size
+                      : tool === "sharpen"
+                        ? sharpenOptions.size
+                        : tool === "smudge"
+                          ? smudgeOptions.size
+                          : tool === "healing-brush"
+                            ? healingBrushOptions.size
+                            : cloneStampOptions.size;
         const r = Math.max(1, ((size / 2) * zoom) / dpr);
         // In tiled mode, coordinates are in [-W, 2W). Map to wrapper-space:
         const cx = ((pos.x + width) * zoom) / dpr;

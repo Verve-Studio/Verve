@@ -3,6 +3,7 @@ import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer"
 import { PinchOptions } from "./PinchOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { DistortionIcon } from "../_shared/icons";
 
 
   /** Photoshop-style Pinch — pulls pixels toward (positive amount) or pushes
@@ -67,4 +68,5 @@ export const PinchEffect: IPipelineEffect<PinchEffectLayer, PinchOp> = {
   },
 
   Panel: PinchOptions,
+  icon: DistortionIcon,
 };

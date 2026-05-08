@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactElement } from "react";
 import type { RGBAColor } from "@/types";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import type {
@@ -90,6 +90,10 @@ export interface IPipelineEffect<
 
   /** Right-side panel component shown when this layer is active. */
   readonly Panel: ComponentType<PanelProps<L>>;
+
+  /** SVG icon shown in the panel header. Optional — falls back to a generic
+   *  effect icon if omitted. */
+  readonly icon?: ReactElement;
 
   /**
    * Optional. Called once per frame after encode + submit. Effects with

@@ -4,6 +4,35 @@ import { ChromaticAberrationOptions } from "./ChromaticAberrationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const ChromaticAberrationIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <circle
+      cx="4.5"
+      cy="6"
+      r="2.5"
+      stroke="#ff5555"
+      strokeWidth="1"
+      opacity="0.85"
+    />
+    <circle
+      cx="7.5"
+      cy="6"
+      r="2.5"
+      stroke="#55aaff"
+      strokeWidth="1"
+      opacity="0.85"
+    />
+  </svg>
+);
+
 
 export interface ChromaticAberrationParams {
     type: "radial" | "directional";
@@ -56,4 +85,5 @@ export const ChromaticAberrationEffect: IPipelineEffect<
   },
 
   Panel: ChromaticAberrationOptions,
+  icon: ChromaticAberrationIcon,
 };

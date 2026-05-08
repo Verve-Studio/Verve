@@ -4,6 +4,23 @@ import { AutoMatchPanel } from "./AutoMatchPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const AutoMatchIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+    <path d="M3 8 L5 5 L7 7 L9 3" />
+    <circle cx="5" cy="5" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 
   /**
    * Per-source statistics captured by the Auto Match analysis pass. Each
@@ -139,4 +156,5 @@ export const AutoMatchEffect: IPipelineEffect<
   },
 
   Panel: AutoMatchPanel,
+  icon: AutoMatchIcon,
 };

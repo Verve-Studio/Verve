@@ -4,6 +4,26 @@ import { ChannelMixerPanel } from "./ChannelMixerPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const ChannelMixerIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <line x1="3" y1="2" x2="3" y2="10" stroke="#ff6060" />
+    <line x1="6" y1="2" x2="6" y2="10" stroke="#60d060" />
+    <line x1="9" y1="2" x2="9" y2="10" stroke="#6060ff" />
+    <circle cx="3" cy="4" r="1" fill="#ff6060" stroke="none" />
+    <circle cx="6" cy="7" r="1" fill="#60d060" stroke="none" />
+    <circle cx="9" cy="5" r="1" fill="#6060ff" stroke="none" />
+  </svg>
+);
+
 
 export interface ChannelMixerParams {
     monochrome: boolean;
@@ -83,4 +103,5 @@ export const ChannelMixerEffect: IPipelineEffect<
   },
 
   Panel: ChannelMixerPanel,
+  icon: ChannelMixerIcon,
 };

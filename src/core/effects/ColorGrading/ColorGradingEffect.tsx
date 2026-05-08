@@ -4,6 +4,23 @@ import { ColorGradingPanel } from "./ColorGradingPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
+const ColorGradingIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <circle cx="3" cy="6" r="1.8" />
+    <circle cx="9" cy="6" r="1.8" />
+    <circle cx="6" cy="3" r="1.8" />
+    <circle cx="6" cy="9" r="1.8" />
+  </svg>
+);
+
 
 export interface ColorGradingParams {
     lift: ColorGradingWheelParams;
@@ -111,4 +128,5 @@ export const ColorGradingEffect: IPipelineEffect<
   },
 
   Panel: ColorGradingPanel,
+  icon: ColorGradingIcon,
 };

@@ -5,6 +5,25 @@ import type { IPipelineEffect } from "../IPipelineEffect";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
+const ColorDitheringIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <rect x="0" y="0" width="3" height="3" />
+    <rect x="6" y="0" width="3" height="3" />
+    <rect x="3" y="3" width="3" height="3" />
+    <rect x="9" y="3" width="3" height="3" />
+    <rect x="0" y="6" width="3" height="3" />
+    <rect x="6" y="6" width="3" height="3" />
+    <rect x="3" y="9" width="3" height="3" />
+    <rect x="9" y="9" width="3" height="3" />
+  </svg>
+);
+
 
 export interface ColorDitheringParams {
     style: "bayer4" | "bayer8";
@@ -101,4 +120,5 @@ export const ColorDitheringEffect: IPipelineEffect<
   },
 
   Panel: ColorDitheringPanel,
+  icon: ColorDitheringIcon,
 };
