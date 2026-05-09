@@ -374,8 +374,10 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         item('About Verve', 'about'),
         item('Keyboard Shortcuts', 'keyboardShortcuts'),
         item('System Information', 'systemInfo'),
-        sep(),
-        item('Open DevTools', 'openDevTools'),
+        // DevTools is a development convenience — hide it from packaged builds.
+        ...(app.isPackaged
+          ? []
+          : [sep(), item('Open DevTools', 'openDevTools')]),
       ],
     },
   ]

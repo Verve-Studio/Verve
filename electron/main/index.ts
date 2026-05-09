@@ -5,6 +5,48 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 // Set the app name early so the macOS menu bar shows "Verve" instead of "Electron".
 app.setName('Verve')
+
+// Disable Chromium subsystems we never use. Switches must be appended before
+// `app.whenReady()`.
+//
+// MediaRouter / DialMediaRouteProvider / CastMediaRouteProvider — Cast and
+//   Presentation APIs. The router probes mDNS at startup on macOS, adding
+//   launch latency and triggering a "wants to find devices on your local
+//   network" permission prompt.
+// AutofillServerCommunication — Chromium periodically POSTs form-field
+//   metadata to Google's autofill servers. An image editor has no forms
+//   that benefit, and the requests are pure background traffic.
+// OptimizationHints — Chrome's Optimization Guide service. Downloads ML
+//   model + heuristic blobs from optimizationguide-pa.googleapis.com used
+//   by features like Lite Mode and prefetch hints. None apply to a desktop
+//   editor; disabling avoids the periodic background fetches.
+// Translate — built-in page-translation UI; meaningless in an app shell.
+// InterestFeedContentSuggestions / SafetyTip / PrivacySandboxSettings4 —
+//   consumer-Chrome features (suggested-content feed, deceptive-site tip,
+//   ad-topics settings) with no place in an Electron desktop app.
+// SpareRendererForSitePerProcess — Chromium keeps a spare renderer process
+//   warm for fast cross-origin navigation. Costs ~50–80 MB and we never
+//   navigate between origins (the renderer is a single SPA).
+// BackForwardCache — caches whole document trees so back/forward navigation
+//   is instant. Useless for a single-SPA Electron app that never navigates;
+//   disabling frees the cached-page memory and skips a freeze/restore path.
+app.commandLine.appendSwitch(
+  'disable-features',
+  [
+    'MediaRouter',
+    'DialMediaRouteProvider',
+    'CastMediaRouteProvider',
+    'AutofillServerCommunication',
+    'OptimizationHints',
+    'Translate',
+    'InterestFeedContentSuggestions',
+    'SafetyTip',
+    'PrivacySandboxSettings4',
+    'SpareRendererForSitePerProcess',
+    'BackForwardCache',
+  ].join(','),
+)
+
 import { registerIpcHandlers } from './ipc'
 import { registerPreferencesHandlers } from './preferences'
 import { buildAndSetMacMenu, setMacMenuItemEnabled, setMacMenuItemChecked } from './menu'
@@ -50,7 +92,20 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // WebSQL is a deprecated, removed-from-the-spec storage API. We don't
+      // use it; disabling drops the SQLite binding from the renderer.
+      enableWebSQL: false,
+      // Verve renders exclusively through WebGPU (`src/graphics/webgpu/`).
+      // Turning off WebGL drops ANGLE / GL initialisation from the renderer.
+      webgl: false,
+      // No long-form text inputs in the app — only short form fields (layer
+      // names, numeric inputs, etc). Disabling skips spellchecker dictionary
+      // downloads and keeps the renderer slimmer.
+      spellcheck: false,
+      // Pepper plugins (built-in PDF viewer, Flash). No <embed>/<object>/PDF
+      // usage in the codebase — drops the plugin host from the renderer.
+      plugins: false
     }
   })
 

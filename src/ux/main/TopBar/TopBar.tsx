@@ -760,8 +760,13 @@ export function TopBar({
             action: onKeyboardShortcuts,
           },
           { label: "System Information", action: onSystemInfo },
-          { separator: true, label: "" },
-          { label: "Open DevTools", action: onDebug },
+          // DevTools is a development convenience — hide it from packaged builds.
+          ...(import.meta.env.PROD
+            ? []
+            : [
+                { separator: true, label: "" },
+                { label: "Open DevTools", action: onDebug },
+              ]),
         ],
       },
     ],
@@ -906,30 +911,32 @@ export function TopBar({
         </div>
       )}
 
-      {/* Right: debug button */}
-      <div className={styles.right}>
-        <button
-          className={styles.debugBtn}
-          onClick={onDebug}
-          title="Open DevTools"
-          aria-label="Open DevTools"
-        >
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            width="14"
-            height="14"
+      {/* Right: debug button — development only. */}
+      {!import.meta.env.PROD && (
+        <div className={styles.right}>
+          <button
+            className={styles.debugBtn}
+            onClick={onDebug}
+            title="Open DevTools"
+            aria-label="Open DevTools"
           >
-            <polyline points="4,6 1,8 4,10" />
-            <polyline points="12,6 15,8 12,10" />
-            <line x1="9" y1="3" x2="7" y2="13" />
-          </svg>
-        </button>
-      </div>
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              width="14"
+              height="14"
+            >
+              <polyline points="4,6 1,8 4,10" />
+              <polyline points="12,6 15,8 12,10" />
+              <line x1="9" y1="3" x2="7" y2="13" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
