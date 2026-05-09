@@ -77,10 +77,10 @@ export function paletteCyclePeriod(swatchGroups: readonly SwatchGroup[]): number
  *  is left untouched (the cycle is virtual).
  *
  *  For a group whose `swatchIndices = [a, b, c, d]`, advancing one step
- *  forward shifts each colour to the next slot — the colour previously
- *  shown at slot `a` is shown at slot `b`, and the colour from slot `d`
- *  wraps to slot `a`. Negative `stepsPerStep` cycles in the opposite
- *  direction. */
+ *  forward makes a pixel painted with index `a` display the colour that
+ *  was originally at slot `b` (i.e. the "next" colour in the group),
+ *  index `b` shows `c`, …, and index `d` wraps around to show `a`.
+ *  Negative `stepsPerStep` cycles in the opposite direction. */
 export function computeEffectivePalette(
   swatches: readonly RGBAColor[],
   swatchGroups: readonly SwatchGroup[],
@@ -105,7 +105,7 @@ export function computeEffectivePalette(
     const original = indices.map((i) => swatches[i]);
     for (let k = 0; k < n; k++) {
       const dstSlot = indices[k];
-      const srcK = (k - shift + n * n) % n;
+      const srcK = (k + shift) % n;
       const colour = original[srcK];
       if (colour) out[dstSlot] = colour;
     }
