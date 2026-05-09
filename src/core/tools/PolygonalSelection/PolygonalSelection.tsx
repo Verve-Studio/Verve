@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import type {
   ToolHandler,
@@ -12,6 +12,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import polygonSelectIconSvg from "./polygon-select.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Module-level options ──────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ export const polygonalSelectionOptions = {
 const SNAP_RADIUS_PX = 12;
 
 function isNearOrigin(x: number, y: number, zoom: number): boolean {
-  const store = polygonalSelectionStore;
+  const store = activeScope().polygonalSelection;
   if (store.vertices.length < 3) return false;
   const { x: ox, y: oy } = store.vertices[0];
   const dpr = window.devicePixelRatio;
@@ -45,7 +46,7 @@ function createPolygonalSelectionHandler(): ToolHandler {
       const now = timeStamp;
       const isDoubleClick = now - lastClickTime < 300;
       lastClickTime = now;
-      const store = polygonalSelectionStore;
+      const store = activeScope().polygonalSelection;
 
       if (!store.isActive) {
         const mode: SelectionMode =
@@ -80,13 +81,13 @@ function createPolygonalSelectionHandler(): ToolHandler {
     },
 
     onPointerMove({ x, y }: ToolPointerPos, ctx: ToolContext) {
-      if (!polygonalSelectionStore.isActive) return;
-      polygonalSelectionStore.setCursor({ x, y }, isNearOrigin(x, y, ctx.zoom));
+      if (!activeScope().polygonalSelection.isActive) return;
+      activeScope().polygonalSelection.setCursor({ x, y }, isNearOrigin(x, y, ctx.zoom));
     },
 
     onHover({ x, y }: ToolPointerPos, ctx: ToolContext) {
-      if (!polygonalSelectionStore.isActive) return;
-      polygonalSelectionStore.setCursor({ x, y }, isNearOrigin(x, y, ctx.zoom));
+      if (!activeScope().polygonalSelection.isActive) return;
+      activeScope().polygonalSelection.setCursor({ x, y }, isNearOrigin(x, y, ctx.zoom));
     },
 
     onLeave() {

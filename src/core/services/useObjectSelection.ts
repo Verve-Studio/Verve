@@ -2,14 +2,15 @@ import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { objectSelectionStore } from "@/core/store/objectSelectionStore";
+
 import {
   objectSelectionCallbacks,
   objectSelectionOptions,
 } from "../tools/ObjectSelection/ObjectSelection";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import { grabCutHybrid } from "@/wasm/grabcutHybrid";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,7 @@ export function useObjectSelection({
   // ── Cache invalidation ─────────────────────────────────────────────────────
 
   const invalidateSamCache = useCallback((): void => {
-    objectSelectionStore.invalidateCache();
+    activeScope().objectSelection.invalidateCache();
     void window.api.sam.invalidateCache();
   }, []);
 
@@ -219,7 +220,7 @@ export function useObjectSelection({
       prevTabIdRef.current = activeTabId;
       hasSavedMaskRef.current = false;
       savedMaskRef.current = null;
-      objectSelectionStore.reset();
+      activeScope().objectSelection.reset();
       invalidateSamCache();
     }
   }, [activeTabId, invalidateSamCache]);
@@ -236,36 +237,36 @@ export function useObjectSelection({
   // ── Model check on mount ───────────────────────────────────────────────────
 
   useEffect(() => {
-    objectSelectionStore.modelStatus = "checking";
-    objectSelectionStore.notify();
+    activeScope().objectSelection.modelStatus = "checking";
+    activeScope().objectSelection.notify();
     window.api.sam
       .checkModel()
       .then((status) => {
-        objectSelectionStore.modelStatus =
+        activeScope().objectSelection.modelStatus =
           status.encoderReady && status.decoderReady ? "ready" : "error";
-        objectSelectionStore.notify();
+        activeScope().objectSelection.notify();
       })
       .catch(() => {
-        objectSelectionStore.modelStatus = "error";
-        objectSelectionStore.notify();
+        activeScope().objectSelection.modelStatus = "error";
+        activeScope().objectSelection.notify();
       });
   }, []);
   // ── Matting model check on mount ─────────────────────────────────────
 
   useEffect(() => {
-    objectSelectionStore.mattingModelStatus = "checking";
-    objectSelectionStore.notify();
+    activeScope().objectSelection.mattingModelStatus = "checking";
+    activeScope().objectSelection.notify();
     window.api.matting
       .checkModel()
       .then((status) => {
-        objectSelectionStore.mattingModelStatus = status.ready
+        activeScope().objectSelection.mattingModelStatus = status.ready
           ? "ready"
           : "error";
-        objectSelectionStore.notify();
+        activeScope().objectSelection.notify();
       })
       .catch(() => {
-        objectSelectionStore.mattingModelStatus = "error";
-        objectSelectionStore.notify();
+        activeScope().objectSelection.mattingModelStatus = "error";
+        activeScope().objectSelection.notify();
       });
   }, []);
   // ── Core inference pipeline ────────────────────────────────────────────────
@@ -281,20 +282,19 @@ export function useObjectSelection({
 
     // Save original selection before first inference in this session
     if (!hasSavedMaskRef.current) {
-      savedMaskRef.current = selectionStore.mask
-        ? new Uint8Array(selectionStore.mask)
-        : null;
+      const mask = activeScope().selection.mask;
+      savedMaskRef.current = mask ? new Uint8Array(mask) : null;
       hasSavedMaskRef.current = true;
     }
 
     isRunningRef.current = true;
-    objectSelectionStore.inferenceStatus = "running";
-    objectSelectionStore.notify();
+    activeScope().objectSelection.inferenceStatus = "running";
+    activeScope().objectSelection.notify();
 
     try {
       // Encode image if cache is stale
       if (
-        encodedCacheVersionRef.current !== objectSelectionStore.cacheVersion
+        encodedCacheVersionRef.current !== activeScope().objectSelection.cacheVersion
       ) {
         const {
           data: rgba,
@@ -303,10 +303,10 @@ export function useObjectSelection({
         } = await handle.rasterizeComposite("sample");
         const data1024 = await downsampleTo1024(rgba as Uint8Array, rw, rh);
         await window.api.sam.encodeImage(data1024, width, height);
-        encodedCacheVersionRef.current = objectSelectionStore.cacheVersion;
+        encodedCacheVersionRef.current = activeScope().objectSelection.cacheVersion;
       }
 
-      const store = objectSelectionStore;
+      const store = activeScope().objectSelection;
       const boxPrompt = store.promptMode === "rect" ? store.dragRect : null;
       const decodeResult = await window.api.sam.decodeMask({
         embeddings: null,
@@ -349,8 +349,8 @@ export function useObjectSelection({
         seeds,
       );
 
-      objectSelectionStore.pendingMask = upsampled;
-      objectSelectionStore.pendingMaskRefined = false;
+      activeScope().objectSelection.pendingMask = upsampled;
+      activeScope().objectSelection.pendingMaskRefined = false;
 
       // Live preview: show the combined result for the current mode so the user
       // sees exactly what will be committed. For 'set' just apply directly;
@@ -359,18 +359,18 @@ export function useObjectSelection({
       const { feather, antiAlias } = objectSelectionOptions;
       const previewMode = objectSelectionOptions.mode;
       if (previewMode !== "set" && savedMaskRef.current !== null) {
-        selectionStore.restoreMask(new Uint8Array(savedMaskRef.current));
+        activeScope().selection.restoreMask(new Uint8Array(savedMaskRef.current));
       } else if (previewMode !== "set") {
-        selectionStore.clear();
+        activeScope().selection.clear();
       }
-      selectionStore.setFromSAMMask(upsampled, previewMode, feather, antiAlias);
+      activeScope().selection.setFromSAMMask(upsampled, previewMode, feather, antiAlias);
 
-      objectSelectionStore.inferenceStatus = "idle";
-      objectSelectionStore.notify();
+      activeScope().objectSelection.inferenceStatus = "idle";
+      activeScope().objectSelection.notify();
     } catch (err) {
       console.error("[ObjectSelection] Inference failed:", err);
-      objectSelectionStore.inferenceStatus = "error";
-      objectSelectionStore.notify();
+      activeScope().objectSelection.inferenceStatus = "error";
+      activeScope().objectSelection.notify();
     } finally {
       isRunningRef.current = false;
     }
@@ -388,19 +388,18 @@ export function useObjectSelection({
     } = stateRef.current;
 
     if (!hasSavedMaskRef.current) {
-      savedMaskRef.current = selectionStore.mask
-        ? new Uint8Array(selectionStore.mask)
-        : null;
+      const mask = activeScope().selection.mask;
+      savedMaskRef.current = mask ? new Uint8Array(mask) : null;
       hasSavedMaskRef.current = true;
     }
 
     isRunningRef.current = true;
-    objectSelectionStore.inferenceStatus = "running";
-    objectSelectionStore.notify();
+    activeScope().objectSelection.inferenceStatus = "running";
+    activeScope().objectSelection.notify();
 
     try {
       if (
-        encodedCacheVersionRef.current !== objectSelectionStore.cacheVersion
+        encodedCacheVersionRef.current !== activeScope().objectSelection.cacheVersion
       ) {
         const {
           data: rgba,
@@ -409,7 +408,7 @@ export function useObjectSelection({
         } = await handle.rasterizeComposite("sample");
         const data1024 = await downsampleTo1024(rgba as Uint8Array, rw, rh);
         await window.api.sam.encodeImage(data1024, width, height);
-        encodedCacheVersionRef.current = objectSelectionStore.cacheVersion;
+        encodedCacheVersionRef.current = activeScope().objectSelection.cacheVersion;
       }
 
       // Use canvas center as implicit positive point for subject detection
@@ -432,24 +431,24 @@ export function useObjectSelection({
       upsampled = keepComponentsContainingSeeds(upsampled, width, height, [
         centerPoint,
       ]);
-      objectSelectionStore.pendingMask = upsampled;
-      objectSelectionStore.pendingMaskRefined = false;
+      activeScope().objectSelection.pendingMask = upsampled;
+      activeScope().objectSelection.pendingMaskRefined = false;
 
       const { feather, antiAlias } = objectSelectionOptions;
       const previewMode = objectSelectionOptions.mode;
       if (previewMode !== "set" && savedMaskRef.current !== null) {
-        selectionStore.restoreMask(new Uint8Array(savedMaskRef.current));
+        activeScope().selection.restoreMask(new Uint8Array(savedMaskRef.current));
       } else if (previewMode !== "set") {
-        selectionStore.clear();
+        activeScope().selection.clear();
       }
-      selectionStore.setFromSAMMask(upsampled, previewMode, feather, antiAlias);
+      activeScope().selection.setFromSAMMask(upsampled, previewMode, feather, antiAlias);
 
-      objectSelectionStore.inferenceStatus = "idle";
-      objectSelectionStore.notify();
+      activeScope().objectSelection.inferenceStatus = "idle";
+      activeScope().objectSelection.notify();
     } catch (err) {
       console.error("[ObjectSelection] Select Subject failed:", err);
-      objectSelectionStore.inferenceStatus = "error";
-      objectSelectionStore.notify();
+      activeScope().objectSelection.inferenceStatus = "error";
+      activeScope().objectSelection.notify();
     } finally {
       isRunningRef.current = false;
     }
@@ -458,91 +457,91 @@ export function useObjectSelection({
   // ── Commit and Cancel ──────────────────────────────────────────────────────
 
   const commitSelection = useCallback((mode: SelectionMode): void => {
-    const pending = objectSelectionStore.pendingMask;
+    const pending = activeScope().objectSelection.pendingMask;
     if (!pending) return;
 
     const { feather, antiAlias } = objectSelectionOptions;
     // If the mask was already processed by Refine Edge its alpha values are
     // final — skip the extra feather/antiAlias pass to avoid softening them.
-    const applyFeather = objectSelectionStore.pendingMaskRefined ? 0 : feather;
-    const applyAA = objectSelectionStore.pendingMaskRefined ? false : antiAlias;
+    const applyFeather = activeScope().objectSelection.pendingMaskRefined ? 0 : feather;
+    const applyAA = activeScope().objectSelection.pendingMaskRefined ? false : antiAlias;
 
     // Restore the original selection, then apply new mask with the chosen mode
     if (savedMaskRef.current !== null) {
-      selectionStore.restoreMask(savedMaskRef.current);
+      activeScope().selection.restoreMask(savedMaskRef.current);
     } else {
-      selectionStore.clear();
+      activeScope().selection.clear();
     }
-    selectionStore.setFromSAMMask(pending, mode, applyFeather, applyAA);
+    activeScope().selection.setFromSAMMask(pending, mode, applyFeather, applyAA);
 
     captureHistoryRef.current("Object Selection");
 
     hasSavedMaskRef.current = false;
     savedMaskRef.current = null;
-    objectSelectionStore.reset();
+    activeScope().objectSelection.reset();
   }, []);
 
   const cancelSelection = useCallback((): void => {
     if (savedMaskRef.current !== null) {
-      selectionStore.restoreMask(savedMaskRef.current);
+      activeScope().selection.restoreMask(savedMaskRef.current);
     } else {
-      selectionStore.clear();
+      activeScope().selection.clear();
     }
     hasSavedMaskRef.current = false;
     savedMaskRef.current = null;
-    objectSelectionStore.reset();
+    activeScope().objectSelection.reset();
   }, []);
 
   // ── Refine Edge (alpha matting via RVM) ────────────────────────────────────
 
   const downloadMattingModel = useCallback(async (): Promise<void> => {
-    objectSelectionStore.mattingModelStatus = "downloading";
-    objectSelectionStore.mattingDownloadProgress = null;
-    objectSelectionStore.mattingModelError = null;
-    objectSelectionStore.notify();
+    activeScope().objectSelection.mattingModelStatus = "downloading";
+    activeScope().objectSelection.mattingDownloadProgress = null;
+    activeScope().objectSelection.mattingModelError = null;
+    activeScope().objectSelection.notify();
 
     const unsubscribe = window.api.matting.onDownloadProgress((p) => {
-      objectSelectionStore.mattingDownloadProgress = p;
-      objectSelectionStore.notify();
+      activeScope().objectSelection.mattingDownloadProgress = p;
+      activeScope().objectSelection.notify();
     });
 
     try {
       const result = await window.api.matting.downloadModel();
       if ("error" in result) {
-        objectSelectionStore.mattingModelStatus = "error";
-        objectSelectionStore.mattingModelError = result.error;
+        activeScope().objectSelection.mattingModelStatus = "error";
+        activeScope().objectSelection.mattingModelError = result.error;
       } else {
-        objectSelectionStore.mattingModelStatus = "ready";
-        objectSelectionStore.mattingDownloadProgress = null;
+        activeScope().objectSelection.mattingModelStatus = "ready";
+        activeScope().objectSelection.mattingDownloadProgress = null;
       }
     } catch (err) {
-      objectSelectionStore.mattingModelStatus = "error";
-      objectSelectionStore.mattingModelError =
+      activeScope().objectSelection.mattingModelStatus = "error";
+      activeScope().objectSelection.mattingModelError =
         err instanceof Error ? err.message : String(err);
     } finally {
       unsubscribe();
-      objectSelectionStore.notify();
+      activeScope().objectSelection.notify();
     }
   }, []);
 
   const refineEdge = useCallback(async (): Promise<void> => {
-    if (objectSelectionStore.refineStatus === "running") return;
+    if (activeScope().objectSelection.refineStatus === "running") return;
     // Hair mode requires the RVM model; object (GrabCut) mode works without it.
     if (
       objectSelectionOptions.refineMode === "hair" &&
-      objectSelectionStore.mattingModelStatus !== "ready"
+      activeScope().objectSelection.mattingModelStatus !== "ready"
     )
       return;
     const handle = canvasHandleRef.current;
     if (!handle) return;
 
-    const mask = selectionStore.mask;
-    const cw = selectionStore.width;
-    const ch = selectionStore.height;
+    const mask = activeScope().selection.mask;
+    const cw = activeScope().selection.width;
+    const ch = activeScope().selection.height;
     if (!mask || cw === 0 || ch === 0) return;
 
-    objectSelectionStore.refineStatus = "running";
-    objectSelectionStore.notify();
+    activeScope().objectSelection.refineStatus = "running";
+    activeScope().objectSelection.notify();
 
     try {
       // 1. Tight bbox of selected pixels (>= 128) with padding for context.
@@ -562,8 +561,8 @@ export function useObjectSelection({
         }
       }
       if (maxX < 0) {
-        objectSelectionStore.refineStatus = "idle";
-        objectSelectionStore.notify();
+        activeScope().objectSelection.refineStatus = "idle";
+        activeScope().objectSelection.notify();
         return;
       }
 
@@ -711,21 +710,21 @@ export function useObjectSelection({
       // would leave the marching-ants overlay empty even though the mask is
       // correct in memory). Pass feather=0, antiAlias=false to keep the
       // refined alpha exactly as RVM produced it.
-      selectionStore.setFromSAMMask(out, "set", 0, false);
+      activeScope().selection.setFromSAMMask(out, "set", 0, false);
 
       // Update pendingMask so a subsequent Commit uses the refined result,
       // not the original coarse SAM mask.
-      objectSelectionStore.pendingMask = out;
-      objectSelectionStore.pendingMaskRefined = true;
+      activeScope().objectSelection.pendingMask = out;
+      activeScope().objectSelection.pendingMaskRefined = true;
 
       captureHistoryRef.current("Refine Edge");
 
-      objectSelectionStore.refineStatus = "idle";
-      objectSelectionStore.notify();
+      activeScope().objectSelection.refineStatus = "idle";
+      activeScope().objectSelection.notify();
     } catch (err) {
       console.error("[ObjectSelection] Refine Edge failed:", err);
-      objectSelectionStore.refineStatus = "error";
-      objectSelectionStore.notify();
+      activeScope().objectSelection.refineStatus = "error";
+      activeScope().objectSelection.notify();
     }
   }, [canvasHandleRef]);
 
@@ -764,11 +763,11 @@ export function useObjectSelection({
   runInferenceRef.current = runInference;
 
   useEffect(() => {
-    let prevPointCount = objectSelectionStore.points.length;
-    let prevIsDragging = objectSelectionStore.isDragging;
+    let prevPointCount = activeScope().objectSelection.points.length;
+    let prevIsDragging = activeScope().objectSelection.isDragging;
 
     const onStoreChange = (): void => {
-      const store = objectSelectionStore;
+      const store = activeScope().objectSelection;
       if (store.modelStatus !== "ready") return;
 
       if (store.promptMode === "rect") {
@@ -793,9 +792,9 @@ export function useObjectSelection({
       }
     };
 
-    objectSelectionStore.subscribe(onStoreChange);
+    activeScope().objectSelection.subscribe(onStoreChange);
     return () => {
-      objectSelectionStore.unsubscribe(onStoreChange);
+      activeScope().objectSelection.unsubscribe(onStoreChange);
       if (debounceTimerRef.current !== null) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
@@ -829,12 +828,12 @@ export function useObjectSelection({
 
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
-        objectSelectionStore.promptMode === "point"
+        activeScope().objectSelection.promptMode === "point"
       ) {
         e.stopPropagation();
         e.preventDefault();
-        if (objectSelectionStore.points.length > 0) {
-          objectSelectionStore.removeLastPoint();
+        if (activeScope().objectSelection.points.length > 0) {
+          activeScope().objectSelection.removeLastPoint();
           // Inference re-triggered via store subscription (debounced)
         }
         return;

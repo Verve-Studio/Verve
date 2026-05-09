@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { selectionStore } from "@/core/store/selectionStore";
+import { activeScope } from "@/core/store/scope";
 
 export type GuidePreset = "thirds" | "safe-zone" | "center-split" | "fourths";
 
@@ -122,11 +122,11 @@ export function useViewActions({
   const handleSelectAll = useCallback((): void => {
     const { width, height } = stateRef.current.canvas;
     if (width === 0 || height === 0) return;
-    selectionStore.setRect(0, 0, width - 1, height - 1, "set");
+    activeScope().selection.setRect(0, 0, width - 1, height - 1, "set");
   }, [stateRef]);
 
   const handleDeselect = useCallback((): void => {
-    selectionStore.clear();
+    activeScope().selection.clear();
   }, []);
 
   const handleSelectAllLayers = useCallback((): void => {

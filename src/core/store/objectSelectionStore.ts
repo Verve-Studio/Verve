@@ -16,7 +16,9 @@ type Listener = () => void;
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-class ObjectSelectionStore {
+const listeners = new Set<Listener>();
+
+export class ObjectSelectionStore {
   // ── Model status ────────────────────────────────────────────────────────────
   modelStatus: ModelStatus = "unknown";
   modelError: string | null = null;
@@ -50,16 +52,14 @@ class ObjectSelectionStore {
   // ── Cache version (bumped to force re-encode on next inference) ──────────────
   cacheVersion = 0;
 
-  private listeners = new Set<Listener>();
-
   subscribe(fn: Listener): void {
-    this.listeners.add(fn);
+    listeners.add(fn);
   }
   unsubscribe(fn: Listener): void {
-    this.listeners.delete(fn);
+    listeners.delete(fn);
   }
   notify(): void {
-    for (const fn of this.listeners) fn();
+    for (const fn of listeners) fn();
   }
 
   reset(): void {
@@ -98,5 +98,3 @@ class ObjectSelectionStore {
     this.pendingMask = null;
   }
 }
-
-export const objectSelectionStore = new ObjectSelectionStore();

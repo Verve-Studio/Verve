@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import { displayStore } from "@/core/store/displayStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { ToneMappingOperator } from "@/types";
 import styles from "./HDRPanel.module.scss";
 

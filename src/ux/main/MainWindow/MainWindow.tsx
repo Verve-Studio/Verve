@@ -48,7 +48,7 @@ import { ContentAwareFillOptionsDialog } from "@/ux/modals/ContentAwareFillOptio
 import { ConvertColorModeDialog } from "@/ux/modals/ConvertColorModeDialog/ConvertColorModeDialog";
 import { ModalDialog } from "@/ux/modals/ModalDialog/ModalDialog";
 import { DialogButton } from "@/ux/widgets/DialogButton/DialogButton";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import {
   ADJUSTMENT_MENU_ITEMS,
   EFFECTS_MENU_ITEMS,
@@ -58,6 +58,7 @@ import type { NewImageSettings } from "@/ux/modals/NewImageDialog/NewImageDialog
 import type { ResizeImageSettings } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import type { ResizeCanvasSettings } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
 import styles from "./MainWindow.module.scss";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -582,7 +583,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onContentAwareDelete={() => handleOpenCafDialog("delete")}
         onFreeTransform={handleEnterTransform}
         isFreeTransformEnabled={isFreeTransformEnabled}
-        onInvertSelection={() => selectionStore.invert()}
+        onInvertSelection={() => activeScope().selection.invert()}
         onSelectAll={handleSelectAll}
         onDeselect={handleDeselect}
         onSelectAllLayers={handleSelectAllLayers}
@@ -692,7 +693,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           const layerPixels = canvasHandleRef.current?.getLayerPixels(
             activeLayerId,
           );
-          const mask = selectionStore.mask;
+          const mask = activeScope().selection.mask;
           if (!layerPixels || !mask) return;
           const { captureBrushTipFromSelection } = await import(
             "@/core/services/captureBrush"

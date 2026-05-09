@@ -8,23 +8,33 @@ export interface CloneStampSource {
   layerId: string;
 }
 
-class CloneStampStore {
+const listeners = new Set<() => void>();
+// App-level handler — registered once and shared across every per-tab
+// instance so it survives `setActiveScope` swapping the active scope.
+const appHandlers: { onSourceDeleted: (() => void) | null } = {
+  onSourceDeleted: null,
+};
+
+export class CloneStampStore {
   source: CloneStampSource | null = null;
 
   alignedOffset: { dx: number; dy: number } | null = null;
 
-  onSourceDeleted: (() => void) | null = null;
-
-  private listeners = new Set<() => void>();
+  get onSourceDeleted(): (() => void) | null {
+    return appHandlers.onSourceDeleted;
+  }
+  set onSourceDeleted(fn: (() => void) | null) {
+    appHandlers.onSourceDeleted = fn;
+  }
 
   subscribe(fn: () => void): void {
-    this.listeners.add(fn);
+    listeners.add(fn);
   }
   unsubscribe(fn: () => void): void {
-    this.listeners.delete(fn);
+    listeners.delete(fn);
   }
   notify(): void {
-    for (const fn of this.listeners) fn();
+    for (const fn of listeners) fn();
   }
 
   setSource(x: number, y: number, layerId: string): void {
@@ -40,5 +50,3 @@ class CloneStampStore {
     this.notify();
   }
 }
-
-export const cloneStampStore = new CloneStampStore();

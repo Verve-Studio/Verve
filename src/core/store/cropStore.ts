@@ -11,24 +11,32 @@ export interface CropRect {
 
 type Listener = () => void;
 
-class CropStore {
+const listeners = new Set<Listener>();
+// App-level handler — registered once and shared across every per-tab
+// instance so it survives `setActiveScope` swapping the active scope.
+const appHandlers: { onCrop: (() => void) | null } = { onCrop: null };
+
+export class CropStore {
   /** Live drag preview (before pointer-up). Drawn by Canvas overlay in orange. */
   pendingRect: { x1: number; y1: number; x2: number; y2: number } | null = null;
   /** Committed crop rectangle (after pointer-up). Displayed in options bar. */
   rect: CropRect | null = null;
   /** Set by App.tsx — called when the user presses the Crop button. */
-  onCrop: (() => void) | null = null;
-
-  private listeners = new Set<Listener>();
+  get onCrop(): (() => void) | null {
+    return appHandlers.onCrop;
+  }
+  set onCrop(fn: (() => void) | null) {
+    appHandlers.onCrop = fn;
+  }
 
   subscribe(fn: Listener): void {
-    this.listeners.add(fn);
+    listeners.add(fn);
   }
   unsubscribe(fn: Listener): void {
-    this.listeners.delete(fn);
+    listeners.delete(fn);
   }
-  private notify(): void {
-    for (const fn of this.listeners) fn();
+  notify(): void {
+    for (const fn of listeners) fn();
   }
 
   /** Update the live drag preview. Clears any previously committed rect. */
@@ -60,5 +68,3 @@ class CropStore {
     this.onCrop?.();
   }
 }
-
-export const cropStore = new CropStore();

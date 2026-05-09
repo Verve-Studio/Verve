@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { FilterKey, PixelFormat } from "@/types";
 import type { EffectType } from "@/core/effects/effectTypes";
 import type { GuidePreset } from "./useViewActions";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import {
   ADJUSTMENT_MENU_ITEMS,
   EFFECTS_MENU_ITEMS,
@@ -10,6 +10,7 @@ import {
 } from "@/core/menuConstants";
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
 import type { PanelId } from "@/ux/main/RightPanel/Dock/types";
+import { activeScope } from "@/core/store/scope";
 
 interface MacNativeMenuParams {
   isMac: boolean;
@@ -412,7 +413,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
           requireTransformDecision(handleEnterTransform);
           break;
         case "invertSelection":
-          selectionStore.invert();
+          activeScope().selection.invert();
           break;
         case "selectAll":
           handleSelectAll();

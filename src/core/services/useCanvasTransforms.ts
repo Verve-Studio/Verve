@@ -1,5 +1,5 @@
 import type { AppAction } from "@/core/store/AppContext";
-import { cropStore } from "@/core/store/cropStore";
+
 import {
   f32TransferStore,
   u8TransferStore,
@@ -21,6 +21,7 @@ import {
 } from "@/wasm";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -314,7 +315,7 @@ export function useCanvasTransforms({
   );
 
   const handleCrop = useCallback((): void => {
-    const r = cropStore.rect;
+    const r = activeScope().crop.rect;
     if (!r) return;
     const oldW = canvasWidth;
     const oldH = canvasHeight;
@@ -360,7 +361,7 @@ export function useCanvasTransforms({
       }
     }
 
-    cropStore.clear();
+    activeScope().crop.clear();
     captureHistory("Before Crop");
     const cropTabId = activeTabId;
     setTabs((prev) =>
@@ -398,9 +399,9 @@ export function useCanvasTransforms({
   ]);
 
   useEffect(() => {
-    cropStore.onCrop = handleCrop;
+    activeScope().crop.onCrop = handleCrop;
     return () => {
-      cropStore.onCrop = null;
+      activeScope().crop.onCrop = null;
     };
   }, [handleCrop]);
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import { cursorStore } from "@/core/store/cursorStore";
-import type { IndexedPixelInfo } from "@/core/store/cursorStore";
+import { cursorStore } from "@/ux/main/Canvas/cursorStore";
+import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import type { PixelFormat } from "@/types";

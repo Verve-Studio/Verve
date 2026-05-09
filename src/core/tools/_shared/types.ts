@@ -16,6 +16,13 @@ import type {
 // ─── Runtime context passed to tool handlers on each pointer event ────────────
 
 export interface ToolContext {
+  /**
+   * Per-document store bundle (selection, history, crop, transform, …).
+   * Tool handlers should read store state through `ctx.scope.X` rather than
+   * importing the legacy module-level singletons; this guarantees the right
+   * tab's instance even if the active scope changes mid-stroke.
+   */
+  scope: import("@/core/store/scope").DocumentScope;
   renderer: WebGPURenderer;
   layer: GpuLayer;
   layers: GpuLayer[];

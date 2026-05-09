@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -15,7 +15,7 @@ import {
   forEachStamp,
   markBrushDirty,
 } from "../_shared/localBrush";
-
+import { activeScope } from "@/core/store/scope";
 // ─── Module-level options ─────────────────────────────────────────────────────
 
 export const healingBrushOptions = {
@@ -291,7 +291,7 @@ function createHealingBrushHandler(): ToolHandler {
   // Alt+drag — draw a freehand source-region selection. On release, the
   // selection's centroid becomes the source anchor (matching the alt-click
   // behaviour). The path is rendered as a live blue dashed outline through
-  // selectionStore.pending, just like the lasso/marquee tools.
+  // activeScope().selection.pending, just like the lasso/marquee tools.
   let drawingSourceSelection = false;
   let sourcePathPoints: { x: number; y: number }[] = [];
   let sourcePathHitLayerId = "";
@@ -330,7 +330,7 @@ function createHealingBrushHandler(): ToolHandler {
         // Show the live path immediately (a single point doesn't draw, but
         // setting pending lets the marching-ants overlay take over once the
         // user moves the pointer).
-        selectionStore.setPending({
+        activeScope().selection.setPending({
           type: "path",
           points: [...sourcePathPoints],
         });
@@ -397,7 +397,7 @@ function createHealingBrushHandler(): ToolHandler {
         const last = sourcePathPoints[sourcePathPoints.length - 1];
         if (Math.abs(x - last.x) < 2 && Math.abs(y - last.y) < 2) return;
         sourcePathPoints.push({ x, y });
-        selectionStore.setPending({
+        activeScope().selection.setPending({
           type: "path",
           points: [...sourcePathPoints],
         });
@@ -448,7 +448,7 @@ function createHealingBrushHandler(): ToolHandler {
           sy /= sourcePathPoints.length;
           setHealingSource(sx, sy, sourcePathHitLayerId);
         }
-        selectionStore.setPending(null);
+        activeScope().selection.setPending(null);
         drawingSourceSelection = false;
         sourcePathPoints = [];
         return;

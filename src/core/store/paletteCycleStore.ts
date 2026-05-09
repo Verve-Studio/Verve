@@ -5,9 +5,10 @@ import type { RGBAColor, SwatchGroup } from "@/types";
 /** A single integer tick driven by the animation playback loop while palette
  *  animation is enabled. Renderer code reads this via {@link computeEffectivePalette}
  *  to derive the displayed colours. */
-class PaletteCycleStore {
+const subs = new Set<() => void>();
+
+export class PaletteCycleStore {
   private _tick = 0;
-  private subs = new Set<() => void>();
 
   get tick(): number {
     return this._tick;
@@ -16,22 +17,24 @@ class PaletteCycleStore {
   set(tick: number): void {
     if (tick === this._tick) return;
     this._tick = tick;
-    for (const fn of this.subs) fn();
+    this.notify();
   }
 
   reset(): void {
     if (this._tick === 0) return;
     this._tick = 0;
-    for (const fn of this.subs) fn();
+    this.notify();
   }
 
   subscribe(fn: () => void): () => void {
-    this.subs.add(fn);
-    return () => this.subs.delete(fn);
+    subs.add(fn);
+    return () => subs.delete(fn);
+  }
+
+  notify(): void {
+    for (const fn of subs) fn();
   }
 }
-
-export const paletteCycleStore = new PaletteCycleStore();
 
 // ─── Period ──────────────────────────────────────────────────────────────────
 

@@ -1,16 +1,17 @@
 import type { AppAction } from "@/core/store/AppContext";
-import { historyStore } from "@/core/store/historyStore";
+
 import type { TabRecord, TabSnapshot } from "@/core/store/tabTypes";
 import { DEFAULT_SWATCHES } from "@/core/store/tabTypes";
 import {
   f32TransferStore,
   u8TransferStore,
 } from "@/core/store/layerDataTransfer";
-import { displayStore } from "@/core/store/displayStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { setActiveScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -164,21 +165,9 @@ export function useTabs(
     (toId: string, tabs_: TabRecord[]): void => {
       const toTab = tabs_.find((t) => t.id === toId);
       if (!toTab) return;
-      if (toTab.savedHistory && toTab.savedHistory.entries.length > 0) {
-        historyStore.restore(
-          toTab.savedHistory.entries,
-          toTab.savedHistory.currentIndex,
-        );
-      } else {
-        historyStore.clear({ recaptureSnapshot: false });
-      }
-      // Null savedHistory after handing ownership to historyStore — prevents
-      // the Tab record from keeping dead Uint8Array refs after the first new push.
-      if (toTab.savedHistory) {
-        setTabsRef.current((prev) =>
-          prev.map((t) => (t.id === toId ? { ...t, savedHistory: null } : t)),
-        );
-      }
+      // Each tab owns its own DocumentScope (selection, history, crop, …).
+      // Activating it is enough — no snapshot/restore dance.
+      setActiveScope(toTab.scope);
       setActiveTabId(toId);
       displayStore.setEV(toTab.exposureEV ?? 0);
       displayStore.setOperator(toTab.toneMappingOperator ?? "reinhard");
@@ -249,14 +238,12 @@ export function useTabs(
     (toId: string): void => {
       if (toId === activeTabId) return;
       const snapshot = captureActiveSnapshot();
-      const savedHistory = historyStore.detach();
       const savedLayerData = serializeActiveTabPixels();
       const updated = tabs.map((t) =>
         t.id === activeTabId
           ? {
               ...t,
               snapshot,
-              savedHistory,
               savedLayerData,
               tiledMode: state.canvas.tiledMode,
               showTileGrid: state.canvas.showTileGrid,

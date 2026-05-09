@@ -1,4 +1,4 @@
-import { objectSelectionStore } from "@/core/store/objectSelectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import React, { useEffect, useState } from "react";
@@ -11,6 +11,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import objectSelectIconSvg from "./object-select.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Module-level options ──────────────────────────────────────────────────────
 
@@ -50,31 +51,31 @@ export const objectSelectionCallbacks = {
 function createObjectSelectionHandler(): ToolHandler {
   return {
     onPointerDown({ x, y, altKey }: ToolPointerPos) {
-      if (objectSelectionStore.modelStatus !== "ready") return;
+      if (activeScope().objectSelection.modelStatus !== "ready") return;
       if (objectSelectionOptions.promptMode === "rect") {
-        objectSelectionStore.setDragRect(x, y, x, y);
+        activeScope().objectSelection.setDragRect(x, y, x, y);
       } else {
-        objectSelectionStore.addPoint({ x, y, positive: !altKey });
+        activeScope().objectSelection.addPoint({ x, y, positive: !altKey });
       }
     },
 
     onPointerMove({ x, y }: ToolPointerPos) {
-      if (!objectSelectionStore.isDragging) return;
-      const r = objectSelectionStore.dragRect!;
-      objectSelectionStore.setDragRect(r.x1, r.y1, x, y);
+      if (!activeScope().objectSelection.isDragging) return;
+      const r = activeScope().objectSelection.dragRect!;
+      activeScope().objectSelection.setDragRect(r.x1, r.y1, x, y);
     },
 
     onPointerUp({ x, y }: ToolPointerPos) {
-      if (!objectSelectionStore.isDragging) return;
-      const r = objectSelectionStore.dragRect!;
+      if (!activeScope().objectSelection.isDragging) return;
+      const r = activeScope().objectSelection.dragRect!;
       if (Math.abs(x - r.x1) < 8 || Math.abs(y - r.y1) < 8) {
-        objectSelectionStore.dragRect = null;
-        objectSelectionStore.endDrag();
+        activeScope().objectSelection.dragRect = null;
+        activeScope().objectSelection.endDrag();
         return;
       }
       // Clamp final position to drag end
-      objectSelectionStore.dragRect = { x1: r.x1, y1: r.y1, x2: x, y2: y };
-      objectSelectionStore.endDrag();
+      activeScope().objectSelection.dragRect = { x1: r.x1, y1: r.y1, x2: x, y2: y };
+      activeScope().objectSelection.endDrag();
       // useObjectSelection is subscribed and will trigger inference
     },
 
@@ -177,10 +178,10 @@ function ObjectSelectionOptions({
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
   const [modelStatus, setModelStatus] = useState(
-    objectSelectionStore.modelStatus,
+    activeScope().objectSelection.modelStatus,
   );
   const [inferenceStatus, setInferenceStatus] = useState(
-    objectSelectionStore.inferenceStatus,
+    activeScope().objectSelection.inferenceStatus,
   );
   const [mode, setMode] = useState(objectSelectionOptions.mode);
   const [promptMode, setPromptMode] = useState(
@@ -192,29 +193,29 @@ function ObjectSelectionOptions({
     objectSelectionOptions.refineMode,
   );
   const [hasPendingMask, setHasPendingMask] = useState(
-    objectSelectionStore.pendingMask !== null,
+    activeScope().objectSelection.pendingMask !== null,
   );
   const [mattingStatus, setMattingStatus] = useState(
-    objectSelectionStore.mattingModelStatus,
+    activeScope().objectSelection.mattingModelStatus,
   );
   const [refineStatus, setRefineStatus] = useState(
-    objectSelectionStore.refineStatus,
+    activeScope().objectSelection.refineStatus,
   );
   const [mattingProgress, setMattingProgress] = useState(
-    objectSelectionStore.mattingDownloadProgress,
+    activeScope().objectSelection.mattingDownloadProgress,
   );
 
   useEffect(() => {
     const update = (): void => {
-      setModelStatus(objectSelectionStore.modelStatus);
-      setInferenceStatus(objectSelectionStore.inferenceStatus);
-      setHasPendingMask(objectSelectionStore.pendingMask !== null);
-      setMattingStatus(objectSelectionStore.mattingModelStatus);
-      setRefineStatus(objectSelectionStore.refineStatus);
-      setMattingProgress(objectSelectionStore.mattingDownloadProgress);
+      setModelStatus(activeScope().objectSelection.modelStatus);
+      setInferenceStatus(activeScope().objectSelection.inferenceStatus);
+      setHasPendingMask(activeScope().objectSelection.pendingMask !== null);
+      setMattingStatus(activeScope().objectSelection.mattingModelStatus);
+      setRefineStatus(activeScope().objectSelection.refineStatus);
+      setMattingProgress(activeScope().objectSelection.mattingDownloadProgress);
     };
-    objectSelectionStore.subscribe(update);
-    return () => objectSelectionStore.unsubscribe(update);
+    activeScope().objectSelection.subscribe(update);
+    return () => activeScope().objectSelection.unsubscribe(update);
   }, []);
 
   // ── Model not downloaded ────────────────────────────────────────────────────
@@ -241,7 +242,7 @@ function ObjectSelectionOptions({
 
   const setP = (p: "rect" | "point"): void => {
     objectSelectionOptions.promptMode = p;
-    objectSelectionStore.promptMode = p;
+    activeScope().objectSelection.promptMode = p;
     setPromptMode(p);
   };
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type {
   Guide,
   TextLayerState,
@@ -20,6 +20,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import moveIconSvg from "./move.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Snap-to-guide options ────────────────────────────────────────────────────
 
@@ -369,10 +370,11 @@ function createMoveHandler(): ToolHandler {
       frameLayerSnapshot =
         ctx.frameLayers.find((f) => f.id === ctx.layer.id) ?? null;
 
-      if (selectionStore.mask) {
+      const selMask = activeScope().selection.mask;
+      if (selMask) {
         // Selection move: pixel-copy approach (selection moves pixels, offset unchanged)
         originalPixels = ctx.layer.data.slice();
-        originalMask = selectionStore.mask.slice();
+        originalMask = selMask.slice();
         originalOffsetX = 0;
         originalOffsetY = 0;
         multiOriginalOffsets = null;
@@ -546,7 +548,7 @@ function createMoveHandler(): ToolHandler {
       if (originalPixels) {
         if (dx !== lastDx || dy !== lastDy) applySelectionMove(dx, dy, ctx);
         if (originalMask && (dx !== 0 || dy !== 0))
-          selectionStore.translateMask(dx, dy);
+          activeScope().selection.translateMask(dx, dy);
         originalPixels = null;
         originalMask = null;
       } else if (textLayerSnapshot) {

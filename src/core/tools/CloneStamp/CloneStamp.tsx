@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { stampCloneSegment } from "./cloneStampStroke";
-import { cloneStampStore } from "@/core/store/cloneStampStore";
+
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,
@@ -12,6 +12,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import cloneStampIconSvg from "./clone-stamp.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Module-level options ────────────────────────────────────────────────────
 
@@ -137,25 +138,25 @@ function createCloneStampHandler(): ToolHandler {
             }
           }
         }
-        cloneStampStore.setSource(x, y, hitLayerId);
+        activeScope().cloneStamp.setSource(x, y, hitLayerId);
         return;
       }
 
-      if (!cloneStampStore.source) return;
+      const cs = activeScope().cloneStamp;
+      const source = cs.source;
+      if (!source) return;
 
       ctx.renderer.strokeStart();
 
-      const source = cloneStampStore.source;
-
       if (cloneStampOptions.aligned) {
-        if (!cloneStampStore.alignedOffset) {
-          cloneStampStore.alignedOffset = {
+        if (!cs.alignedOffset) {
+          cs.alignedOffset = {
             dx: source.x - x,
             dy: source.y - y,
           };
         }
-        strokeOffsetDX = cloneStampStore.alignedOffset.dx;
-        strokeOffsetDY = cloneStampStore.alignedOffset.dy;
+        strokeOffsetDX = cs.alignedOffset.dx;
+        strokeOffsetDY = cs.alignedOffset.dy;
       } else {
         strokeOffsetDX = source.x - x;
         strokeOffsetDY = source.y - y;
@@ -199,8 +200,8 @@ function createCloneStampHandler(): ToolHandler {
       if (!isStrokeReady || !lastPos || !sourceBuffer) return;
       paintSegment(lastPos.x, lastPos.y, x, y, ctx);
       lastPos = { x, y };
-      if (cloneStampOptions.aligned && cloneStampStore.alignedOffset) {
-        cloneStampStore.notify();
+      if (cloneStampOptions.aligned && activeScope().cloneStamp.alignedOffset) {
+        activeScope().cloneStamp.notify();
       }
     },
 
@@ -219,8 +220,8 @@ function createCloneStampHandler(): ToolHandler {
     },
 
     onHover() {
-      if (cloneStampStore.source !== null) {
-        cloneStampStore.notify();
+      if (activeScope().cloneStamp.source !== null) {
+        activeScope().cloneStamp.notify();
       }
     },
   };
@@ -240,12 +241,12 @@ function CloneStampOptions({
   const [sampleAllLayers, setSampleAllLayers] = useState(
     cloneStampOptions.sampleAllLayers,
   );
-  const [source, setSource] = useState(cloneStampStore.source);
+  const [source, setSource] = useState(activeScope().cloneStamp.source);
 
   useEffect(() => {
-    const update = (): void => setSource(cloneStampStore.source);
-    cloneStampStore.subscribe(update);
-    return () => cloneStampStore.unsubscribe(update);
+    const update = (): void => setSource(activeScope().cloneStamp.source);
+    activeScope().cloneStamp.subscribe(update);
+    return () => activeScope().cloneStamp.unsubscribe(update);
   }, []);
 
   const handleSize = (v: number): void => {

@@ -5,11 +5,7 @@ import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
-import {
-  computeEffectivePalette,
-  paletteCyclePeriod,
-  paletteCycleStore,
-} from "@/core/store/paletteCycleStore";
+import { computeEffectivePalette, paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import type { ImportSpritesheetFramesResult } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
 import type { ExportAnimationFramesSettings } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
 import { exportPng } from "@/core/io/exportPng";
@@ -18,6 +14,7 @@ import { exportWebp } from "@/core/io/exportWebp";
 import { exportTga } from "@/core/io/exportTga";
 import { exportTiff } from "@/core/io/exportTiff";
 import { encodeAnimatedGif } from "@/core/io/encodeAnimatedGif";
+import { activeScope } from "@/core/store/scope";
 
 interface UseSpritesheetAnimationOpsOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
@@ -363,7 +360,7 @@ export function useSpritesheetAnimationOps({
           const selected = new Set(settings.selectedPaletteGroupIds);
           const cw = s.canvas.width;
           const ch = s.canvas.height;
-          const savedTick = paletteCycleStore.tick;
+          const savedTick = activeScope().paletteCycle.tick;
 
           const groupsActiveOn = (activeIds: Set<string>) =>
             s.swatchGroups.map((g) =>
@@ -395,7 +392,7 @@ export function useSpritesheetAnimationOps({
             for (const seg of sequence) {
               const segGroups = groupsActiveOn(new Set([seg.groupId]));
               for (let i = 0; i < seg.period; i++) {
-                paletteCycleStore.set(i);
+                activeScope().paletteCycle.set(i);
                 const eff = computeEffectivePalette(s.swatches, segGroups, i);
                 handle.repaintIndexedLayers(eff);
                 const flat = await handle.rasterizeLayers(s.layers, "export");
@@ -421,7 +418,7 @@ export function useSpritesheetAnimationOps({
               return;
             }
             for (let i = 0; i < period; i++) {
-              paletteCycleStore.set(i);
+              activeScope().paletteCycle.set(i);
               const eff = computeEffectivePalette(s.swatches, exportGroups, i);
               handle.repaintIndexedLayers(eff);
               const flat = await handle.rasterizeLayers(s.layers, "export");
@@ -437,7 +434,7 @@ export function useSpritesheetAnimationOps({
           // Restore the cycle position the user was at, with the full
           // (un-trimmed) group set so the on-canvas preview returns to
           // exactly what it was before the export ran.
-          paletteCycleStore.set(savedTick);
+          activeScope().paletteCycle.set(savedTick);
           handle.repaintIndexedLayers(
             computeEffectivePalette(s.swatches, s.swatchGroups, savedTick),
           );

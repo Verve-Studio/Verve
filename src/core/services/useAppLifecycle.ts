@@ -3,11 +3,11 @@ import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import { brushStore } from "@/core/store/brushStore";
 import { pixelBrushStore } from "@/core/store/pixelBrushStore";
-import { cloneStampStore } from "@/core/store/cloneStampStore";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { MemoryLimitError } from "@/core/store/memoryStore";
 import { notificationStore } from "@/core/store/notificationStore";
 import { makeDefaultBrush } from "@/types";
+import { activeScope } from "@/core/store/scope";
 
 /** Initialise pixel brush + paint brush stores on mount, and pick a default
  *  active brush if none is set. Mount-only — `activeBrushId` is read once
@@ -45,7 +45,7 @@ export function useCloneStampNotification(): string | null {
   const [message, setMessage] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    cloneStampStore.onSourceDeleted = () => {
+    activeScope().cloneStamp.onSourceDeleted = () => {
       setMessage(
         "⚠ Source layer was deleted — Alt+click to set a new source",
       );
@@ -53,7 +53,7 @@ export function useCloneStampNotification(): string | null {
       timerRef.current = setTimeout(() => setMessage(null), 4000);
     };
     return () => {
-      cloneStampStore.onSourceDeleted = null;
+      activeScope().cloneStamp.onSourceDeleted = null;
       if (timerRef.current !== null) clearTimeout(timerRef.current);
     };
   }, []);
@@ -87,14 +87,14 @@ export function useMemoryErrorHandler(): void {
   }, []);
 }
 
-/** Mirror selectionStore.hasSelection() into React state so menu items can
+/** Mirror activeScope().selection.hasSelection() into React state so menu items can
  *  reactively enable/disable. */
 export function useSelectionFlag(): boolean {
   const [hasSelection, setHasSelection] = useState(false);
   useEffect(() => {
-    const update = (): void => setHasSelection(selectionStore.hasSelection());
-    selectionStore.subscribe(update);
-    return () => selectionStore.unsubscribe(update);
+    const update = (): void => setHasSelection(activeScope().selection.hasSelection());
+    activeScope().selection.subscribe(update);
+    return () => activeScope().selection.unsubscribe(update);
   }, []);
   return hasSelection;
 }

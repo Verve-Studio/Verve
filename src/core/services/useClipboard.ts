@@ -1,12 +1,13 @@
 import type { AppAction } from "@/core/store/AppContext";
 import type { ClipboardData } from "@/core/store/clipboardStore";
 import { clipboardStore } from "@/core/store/clipboardStore";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { makeTabId } from "@/core/store/tabTypes";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,11 +166,10 @@ export function useClipboard({
     const { width, height } = state.canvas;
 
     // Apply selection mask: scale alpha by selection strength (supports feathered edges)
-    if (selectionStore.mask) {
-      for (let i = 0; i < selectionStore.mask.length; i++) {
-        pixels[i * 4 + 3] = Math.round(
-          (pixels[i * 4 + 3] * selectionStore.mask[i]) / 255,
-        );
+    const mask = activeScope().selection.mask;
+    if (mask) {
+      for (let i = 0; i < mask.length; i++) {
+        pixels[i * 4 + 3] = Math.round((pixels[i * 4 + 3] * mask[i]) / 255);
       }
     }
 
@@ -184,7 +184,7 @@ export function useClipboard({
     if (layerMeta && "type" in layerMeta) return;
     handleCopy();
     const totalPixels = state.canvas.width * state.canvas.height;
-    const mask = selectionStore.mask ?? new Uint8Array(totalPixels).fill(255);
+    const mask = activeScope().selection.mask ?? new Uint8Array(totalPixels).fill(255);
     canvasHandleRef.current?.clearLayerPixels(activeId, mask);
     captureHistory("Cut");
   }, [
@@ -203,7 +203,7 @@ export function useClipboard({
     const layerMeta = state.layers.find((l) => l.id === activeId);
     if (layerMeta && "type" in layerMeta) return;
     const totalPixels = state.canvas.width * state.canvas.height;
-    const mask = selectionStore.mask ?? new Uint8Array(totalPixels).fill(255);
+    const mask = activeScope().selection.mask ?? new Uint8Array(totalPixels).fill(255);
     canvasHandleRef.current?.clearLayerPixels(activeId, mask);
     captureHistory("Delete");
   }, [
@@ -306,8 +306,9 @@ export function useClipboard({
   }, [state.canvas, canvasHandleRef]);
 
   const handlePasteInto = useCallback((): void => {
-    if (!selectionStore.mask) return; // no-op without an active selection
-    const selMask = selectionStore.mask.slice(); // snapshot before async
+    const sourceMask = activeScope().selection.mask;
+    if (!sourceMask) return; // no-op without an active selection
+    const selMask = sourceMask.slice(); // snapshot before async
     void (async () => {
       const { width: dstW, height: dstH } = state.canvas;
 

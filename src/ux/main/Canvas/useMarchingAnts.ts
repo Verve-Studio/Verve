@@ -1,8 +1,7 @@
 import { useEffect } from "react";
-import { selectionStore } from "@/core/store/selectionStore";
-import { cropStore } from "@/core/store/cropStore";
-import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
-import { measureStore } from "@/core/store/measureStore";
+
+import { measureStore } from "@/core/tools/Measure/measureStore";
+import { activeScope } from "@/core/store/scope";
 
 /**
  * Drives the marching-ants / crop-overlay / polygonal-selection RAF animation
@@ -57,11 +56,11 @@ export function useMarchingAnts(
 
       ctx2d.clearRect(0, 0, overlay.width, overlay.height);
 
-      const { mask, pending, borderSegments } = selectionStore;
-      const hasCrop = !!(cropStore.pendingRect || cropStore.rect);
+      const { mask, pending, borderSegments } = activeScope().selection;
+      const hasCrop = !!(activeScope().crop.pendingRect || activeScope().crop.rect);
       const isPolyTool = activeToolRef.current === "polygonal-selection";
       const hasPolyVerts =
-        isPolyTool && polygonalSelectionStore.vertices.length > 0;
+        isPolyTool && activeScope().polygonalSelection.vertices.length > 0;
       const hasMeasure = !!(measureStore.start && measureStore.end);
       if (!mask && !pending && !hasCrop && !hasPolyVerts && !hasMeasure) return;
 
@@ -141,8 +140,8 @@ export function useMarchingAnts(
       }
 
       // ── Crop overlay ─────────────────────────────────────────────────────
-      const cp = cropStore.pendingRect;
-      const cr = cropStore.rect;
+      const cp = activeScope().crop.pendingRect;
+      const cr = activeScope().crop.rect;
       if (cp) {
         ctx2d.strokeStyle = "#ff9900";
         ctx2d.lineWidth = 1;
@@ -210,7 +209,7 @@ export function useMarchingAnts(
 
       // ── Polygonal selection tool overlay ─────────────────────────────────
       if (hasPolyVerts) {
-        const { vertices, cursor, nearClose } = polygonalSelectionStore;
+        const { vertices, cursor, nearClose } = activeScope().polygonalSelection;
 
         // 1. Black backing stroke on committed segments
         if (vertices.length >= 2) {

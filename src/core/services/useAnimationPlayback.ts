@@ -8,12 +8,9 @@ import {
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState, AnimationDef } from "@/types";
-import {
-  computeEffectivePalette,
-  paletteCycleStore,
-  paletteCyclePeriod,
-} from "@/core/store/paletteCycleStore";
+import { computeEffectivePalette, paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Public interface ──────────────────────────────────────────────────────────
 
@@ -237,17 +234,17 @@ export function useAnimationPlayback(
     if (!paletteEnabled || !isPlaying) return;
     const interval = Math.round(1000 / paletteFps);
     const id = setInterval(() => {
-      const nextTick = paletteCycleStore.tick + 1;
+      const nextTick = activeScope().paletteCycle.tick + 1;
       const period = palettePeriodRef.current;
       // Honour the loop toggle in palette mode: when looping is off, stop
       // playback at the end of one full cycle and snap back to tick 0.
       if (!isLoopingRef.current && period > 0 && nextTick >= period) {
-        paletteCycleStore.set(0);
+        activeScope().paletteCycle.set(0);
         repaint(0);
         setIsPlaying(false);
         return;
       }
-      paletteCycleStore.set(nextTick);
+      activeScope().paletteCycle.set(nextTick);
       repaint(nextTick);
     }, interval);
     return () => clearInterval(id);
@@ -257,8 +254,8 @@ export function useAnimationPlayback(
   // updates live during playback. (The repaint above already keeps pixels in
   // sync; this is just to drive React re-renders.)
   const paletteTick = useSyncExternalStore(
-    (cb) => paletteCycleStore.subscribe(cb),
-    () => paletteCycleStore.tick,
+    (cb) => activeScope().paletteCycle.subscribe(cb),
+    () => activeScope().paletteCycle.tick,
   );
 
   // Default the loop toggle to ON the moment palette mode becomes active so
@@ -280,10 +277,10 @@ export function useAnimationPlayback(
   // waiting for the next tick.
   useEffect(() => {
     if (paletteEnabled) {
-      repaint(paletteCycleStore.tick);
+      repaint(activeScope().paletteCycle.tick);
     } else {
       // Restore original palette when the feature is turned off.
-      paletteCycleStore.reset();
+      activeScope().paletteCycle.reset();
       repaint(0);
     }
   }, [paletteEnabled, swatches, swatchGroups, repaint]);
@@ -299,9 +296,9 @@ export function useAnimationPlayback(
       // cycle one tick backward and repaints with the cycled palette.
       // Pause the cycle so the manual step is preserved.
       setIsPlaying(false);
-      const next = paletteCycleStore.tick - 1;
-      paletteCycleStore.set(next);
-      repaint(paletteCycleStore.tick);
+      const next = activeScope().paletteCycle.tick - 1;
+      activeScope().paletteCycle.set(next);
+      repaint(activeScope().paletteCycle.tick);
       return;
     }
     const anim = selectedAnimRef.current;
@@ -330,8 +327,8 @@ export function useAnimationPlayback(
   const handleNextFrame = useCallback((): void => {
     if (paletteEnabledRef.current) {
       setIsPlaying(false);
-      paletteCycleStore.set(paletteCycleStore.tick + 1);
-      repaint(paletteCycleStore.tick);
+      activeScope().paletteCycle.set(activeScope().paletteCycle.tick + 1);
+      repaint(activeScope().paletteCycle.tick);
       return;
     }
     const anim = selectedAnimRef.current;

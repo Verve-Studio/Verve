@@ -37,14 +37,12 @@ import { healingBrushOptions } from "@/core/tools/HealingBrush/HealingBrush";
 import { quickSelectOptions } from "@/core/tools/QuickSelect/QuickSelect";
 import { cloneStampOptions } from "@/core/tools/CloneStamp/CloneStamp";
 import { dodgeOptions, burnOptions } from "@/core/tools/Dodge/Dodge";
-import { cloneStampStore } from "@/core/store/cloneStampStore";
+
 import { drawCloneStampOverlay } from "./cloneStampOverlay";
-import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
-import { objectSelectionStore } from "@/core/store/objectSelectionStore";
-import { selectionStore } from "@/core/store/selectionStore";
-import { measureStore } from "@/core/store/measureStore";
-import { cursorStore } from "@/core/store/cursorStore";
-import { transformStore } from "@/core/store/transformStore";
+
+import { measureStore } from "@/core/tools/Measure/measureStore";
+import { cursorStore } from "@/ux/main/Canvas/cursorStore";
+
 import { drawTransformOverlay } from "@/core/tools/Transform/Transform";
 import { TextLayerEditor } from "./TextLayerEditor";
 import { rasterizeTextToLayer } from "./textRasterizer";
@@ -63,13 +61,14 @@ import { useScrollZoom } from "./useScrollZoom";
 import { useSpacePan } from "./useSpacePan";
 import { useRulers } from "./useRulers";
 import { useGuides } from "./useGuides";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
-import { displayStore } from "@/core/store/displayStore";
+
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import {
   f32TransferStore,
   u8TransferStore,
 } from "@/core/store/layerDataTransfer";
 import styles from "./Canvas.module.scss";
+import { activeScope } from "@/core/store/scope";
 
 // Re-export so external importers (App.tsx etc.) don't need to change their paths.
 export type { CanvasHandle } from "./canvasHandle";
@@ -417,10 +416,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     (() => { x: number; y: number } | null) | null
   >(null);
   getSelectionAnchorRef.current = (): { x: number; y: number } | null => {
-    const mask = selectionStore.mask;
+    const mask = activeScope().selection.mask;
     if (!mask) return null;
-    const sw = selectionStore.width;
-    const sh = selectionStore.height;
+    const sw = activeScope().selection.width;
+    const sh = activeScope().selection.height;
     let lx = sw,
       ly = sh,
       rx = -1,
@@ -520,9 +519,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   // Init selection store dimensions once canvas is sized
   useEffect(() => {
     if (!isActive) return;
-    selectionStore.setDimensions(width, height);
+    activeScope().selection.setDimensions(width, height);
     return () => {
-      selectionStore.clear();
+      activeScope().selection.clear();
       measureStore.clear();
     };
   }, [width, height, isActive]);
@@ -1039,9 +1038,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       }
     }
 
-    if (state.activeTool === "clone-stamp" && cloneStampStore.source) {
-      if (!stateIds.has(cloneStampStore.source.layerId)) {
-        cloneStampStore.clearSource();
+    if (state.activeTool === "clone-stamp") {
+      const cs = activeScope().cloneStamp;
+      if (cs.source && !stateIds.has(cs.source.layerId)) {
+        cs.clearSource();
       }
     }
 
@@ -1210,7 +1210,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   useEffect(() => {
     if (!isActive) return;
-    const unsubscribe = adjustmentPreviewStore.subscribe(() => {
+    const unsubscribe = activeScope().adjustmentPreview.subscribe(() => {
       const renderer = rendererRef.current;
       if (!renderer) return;
       doRender();
@@ -1262,12 +1262,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const redraw = (): void => {
       const oc = toolOverlayRef.current;
       if (!oc) return;
-      drawTransformOverlay(oc, transformStore, zoomRef.current);
+      drawTransformOverlay(oc, activeScope().transform, zoomRef.current);
     };
     redraw();
-    transformStore.subscribe(redraw);
+    activeScope().transform.subscribe(redraw);
     return () => {
-      transformStore.unsubscribe(redraw);
+      activeScope().transform.unsubscribe(redraw);
       const oc = toolOverlayRef.current;
       if (oc) {
         const ctx = oc.getContext("2d");
@@ -1282,17 +1282,17 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const redraw = (): void => {
       const oc = toolOverlayRef.current;
       if (!oc) return;
+      const source = activeScope().cloneStamp.source;
       const canvas = canvasRef.current;
-      if (canvas)
-        canvas.style.cursor = cloneStampStore.source ? "none" : "crosshair";
-      if (!cloneStampStore.source) {
+      if (canvas) canvas.style.cursor = source ? "none" : "crosshair";
+      if (!source) {
         oc.getContext("2d")?.clearRect(0, 0, oc.width, oc.height);
         return;
       }
       drawCloneStampOverlay(
         oc,
-        cloneStampStore.source.x,
-        cloneStampStore.source.y,
+        source.x,
+        source.y,
         cursorStore.x,
         cursorStore.y,
         cloneStampOptions.aligned,
@@ -1300,9 +1300,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     };
 
     redraw();
-    cloneStampStore.subscribe(redraw);
+    activeScope().cloneStamp.subscribe(redraw);
     return () => {
-      cloneStampStore.unsubscribe(redraw);
+      activeScope().cloneStamp.unsubscribe(redraw);
       const oc = toolOverlayRef.current;
       oc?.getContext("2d")?.clearRect(0, 0, oc.width, oc.height);
       const canvas = canvasRef.current;
@@ -1327,16 +1327,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
     const updateCursor = (): void => {
       if (canvasRef.current) {
-        canvasRef.current.style.cursor = polygonalSelectionStore.nearClose
+        canvasRef.current.style.cursor = activeScope().polygonalSelection.nearClose
           ? "cell"
           : "crosshair";
       }
     };
 
     updateCursor();
-    polygonalSelectionStore.subscribe(updateCursor);
+    activeScope().polygonalSelection.subscribe(updateCursor);
     return () => {
-      polygonalSelectionStore.unsubscribe(updateCursor);
+      activeScope().polygonalSelection.unsubscribe(updateCursor);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, state.activeTool]);
@@ -1352,7 +1352,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       if (!ctx2d) return;
       ctx2d.clearRect(0, 0, oc.width, oc.height);
 
-      const store = objectSelectionStore;
+      const store = activeScope().objectSelection;
 
       // Draw drag rectangle
       if (store.dragRect) {
@@ -1392,10 +1392,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     };
 
     redraw();
-    objectSelectionStore.subscribe(redraw);
+    activeScope().objectSelection.subscribe(redraw);
 
     return () => {
-      objectSelectionStore.unsubscribe(redraw);
+      activeScope().objectSelection.unsubscribe(redraw);
       const oc = toolOverlayRef.current;
       oc?.getContext("2d")?.clearRect(0, 0, oc.width, oc.height);
     };
@@ -1435,7 +1435,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       glLayersRef.current,
       buildMaskMap(),
       adjustmentMaskMap.current,
-      adjustmentPreviewStore.snapshot(),
+      activeScope().adjustmentPreview.snapshot(),
       state.swatches,
       state.pixelFormat,
     );
@@ -1459,12 +1459,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       sel !== "patch" &&
       sel !== "healing-brush"
     ) {
-      selectionStore.setPending(null);
+      activeScope().selection.setPending(null);
     }
     toolHandlerRef.current = TOOL_REGISTRY[state.activeTool].createHandler();
     // Cancel any in-progress polygonal selection when switching tools
-    polygonalSelectionStore.cancel();
-    if (sel !== "object-selection") objectSelectionStore.reset();
+    activeScope().polygonalSelection.cancel();
+    if (sel !== "object-selection") activeScope().objectSelection.reset();
     // Hide brush cursor when switching away from a circle-cursor tool
     if (brushCursorRef.current) {
       if (
@@ -1528,6 +1528,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       return { r: g, g: g, b: g, a: 1 };
     };
     return {
+      scope: activeScope(),
       renderer,
       layer: activeLayer!, // text tool never dereferences this; all others are guarded above
       layers: buildOrderedGLLayers(),
@@ -1537,7 +1538,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       secondaryColor: isMaskLayer
         ? toGray(state.secondaryColor)
         : state.secondaryColor,
-      selectionMask: selectionStore.mask,
+      selectionMask: activeScope().selection.mask,
       render: () => {
         doRender();
       },
@@ -1910,7 +1911,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         el.style.width = `${r * 2}px`;
         el.style.height = `${r * 2}px`;
         if (tool === "clone-stamp") {
-          el.style.display = cloneStampStore.source ? "block" : "none";
+          el.style.display = activeScope().cloneStamp.source ? "block" : "none";
           el.className = `${styles.brushCursor} ${styles.brushCursorCrossHair}`;
         } else {
           el.style.display = "block";
@@ -2090,7 +2091,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         el.style.width = `${r * 2}px`;
         el.style.height = `${r * 2}px`;
         if (tool === "clone-stamp") {
-          el.style.display = cloneStampStore.source ? "block" : "none";
+          el.style.display = activeScope().cloneStamp.source ? "block" : "none";
           el.className = `${styles.brushCursor} ${styles.brushCursorCrossHair}`;
         } else {
           el.style.display = "block";

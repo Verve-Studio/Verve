@@ -32,10 +32,10 @@ import { useTransformGuard } from "@/core/services/useTransformGuard";
 import { useViewActions } from "@/core/services/useViewActions";
 import { AppProvider, useAppContext } from "@/core/store/AppContext";
 import { CanvasProvider } from "@/core/store/CanvasContext";
-import { historyStore } from "@/core/store/historyStore";
+
 import { useNotification } from "@/core/store/notificationStore";
 import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { toolRegistry } from "@/core/tools/toolRegistry";
 import type { LayerState, Tool } from "@/types";
@@ -43,6 +43,7 @@ import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
@@ -255,7 +256,8 @@ function AppContent(): React.JSX.Element {
 
   // ── Adjustments ───────────────────────────────────────────────────
   const getSelectionPixels = useCallback((): Uint8Array | null => {
-    return selectionStore.mask ? selectionStore.mask.slice() : null;
+    const mask = activeScope().selection.mask;
+    return mask ? mask.slice() : null;
   }, []);
 
   const registerAdjMask = useCallback(
@@ -344,10 +346,10 @@ function AppContent(): React.JSX.Element {
 
   // ── View actions ──────────────────────────────────────────────────
   const handleUndo = useCallback(() => {
-    historyStore.undo();
+    activeScope().history.undo();
   }, []);
   const handleRedo = useCallback(() => {
-    historyStore.redo();
+    activeScope().history.redo();
   }, []);
 
   const {
@@ -397,7 +399,6 @@ function AppContent(): React.JSX.Element {
     captureHistory,
     dispatch,
   });
-
 
   // ── Sync state.pixelFormat → active TabRecord.pixelFormat ────────
   // SET_PIXEL_FORMAT updates state but not the tabs array; keep them in sync.
@@ -499,7 +500,7 @@ function AppContent(): React.JSX.Element {
       [],
     ),
     handleFreeTransform: handleEnterTransform,
-    handleInvertSelection: useCallback(() => selectionStore.invert(), []),
+    handleInvertSelection: useCallback(() => activeScope().selection.invert(), []),
     handleSelectAll,
     handleDeselect,
     handleSelectAllLayers,

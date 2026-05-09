@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { historyStore } from "@/core/store/historyStore";
+
 import { DialogButton } from "@/ux/widgets/DialogButton/DialogButton";
 import styles from "./HistoryPanel.module.scss";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -104,14 +105,14 @@ export function HistoryPanel(): React.JSX.Element {
   const [, forceUpdate] = useState(0);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => historyStore.subscribe(() => forceUpdate((n) => n + 1)), []);
+  useEffect(() => activeScope().history.subscribe(() => forceUpdate((n) => n + 1)), []);
 
   // Scroll the selected entry into view whenever it changes
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: "nearest" });
   });
 
-  const { entries, currentIndex, selectedIndex } = historyStore;
+  const { entries, currentIndex, selectedIndex } = activeScope().history;
 
   if (entries.length === 0) {
     return <div className={styles.empty}>No history yet</div>;
@@ -134,7 +135,7 @@ export function HistoryPanel(): React.JSX.Element {
             ]
               .filter(Boolean)
               .join(" ")}
-            onClick={() => historyStore.select(i)}
+            onClick={() => activeScope().history.select(i)}
             title={formatTime(entry.timestamp)}
           >
             <span className={styles.icon}>
@@ -147,13 +148,13 @@ export function HistoryPanel(): React.JSX.Element {
       </div>
       <div className={styles.footer}>
         <DialogButton
-          onClick={() => historyStore.jumpTo(selectedIndex)}
+          onClick={() => activeScope().history.jumpTo(selectedIndex)}
           disabled={!canRestore}
           primary
         >
           Restore to here
         </DialogButton>
-        <DialogButton onClick={() => historyStore.clear()}>
+        <DialogButton onClick={() => activeScope().history.clear()}>
           Clear History
         </DialogButton>
       </div>

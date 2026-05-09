@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
@@ -12,6 +12,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import marqueeRectIconSvg from "./marquee-rect.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Shared options ───────────────────────────────────────────────────────────
 
@@ -87,12 +88,12 @@ function createSelectHandler(): ToolHandler {
       mode = altKey ? "subtract" : shiftKey ? "add" : "set";
       // Apply constraint immediately so fixed-size shows the correct shape on click, not a dot
       const { x2, y2 } = constrainEnd(x, y, x, y);
-      selectionStore.setPending({ type: "rect", x1: x, y1: y, x2, y2 });
+      activeScope().selection.setPending({ type: "rect", x1: x, y1: y, x2, y2 });
     },
 
     onPointerMove({ x, y }: ToolPointerPos, _ctx: ToolContext) {
       const { x2, y2 } = constrainEnd(startX, startY, x, y);
-      selectionStore.setPending({
+      activeScope().selection.setPending({
         type: "rect",
         x1: startX,
         y1: startY,
@@ -103,7 +104,7 @@ function createSelectHandler(): ToolHandler {
 
     onPointerUp({ x, y }: ToolPointerPos, _ctx: ToolContext) {
       const { x2, y2 } = constrainEnd(startX, startY, x, y);
-      selectionStore.setRect(
+      activeScope().selection.setRect(
         startX,
         startY,
         x2,

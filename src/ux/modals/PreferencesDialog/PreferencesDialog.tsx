@@ -6,9 +6,10 @@ import {
   usePreferences,
   type ThemePreference,
 } from "@/core/store/preferencesStore";
-import { historyStore } from "@/core/store/historyStore";
+
 import { useTrackedMemory } from "@/core/store/memoryStore";
 import styles from "./PreferencesDialog.module.scss";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,15 +127,15 @@ function formatBytes(bytes: number): string {
 
 function MemorySection(): React.JSX.Element {
   const prefs = usePreferences();
-  // Subscribe to historyStore so the "currently used" readout updates live as
+  // Subscribe to activeScope().history so the "currently used" readout updates live as
   // the user paints / undoes / redoes while the dialog is open.
   const [bytesUsed, setBytesUsed] = useState(() =>
-    historyStore.getCurrentBytes(),
+    activeScope().history.getCurrentBytes(),
   );
   useEffect(() => {
-    const update = (): void => setBytesUsed(historyStore.getCurrentBytes());
+    const update = (): void => setBytesUsed(activeScope().history.getCurrentBytes());
     update();
-    return historyStore.subscribe(update);
+    return activeScope().history.subscribe(update);
   }, []);
 
   const valueGB = prefs.historyMemoryBytes / GB;
@@ -227,8 +228,8 @@ function MemorySection(): React.JSX.Element {
           {formatBytes(bytesUsed)} of {formatBytes(prefs.historyMemoryBytes)}{" "}
           used
           {" · "}
-          {historyStore.entries.length}{" "}
-          {historyStore.entries.length === 1 ? "entry" : "entries"}
+          {activeScope().history.entries.length}{" "}
+          {activeScope().history.entries.length === 1 ? "entry" : "entries"}
         </span>
       </div>
 

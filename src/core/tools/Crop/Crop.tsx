@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { cropStore } from "@/core/store/cropStore";
+
 import type { CropRect } from "@/core/store/cropStore";
 import type {
   ToolHandler,
@@ -11,6 +11,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import cropIconSvg from "./crop.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -22,15 +23,15 @@ function createCropHandler(): ToolHandler {
     onPointerDown({ x, y }: ToolPointerPos, _ctx: ToolContext) {
       startX = Math.round(x);
       startY = Math.round(y);
-      cropStore.setPending(startX, startY, startX, startY);
+      activeScope().crop.setPending(startX, startY, startX, startY);
     },
 
     onPointerMove({ x, y }: ToolPointerPos, _ctx: ToolContext) {
-      cropStore.setPending(startX, startY, x, y);
+      activeScope().crop.setPending(startX, startY, x, y);
     },
 
     onPointerUp({ x, y }: ToolPointerPos, _ctx: ToolContext) {
-      cropStore.commitRect(startX, startY, x, y);
+      activeScope().crop.commitRect(startX, startY, x, y);
     },
   };
 }
@@ -42,12 +43,12 @@ function CropOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const [rect, setRect] = useState<CropRect | null>(cropStore.rect);
+  const [rect, setRect] = useState<CropRect | null>(activeScope().crop.rect);
 
   useEffect(() => {
-    const fn = (): void => setRect(cropStore.rect);
-    cropStore.subscribe(fn);
-    return () => cropStore.unsubscribe(fn);
+    const fn = (): void => setRect(activeScope().crop.rect);
+    activeScope().crop.subscribe(fn);
+    return () => activeScope().crop.unsubscribe(fn);
   }, []);
 
   return (
@@ -67,7 +68,7 @@ function CropOptions({
       <button
         className={styles.optBtn}
         disabled={rect == null}
-        onClick={() => cropStore.triggerCrop()}
+        onClick={() => activeScope().crop.triggerCrop()}
       >
         Crop
       </button>

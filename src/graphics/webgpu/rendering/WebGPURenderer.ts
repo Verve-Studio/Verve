@@ -11,7 +11,7 @@ import {
 } from "../utils";
 import { EffectEncoder } from "../EffectEncoder";
 import { initGrabCutCompute } from "../compute/grabcutCompute";
-import { displayStore, OPERATOR_SHADER_ID } from "@/core/store/displayStore";
+import { displayStore, OPERATOR_SHADER_ID } from "@/ux/main/Canvas/displayStore";
 import {
   allocFloat32,
   allocUint8,

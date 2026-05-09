@@ -11,7 +11,7 @@ import {
   buildRenderPlan as buildCanvasRenderPlan,
   buildSubPlan,
 } from "./canvasPlan";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
+
 import { encodePng } from "./pngHelpers";
 import {
   rasterizeDocument,
@@ -19,6 +19,7 @@ import {
   type RasterReason,
 } from "@/graphics/rasterization";
 import { matchPaletteIndices } from "@/wasm";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Public handle type (imported by App.tsx and other callers) ────────────
 
@@ -167,7 +168,7 @@ export interface CanvasHandle {
   repaintIndexedLayers: (palette: readonly RGBAColor[]) => void;
   /**
    * Register a baked selection mask for an adjustment layer.
-   * selPixels is a full-canvas Uint8Array (1 byte per pixel, 255 = selected) from selectionStore.mask.
+   * selPixels is a full-canvas Uint8Array (1 byte per pixel, 255 = selected) from activeScope().selection.mask.
    * The R channel of the resulting WebGL layer drives the shader blend weight.
    */
   registerAdjustmentSelectionMask: (
@@ -201,7 +202,7 @@ export interface CanvasHandle {
   getGpuLayer: (layerId: string) => GpuLayer | null;
   /**
    * Pre-populate a mask layer's GPU data from a selection mask before dispatching ADD_MASK_LAYER.
-   * selPixels is a canvas-sized Uint8Array (1 byte/pixel, 0–255) from selectionStore.mask.
+   * selPixels is a canvas-sized Uint8Array (1 byte/pixel, 0–255) from activeScope().selection.mask.
    * Canvas.tsx's layer-init effect skips layers already in glLayersRef, so the mask
    * will use this data instead of the default all-white fill.
    */
@@ -305,7 +306,7 @@ export function useCanvasHandle({
       glLayersRef.current,
       maskMap,
       adjustmentMaskMap.current,
-      adjustmentPreviewStore.snapshot(),
+      activeScope().adjustmentPreview.snapshot(),
       swatchesRef.current as RGBAColor[],
     );
   };

@@ -4,7 +4,7 @@ import {
   getAdjustmentClipboardData,
   setAdjustmentClipboardData,
 } from "@/core/store/adjustmentClipboardStore";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
+
 import { useAppContext } from "@/core/store/AppContext";
 import type { CurvesChannel, CurvesControlPoint } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
@@ -29,7 +29,7 @@ import {
   BUILTIN_CURVES_PRESETS,
   clonePresetChannels,
 } from "./curvesPresets";
-
+import { activeScope } from "@/core/store/scope";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CurvesPanelProps {
@@ -122,7 +122,7 @@ export function CurvesPanel({
   // Preview store integration
   useEffect(() => {
     return () => {
-      adjustmentPreviewStore.clear(layer.id);
+      activeScope().adjustmentPreview.clear(layer.id);
     };
   }, [layer.id]);
 
@@ -384,7 +384,7 @@ export function CurvesPanel({
 
   const handlePreviewToggle = (enabled: boolean): void => {
     setPreviewEnabled(enabled);
-    adjustmentPreviewStore.setBypassed(layer.id, !enabled);
+    activeScope().adjustmentPreview.setBypassed(layer.id, !enabled);
   };
 
   // ─── Visual aids ────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { displayStore } from "@/core/store/displayStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { ToneMappingOperator } from "@/types";
 import type { PixelFormat } from "@/types";
 import styles from "./ToneMappingControls.module.scss";

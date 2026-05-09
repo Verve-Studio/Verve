@@ -1,7 +1,7 @@
 /**
  * Module-level singleton for app-wide user preferences.
  *
- * Pattern mirrors `historyStore` / `selectionStore`: imperative `.set()`,
+ * Pattern mirrors `activeScope().history` / `activeScope().selection`: imperative `.set()`,
  * `.get()`, `.subscribe()` API. Components observe via `usePreferences()`.
  *
  * Persistence: backed by `userData/preferences.json` via the main process

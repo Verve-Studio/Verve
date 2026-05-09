@@ -8,7 +8,7 @@ import { exportTiff32 } from "@/core/io/exportTiff32";
 import { exportDds } from "@/core/io/exportDds";
 import { encodeExr, encodeExrLayers } from "@/wasm";
 import { DdsFormat, DdsHeaderMode } from "@/wasm";
-import { displayStore } from "@/core/store/displayStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState, ToneMappingOperator } from "@/types";
 import { showOperationError } from "@/utils/userFeedback";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";

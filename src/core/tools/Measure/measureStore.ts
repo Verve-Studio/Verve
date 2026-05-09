@@ -2,7 +2,7 @@
 // Module-level singleton holding the live + committed measurement line(s) for
 // the Measure tool. The marching-ants overlay reads this directly to draw the
 // line on screen, and the tool's options bar subscribes to display X/Y/W/H/A
-// readouts. Mirrors the cropStore pattern.
+// readouts. Mirrors the activeScope().crop pattern.
 //
 // A measurement consists of:
 //   • a primary line (start → end), always present once a measurement has

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import type {
   ToolHandler,
@@ -14,6 +14,7 @@ import { SvgIcon } from "../_shared/SvgIcon";
 import magicWandIconSvg from "./magic-wand.svg?raw";
 import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
 import { useAppContext } from "@/core/store/AppContext";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Shared options ───────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ function createMagicWandHandler(): ToolHandler {
       // Build a canvas-sized RGBA buffer containing only the active layer's
       // pixels placed at the layer's offset. floodFillSelect indexes with
       // canvas-space coordinates, so the buffer must be canvas-sized.
-      const { width: cw, height: ch } = selectionStore;
+      const { width: cw, height: ch } = activeScope().selection;
       const canvasData = new Uint8Array(cw * ch * 4);
       const layer = ctx.layer;
       const lw = layer.layerWidth;
@@ -69,7 +70,7 @@ function createMagicWandHandler(): ToolHandler {
             canvasData[di + 3] = expandedLayer[si + 3];
           }
         }
-        selectionStore.floodFillSelect(
+        activeScope().selection.floodFillSelect(
           x,
           y,
           canvasData,
@@ -98,7 +99,7 @@ function createMagicWandHandler(): ToolHandler {
           canvasData[di + 3] = src[si + 3];
         }
       }
-      selectionStore.floodFillSelect(
+      activeScope().selection.floodFillSelect(
         x,
         y,
         canvasData,

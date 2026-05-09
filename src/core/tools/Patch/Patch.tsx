@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,
@@ -11,6 +11,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import patchIconSvg from "./patch.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -305,7 +306,7 @@ function createPatchHandler(): ToolHandler {
       // Click inside the existing selection → patch drag.
       if (
         ctx.selectionMask &&
-        selectionStore.isPixelSelected(Math.round(x), Math.round(y))
+        activeScope().selection.isPixelSelected(Math.round(x), Math.round(y))
       ) {
         snapshot = captureSnapshot(ctx);
         if (!snapshot) return;
@@ -322,7 +323,7 @@ function createPatchHandler(): ToolHandler {
       void altKey;
       drawingPath = true;
       pathPoints = [{ x, y }];
-      selectionStore.setPending({ type: "path", points: [...pathPoints] });
+      activeScope().selection.setPending({ type: "path", points: [...pathPoints] });
       ctx.setCursor("crosshair");
     },
 
@@ -334,7 +335,7 @@ function createPatchHandler(): ToolHandler {
         const last = pathPoints[pathPoints.length - 1];
         if (Math.abs(x - last.x) < 2 && Math.abs(y - last.y) < 2) return;
         pathPoints.push({ x, y });
-        selectionStore.setPending({ type: "path", points: [...pathPoints] });
+        activeScope().selection.setPending({ type: "path", points: [...pathPoints] });
         void shiftKey;
         void altKey;
         return;
@@ -360,7 +361,7 @@ function createPatchHandler(): ToolHandler {
             : patchOptions.antiAlias
               ? 1
               : 0;
-        selectionStore.setPolygon(pathPoints, mode, effectiveFeather);
+        activeScope().selection.setPolygon(pathPoints, mode, effectiveFeather);
         drawingPath = false;
         pathPoints = [];
         return;
@@ -382,7 +383,7 @@ function createPatchHandler(): ToolHandler {
         ctx.renderer.flushLayer(ctx.layer);
         // Destination mode moves the selection along with the patched pixels.
         if (patchOptions.mode === "destination") {
-          selectionStore.translateMask(dx, dy);
+          activeScope().selection.translateMask(dx, dy);
         }
         ctx.render();
         ctx.commitStroke("Patch");
@@ -399,7 +400,7 @@ function createPatchHandler(): ToolHandler {
       // here), otherwise crosshair (you can draw a new selection).
       const inside =
         !!ctx.selectionMask &&
-        selectionStore.isPixelSelected(Math.round(pos.x), Math.round(pos.y));
+        activeScope().selection.isPixelSelected(Math.round(pos.x), Math.round(pos.y));
       ctx.setCursor(inside ? "move" : "crosshair");
     },
 

@@ -3,7 +3,7 @@
  * source position to the current brush position.
  *
  * Call from:
- *  - the cloneStampStore subscriber in Canvas.tsx (on source change)
+ *  - the activeScope().cloneStamp subscriber in Canvas.tsx (on source change)
  *  - the onHover callback in Canvas.tsx (on every pointer move)
  *
  * @param oc         The tool overlay canvas (toolOverlayRef)

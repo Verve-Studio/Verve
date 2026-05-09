@@ -441,7 +441,7 @@ export async function flipIndexed(
  * @param pixels   RGBA flat canvas composite, width × height × 4 bytes.
  * @param width    Canvas width in pixels.
  * @param height   Canvas height in pixels.
- * @param mask     Single-channel fill mask from selectionStore.mask,
+ * @param mask     Single-channel fill mask from activeScope().selection.mask,
  *                 width × height bytes (255 = fill region, 0 = source region).
  * @param sourceMask  Optional source-eligibility mask (1 = eligible, 0 = excluded).
  *                    Pass undefined for unconstrained (sample entire image).

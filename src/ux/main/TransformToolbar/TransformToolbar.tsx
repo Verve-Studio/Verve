@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { transformStore } from "@/core/store/transformStore";
+
 import { useAppContext } from "@/core/store/AppContext";
 import type { TransformHandleMode, TransformInterpolation } from "@/types";
 import styles from "./TransformToolbar.module.scss";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Lock icon SVG ────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ function LockIcon({ locked }: { locked: boolean }): React.JSX.Element {
 export function TransformToolbar(): React.JSX.Element {
   const { state } = useAppContext();
   const isIndexed = state.pixelFormat === "indexed8";
-  const [params, setParams] = useState(() => transformStore.params);
+  const [params, setParams] = useState(() => activeScope().transform.params);
   const [aspectLocked, setAspectLocked] = useState(false);
   const [handleMode, setHandleMode] = useState<TransformHandleMode>("scale");
   const [interpolation, setInterpolation] =
@@ -54,38 +55,38 @@ export function TransformToolbar(): React.JSX.Element {
 
   useEffect(() => {
     const sync = (): void => {
-      setParams({ ...transformStore.params });
-      setAspectLocked(transformStore.aspectLocked);
-      setHandleMode(transformStore.handleMode);
-      setInterpolation(transformStore.interpolation);
+      setParams({ ...activeScope().transform.params });
+      setAspectLocked(activeScope().transform.aspectLocked);
+      setHandleMode(activeScope().transform.handleMode);
+      setInterpolation(activeScope().transform.interpolation);
     };
-    transformStore.subscribe(sync);
+    activeScope().transform.subscribe(sync);
     sync();
-    return () => transformStore.unsubscribe(sync);
+    return () => activeScope().transform.unsubscribe(sync);
   }, []);
 
   const origAspect =
-    transformStore.originalH > 0
-      ? transformStore.originalW / transformStore.originalH
+    activeScope().transform.originalH > 0
+      ? activeScope().transform.originalW / activeScope().transform.originalH
       : 1;
 
   const commitX = useCallback((raw: string): void => {
     const v = parseFloat(raw);
-    if (!isNaN(v)) transformStore.updateParams({ x: v });
+    if (!isNaN(v)) activeScope().transform.updateParams({ x: v });
   }, []);
 
   const commitY = useCallback((raw: string): void => {
     const v = parseFloat(raw);
-    if (!isNaN(v)) transformStore.updateParams({ y: v });
+    if (!isNaN(v)) activeScope().transform.updateParams({ y: v });
   }, []);
 
   const commitW = useCallback(
     (raw: string): void => {
       const v = Math.max(1, parseFloat(raw) || 1);
-      if (transformStore.aspectLocked) {
-        transformStore.updateParams({ w: v, h: Math.round(v / origAspect) });
+      if (activeScope().transform.aspectLocked) {
+        activeScope().transform.updateParams({ w: v, h: Math.round(v / origAspect) });
       } else {
-        transformStore.updateParams({ w: v });
+        activeScope().transform.updateParams({ w: v });
       }
     },
     [origAspect],
@@ -94,10 +95,10 @@ export function TransformToolbar(): React.JSX.Element {
   const commitH = useCallback(
     (raw: string): void => {
       const v = Math.max(1, parseFloat(raw) || 1);
-      if (transformStore.aspectLocked) {
-        transformStore.updateParams({ h: v, w: Math.round(v * origAspect) });
+      if (activeScope().transform.aspectLocked) {
+        activeScope().transform.updateParams({ h: v, w: Math.round(v * origAspect) });
       } else {
-        transformStore.updateParams({ h: v });
+        activeScope().transform.updateParams({ h: v });
       }
     },
     [origAspect],
@@ -109,21 +110,21 @@ export function TransformToolbar(): React.JSX.Element {
       let r = v % 360;
       if (r > 180) r -= 360;
       if (r < -180) r += 360;
-      transformStore.updateParams({ rotation: r });
+      activeScope().transform.updateParams({ rotation: r });
     }
   }, []);
 
   const toggleLock = useCallback((): void => {
-    transformStore.aspectLocked = !transformStore.aspectLocked;
-    transformStore.notify();
+    activeScope().transform.aspectLocked = !activeScope().transform.aspectLocked;
+    activeScope().transform.notify();
   }, []);
 
   const setMode = useCallback((mode: TransformHandleMode): void => {
-    const prev = transformStore.handleMode;
-    transformStore.handleMode = mode;
+    const prev = activeScope().transform.handleMode;
+    activeScope().transform.handleMode = mode;
     if (mode === "perspective" && prev !== "perspective") {
-      const p = transformStore.params;
-      transformStore.params = {
+      const p = activeScope().transform.params;
+      activeScope().transform.params = {
         ...p,
         perspectiveCorners: [
           { x: p.x, y: p.y },
@@ -133,17 +134,17 @@ export function TransformToolbar(): React.JSX.Element {
         ],
       };
     } else if (mode !== "perspective" && prev === "perspective") {
-      transformStore.params = {
-        ...transformStore.params,
+      activeScope().transform.params = {
+        ...activeScope().transform.params,
         perspectiveCorners: null,
       };
     }
-    transformStore.notify();
+    activeScope().transform.notify();
   }, []);
 
   const setInterp = useCallback((interp: TransformInterpolation): void => {
-    transformStore.interpolation = interp;
-    transformStore.notify();
+    activeScope().transform.interpolation = interp;
+    activeScope().transform.notify();
   }, []);
 
   const isPerspective = handleMode === "perspective";
@@ -303,14 +304,14 @@ export function TransformToolbar(): React.JSX.Element {
       {/* Cancel / Apply */}
       <button
         className={styles.cancelBtn}
-        onClick={() => transformStore.triggerCancel()}
+        onClick={() => activeScope().transform.triggerCancel()}
         type="button"
       >
         Cancel
       </button>
       <button
         className={styles.applyBtn}
-        onClick={() => transformStore.triggerApply()}
+        onClick={() => activeScope().transform.triggerApply()}
         type="button"
       >
         Apply

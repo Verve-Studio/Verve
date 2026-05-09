@@ -1,8 +1,9 @@
 type Listener = () => void;
 
-class AdjustmentPreviewStore {
+const listeners = new Set<Listener>();
+
+export class AdjustmentPreviewStore {
   private bypassIds = new Set<string>();
-  private listeners = new Set<Listener>();
 
   isBypassed(layerId: string): boolean {
     return this.bypassIds.has(layerId);
@@ -38,13 +39,11 @@ class AdjustmentPreviewStore {
   }
 
   subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    listeners.add(listener);
+    return () => listeners.delete(listener);
   }
 
-  private notify(): void {
-    for (const listener of this.listeners) listener();
+  notify(): void {
+    for (const listener of listeners) listener();
   }
 }
-
-export const adjustmentPreviewStore = new AdjustmentPreviewStore();

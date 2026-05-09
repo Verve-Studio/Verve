@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { transformStore } from "@/core/store/transformStore";
+
 import type {
   TransformParams,
   Point,
@@ -15,6 +15,8 @@ import type {
   ToolOptionsStyles,
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
+import { activeScope } from "@/core/store/scope";
+import type { TransformStore } from "@/core/store/transformStore";
 
 // ─── Matrix helpers ───────────────────────────────────────────────────────────
 
@@ -343,7 +345,7 @@ function applyScaleDrag(
 
   const isCorner =
     handleIdx === 0 || handleIdx === 2 || handleIdx === 5 || handleIdx === 7;
-  if ((shiftKey || transformStore.aspectLocked) && isCorner) {
+  if ((shiftKey || activeScope().transform.aspectLocked) && isCorner) {
     const origAspect = startParams.w / startParams.h;
     const constrainBy = Math.max(newW / origAspect, newH) > newH ? "w" : "h";
     if (constrainBy === "w") newH = newW / origAspect;
@@ -559,7 +561,7 @@ const SHEAR_EDGE_COLOR = "rgba(120,220,80,0.9)";
 
 export function drawTransformOverlay(
   overlayCanvas: HTMLCanvasElement,
-  store: typeof transformStore,
+  store: TransformStore,
   zoom: number,
 ): void {
   const ctx = overlayCanvas.getContext("2d");
@@ -897,25 +899,25 @@ export function createTransformHandler(): ToolHandler {
 
   return {
     onPointerDown(pos: ToolPointerPos, ctx: ToolContext): void {
-      if (!transformStore.isActive) return;
+      if (!activeScope().transform.isActive) return;
       if (
         "button" in (pos as unknown as PointerEvent) &&
         (pos as unknown as PointerEvent).button !== 0
       )
         return;
 
-      const handles = getHandleWorldPositions(transformStore.params);
+      const handles = getHandleWorldPositions(activeScope().transform.params);
       const hit = hitTestHandle(
         handles,
         pos.x,
         pos.y,
         ctx.zoom,
-        transformStore.handleMode,
+        activeScope().transform.handleMode,
       );
 
       if (hit !== null) {
         activeHandle = hit;
-      } else if (isInsideBox(transformStore.params, pos.x, pos.y)) {
+      } else if (isInsideBox(activeScope().transform.params, pos.x, pos.y)) {
         activeHandle = HANDLE_TRANSLATE;
       } else {
         activeHandle = null;
@@ -923,7 +925,7 @@ export function createTransformHandler(): ToolHandler {
       }
 
       dragStartPos = { x: pos.x, y: pos.y };
-      paramsAtDragStart = { ...transformStore.params };
+      paramsAtDragStart = { ...activeScope().transform.params };
       if (paramsAtDragStart.perspectiveCorners) {
         paramsAtDragStart = {
           ...paramsAtDragStart,
@@ -939,35 +941,35 @@ export function createTransformHandler(): ToolHandler {
 
     onPointerMove(pos: ToolPointerPos, ctx: ToolContext): void {
       if (
-        !transformStore.isActive ||
+        !activeScope().transform.isActive ||
         activeHandle === null ||
         !paramsAtDragStart
       )
         return;
 
       const p = paramsAtDragStart;
-      const { handleMode } = transformStore;
+      const { handleMode } = activeScope().transform;
       let newParams: TransformParams;
 
       if (activeHandle === HANDLE_TRANSLATE) {
         newParams = applyTranslateDrag(
-          transformStore.params,
+          activeScope().transform.params,
           { x: pos.x - dragStartPos.x, y: pos.y - dragStartPos.y },
           p,
         );
       } else if (activeHandle === 8) {
         newParams = applyRotateDrag(
-          transformStore.params,
+          activeScope().transform.params,
           pos,
           dragStartPos,
           p,
           pos.shiftKey,
         );
       } else if (activeHandle === 9) {
-        newParams = applyPivotDrag(transformStore.params, pos, p);
+        newParams = applyPivotDrag(activeScope().transform.params, pos, p);
       } else if (activeHandle >= 10 && activeHandle <= 13) {
         newParams = applyPerspectiveDrag(
-          transformStore.params,
+          activeScope().transform.params,
           activeHandle - 10,
           pos,
           pos.shiftKey,
@@ -975,7 +977,7 @@ export function createTransformHandler(): ToolHandler {
         );
       } else if (handleMode === "shear") {
         newParams = applyShearDrag(
-          transformStore.params,
+          activeScope().transform.params,
           activeHandle,
           pos,
           dragStartPos,
@@ -983,7 +985,7 @@ export function createTransformHandler(): ToolHandler {
         );
       } else {
         newParams = applyScaleDrag(
-          transformStore.params,
+          activeScope().transform.params,
           activeHandle,
           pos,
           p,
@@ -992,7 +994,7 @@ export function createTransformHandler(): ToolHandler {
       }
 
       void ctx;
-      transformStore.updateParams(newParams);
+      activeScope().transform.updateParams(newParams);
     },
 
     onPointerUp(_pos: ToolPointerPos, _ctx: ToolContext): void {
@@ -1001,16 +1003,16 @@ export function createTransformHandler(): ToolHandler {
     },
 
     onHover(pos: ToolPointerPos, ctx: ToolContext): void {
-      if (!transformStore.isActive || !ctx.overlayCanvas) return;
-      const handles = getHandleWorldPositions(transformStore.params);
+      if (!activeScope().transform.isActive || !ctx.overlayCanvas) return;
+      const handles = getHandleWorldPositions(activeScope().transform.params);
       const hit = hitTestHandle(
         handles,
         pos.x,
         pos.y,
         ctx.zoom,
-        transformStore.handleMode,
+        activeScope().transform.handleMode,
       );
-      const inside = isInsideBox(transformStore.params, pos.x, pos.y);
+      const inside = isInsideBox(activeScope().transform.params, pos.x, pos.y);
       let cursor = "default";
       if (hit !== null) {
         if (hit === 8) cursor = "grab";
@@ -1018,7 +1020,7 @@ export function createTransformHandler(): ToolHandler {
         else if (hit >= 10) cursor = "move";
         else
           cursor =
-            resizeCursorForHandle(hit, transformStore.params.rotation) ??
+            resizeCursorForHandle(hit, activeScope().transform.params.rotation) ??
             "nwse-resize";
       } else if (inside) {
         cursor = "move";
@@ -1072,7 +1074,7 @@ function LockIcon({ locked }: { locked: boolean }): React.JSX.Element {
 // ─── Toolbar component ────────────────────────────────────────────────────────
 
 export function TransformToolbar(): React.JSX.Element {
-  const [params, setParams] = useState(() => transformStore.params);
+  const [params, setParams] = useState(() => activeScope().transform.params);
   const [aspectLocked, setAspectLocked] = useState(false);
   const [handleMode, setHandleMode] = useState<TransformHandleMode>("scale");
   const [interpolation, setInterpolation] =
@@ -1080,38 +1082,38 @@ export function TransformToolbar(): React.JSX.Element {
 
   useEffect(() => {
     const sync = (): void => {
-      setParams({ ...transformStore.params });
-      setAspectLocked(transformStore.aspectLocked);
-      setHandleMode(transformStore.handleMode);
-      setInterpolation(transformStore.interpolation);
+      setParams({ ...activeScope().transform.params });
+      setAspectLocked(activeScope().transform.aspectLocked);
+      setHandleMode(activeScope().transform.handleMode);
+      setInterpolation(activeScope().transform.interpolation);
     };
-    transformStore.subscribe(sync);
+    activeScope().transform.subscribe(sync);
     sync();
-    return () => transformStore.unsubscribe(sync);
+    return () => activeScope().transform.unsubscribe(sync);
   }, []);
 
   const origAspect =
-    transformStore.originalH > 0
-      ? transformStore.originalW / transformStore.originalH
+    activeScope().transform.originalH > 0
+      ? activeScope().transform.originalW / activeScope().transform.originalH
       : 1;
 
   const commitX = useCallback((raw: string): void => {
     const v = parseFloat(raw);
-    if (!isNaN(v)) transformStore.updateParams({ x: v });
+    if (!isNaN(v)) activeScope().transform.updateParams({ x: v });
   }, []);
 
   const commitY = useCallback((raw: string): void => {
     const v = parseFloat(raw);
-    if (!isNaN(v)) transformStore.updateParams({ y: v });
+    if (!isNaN(v)) activeScope().transform.updateParams({ y: v });
   }, []);
 
   const commitW = useCallback(
     (raw: string): void => {
       const v = Math.max(1, parseFloat(raw) || 1);
-      if (transformStore.aspectLocked) {
-        transformStore.updateParams({ w: v, h: Math.round(v / origAspect) });
+      if (activeScope().transform.aspectLocked) {
+        activeScope().transform.updateParams({ w: v, h: Math.round(v / origAspect) });
       } else {
-        transformStore.updateParams({ w: v });
+        activeScope().transform.updateParams({ w: v });
       }
     },
     [origAspect],
@@ -1120,10 +1122,10 @@ export function TransformToolbar(): React.JSX.Element {
   const commitH = useCallback(
     (raw: string): void => {
       const v = Math.max(1, parseFloat(raw) || 1);
-      if (transformStore.aspectLocked) {
-        transformStore.updateParams({ h: v, w: Math.round(v * origAspect) });
+      if (activeScope().transform.aspectLocked) {
+        activeScope().transform.updateParams({ h: v, w: Math.round(v * origAspect) });
       } else {
-        transformStore.updateParams({ h: v });
+        activeScope().transform.updateParams({ h: v });
       }
     },
     [origAspect],
@@ -1135,21 +1137,21 @@ export function TransformToolbar(): React.JSX.Element {
       let r = v % 360;
       if (r > 180) r -= 360;
       if (r < -180) r += 360;
-      transformStore.updateParams({ rotation: r });
+      activeScope().transform.updateParams({ rotation: r });
     }
   }, []);
 
   const toggleLock = useCallback((): void => {
-    transformStore.aspectLocked = !transformStore.aspectLocked;
-    transformStore.notify();
+    activeScope().transform.aspectLocked = !activeScope().transform.aspectLocked;
+    activeScope().transform.notify();
   }, []);
 
   const setMode = useCallback((mode: TransformHandleMode): void => {
-    const prev = transformStore.handleMode;
-    transformStore.handleMode = mode;
+    const prev = activeScope().transform.handleMode;
+    activeScope().transform.handleMode = mode;
     if (mode === "perspective" && prev !== "perspective") {
-      const p = transformStore.params;
-      transformStore.params = {
+      const p = activeScope().transform.params;
+      activeScope().transform.params = {
         ...p,
         perspectiveCorners: [
           { x: p.x, y: p.y },
@@ -1159,17 +1161,17 @@ export function TransformToolbar(): React.JSX.Element {
         ],
       };
     } else if (mode !== "perspective" && prev === "perspective") {
-      transformStore.params = {
-        ...transformStore.params,
+      activeScope().transform.params = {
+        ...activeScope().transform.params,
         perspectiveCorners: null,
       };
     }
-    transformStore.notify();
+    activeScope().transform.notify();
   }, []);
 
   const setInterp = useCallback((interp: TransformInterpolation): void => {
-    transformStore.interpolation = interp;
-    transformStore.notify();
+    activeScope().transform.interpolation = interp;
+    activeScope().transform.notify();
   }, []);
 
   const isPerspective = handleMode === "perspective";
@@ -1323,14 +1325,14 @@ export function TransformToolbar(): React.JSX.Element {
       {/* Cancel / Apply */}
       <button
         className={styles.cancelBtn}
-        onClick={() => transformStore.triggerCancel()}
+        onClick={() => activeScope().transform.triggerCancel()}
         type="button"
       >
         Cancel
       </button>
       <button
         className={styles.applyBtn}
-        onClick={() => transformStore.triggerApply()}
+        onClick={() => activeScope().transform.triggerApply()}
         type="button"
       >
         Apply

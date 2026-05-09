@@ -5,7 +5,7 @@ import { walkQuadBezier, stampAirbrush } from "./brushStroke";
 import type { BrushShape } from "./brushStroke";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useAppContext } from "@/core/store/AppContext";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { pixelBrushStore } from "@/core/store/pixelBrushStore";
 import { PixelBrushGallery } from "@/ux/widgets/PixelBrushGallery/PixelBrushGallery";
 import { PixelBrushesModal } from "@/ux/modals/PixelBrushesModal/PixelBrushesModal";
@@ -27,7 +27,7 @@ import {
   writeIndexToLayer,
   stampIndexedShape,
 } from "@/utils/indexedColorUtils";
-
+import { activeScope } from "@/core/store/scope";
 // ─── Shared options ───────────────────────────────────────────────────────────
 
 export const pencilOptions = {
@@ -1190,7 +1190,7 @@ function captureSelectionAsBrush(
   dispatch: ReturnType<typeof useAppContext>["dispatch"],
 ): void {
   if (!_renderer || !_layer) return;
-  const mask = selectionStore.mask;
+  const mask = activeScope().selection.mask;
   if (!mask) return;
 
   const cw = _renderer.pixelWidth;

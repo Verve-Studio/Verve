@@ -234,9 +234,24 @@ Tab state (multi-document) lives in `useTabs`. Canvas pixel data lives in WebGPU
 
 Avoid re-initializing canvas layers in effects that list `rendererRef.current` as a dependency — use a `hasInitializedRef` guard instead.
 
-**Module-level singletons** (`src/core/store/`): stateful objects that tools and canvas components import directly without going through React. They are not React state; update them imperatively and call their `notify()` to trigger subscribers.
+### Stores
 
-Inventory: `selectionStore`, `historyStore`, `clipboardStore`, `adjustmentClipboardStore`, `adjustmentPreviewStore`, `cursorStore`, `cropStore`, `transformStore`, `objectSelectionStore`, `polygonalSelectionStore`, `cloneStampStore`, `pixelBrushStore`, `displayStore`, `notificationStore`, `memoryStore`, `paletteCycleStore`, `brushStore`, `brushPanelStore`, `brushManagerStore`, `measureStore`, `preferencesStore`.
+There are two kinds of stores; they sit at different scopes.
+
+**Per-document stores (`DocumentScope`).** Each tab owns its own bundle of stateful stores: `selection`, `history`, `crop`, `transform`, `objectSelection`, `polygonalSelection`, `cloneStamp`, `adjustmentPreview`, `paletteCycle`. Defined in `src/core/store/scope.ts`. The active scope is the active tab's scope; `setActiveScope(tab.scope)` runs in `useTabs.switchToTab` — there's no copy-on-switch dance. Subscribers are kept at module scope inside each store file (not on the instance), so a component that subscribed to `selection` while Tab 1 was active still wakes up when Tab 2's selection mutates after a switch.
+
+Read patterns:
+- **Tool handlers** (synchronous pointer-event path): `ctx.scope.selection.X` — `scope` is supplied through `ToolContext`, hot-path-friendly.
+- **Hooks / React components / non-handler tool code**: `activeScope().selection.X` — imported from `@/core/store/scope`.
+- A bootstrap scope is created at module load so early-mount subscribers can call `activeScope()` before the first tab exists; `useTabs` swaps in a real tab scope on first document open.
+
+**Cross-document module singletons (`src/core/store/`).** Genuinely process-global stores that span all tabs: `clipboardStore`, `adjustmentClipboardStore` (cross-document copy/paste), `brushStore`, `pixelBrushStore`, `preferencesStore` (persisted to Electron userData), `notificationStore`, `memoryStore`. Imported directly by name; no scope involved.
+
+**Co-located UI scratchpads.** Stores that exist purely as imperative caches for one piece of UI live alongside that UI, not in `core/store/`:
+- `displayStore` (HDR exposure / tone-mapping operator) — `src/ux/main/Canvas/displayStore.ts`
+- `cursorStore` (live canvas-space cursor position) — `src/ux/main/Canvas/cursorStore.ts`
+- `measureStore` (last measure-tool result) — `src/core/tools/Measure/measureStore.ts`
+- `brushPanelStore`, `brushManagerStore` (brush UI state) — `src/core/tools/Brush/`
 
 **`selectedLayerIds`** is kept in `AppState` (not as local panel state) so hooks like `useLayers` can act on multi-layer selections. Any action that resets the layer stack (`SET_ACTIVE_LAYER`, `REORDER_LAYERS`, `RESTORE_LAYERS`, `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB`) also resets `selectedLayerIds` to `[]`.
 

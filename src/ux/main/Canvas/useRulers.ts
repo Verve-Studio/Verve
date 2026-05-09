@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { cursorStore } from "@/core/store/cursorStore";
+import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 
 export const RULER_SIZE = 20; // CSS pixels
 

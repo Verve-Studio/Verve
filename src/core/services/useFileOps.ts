@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { historyStore } from "@/core/store/historyStore";
+
 import {
   u8TransferStore,
   f32TransferStore,
@@ -25,6 +25,7 @@ import type {
 import type { AppAction } from "@/core/store/AppContext";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
+import { activeScope, createDocumentScope, setActiveScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -158,11 +159,11 @@ export function useFileOps({
       pixelFormat?: PixelFormat;
     }): void => {
       const snapshot = captureActiveSnapshot();
-      const savedHistory = historyStore.detach();
       const savedLayerData = serializeActiveTabPixels();
       const n = untitledCounter;
       setUntitledCounter(n + 1);
       const newId: string = makeTabId();
+      const newScope = createDocumentScope();
       const fmt: PixelFormat = pixelFormat ?? "rgba8";
       const newSnapshot: TabSnapshot = {
         canvasWidth: width,
@@ -188,7 +189,7 @@ export function useFileOps({
       const updated: TabRecord[] = [
         ...tabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, snapshot, savedHistory, savedLayerData }
+            ? { ...t, snapshot, savedLayerData }
             : t,
         ),
         {
@@ -197,7 +198,7 @@ export function useFileOps({
           filePath: null,
           snapshot: newSnapshot,
           savedLayerData: null,
-          savedHistory: null,
+          scope: newScope,
           canvasKey: 1,
           tiledMode: false,
           showTileGrid: false,
@@ -208,8 +209,9 @@ export function useFileOps({
         },
       ];
       setTabs(updated);
+      setActiveScope(newScope);
       setActiveTabId(newId);
-      historyStore.clear({ recaptureSnapshot: false });
+      activeScope().history.clear({ recaptureSnapshot: false });
       setPendingLayerData(null);
       dispatch({
         type: "NEW_CANVAS",
@@ -256,6 +258,7 @@ export function useFileOps({
           return;
         }
         const newId = makeTabId();
+      const newScope = createDocumentScope();
         const layerData = new Map<string, string>();
         const layers: LayerState[] = [];
         // Recursively flatten the PSD tree into Verve's flat layer array.
@@ -362,12 +365,11 @@ export function useFileOps({
           pixelFormat: "rgba8",
         };
         const snapshot = captureActiveSnapshot();
-        const savedHistory = historyStore.detach();
         const savedLayerData = serializeActiveTabPixels();
         const updated: TabRecord[] = [
           ...tabs.map((t) =>
             t.id === activeTabId
-              ? { ...t, snapshot, savedHistory, savedLayerData }
+              ? { ...t, snapshot, savedLayerData }
               : t,
           ),
           {
@@ -376,7 +378,7 @@ export function useFileOps({
             filePath: path,
             snapshot: newSnapshot,
             savedLayerData: layerData,
-            savedHistory: null,
+            scope: newScope,
             canvasKey: 1,
             tiledMode: false,
             showTileGrid: false,
@@ -387,8 +389,9 @@ export function useFileOps({
           },
         ];
         setTabs(updated);
+        setActiveScope(newScope);
         setActiveTabId(newId);
-        historyStore.clear({ recaptureSnapshot: false });
+        activeScope().history.clear({ recaptureSnapshot: false });
         setPendingLayerData(null);
         dispatch({
           type: "SWITCH_TAB",
@@ -424,6 +427,7 @@ export function useFileOps({
         const exr = await decodeExrLayers(bytes);
         if (exr.layers.length > 1) {
           const newId = makeTabId();
+      const newScope = createDocumentScope();
           const layerData = new Map<string, string>();
           const layers: LayerState[] = [];
           // Track names already used so we can disambiguate duplicates.
@@ -469,12 +473,11 @@ export function useFileOps({
             pixelFormat: "rgba32f",
           };
           const snapshot = captureActiveSnapshot();
-          const savedHistory = historyStore.detach();
           const savedLayerData = serializeActiveTabPixels();
           const updated: TabRecord[] = [
             ...tabs.map((t) =>
               t.id === activeTabId
-                ? { ...t, snapshot, savedHistory, savedLayerData }
+                ? { ...t, snapshot, savedLayerData }
                 : t,
             ),
             {
@@ -483,7 +486,7 @@ export function useFileOps({
               filePath: path,
               snapshot: newSnapshot,
               savedLayerData: layerData,
-              savedHistory: null,
+            scope: newScope,
               canvasKey: 1,
               tiledMode: false,
               showTileGrid: false,
@@ -494,8 +497,9 @@ export function useFileOps({
             },
           ];
           setTabs(updated);
+          setActiveScope(newScope);
           setActiveTabId(newId);
-          historyStore.clear({ recaptureSnapshot: false });
+          activeScope().history.clear({ recaptureSnapshot: false });
           setPendingLayerData(null);
           dispatch({
             type: "SWITCH_TAB",
@@ -566,13 +570,13 @@ export function useFileOps({
             pixelFormat: "rgba32f",
           };
           const snapshot = captureActiveSnapshot();
-          const savedHistory = historyStore.detach();
           const savedLayerData = serializeActiveTabPixels();
           const newId = makeTabId();
+      const newScope = createDocumentScope();
           const updated: TabRecord[] = [
             ...tabs.map((t) =>
               t.id === activeTabId
-                ? { ...t, snapshot, savedHistory, savedLayerData }
+                ? { ...t, snapshot, savedLayerData }
                 : t,
             ),
             {
@@ -581,7 +585,7 @@ export function useFileOps({
               filePath: null,
               snapshot: newSnapshot,
               savedLayerData: layerData,
-              savedHistory: null,
+            scope: newScope,
               canvasKey: 1,
               tiledMode: false,
               showTileGrid: false,
@@ -592,8 +596,9 @@ export function useFileOps({
             },
           ];
           setTabs(updated);
+          setActiveScope(newScope);
           setActiveTabId(newId);
-          historyStore.clear({ recaptureSnapshot: false });
+          activeScope().history.clear({ recaptureSnapshot: false });
           setPendingLayerData(null);
           dispatch({
             type: "SWITCH_TAB",
@@ -620,6 +625,7 @@ export function useFileOps({
         const data = loaded.data as Uint8Array;
         const layerId = "layer-0";
         const newId = makeTabId();
+      const newScope = createDocumentScope();
         const storeKey = `${newId}:${layerId}`;
         u8TransferStore.set(storeKey, data);
         const layerData = new Map([
@@ -649,12 +655,11 @@ export function useFileOps({
           pixelFormat: "rgba8",
         };
         const snapshot = captureActiveSnapshot();
-        const savedHistory = historyStore.detach();
         const savedLayerData = serializeActiveTabPixels();
         const updated: TabRecord[] = [
           ...tabs.map((t) =>
             t.id === activeTabId
-              ? { ...t, snapshot, savedHistory, savedLayerData }
+              ? { ...t, snapshot, savedLayerData }
               : t,
           ),
           {
@@ -663,7 +668,7 @@ export function useFileOps({
             filePath: null,
             snapshot: newSnapshot,
             savedLayerData: layerData,
-            savedHistory: null,
+            scope: newScope,
             canvasKey: 1,
             tiledMode: false,
             showTileGrid: false,
@@ -674,8 +679,9 @@ export function useFileOps({
           },
         ];
         setTabs(updated);
+        setActiveScope(newScope);
         setActiveTabId(newId);
-        historyStore.clear({ recaptureSnapshot: false });
+        activeScope().history.clear({ recaptureSnapshot: false });
         setPendingLayerData(null);
         dispatch({
           type: "SWITCH_TAB",
@@ -846,13 +852,13 @@ export function useFileOps({
         spritesheet: docSpritesheet,
       };
       const snapshot = captureActiveSnapshot();
-      const savedHistory = historyStore.detach();
       const savedLayerData = serializeActiveTabPixels();
       const newId = makeTabId();
+      const newScope = createDocumentScope();
       const updated: TabRecord[] = [
         ...tabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, snapshot, savedHistory, savedLayerData }
+            ? { ...t, snapshot, savedLayerData }
             : t,
         ),
         {
@@ -861,7 +867,7 @@ export function useFileOps({
           filePath: path,
           snapshot: newSnapshot,
           savedLayerData: layerData,
-          savedHistory: null,
+            scope: newScope,
           canvasKey: 1,
           tiledMode: false,
           showTileGrid: false,
@@ -872,8 +878,9 @@ export function useFileOps({
         },
       ];
       setTabs(updated);
+      setActiveScope(newScope);
       setActiveTabId(newId);
-      historyStore.clear({ recaptureSnapshot: false });
+      activeScope().history.clear({ recaptureSnapshot: false });
       setPendingLayerData(null);
       dispatch({
         type: "SWITCH_TAB",

@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@/core/store/historyStore";
+import type { DocumentScope } from "@/core/store/scope";
 import type {
   LayerState,
   BackgroundFill,
@@ -66,8 +66,12 @@ export interface TabRecord {
   snapshot: TabSnapshot;
   /** Pixel data for each layer — null while tab is active (data lives in WebGL) */
   savedLayerData: Map<string, string> | null;
-  /** History stack — null while tab is active (historyStore holds the live data) */
-  savedHistory: { entries: HistoryEntry[]; currentIndex: number } | null;
+  /**
+   * Per-document store bundle (selection, history, crop, transform, …).
+   * Each tab owns its own instance; switching tabs calls `setActiveScope`
+   * on this object — no copying or restore-from-snapshot dance.
+   */
+  scope: DocumentScope;
   /** Incremented to force this tab's Canvas to remount (resize / crop). */
   canvasKey: number;
   /** Session-only: tiled mode toggle for this tab. Not persisted to document. */

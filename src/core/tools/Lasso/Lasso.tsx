@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
@@ -12,6 +12,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import lassoIconSvg from "./lasso.svg?raw";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Shared options ────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ function createLassoHandler(): ToolHandler {
     ) {
       points = [{ x, y }];
       mode = altKey ? "subtract" : shiftKey ? "add" : "set";
-      selectionStore.setPending({ type: "path", points: [...points] });
+      activeScope().selection.setPending({ type: "path", points: [...points] });
     },
 
     onPointerMove({ x, y }: ToolPointerPos, _ctx: ToolContext) {
@@ -38,7 +39,7 @@ function createLassoHandler(): ToolHandler {
       // Subsample: only record if moved at least 2px to keep array small
       if (Math.abs(x - last.x) < 2 && Math.abs(y - last.y) < 2) return;
       points.push({ x, y });
-      selectionStore.setPending({ type: "path", points: [...points] });
+      activeScope().selection.setPending({ type: "path", points: [...points] });
     },
 
     onPointerUp({ x, y }: ToolPointerPos, _ctx: ToolContext) {
@@ -50,7 +51,7 @@ function createLassoHandler(): ToolHandler {
           : lassoOptions.antiAlias
             ? 1
             : 0;
-      selectionStore.setPolygon(points, mode, effectiveFeather);
+      activeScope().selection.setPolygon(points, mode, effectiveFeather);
       points = [];
     },
   };

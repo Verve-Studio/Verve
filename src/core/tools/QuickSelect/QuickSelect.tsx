@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
@@ -17,6 +17,7 @@ import {
   forEachStamp,
   markBrushDirty as _markBrushDirty,
 } from "../_shared/localBrush";
+import { activeScope } from "@/core/store/scope";
 void _markBrushDirty;
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ export const quickSelectOptions = {
 
 /** Map the 0..255 tolerance setting to a small per-channel-average tolerance
  *  used for flood-fill comparisons. The flood-fill compares the avg of |Δr|
- *  per channel against this threshold (matches selectionStore.floodFillSelect). */
+ *  per channel against this threshold (matches activeScope().selection.floodFillSelect). */
 function effectiveTolerance(tol: number): number {
   return Math.max(0, Math.min(255, tol));
 }
@@ -56,7 +57,7 @@ function effectiveTolerance(tol: number): number {
  * indexes by canvas-space coords, so the buffer must be canvas-sized.
  */
 function buildCanvasAlignedPixels(ctx: ToolContext): Uint8Array | null {
-  const { width: cw, height: ch } = selectionStore;
+  const { width: cw, height: ch } = activeScope().selection;
   if (cw === 0 || ch === 0) return null;
   const out = new Uint8Array(cw * ch * 4);
   const layer = ctx.layer;
@@ -242,7 +243,7 @@ function createQuickSelectHandler(): ToolHandler {
     // Push the in-progress mask into the live selection so the user sees the
     // marching ants update every stamp. mergeMask copies the mask, so we can
     // keep mutating `strokeMask` afterwards.
-    selectionStore.mergeMask(new Uint8Array(strokeMask), strokeMode);
+    activeScope().selection.mergeMask(new Uint8Array(strokeMask), strokeMode);
   }
 
   return {
@@ -252,8 +253,8 @@ function createQuickSelectHandler(): ToolHandler {
     ): void {
       pixels = buildCanvasAlignedPixels(ctx);
       if (!pixels) return;
-      cw = selectionStore.width;
-      ch = selectionStore.height;
+      cw = activeScope().selection.width;
+      ch = activeScope().selection.height;
       strokeMask = new Uint8Array(cw * ch);
       strokeSeen = new Uint8Array(cw * ch);
 

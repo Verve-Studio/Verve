@@ -1,5 +1,5 @@
 import type { AppAction } from "@/core/store/AppContext";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { AppState } from "@/types";
 import { computeSourceMask } from "@/utils/computeSourceMask";
 import { extractErrorMessage } from "@/utils/userFeedback";
@@ -7,6 +7,7 @@ import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { getPixelOps, inpaintRegion } from "@/wasm";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useRef } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,8 +51,8 @@ export function useContentAwareFill({
       const handle = canvasHandleRef.current;
 
       // Guard: selection must exist
-      if (!selectionStore.hasSelection()) return;
-      const mask = selectionStore.mask!;
+      if (!activeScope().selection.hasSelection()) return;
+      const mask = activeScope().selection.mask!;
 
       // Guard: selection bounding box must be at least 4×4
       const { canvas, activeLayerId } = stateRef.current;

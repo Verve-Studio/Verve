@@ -1,10 +1,11 @@
 import { effectRegistry } from "@/core/effects";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
+
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState, LayerState } from "@/types";
 import type { EffectLayerState, EffectParamsMap, EffectType } from "@/core/effects/effectTypes";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useMemo } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ export function useAdjustments({
 
   const handleCloseAdjustmentPanel = useCallback((): void => {
     const openLayerId = stateRef.current.openAdjustmentLayerId;
-    if (openLayerId) adjustmentPreviewStore.clear(openLayerId);
+    if (openLayerId) activeScope().adjustmentPreview.clear(openLayerId);
     captureHistory("Adjustment");
     dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
   }, [stateRef, captureHistory, dispatch]);
@@ -81,7 +82,7 @@ export function useAdjustments({
       const { activeLayerId, layers, openAdjustmentLayerId } = stateRef.current;
 
       if (openAdjustmentLayerId !== null) {
-        adjustmentPreviewStore.clear(openAdjustmentLayerId);
+        activeScope().adjustmentPreview.clear(openAdjustmentLayerId);
         captureHistory("Adjustment");
         dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
       }

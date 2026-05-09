@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { transformStore } from "@/core/store/transformStore";
+import { activeScope } from "@/core/store/scope";
 
 interface TransformGuardParams {
   handleTransformApply: () => void;
@@ -15,7 +15,7 @@ export function useTransformGuard({
   >(null);
 
   const requireTransformDecision = useCallback((action: () => void): void => {
-    if (transformStore.isActive) {
+    if (activeScope().transform.isActive) {
       setPendingGuardedAction(() => action);
       return;
     }
@@ -28,12 +28,12 @@ export function useTransformGuard({
     if (!pending) return;
     // Subscribe to the store so we run the pending action after the async WASM apply finishes.
     const onComplete = (): void => {
-      if (!transformStore.isActive) {
-        transformStore.unsubscribe(onComplete);
+      if (!activeScope().transform.isActive) {
+        activeScope().transform.unsubscribe(onComplete);
         pending();
       }
     };
-    transformStore.subscribe(onComplete);
+    activeScope().transform.subscribe(onComplete);
     handleTransformApply();
   }, [pendingGuardedAction, handleTransformApply]);
 

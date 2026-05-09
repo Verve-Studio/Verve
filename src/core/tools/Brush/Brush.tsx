@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useBrushes } from "@/core/services/useBrushes";
-import { brushPanelStore } from "@/core/store/brushPanelStore";
-import { brushManagerStore } from "@/core/store/brushManagerStore";
+import { brushPanelStore } from "@/core/tools/Brush/brushPanelStore";
+import { brushManagerStore } from "@/core/tools/Brush/brushManagerStore";
 import type { Brush } from "@/types";
 import { makeDefaultBrush } from "@/types";
 import {

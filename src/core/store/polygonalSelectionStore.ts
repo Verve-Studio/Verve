@@ -1,29 +1,29 @@
 import type { Point } from "@/types";
-import { selectionStore } from "./selectionStore";
+import { activeScope } from "./scope";
 import type { SelectionMode } from "./selectionStore";
 
 type Listener = () => void;
 
-class PolygonalSelectionStore {
+const listeners = new Set<Listener>();
+
+export class PolygonalSelectionStore {
   vertices: Point[] = [];
   cursor: Point = { x: 0, y: 0 };
   nearClose = false;
   lockedMode: SelectionMode = "set";
-
-  private listeners = new Set<Listener>();
 
   get isActive(): boolean {
     return this.vertices.length > 0;
   }
 
   subscribe(fn: Listener): void {
-    this.listeners.add(fn);
+    listeners.add(fn);
   }
   unsubscribe(fn: Listener): void {
-    this.listeners.delete(fn);
+    listeners.delete(fn);
   }
   notify(): void {
-    for (const fn of this.listeners) fn();
+    for (const fn of listeners) fn();
   }
 
   start(origin: Point, mode: SelectionMode): void {
@@ -46,7 +46,7 @@ class PolygonalSelectionStore {
 
   commit(feather = 0, antiAlias = false): void {
     if (this.vertices.length >= 3) {
-      selectionStore.setPolygon(
+      activeScope().selection.setPolygon(
         this.vertices,
         this.lockedMode,
         feather,
@@ -58,7 +58,7 @@ class PolygonalSelectionStore {
 
   cancel(): void {
     this.reset();
-    selectionStore.setPending(null);
+    activeScope().selection.setPending(null);
   }
 
   removeLastVertex(): void {
@@ -76,5 +76,3 @@ class PolygonalSelectionStore {
     this.notify();
   }
 }
-
-export const polygonalSelectionStore = new PolygonalSelectionStore();
