@@ -11,8 +11,8 @@
 
 .segmented {
   display: flex;
-  background: #1a1a1a;
-  border: 1px solid #333333;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
   border-radius: 3px;
   padding: 2px;
   gap: 2px;
@@ -26,19 +26,19 @@
   font-size: 11px;
   font-family: vars.$font-sans;
   cursor: default;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   background: transparent;
   transition: background vars.$transition-fast, color vars.$transition-fast;
   white-space: nowrap;
 
   &:hover {
-    color: #aaaaaa;
+    color: var(--color-text-dim);
   }
 }
 
 .segBtnActive {
-  background: #3a3a3a;
-  color: #d4d4d4;
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
 
 .row {
@@ -52,7 +52,7 @@
   width: 44px;
   flex-shrink: 0;
   font-size: 11px;
-  color: #aaaaaa;
+  color: var(--color-text-dim);
   white-space: nowrap;
 }
 
@@ -69,7 +69,7 @@
   height: 3px;
   appearance: none;
   -webkit-appearance: none;
-  background: linear-gradient(to right, #0699fb calc(var(--pct) * 100%), #3a3a3a calc(var(--pct) * 100%));
+  background: linear-gradient(to right, #0699fb calc(var(--pct) * 100%), var(--color-surface-hover) calc(var(--pct) * 100%));
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -80,14 +80,14 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #d4d4d4;
-    border: 1px solid #555555;
+    background: var(--color-text);
+    border: 1px solid var(--color-border-light);
     cursor: pointer;
     transition: background 80ms;
   }
 
   &:hover::-webkit-slider-thumb {
-    background: #ffffff;
+    background: var(--color-text-dim);
   }
 
   &:focus::-webkit-slider-thumb {
@@ -100,8 +100,8 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #d4d4d4;
-    border: 1px solid #555555;
+    background: var(--color-text);
+    border: 1px solid var(--color-border-light);
     cursor: pointer;
   }
 }
@@ -110,12 +110,12 @@
   width: 40px;
   height: 18px;
   padding: 0 4px;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-surface-hover);
   border-radius: 2px;
   font-size: 11px;
   font-family: vars.$font-sans;
-  color: #d4d4d4;
+  color: var(--color-text);
   text-align: right;
   outline: none;
   flex-shrink: 0;
@@ -136,7 +136,7 @@
 
 .computing {
   font-size: 11px;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   font-style: italic;
   margin: 2px 0 0;
 }
@@ -147,7 +147,7 @@
 
 .paletteCount {
   font-size: 11px;
-  color: #aaaaaa;
+  color: var(--color-text-dim);
 }
 
 .warning {
@@ -167,15 +167,15 @@
   align-items: center;
   justify-content: space-between;
   padding-top: 6px;
-  border-top: 1px solid #191919;
+  border-top: 1px solid var(--color-border);
   font-size: 10px;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   gap: 6px;
   margin-top: 4px;
 
   strong {
     font-weight: 500;
-    color: #d4d4d4;
+    color: var(--color-text);
   }
 }
 
@@ -191,9 +191,9 @@
 
 .resetBtn {
   background: transparent;
-  border: 1px solid #555555;
+  border: 1px solid var(--color-border-light);
   border-radius: vars.$radius-sm;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   padding: 0 8px;
   height: 20px;
   font-size: 11px;
@@ -203,12 +203,12 @@
   transition: background vars.$transition-fast, border-color vars.$transition-fast, color vars.$transition-fast;
 
   &:hover {
-    background: #3a3a3a;
-    border-color: #777777;
-    color: #d4d4d4;
+    background: var(--color-surface-hover);
+    border-color: var(--color-text-muted);
+    color: var(--color-text);
   }
 
   &:active {
-    background: #404040;
+    background: var(--color-surface-selected);
   }
 }

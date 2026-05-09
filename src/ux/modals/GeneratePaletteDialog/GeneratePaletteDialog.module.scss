@@ -4,7 +4,9 @@
 
 .tabStrip {
   display: flex;
-  background: #242424;
+  // Slightly darker than the surface so the inactive tabs read as a recessed
+  // strip; the active tab elevates back to `--color-surface`.
+  background: var(--color-surface-2);
   border-bottom: 1px solid vars.$color-border;
   flex-shrink: 0;
 }
@@ -38,7 +40,7 @@
   }
 
   &.tabDisabled {
-    color: #444;
+    color: color-mix(in srgb, var(--color-text-muted) 50%, transparent);
     cursor: not-allowed;
 
     &:hover { background: transparent; }
@@ -442,7 +444,7 @@
 
   &::-webkit-scrollbar { width: 6px; }
   &::-webkit-scrollbar-track { background: vars.$color-surface-2; }
-  &::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  &::-webkit-scrollbar-thumb { background: var(--color-border-light); border-radius: 3px; }
 }
 
 .colorChip {

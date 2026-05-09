@@ -16,7 +16,7 @@
   width: 78px;
   flex-shrink: 0;
   font-size: 11px;
-  color: #aaaaaa;
+  color: vars.$color-text-dim;
   white-space: nowrap;
 }
 
@@ -33,7 +33,11 @@
   height: 3px;
   appearance: none;
   -webkit-appearance: none;
-  background: linear-gradient(to right, #0699fb calc(var(--pct) * 100%), #3a3a3a calc(var(--pct) * 100%));
+  background: linear-gradient(
+    to right,
+    vars.$color-accent-solid calc(var(--pct) * 100%),
+    var(--color-surface-hover) calc(var(--pct) * 100%)
+  );
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -44,17 +48,19 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #d4d4d4;
-    border: 1px solid #555555;
+    background: vars.$color-text;
+    border: 1px solid vars.$color-border-light;
     cursor: pointer;
     transition: background 80ms;
   }
 
-  &:hover::-webkit-slider-thumb { background: #ffffff; }
+  &:hover::-webkit-slider-thumb {
+    background: vars.$color-text-dim;
+  }
 
   &:focus::-webkit-slider-thumb {
-    background: #0699fb;
-    border-color: #0699fb;
+    background: vars.$color-accent-solid;
+    border-color: vars.$color-accent-solid;
     box-shadow: 0 0 0 2px rgba(6, 153, 251, 0.18);
   }
 
@@ -62,8 +68,8 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #d4d4d4;
-    border: 1px solid #555555;
+    background: vars.$color-text;
+    border: 1px solid vars.$color-border-light;
     cursor: pointer;
   }
 }
@@ -72,12 +78,12 @@
   width: 40px;
   height: 18px;
   padding: 0 4px;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border;
   border-radius: 2px;
   font-size: 11px;
   font-family: vars.$font-sans;
-  color: #d4d4d4;
+  color: vars.$color-text;
   text-align: right;
   outline: none;
   flex-shrink: 0;
@@ -91,14 +97,14 @@
   }
 
   &:focus {
-    border-color: #0699fb;
+    border-color: vars.$color-accent-solid;
     box-shadow: 0 0 0 1px rgba(6, 153, 251, 0.45);
   }
 }
 
 .unitLabel {
   font-size: 10px;
-  color: #7a7a7a;
+  color: vars.$color-text-muted;
   flex-shrink: 0;
   width: 14px;
 }
@@ -110,15 +116,15 @@
 
 .sep {
   height: 1px;
-  background: #191919;
+  background: vars.$color-border;
   margin: 2px 0 1px;
 }
 
 .segmented {
   display: flex;
   flex: 1;
-  background: #1a1a1a;
-  border: 1px solid #333333;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border;
   border-radius: 3px;
   padding: 2px;
   gap: 2px;
@@ -132,17 +138,17 @@
   font-size: 11px;
   font-family: vars.$font-sans;
   cursor: default;
-  color: #7a7a7a;
+  color: vars.$color-text-muted;
   background: transparent;
   transition: background vars.$transition-fast, color vars.$transition-fast;
   white-space: nowrap;
 
-  &:hover { color: #aaaaaa; }
+  &:hover { color: vars.$color-text-dim; }
 }
 
 .segBtnActive {
-  background: #3a3a3a;
-  color: #d4d4d4;
+  background: vars.$color-surface-hover;
+  color: vars.$color-text;
 }
 
 .toggleRow {
@@ -156,7 +162,7 @@
 .checkbox {
   width: 13px;
   height: 13px;
-  accent-color: #0699fb;
+  accent-color: vars.$color-accent-solid;
   cursor: default;
 }
 
@@ -170,15 +176,15 @@
 .seedValue {
   flex: 1;
   font-size: 11px;
-  color: #7a7a7a;
+  color: vars.$color-text-muted;
   font-family: monospace;
 }
 
 .seedBtn {
   background: transparent;
-  border: 1px solid #555555;
+  border: 1px solid vars.$color-border-light;
   border-radius: vars.$radius-sm;
-  color: #7a7a7a;
+  color: vars.$color-text-muted;
   padding: 0 8px;
   height: 20px;
   font-size: 11px;
@@ -188,9 +194,9 @@
   transition: background vars.$transition-fast, border-color vars.$transition-fast, color vars.$transition-fast;
 
   &:hover {
-    background: #3a3a3a;
-    border-color: #777777;
-    color: #d4d4d4;
+    background: vars.$color-surface-hover;
+    border-color: vars.$color-text-muted;
+    color: vars.$color-text;
   }
 }
 
@@ -198,13 +204,13 @@
   width: 20px;
   height: 16px;
   border-radius: 2px;
-  border: 1px solid #555555;
+  border: 1px solid vars.$color-border-light;
   flex-shrink: 0;
 }
 
 .noParams {
   font-size: 11px;
-  color: #6a6a6a;
+  color: vars.$color-text-muted;
   font-style: italic;
   padding: 4px 0 2px;
 }
@@ -214,15 +220,15 @@
   align-items: center;
   justify-content: space-between;
   padding-top: 6px;
-  border-top: 1px solid #191919;
+  border-top: 1px solid vars.$color-border;
   font-size: 10px;
-  color: #7a7a7a;
+  color: vars.$color-text-muted;
   gap: 6px;
   margin-top: 4px;
 
   strong {
     font-weight: 500;
-    color: #d4d4d4;
+    color: vars.$color-text;
   }
 }
 
@@ -238,9 +244,9 @@
 
 .resetBtn {
   background: transparent;
-  border: 1px solid #555555;
+  border: 1px solid vars.$color-border-light;
   border-radius: vars.$radius-sm;
-  color: #7a7a7a;
+  color: vars.$color-text-muted;
   padding: 0 8px;
   height: 20px;
   font-size: 11px;
@@ -250,10 +256,10 @@
   transition: background vars.$transition-fast, border-color vars.$transition-fast, color vars.$transition-fast;
 
   &:hover {
-    background: #3a3a3a;
-    border-color: #777777;
-    color: #d4d4d4;
+    background: vars.$color-surface-hover;
+    border-color: vars.$color-text-muted;
+    color: vars.$color-text;
   }
 
-  &:active { background: #404040; }
+  &:active { background: vars.$color-surface-selected; }
 }

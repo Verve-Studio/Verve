@@ -12,6 +12,8 @@ import { join } from 'node:path'
  * so old config files remain forward-compatible.
  */
 export interface AppPreferences {
+  /** UI theme: "light" | "dark" | "auto" (auto = follow OS). */
+  theme?: 'light' | 'dark' | 'auto'
   /** Maximum total bytes the in-memory undo history is allowed to use. */
   historyMemoryBytes: number
   /**
@@ -38,6 +40,7 @@ export interface AppPreferences {
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
+  theme: 'dark',
   // 4 GB default — generous on modern machines, tight enough that the
   // eviction path runs in normal use on multi-GB-per-layer documents.
   historyMemoryBytes: 4 * 1024 * 1024 * 1024,

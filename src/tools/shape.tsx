@@ -1061,7 +1061,7 @@ function ShapeOptions({
             checked={!curAntiAlias}
             onChange={(e) => setAntiAlias(!e.target.checked)}
           />
-          AA
+          Anti-Aliasing
         </label>
       )}
 

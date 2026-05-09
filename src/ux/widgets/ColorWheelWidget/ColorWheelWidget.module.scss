@@ -120,7 +120,7 @@
   left: 50%;
   width: 4px;
   margin-left: -2px;
-  background: rgba(210, 210, 210, 0.35);
+  background: color-mix(in srgb, var(--color-text) 35%, transparent);
   border-radius: 2px;
   pointer-events: none;
 }
@@ -132,13 +132,13 @@
   height: 4px;
   margin-left: -5px;
   margin-top: -2px;
-  background: rgba(210, 210, 210, 0.6);
+  background: color-mix(in srgb, var(--color-text) 60%, transparent);
   border-radius: 2px;
   pointer-events: none;
   transition: background 80ms;
 
   .masterSlider:hover & {
-    background: rgba(230, 230, 230, 0.85);
+    background: color-mix(in srgb, var(--color-text) 85%, transparent);
   }
 }
 
@@ -181,7 +181,7 @@
 
   &:focus {
     border-color: var(--color-accent);
-    background: #242424;
+    background: var(--color-surface-2);
   }
 }
 
@@ -197,11 +197,11 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
 }
 
 .ch_master {
-  border-bottom: 2px solid rgba(210, 210, 210, 0.6);
+  border-bottom: 2px solid color-mix(in srgb, var(--color-text) 60%, transparent);
 }
 
 .ch_r {

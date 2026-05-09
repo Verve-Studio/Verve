@@ -5,7 +5,7 @@
   border-radius: 3px;
   overflow: hidden;
   background:
-    repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 12px 12px;
+    repeating-conic-gradient(#2a2a2a 0% 25%, var(--color-surface-2) 0% 50%) 0 0 / 12px 12px;
   cursor: crosshair;
   user-select: none;
 }
@@ -67,14 +67,14 @@
 .previewHint {
   text-align: center;
   font-size: 10px;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   margin: 0 0 6px;
   user-select: none;
 }
 
 .axisLabel {
   font-size: 10px;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   width: 10px;
   flex-shrink: 0;
 }

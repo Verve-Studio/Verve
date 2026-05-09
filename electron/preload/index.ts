@@ -77,12 +77,14 @@ const api = {
 
   // ── Preferences (persisted to userData/preferences.json) ────────────────
   loadPreferences: (): Promise<{
+    theme?: 'light' | 'dark' | 'auto'
     historyMemoryBytes: number
     bufferMemoryBytes: number
     bufferMemoryMaxOut: boolean
     unifiedMemory?: boolean
   }> => ipcRenderer.invoke('prefs:load'),
   savePreferences: (prefs: {
+    theme?: 'light' | 'dark' | 'auto'
     historyMemoryBytes: number
     bufferMemoryBytes: number
     bufferMemoryMaxOut: boolean

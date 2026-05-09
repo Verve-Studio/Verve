@@ -4,6 +4,7 @@ import { DialogButton } from "../../widgets/DialogButton/DialogButton";
 import {
   preferencesStore,
   usePreferences,
+  type ThemePreference,
 } from "@/core/store/preferencesStore";
 import { historyStore } from "@/core/store/historyStore";
 import { useTrackedMemory } from "@/core/store/memoryStore";
@@ -16,9 +17,10 @@ export interface PreferencesDialogProps {
   onClose: () => void;
 }
 
-type SectionId = "fileAssoc" | "memory";
+type SectionId = "appearance" | "fileAssoc" | "memory";
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
+  { id: "appearance", label: "Appearance" },
   { id: "fileAssoc", label: "File Associations" },
   { id: "memory", label: "Memory" },
 ];
@@ -39,6 +41,74 @@ const ALL_FILE_TYPES = [
   { ext: "exr", label: "OpenEXR Image (.exr)" },
   { ext: "hdr", label: "Radiance HDR Image (.hdr)" },
 ];
+
+// ─── Appearance section ──────────────────────────────────────────────────────
+
+function AppearanceSection(): React.JSX.Element {
+  const prefs = usePreferences();
+  const setTheme = (theme: ThemePreference): void => {
+    preferencesStore.set({ theme });
+  };
+  const options: Array<{
+    value: ThemePreference;
+    label: string;
+    hint: string;
+  }> = [
+    {
+      value: "light",
+      label: "Light",
+      hint: "A bright workspace, regardless of OS preference.",
+    },
+    {
+      value: "dark",
+      label: "Dark",
+      hint: "A dim workspace, regardless of OS preference.",
+    },
+    {
+      value: "auto",
+      label: "Automatic",
+      hint: "Follow the host OS's light / dark preference.",
+    },
+  ];
+  return (
+    <div className={styles.sectionBody}>
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>Theme</span>
+        <div
+          role="radiogroup"
+          aria-label="Theme"
+          style={{ display: "flex", flexDirection: "column", gap: 4 }}
+        >
+          {options.map((opt) => (
+            <label
+              key={opt.value}
+              className={styles.checkboxLabel}
+              style={{ marginLeft: 0 }}
+            >
+              <input
+                type="radio"
+                name="theme"
+                value={opt.value}
+                checked={prefs.theme === opt.value}
+                onChange={() => setTheme(opt.value)}
+              />
+              <span>
+                <strong>{opt.label}</strong>{" "}
+                <span className={styles.hint} style={{ marginLeft: 6 }}>
+                  {opt.hint}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className={styles.hint}>
+          The chosen palette is applied immediately and persists across
+          sessions.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 // ─── Memory section ──────────────────────────────────────────────────────────
 
@@ -608,7 +678,7 @@ export function PreferencesDialog({
   open,
   onClose,
 }: PreferencesDialogProps): React.JSX.Element | null {
-  const [activeSection, setActiveSection] = useState<SectionId>("fileAssoc");
+  const [activeSection, setActiveSection] = useState<SectionId>("appearance");
 
   return (
     <ModalDialog open={open} title="Preferences" width={620} onClose={onClose}>
@@ -631,6 +701,7 @@ export function PreferencesDialog({
           <div className={styles.sectionHeader}>
             {SECTIONS.find((s) => s.id === activeSection)?.label}
           </div>
+          {activeSection === "appearance" && <AppearanceSection />}
           {activeSection === "fileAssoc" && (
             <FileAssocSection key={open ? "open" : "closed"} />
           )}

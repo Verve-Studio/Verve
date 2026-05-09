@@ -1306,16 +1306,22 @@ function BrushFlyout({
         top,
         left,
         zIndex: 500,
-        background: "#2d2d2d",
-        border: "1px solid #191919",
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
         borderRadius: 6,
-        boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
         padding: 8,
         minWidth: 220,
         maxWidth: 320,
       }}
     >
-      <div style={{ fontSize: 11, color: "#aaa", marginBottom: 6 }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--color-text-dim)",
+          marginBottom: 6,
+        }}
+      >
         Pixel Brushes
       </div>
       <div style={{ maxHeight: 200, overflowY: "auto" }}>
@@ -1332,14 +1338,20 @@ function BrushFlyout({
             background:
               selectedId === null ? "rgba(82,130,255,0.25)" : "transparent",
             fontSize: 11,
-            color: "#ccc",
+            color: "var(--color-text)",
             marginBottom: 4,
           }}
         >
           ✕ None (standard pencil)
         </div>
         {allBrushes.length === 0 ? (
-          <div style={{ fontSize: 11, color: "#777", padding: "4px 6px" }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--color-text-muted)",
+              padding: "4px 6px",
+            }}
+          >
             No brushes yet
           </div>
         ) : (
@@ -1354,14 +1366,18 @@ function BrushFlyout({
         )}
       </div>
       <div
-        style={{ borderTop: "1px solid #191919", marginTop: 6, paddingTop: 6 }}
+        style={{
+          borderTop: "1px solid var(--color-border)",
+          marginTop: 6,
+          paddingTop: 6,
+        }}
       >
         <button
           style={{
             fontSize: 11,
-            background: "#3a3a3a",
-            color: "#ccc",
-            border: "1px solid #191919",
+            background: "var(--color-surface-2)",
+            color: "var(--color-text)",
+            border: "1px solid var(--color-border)",
             borderRadius: 4,
             padding: "3px 10px",
             cursor: "pointer",
