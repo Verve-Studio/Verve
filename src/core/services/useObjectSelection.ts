@@ -6,7 +6,7 @@ import { objectSelectionStore } from "@/core/store/objectSelectionStore";
 import {
   objectSelectionCallbacks,
   objectSelectionOptions,
-} from "../../tools/ObjectSelection/ObjectSelection";
+} from "../tools/ObjectSelection/ObjectSelection";
 import { selectionStore } from "@/core/store/selectionStore";
 import type { SelectionMode } from "@/core/store/selectionStore";
 import { grabCutHybrid } from "@/wasm/grabcutHybrid";

@@ -10,6 +10,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import zoomIconSvg from "./zoom.svg?raw";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -104,36 +106,7 @@ class ZoomTool implements ITool {
   readonly id = "zoom";
   readonly label = "Zoom";
   readonly shortcut = "Z";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <circle
-          cx="7"
-          cy="7"
-          r="4.2"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-        />
-        <path
-          d="M10 10 L13.5 13.5"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
-        <path
-          d="M5 7 L9 7 M7 5 L7 9"
-          stroke="currentColor"
-          strokeWidth="1.1"
-          strokeLinecap="round"
-        />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={zoomIconSvg} />;
   readonly placement = {
     group: ToolGroup.Navigation,
     row: 0,

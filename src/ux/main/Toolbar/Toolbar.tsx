@@ -3,9 +3,9 @@ import type { RGBAColor, Tool } from "@/types";
 import { ColorPickerDialog } from "@/ux/modals/ColorPickerDialog/ColorPickerDialog";
 import { IndexedPaletteColorPicker } from "@/ux/widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
 // Side-effect import: registers every tool in `toolRegistry` on first load.
-import "@/tools";
-import { toolRegistry } from "@/tools/toolRegistry";
-import type { ITool } from "@/tools";
+import "@/core/tools";
+import { toolRegistry } from "@/core/tools/toolRegistry";
+import type { ITool } from "@/core/tools";
 import React, { useState } from "react";
 import styles from "./Toolbar.module.scss";
 

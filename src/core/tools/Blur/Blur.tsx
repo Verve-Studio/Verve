@@ -8,6 +8,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import blurIconSvg from "./blur.svg?raw";
 import {
   forEachBrushPixel,
   forEachStamp,
@@ -298,23 +300,7 @@ class BlurTool implements ITool {
   readonly id = "blur";
   readonly label = "Blur";
   readonly shortcut = "R";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <path
-          d="M8 2.5 C 5 6.5, 4 8.5, 4 11 a4 4 0 0 0 8 0 c 0 -2.5 -1 -4.5 -4 -8.5 z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={blurIconSvg} />;
   readonly placement = {
     group: ToolGroup.LocalEffect,
     row: 0,

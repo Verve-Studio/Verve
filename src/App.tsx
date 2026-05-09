@@ -37,7 +37,7 @@ import { useNotification } from "@/core/store/notificationStore";
 import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import { selectionStore } from "@/core/store/selectionStore";
 import { viewportCommands } from "@/core/store/viewportCommands";
-import { toolRegistry } from "@/tools/toolRegistry";
+import { toolRegistry } from "@/core/tools/toolRegistry";
 import type { LayerState, Tool } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";

@@ -5,7 +5,7 @@ import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import swatchStyles from "@/ux/widgets/ColorSwatch/ColorSwatch.module.scss";
 import { IndexedPaletteColorPicker } from "@/ux/widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
-import { buildShapePath, rgbaToStr } from "../../ux/main/Canvas/shapeRasterizer";
+import { buildShapePath, rgbaToStr } from "@/ux/main/Canvas/shapeRasterizer";
 import type {
   ToolHandler,
   ToolPointerPos,

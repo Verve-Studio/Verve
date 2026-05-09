@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { selectionStore } from "../../core/store/selectionStore";
-import type { SelectionMode } from "../../core/store/selectionStore";
+import { selectionStore } from "@/core/store/selectionStore";
+import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,

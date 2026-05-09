@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { selectionStore } from "../../core/store/selectionStore";
+import { selectionStore } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,
@@ -9,6 +9,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import patchIconSvg from "./patch.svg?raw";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -494,30 +496,7 @@ class PatchTool implements ITool {
   readonly id = "patch";
   readonly label = "Patch";
   readonly shortcut = "J";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <path
-          d="M3 5 L3 13 L11 13 L13 11 L13 3 L5 3 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinejoin="round"
-          strokeDasharray="1.6 1.6"
-        />
-        <path
-          d="M5 3 L3 5 M11 13 L13 11"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-        />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={patchIconSvg} />;
   readonly placement = {
     group: ToolGroup.Retouching,
     row: 1,

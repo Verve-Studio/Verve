@@ -8,6 +8,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import handIconSvg from "./hand.svg?raw";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -89,24 +91,7 @@ class HandTool implements ITool {
   readonly id = "hand";
   readonly label = "Hand";
   readonly shortcut = "H";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <path
-          d="M5 8 V4.2 a1 1 0 0 1 2 0 V7.5 M7 4 V3 a1 1 0 0 1 2 0 V7.5 M9 3.5 V3 a1 1 0 0 1 2 0 V8 M11 5 V4.2 a1 1 0 0 1 2 0 V10 a4 4 0 0 1 -8 0 V7"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.1"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={handIconSvg} />;
   readonly placement = {
     group: ToolGroup.Navigation,
     row: 0,

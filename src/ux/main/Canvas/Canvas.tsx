@@ -20,23 +20,23 @@ import type {
   FrameLayerState,
   MaskLayerState,
 } from "@/types";
-import { TOOL_REGISTRY } from "@/tools";
-import type { ToolContext, ToolHandler } from "@/tools";
-import { brushOptions } from "@/tools/Brush/Brush";
+import { TOOL_REGISTRY } from "@/core/tools";
+import type { ToolContext, ToolHandler } from "@/core/tools";
+import { brushOptions } from "@/core/tools/Brush/Brush";
 import {
   pencilOptions,
   getPencilBrushPreviewDataUrl,
   getPencilShapePreviewDataUrl,
-} from "@/tools/Pencil/Pencil";
-import { eraserOptions } from "@/tools/Eraser/Eraser";
-import { liquifyOptions } from "@/tools/Liquify/Liquify";
-import { blurOptions } from "@/tools/Blur/Blur";
-import { sharpenOptions } from "@/tools/Sharpen/Sharpen";
-import { smudgeOptions } from "@/tools/Smudge/Smudge";
-import { healingBrushOptions } from "@/tools/HealingBrush/HealingBrush";
-import { quickSelectOptions } from "@/tools/QuickSelect/QuickSelect";
-import { cloneStampOptions } from "@/tools/CloneStamp/CloneStamp";
-import { dodgeOptions, burnOptions } from "@/tools/Dodge/Dodge";
+} from "@/core/tools/Pencil/Pencil";
+import { eraserOptions } from "@/core/tools/Eraser/Eraser";
+import { liquifyOptions } from "@/core/tools/Liquify/Liquify";
+import { blurOptions } from "@/core/tools/Blur/Blur";
+import { sharpenOptions } from "@/core/tools/Sharpen/Sharpen";
+import { smudgeOptions } from "@/core/tools/Smudge/Smudge";
+import { healingBrushOptions } from "@/core/tools/HealingBrush/HealingBrush";
+import { quickSelectOptions } from "@/core/tools/QuickSelect/QuickSelect";
+import { cloneStampOptions } from "@/core/tools/CloneStamp/CloneStamp";
+import { dodgeOptions, burnOptions } from "@/core/tools/Dodge/Dodge";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
 import { drawCloneStampOverlay } from "./cloneStampOverlay";
 import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
@@ -45,7 +45,7 @@ import { selectionStore } from "@/core/store/selectionStore";
 import { measureStore } from "@/core/store/measureStore";
 import { cursorStore } from "@/core/store/cursorStore";
 import { transformStore } from "@/core/store/transformStore";
-import { drawTransformOverlay } from "@/tools/Transform/Transform";
+import { drawTransformOverlay } from "@/core/tools/Transform/Transform";
 import { TextLayerEditor } from "./TextLayerEditor";
 import { rasterizeTextToLayer } from "./textRasterizer";
 import { rasterizeShapeToLayer } from "./shapeRasterizer";

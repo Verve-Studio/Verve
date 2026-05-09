@@ -8,6 +8,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import sharpenIconSvg from "./sharpen.svg?raw";
 import {
   forEachBrushPixel,
   forEachStamp,
@@ -293,29 +295,7 @@ class SharpenTool implements ITool {
   readonly id = "sharpen";
   readonly label = "Sharpen";
   readonly shortcut = "R";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <path
-          d="M8 2.5 L4.5 13.5 L11.5 13.5 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M6.5 9 L9.5 9"
-          stroke="currentColor"
-          strokeWidth="1"
-          strokeLinecap="round"
-        />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={sharpenIconSvg} />;
   readonly placement = {
     group: ToolGroup.LocalEffect,
     row: 0,

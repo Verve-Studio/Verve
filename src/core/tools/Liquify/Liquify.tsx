@@ -8,6 +8,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import liquifyIconSvg from "./liquify.svg?raw";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -457,32 +459,7 @@ class LiquifyTool implements ITool {
   readonly id = "liquify";
   readonly label = "Liquify";
   readonly shortcut = "Q";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <path
-          d="M3 11 C 3 6, 13 6, 13 11"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-        />
-        <path
-          d="M3 8 C 3 4, 13 4, 13 8"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          opacity="0.5"
-        />
-        <circle cx="8" cy="11" r="1.3" fill="currentColor" />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={liquifyIconSvg} />;
   readonly placement = {
     group: ToolGroup.Distortion,
     row: 0,

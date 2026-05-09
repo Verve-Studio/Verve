@@ -11,6 +11,8 @@ import type {
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import quickSelectIconSvg from "./quick-select.svg?raw";
 import {
   forEachStamp,
   markBrushDirty as _markBrushDirty,
@@ -377,31 +379,7 @@ class QuickSelectTool implements ITool {
   readonly id = "quick-select";
   readonly label = "Quick Selection";
   readonly shortcut = "W";
-  readonly icon = (
-    <span style={{ display: "block", width: "100%", height: "100%" }}>
-      <svg
-        viewBox="0 0 16 16"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "100%" }}
-      >
-        <path
-          d="M2 11 C 4 6, 12 6, 14 11"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.1"
-          strokeLinecap="round"
-          strokeDasharray="1.6 1.6"
-        />
-        <path
-          d="M9 3 L13 7"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-        />
-        <circle cx="9" cy="3" r="1.4" fill="currentColor" />
-      </svg>
-    </span>
-  );
+  readonly icon = <SvgIcon src={quickSelectIconSvg} />;
   readonly placement = {
     group: ToolGroup.Selection,
     row: 1,
