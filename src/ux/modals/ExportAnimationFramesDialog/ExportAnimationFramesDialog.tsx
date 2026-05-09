@@ -6,7 +6,13 @@ import styles from "./ExportAnimationFramesDialog.module.scss";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type FrameSequenceFormat = "png" | "jpeg" | "webp" | "tga" | "tiff";
+export type FrameSequenceFormat =
+  | "png"
+  | "jpeg"
+  | "webp"
+  | "tga"
+  | "tiff"
+  | "gif";
 
 /** How multiple cycling groups are combined in the exported sequence:
  *  - `parallel`  — every selected group cycles together. Total frame count is
@@ -27,6 +33,8 @@ export interface ExportAnimationFramesSettings {
   padDigits: number;
   jpegQuality: number;
   webpQuality: number;
+  /** GIF playback rate (frames per second). Ignored unless `format === "gif"`. */
+  gifFps: number;
   /** Subset of palette-cycling group IDs to include in the exported sequence.
    *  Empty in spritesheet mode. */
   selectedPaletteGroupIds: string[];
@@ -57,6 +65,10 @@ export interface ExportAnimationFramesDialogProps {
     selectedGroupIds: string[],
     evaluation: PaletteCycleEvaluation,
   ) => number;
+  /** Sensible default fps for the GIF format option — typically the
+   *  selected animation's fps (sprite mode) or the palette animation's
+   *  fps (palette mode). The user can override in the dialog. */
+  defaultGifFps?: number;
   /** Async — must report progress via `onProgress(current, total)` on each
    *  frame written and resolve when the entire sequence has been saved. */
   onConfirm: (
@@ -74,6 +86,7 @@ const EXT: Record<FrameSequenceFormat, string> = {
   webp: ".webp",
   tga: ".tga",
   tiff: ".tif",
+  gif: ".gif",
 };
 
 function pad(n: number, width: number): string {
@@ -88,6 +101,7 @@ export function ExportAnimationFramesDialog({
   animationName,
   paletteGroups,
   computeFrameCount,
+  defaultGifFps,
   onConfirm,
   onCancel,
 }: ExportAnimationFramesDialogProps): React.JSX.Element | null {
@@ -98,6 +112,14 @@ export function ExportAnimationFramesDialog({
   const [padDigits, setPadDigits] = useState<number>(7);
   const [jpegQuality, setJpegQuality] = useState<number>(92);
   const [webpQuality, setWebpQuality] = useState<number>(90);
+  const [gifFps, setGifFps] = useState<number>(defaultGifFps ?? 12);
+
+  // Reset the GIF fps to the caller-supplied default each time the
+  // dialog opens (so a freshly-selected animation's fps is reflected).
+  useEffect(() => {
+    if (!open) return;
+    setGifFps(defaultGifFps ?? 12);
+  }, [open, defaultGifFps]);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"configure" | "exporting" | "done">(
     "configure",
@@ -171,6 +193,7 @@ export function ExportAnimationFramesDialog({
       padDigits: Math.max(1, Math.min(12, Math.floor(padDigits))),
       jpegQuality: Math.max(1, Math.min(100, Math.round(jpegQuality))),
       webpQuality: Math.max(1, Math.min(100, Math.round(webpQuality))),
+      gifFps: Math.max(1, Math.min(120, Math.round(gifFps))),
       selectedPaletteGroupIds: paletteGroups ? selectedGroupIds : [],
       paletteCycleEvaluation: evaluation,
     };
@@ -197,6 +220,10 @@ export function ExportAnimationFramesDialog({
     padDigits,
     jpegQuality,
     webpQuality,
+    gifFps,
+    paletteGroups,
+    selectedGroupIds,
+    evaluation,
   ]);
 
   if (phase === "exporting") {
@@ -314,6 +341,7 @@ export function ExportAnimationFramesDialog({
             <option value="webp">WebP</option>
             <option value="tga">TGA</option>
             <option value="tiff">TIFF</option>
+            <option value="gif">GIF (animated)</option>
           </select>
         </div>
 
@@ -365,29 +393,45 @@ export function ExportAnimationFramesDialog({
           </>
         )}
 
-        <div className={styles.fieldRow}>
-          <span className={styles.fieldLabel}>Start / Pad</span>
-          <div className={styles.dualSlider}>
-            <span className={styles.subLabel}>Start</span>
+        {format !== "gif" && (
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Start / Pad</span>
+            <div className={styles.dualSlider}>
+              <span className={styles.subLabel}>Start</span>
+              <SliderInput
+                value={startIndex}
+                min={0}
+                max={9999}
+                step={1}
+                inputWidth={48}
+                onChange={setStartIndex}
+              />
+              <span className={styles.subLabel}>Digits</span>
+              <SliderInput
+                value={padDigits}
+                min={1}
+                max={12}
+                step={1}
+                inputWidth={36}
+                onChange={setPadDigits}
+              />
+            </div>
+          </div>
+        )}
+
+        {format === "gif" && (
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>FPS</span>
             <SliderInput
-              value={startIndex}
-              min={0}
-              max={9999}
+              value={gifFps}
+              min={1}
+              max={60}
               step={1}
               inputWidth={48}
-              onChange={setStartIndex}
-            />
-            <span className={styles.subLabel}>Digits</span>
-            <SliderInput
-              value={padDigits}
-              min={1}
-              max={12}
-              step={1}
-              inputWidth={36}
-              onChange={setPadDigits}
+              onChange={setGifFps}
             />
           </div>
-        </div>
+        )}
 
         {format === "jpeg" && (
           <div className={styles.fieldRow}>
@@ -449,9 +493,13 @@ export function ExportAnimationFramesDialog({
 
         <p className={styles.preview}>
           {frameCount > 0
-            ? `${frameCount} frame${frameCount === 1 ? "" : "s"}${
-                animationName ? ` from "${animationName}"` : ""
-              } → ${previewName} … ${safeBase}${pad(startIndex + frameCount - 1, padDigits)}${EXT[format]}`
+            ? format === "gif"
+              ? `${frameCount} frame${frameCount === 1 ? "" : "s"}${
+                  animationName ? ` from "${animationName}"` : ""
+                } → ${safeBase}${EXT.gif} (${gifFps} fps)`
+              : `${frameCount} frame${frameCount === 1 ? "" : "s"}${
+                  animationName ? ` from "${animationName}"` : ""
+                } → ${previewName} … ${safeBase}${pad(startIndex + frameCount - 1, padDigits)}${EXT[format]}`
             : "No frames to export."}
         </p>
         {error && <p className={styles.error}>{error}</p>}

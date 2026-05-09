@@ -702,11 +702,15 @@ function AppContent(): React.JSX.Element {
               ? ".webp"
               : settings.format === "tga"
                 ? ".tga"
-                : ".tif";
+                : settings.format === "gif"
+                  ? ".gif"
+                  : ".tif";
       const pad = (n: number, w: number): string => {
         const t = String(n);
         return t.length >= w ? t : "0".repeat(w - t.length) + t;
       };
+
+      const isGif = settings.format === "gif";
 
       const { exportPng } = await import("@/core/io/exportPng");
       const { exportJpeg } = await import("@/core/io/exportJpeg");
@@ -731,12 +735,26 @@ function AppContent(): React.JSX.Element {
         return exportTiff(data, w, h);
       };
 
+      // GIF builds a single file at the end — buffer per-frame RGBA
+      // copies plus their dims while the loops run; everything else
+      // writes one file per frame as before.
+      const gifFrames: Uint8Array[] = [];
+      let gifW = 0;
+      let gifH = 0;
+
       const writeFrame = async (
         i: number,
         data: Uint8Array,
         w: number,
         h: number,
       ): Promise<void> => {
+        if (isGif) {
+          // The buffer is reused across frames — copy before queuing.
+          gifFrames.push(new Uint8Array(data));
+          gifW = w;
+          gifH = h;
+          return;
+        }
         const dataUrl = encode(data, w, h);
         const filename = `${settings.baseName}${pad(settings.startIndex + i, settings.padDigits)}${ext}`;
         const filePath = `${settings.folder}${sep}${filename}`;
@@ -896,6 +914,34 @@ function AppContent(): React.JSX.Element {
           handle.repaintIndexedLayers(
             computeEffectivePalette(s.swatches, s.swatchGroups, savedTick),
           );
+        }
+
+        // GIF: encode the buffered frames into a single animated file.
+        if (isGif && gifFrames.length > 0) {
+          const { encodeAnimatedGif } = await import(
+            "@/core/io/encodeAnimatedGif"
+          );
+          const bytes = encodeAnimatedGif({
+            frames: gifFrames,
+            width: gifW,
+            height: gifH,
+            fps: settings.gifFps,
+          });
+          // exportImage expects base64; build it from the raw bytes,
+          // chunked to avoid `Maximum call stack size exceeded` from
+          // String.fromCharCode(...largeArray).
+          let bin = "";
+          const CHUNK = 8192;
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            bin += String.fromCharCode.apply(
+              null,
+              Array.from(bytes.subarray(i, i + CHUNK)),
+            );
+          }
+          const base64 = btoa(bin);
+          const filename = `${settings.baseName}${ext}`;
+          const filePath = `${settings.folder}${sep}${filename}`;
+          await window.api.exportImage(filePath, base64);
         }
       } catch (err) {
         console.error("[handleExportAnimationFrames]", err);
@@ -1382,6 +1428,11 @@ function AppContent(): React.JSX.Element {
           }
           return playback.selectedAnim?.frames.length ?? 0;
         }}
+        exportDefaultGifFps={
+          state.paletteAnimation.enabled
+            ? state.paletteAnimation.fps
+            : (playback.selectedAnim?.fps ?? 12)
+        }
         handleExportSpritesheetJson={() => void handleExportSpritesheetJson()}
         handleExportPaletteAnimationJson={() =>
           void handleExportPaletteAnimationJson()

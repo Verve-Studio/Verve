@@ -159,6 +159,7 @@ export interface MainWindowProps {
       "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog"
     ).PaletteCycleEvaluation,
   ) => number;
+  exportDefaultGifFps: number | undefined;
   handleExportSpritesheetJson: () => void;
   handleExportPaletteAnimationJson: () => void;
   showAboutDialog: boolean;
@@ -355,6 +356,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     exportAnimationName,
     exportPaletteGroups,
     exportComputeFrameCount,
+    exportDefaultGifFps,
     handleExportSpritesheetJson,
     handleExportPaletteAnimationJson,
     showAboutDialog,
@@ -763,6 +765,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         animationName={exportAnimationName}
         paletteGroups={exportPaletteGroups}
         computeFrameCount={exportComputeFrameCount}
+        defaultGifFps={exportDefaultGifFps}
         onCancel={() => setShowExportAnimationFramesDialog(false)}
         onConfirm={(s, onProgress) =>
           handleExportAnimationFrames(s, onProgress)
