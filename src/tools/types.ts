@@ -98,6 +98,9 @@ export interface ToolContext {
   pixelFormat: PixelFormat;
   /** Current swatch palette — required by indexed8 drawing tools for nearest-index resolution. */
   swatches: readonly RGBAColor[];
+  /** Current swatch groups — required by indexed8 tools that operate on a
+   *  group's index range (e.g. the gradient tool). */
+  swatchGroups: readonly import("@/types").SwatchGroup[];
   /** Set the active palette swatch index (used by the eyedropper in indexed8 mode). */
   setSwatch: (index: number) => void;
   /** Current guide list — used by tools that snap to guides. */

@@ -618,7 +618,6 @@ const PIXEL_ONLY_TOOLS = new Set<Tool>([
 /** Tools that have no indexed8 implementation. */
 const INDEXED8_UNSUPPORTED_TOOLS = new Set<Tool>([
   "brush",
-  "gradient",
   "dodge",
   "burn",
   "clone-stamp",

@@ -1682,6 +1682,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       tiledMode: state.canvas.tiledMode,
       pixelFormat: state.pixelFormat,
       swatches: swatchesRef.current,
+      swatchGroups: state.swatchGroups,
       setSwatch: (index) => {
         dispatch({ type: "SET_ACTIVE_SWATCH", payload: index });
       },
