@@ -279,6 +279,31 @@ export interface PixelOpsModule {
   ): number;
   _freeExrBytes(resultPtr: number): void;
 
+  /**
+   * Decode an EXR file into one-or-more named layers (multi-part files OR
+   * single-part files with channels named "<LayerName>.R/G/B/A").
+   * Returns pointer to ExrMultiResult { canvasW, canvasH, numLayers,
+   * layersPtr → ExrLayerOut[] }, or 0 on failure.
+   */
+  _loadExrLayers(srcPtr: number, srcLen: number): number;
+  _freeExrLayersResult(resultPtr: number): void;
+
+  /**
+   * Encode multiple full-canvas RGBA float32 layers into a single-part EXR
+   * with channel-named groups ("<LayerName>.R/G/B/A").
+   * concatNames: numLayers null-terminated UTF-8 strings, concatenated.
+   * concatPixels: numLayers × width*height*4 floats, layer-major.
+   */
+  _saveExrLayers(
+    width: number,
+    height: number,
+    numLayers: number,
+    concatNamesPtr: number,
+    concatPixelsPtr: number,
+    compression: number,
+    halfFloat: number,
+  ): number;
+
   // DDS I/O
   _pixelops_dds_get_info(dataPtr: number, size: number, outPtr: number): number;
   _pixelops_dds_decode(

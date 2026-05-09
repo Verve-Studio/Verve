@@ -794,6 +794,150 @@ export async function encodeExr(
   }
 }
 
+export interface ExrDecodedLayer {
+  name: string;
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
+  pixels: Float32Array;
+}
+
+export interface ExrMultiDecodeResult {
+  canvasWidth: number;
+  canvasHeight: number;
+  layers: ExrDecodedLayer[];
+}
+
+/** Read a null-terminated UTF-8 string from the WASM heap. */
+function readCString(heap: Uint8Array, ptr: number): string {
+  let end = ptr;
+  while (end < heap.length && heap[end] !== 0) end++;
+  return new TextDecoder("utf-8").decode(heap.subarray(ptr, end));
+}
+
+/** Decode an EXR file into one or more named layers. */
+export async function decodeExrLayers(
+  bytes: Uint8Array,
+): Promise<ExrMultiDecodeResult> {
+  const m = await getPixelOps();
+  const srcPtr = m._malloc(bytes.byteLength);
+  let resultPtr = 0;
+  try {
+    m.HEAPU8.set(bytes, srcPtr);
+    resultPtr = m._loadExrLayers(srcPtr, bytes.byteLength);
+    if (resultPtr === 0) throw new Error("EXR multi-layer decode failed");
+
+    const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+    const canvasWidth = view.getInt32(resultPtr, true);
+    const canvasHeight = view.getInt32(resultPtr + 4, true);
+    const numLayers = view.getInt32(resultPtr + 8, true);
+    const layersPtr = view.getInt32(resultPtr + 12, true);
+
+    const layers: ExrDecodedLayer[] = [];
+    const STRIDE = 24; // ExrLayerOut size
+    for (let i = 0; i < numLayers; i++) {
+      const base = layersPtr + i * STRIDE;
+      const w = view.getInt32(base, true);
+      const h = view.getInt32(base + 4, true);
+      const offX = view.getInt32(base + 8, true);
+      const offY = view.getInt32(base + 12, true);
+      const namePtr = view.getInt32(base + 16, true);
+      const pxPtr = view.getInt32(base + 20, true);
+      const name = readCString(m.HEAPU8, namePtr);
+      const count = w * h * 4;
+      const pixels = new Float32Array(count);
+      const heapF32 = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+      pixels.set(heapF32.subarray(pxPtr >> 2, (pxPtr >> 2) + count));
+      layers.push({
+        name,
+        width: w,
+        height: h,
+        offsetX: offX,
+        offsetY: offY,
+        pixels,
+      });
+    }
+    return { canvasWidth, canvasHeight, layers };
+  } finally {
+    if (resultPtr !== 0) m._freeExrLayersResult(resultPtr);
+    m._free(srcPtr);
+  }
+}
+
+/**
+ * Encode multiple full-canvas RGBA float32 layers into a single-part EXR with
+ * channel-named groups ("<LayerName>.R/G/B/A").  Each layer's `pixels` must be
+ * width*height*4 floats.
+ */
+export async function encodeExrLayers(
+  layers: ReadonlyArray<{ name: string; pixels: Float32Array }>,
+  width: number,
+  height: number,
+  compression = 0,
+  halfFloat = 0,
+): Promise<Uint8Array> {
+  if (layers.length === 0) throw new Error("encodeExrLayers: no layers given");
+  const m = await getPixelOps();
+
+  // Pack names: null-separated UTF-8.
+  const enc = new TextEncoder();
+  const nameBufs = layers.map((l) => enc.encode(l.name));
+  const nameBytes = nameBufs.reduce((s, b) => s + b.length + 1, 0);
+  const namesBuf = new Uint8Array(nameBytes);
+  {
+    let off = 0;
+    for (const nb of nameBufs) {
+      namesBuf.set(nb, off);
+      off += nb.length;
+      namesBuf[off++] = 0;
+    }
+  }
+
+  // Pack pixels: layer-major contiguous.
+  const pixelsPerLayer = width * height * 4;
+  const totalFloats = pixelsPerLayer * layers.length;
+  const namesPtr = m._malloc(namesBuf.byteLength);
+  const pixelsPtr = m._malloc(totalFloats * 4);
+  let resultPtr = 0;
+  try {
+    m.HEAPU8.set(namesBuf, namesPtr);
+    const heapF32 = new Float32Array(
+      m.HEAPU8.buffer,
+      m.HEAPU8.byteOffset + pixelsPtr,
+      totalFloats,
+    );
+    for (let i = 0; i < layers.length; i++) {
+      if (layers[i].pixels.length !== pixelsPerLayer) {
+        throw new Error(
+          `encodeExrLayers: layer ${i} (${layers[i].name}) has ${layers[i].pixels.length} floats, expected ${pixelsPerLayer}`,
+        );
+      }
+      heapF32.set(layers[i].pixels, i * pixelsPerLayer);
+    }
+    resultPtr = m._saveExrLayers(
+      width,
+      height,
+      layers.length,
+      namesPtr,
+      pixelsPtr,
+      compression,
+      halfFloat,
+    );
+    if (resultPtr === 0) throw new Error("EXR multi-layer encode failed");
+    const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+    const bytesPtr = view.getInt32(resultPtr, true);
+    const outLen = view.getInt32(resultPtr + 4, true);
+    const out = new Uint8Array(outLen);
+    out.set(m.HEAPU8.subarray(bytesPtr, bytesPtr + outLen));
+    return out;
+  } finally {
+    if (resultPtr !== 0) m._freeExrBytes(resultPtr);
+    m._free(namesPtr);
+    m._free(pixelsPtr);
+  }
+}
+
 // ─── DDS I/O ─────────────────────────────────────────────────────────────────
 
 export const DdsFormat = {

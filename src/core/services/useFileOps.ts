@@ -1,7 +1,11 @@
 import { useCallback, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { historyStore } from "@/core/store/historyStore";
-import { u8TransferStore } from "@/core/store/layerDataTransfer";
+import {
+  u8TransferStore,
+  f32TransferStore,
+} from "@/core/store/layerDataTransfer";
+import { decodeExrLayers } from "@/wasm";
 import {
   IMAGE_EXTENSIONS,
   EXT_TO_MIME,
@@ -409,6 +413,109 @@ export function useFileOps({
         }
         return;
       }
+      // ── Multi-layer EXR ───────────────────────────────────────────────
+      if (ext === ".exr") {
+        const base64 = await window.api.readFileBase64(path);
+        const bin = atob(base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const exr = await decodeExrLayers(bytes);
+        if (exr.layers.length > 1) {
+          const newId = makeTabId();
+          const layerData = new Map<string, string>();
+          const layers: LayerState[] = [];
+          // Track names already used so we can disambiguate duplicates.
+          const seenNames = new Map<string, number>();
+          exr.layers.forEach((L, i) => {
+            const layerId = `layer-${i}`;
+            let name = L.name.trim() || `Layer ${i + 1}`;
+            const n = seenNames.get(name) ?? 0;
+            if (n > 0) name = `${name} (${n + 1})`;
+            seenNames.set(name, n + 1);
+            const storeKey = `${newId}:${layerId}`;
+            f32TransferStore.set(storeKey, L.pixels);
+            layerData.set(layerId, `data:raw/f32-ref;id=${storeKey}`);
+            layerData.set(
+              `${layerId}:geo`,
+              JSON.stringify({
+                layerWidth: L.width,
+                layerHeight: L.height,
+                offsetX: L.offsetX,
+                offsetY: L.offsetY,
+              }),
+            );
+            layers.push({
+              id: layerId,
+              name,
+              visible: true,
+              opacity: 1,
+              locked: false,
+              blendMode: "normal",
+            });
+          });
+          const title = fileTitle(path);
+          const newSnapshot: TabSnapshot = {
+            canvasWidth: exr.canvasWidth,
+            canvasHeight: exr.canvasHeight,
+            backgroundFill: "transparent",
+            layers,
+            activeLayerId: layers[layers.length - 1]?.id ?? null,
+            zoom: 1,
+            swatches: DEFAULT_SWATCHES,
+            swatchGroups: [],
+            pixelBrushes: [],
+            pixelFormat: "rgba32f",
+          };
+          const snapshot = captureActiveSnapshot();
+          const savedHistory = historyStore.detach();
+          const savedLayerData = serializeActiveTabPixels();
+          const updated: TabRecord[] = [
+            ...tabs.map((t) =>
+              t.id === activeTabId
+                ? { ...t, snapshot, savedHistory, savedLayerData }
+                : t,
+            ),
+            {
+              id: newId,
+              title,
+              filePath: path,
+              snapshot: newSnapshot,
+              savedLayerData: layerData,
+              savedHistory: null,
+              canvasKey: 1,
+              tiledMode: false,
+              showTileGrid: false,
+              pixelFormat: "rgba32f" as PixelFormat,
+              exposureEV: 0,
+              toneMappingOperator: "reinhard",
+              animationMode: false,
+            },
+          ];
+          setTabs(updated);
+          setActiveTabId(newId);
+          historyStore.clear({ recaptureSnapshot: false });
+          setPendingLayerData(null);
+          dispatch({
+            type: "SWITCH_TAB",
+            payload: {
+              width: exr.canvasWidth,
+              height: exr.canvasHeight,
+              backgroundFill: "transparent",
+              layers,
+              activeLayerId: newSnapshot.activeLayerId,
+              zoom: 1,
+              tiledMode: false,
+              showTileGrid: false,
+              pixelFormat: "rgba32f",
+            },
+          });
+          const updatedRecent = await window.api.addRecentFile(path);
+          onRecentFilesUpdated?.(updatedRecent);
+          return;
+        }
+        // Single-layer EXR — fall through to the standard image-import path.
+      }
+
       if (IMAGE_EXTENSIONS.has(ext)) {
         const base64 = await window.api.readFileBase64(path);
         const mime = EXT_TO_MIME[ext] ?? "image/png";

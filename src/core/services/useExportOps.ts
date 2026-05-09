@@ -6,7 +6,7 @@ import { exportWebp } from "@/core/io/exportWebp";
 import { exportHdr } from "@/core/io/exportHdr";
 import { exportTiff32 } from "@/core/io/exportTiff32";
 import { exportDds } from "@/core/io/exportDds";
-import { encodeExr } from "@/wasm";
+import { encodeExr, encodeExrLayers } from "@/wasm";
 import { DdsFormat, DdsHeaderMode } from "@/wasm";
 import { displayStore } from "@/core/store/displayStore";
 import type { AppState, ToneMappingOperator } from "@/types";
@@ -85,18 +85,20 @@ export function useExportOps({
           "Canvas renderer is not ready yet. Please try export again.",
         );
 
-      // Per-layer flat export: rasterise each picked layer (with its
-      // attached adjustment/effect/filter children + mask) on its own,
-      // then encode + write to "<stem>_<sanitised-name>.<ext>".
-      // Only LDR flat formats — PSD has its own per-layer flow, HDR
-      // formats have no notion of separate layer files.
-      const isFlatLdr =
+      // Per-layer "separate file" export: rasterise each picked layer (with
+      // its attached adjustment/effect/filter children + mask) on its own,
+      // then encode + write to "<stem>_<sanitised-name>.<ext>".  Supported
+      // for the flat LDR formats and for the layer-capable formats (PSD,
+      // EXR — each emitted file contains a single rasterized layer).
+      const separateSupported =
         settings.format === "png" ||
         settings.format === "jpeg" ||
         settings.format === "webp" ||
         settings.format === "tga" ||
-        settings.format === "tiff";
-      if (settings.perLayer && isFlatLdr) {
+        settings.format === "tiff" ||
+        settings.format === "psd" ||
+        settings.format === "exr";
+      if (settings.layerMode === "separate" && separateSupported) {
         const allLayers = stateRef.current.layers;
         const ids = settings.perLayerIds ?? [];
         if (ids.length === 0) {
@@ -117,6 +119,15 @@ export function useExportOps({
         const ext = dot >= 0 ? file.slice(dot) : "";
         const sanitiseName = (n: string): string =>
           n.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_") || "layer";
+
+        const cw = stateRef.current.canvas.width;
+        const ch = stateRef.current.canvas.height;
+        const isHdrDoc = stateRef.current.pixelFormat === "rgba32f";
+        // PSD writer is dynamically imported; pull it once outside the loop.
+        const psdMod =
+          settings.format === "psd"
+            ? await import("@/core/io/exportPsd")
+            : null;
 
         for (const id of ids) {
           const ls = allLayers.find((l) => l.id === id);
@@ -155,12 +166,76 @@ export function useExportOps({
             if (maskChild) subset.push(maskChild);
           }
           const flatLayer = await handle.rasterizeLayers(subset, "export");
-          const fullPixels: Uint8Array =
-            flatLayer.data instanceof Float32Array
-              ? clampF32ToUint8(flatLayer.data)
-              : flatLayer.data;
           const w = flatLayer.width;
           const h = flatLayer.height;
+
+          // EXR per-layer: write a single-image float EXR per layer.
+          if (settings.format === "exr") {
+            if (!(flatLayer.data instanceof Float32Array)) {
+              throw new Error(
+                "EXR per-layer export requires a rgba32f document.",
+              );
+            }
+            const bytes = await encodeExr(
+              flatLayer.data,
+              w,
+              h,
+              settings.exrCompression,
+              settings.exrHalfFloat ? 1 : 0,
+            );
+            const filename = `${stem}_${sanitiseName(ls.name)}${ext}`;
+            const filePath = dir ? `${dir}${sep}${filename}` : filename;
+            await window.api.exportImage(filePath, bytesToBase64(bytes));
+            continue;
+          }
+
+          // PSD per-layer: write a single-layer PSD.
+          if (settings.format === "psd" && psdMod) {
+            const ldr: Uint8Array =
+              flatLayer.data instanceof Float32Array
+                ? isHdrDoc
+                  ? toneMapToUint8(
+                      flatLayer.data,
+                      displayStore.toneMappingOperator,
+                      displayStore.exposureEV,
+                    )
+                  : clampF32ToUint8(flatLayer.data)
+                : flatLayer.data;
+            const psdBytes = psdMod.exportPsd({
+              width: cw,
+              height: ch,
+              layers: [
+                {
+                  kind: "layer",
+                  name: ls.name,
+                  visible: true,
+                  opacity: 1,
+                  blendMode: "normal",
+                  pixels: ldr,
+                  layerWidth: w,
+                  layerHeight: h,
+                  offsetX: 0,
+                  offsetY: 0,
+                },
+              ],
+            });
+            const filename = `${stem}_${sanitiseName(ls.name)}${ext}`;
+            const filePath = dir ? `${dir}${sep}${filename}` : filename;
+            await window.api.exportImage(filePath, bytesToBase64(psdBytes));
+            continue;
+          }
+
+          // Flat LDR formats.
+          const fullPixels: Uint8Array =
+            flatLayer.data instanceof Float32Array
+              ? isHdrDoc
+                ? toneMapToUint8(
+                    flatLayer.data,
+                    displayStore.toneMappingOperator,
+                    displayStore.exposureEV,
+                  )
+                : clampF32ToUint8(flatLayer.data)
+              : flatLayer.data;
 
           let dataUrl: string;
           if (settings.format === "png") {
@@ -203,6 +278,45 @@ export function useExportOps({
         const layers = stateRef.current.layers;
         const cw = stateRef.current.canvas.width;
         const ch = stateRef.current.canvas.height;
+        const isHdrDoc = stateRef.current.pixelFormat === "rgba32f";
+
+        // "Flatten" mode → single rasterized "Background" layer.
+        if (settings.layerMode === "single") {
+          const flatAll = await handle.rasterizeLayers(layers, "export");
+          const ldr: Uint8Array =
+            flatAll.data instanceof Float32Array
+              ? isHdrDoc
+                ? toneMapToUint8(
+                    flatAll.data,
+                    displayStore.toneMappingOperator,
+                    displayStore.exposureEV,
+                  )
+                : clampF32ToUint8(flatAll.data)
+              : flatAll.data;
+          const psdBytes = exportPsd({
+            width: cw,
+            height: ch,
+            layers: [
+              {
+                kind: "layer",
+                name: "Background",
+                visible: true,
+                opacity: 1,
+                blendMode: "normal",
+                pixels: ldr,
+                layerWidth: flatAll.width,
+                layerHeight: flatAll.height,
+                offsetX: 0,
+                offsetY: 0,
+              },
+            ],
+          });
+          await window.api.exportImage(
+            settings.filePath,
+            bytesToBase64(psdBytes),
+          );
+          return;
+        }
 
         // Rasterize a single pixel-bearing layer (pixel/text/shape/frame or
         // a composite — composites bring their descendants along) through
@@ -385,6 +499,98 @@ export function useExportOps({
       if (settings.format === "exr") {
         if (!(flat.data instanceof Float32Array))
           throw new Error("EXR export requires a rgba32f document.");
+
+        // Multi-layer EXR: when the user picked "Preserve layers" (the
+        // default for multi-layer rgba32f docs), write each pixel layer as a
+        // channel-named layer ("<Name>.R/G/B/A") in a single-part EXR.
+        // Adjustment/mask children are baked into the owning pixel layer's
+        // pixels via per-layer rasterization.  Group layers are skipped
+        // (their leaves are emitted individually).
+        const allLayers = stateRef.current.layers;
+        const isPixelLayer = (
+          l: AppState["layers"][number],
+        ): boolean => {
+          if (!("type" in l)) return true;
+          const t = (l as { type?: string }).type;
+          return (
+            t === undefined ||
+            t === "pixel" ||
+            t === "text" ||
+            t === "shape" ||
+            t === "frame" ||
+            t === "composite"
+          );
+        };
+        const pixelLayers = allLayers.filter(isPixelLayer);
+        if (settings.layerMode === "multilayer" && pixelLayers.length > 1) {
+          const exrLayers: { name: string; pixels: Float32Array }[] = [];
+          for (const ls of pixelLayers) {
+            const isComposite =
+              "type" in ls && (ls as { type: string }).type === "composite";
+            const adjChildren = allLayers.filter(
+              (l) =>
+                "type" in l &&
+                (l as { type: string }).type === "adjustment" &&
+                (l as { parentId?: string }).parentId === ls.id,
+            );
+            const maskChild = allLayers.find(
+              (l) =>
+                "type" in l &&
+                (l as { type: string }).type === "mask" &&
+                (l as { parentId?: string }).parentId === ls.id,
+            );
+            // Neutralize layer-level visibility/opacity/blend so we get the
+            // raw layer content composited at canvas size.
+            const lsForRaster = {
+              ...ls,
+              opacity: 1,
+              visible: true,
+              blendMode: "normal",
+            } as typeof ls;
+            const adjForRaster = adjChildren.map(
+              (a) => ({ ...a, visible: true }) as typeof a,
+            );
+            let subset: AppState["layers"][number][];
+            if (isComposite) {
+              const descIds = new Set(getDescendantIds(allLayers, ls.id));
+              const descendants = allLayers.filter((l) => descIds.has(l.id));
+              const descAttachments = allLayers.filter((l) => {
+                if (!("type" in l)) return false;
+                const t = (l as { type: string }).type;
+                if (t !== "mask" && t !== "adjustment") return false;
+                const pid = (l as { parentId?: string }).parentId;
+                return pid !== undefined && descIds.has(pid);
+              });
+              subset = [
+                lsForRaster,
+                ...descendants,
+                ...adjForRaster,
+                ...descAttachments,
+              ];
+            } else {
+              subset = [lsForRaster, ...adjForRaster];
+              if (maskChild) subset.push(maskChild);
+            }
+            const flatLayer = await handle.rasterizeLayers(subset, "export");
+            if (!(flatLayer.data instanceof Float32Array)) {
+              throw new Error(
+                `EXR multi-layer export: layer "${ls.name}" did not produce float32 pixels.`,
+              );
+            }
+            exrLayers.push({ name: ls.name, pixels: flatLayer.data });
+          }
+          const bytes = await encodeExrLayers(
+            exrLayers,
+            width,
+            height,
+            settings.exrCompression,
+            settings.exrHalfFloat ? 1 : 0,
+          );
+          const b64 = bytesToBase64(bytes);
+          await window.api.exportImage(settings.filePath, b64);
+          return;
+        }
+
         const bytes = await encodeExr(
           flat.data,
           width,
