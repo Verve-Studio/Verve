@@ -1523,8 +1523,16 @@ function AppContent(): React.JSX.Element {
         handleSetAnimationMode={handleSetAnimationMode}
         isPlaying={playback.isPlaying}
         isLooping={playback.isLooping}
-        currentFrame={playback.currentFrameIdx + 1}
-        totalFrames={playback.selectedAnim?.frames.length ?? 0}
+        currentFrame={
+          state.paletteAnimation.enabled
+            ? playback.paletteFrameIdx + 1
+            : playback.currentFrameIdx + 1
+        }
+        totalFrames={
+          state.paletteAnimation.enabled
+            ? playback.paletteTotalFrames
+            : (playback.selectedAnim?.frames.length ?? 0)
+        }
         onPlayPause={playback.onPlayPause}
         onLoopToggle={playback.onLoopToggle}
         onPrevFrame={playback.onPrevFrame}

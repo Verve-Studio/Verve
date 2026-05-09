@@ -156,17 +156,15 @@ export function PlaybackBar({
             <IconNextAnim />
           </button>
         )}
-        {!paletteAnimationActive && (
-          <button
-            className={`${styles.btn} ${isLooping ? styles.btnActive : ""}`}
-            title={isLooping ? "Loop: On" : "Loop: Off"}
-            aria-label={isLooping ? "Loop: On" : "Loop: Off"}
-            aria-pressed={isLooping}
-            onClick={onLoopToggle}
-          >
-            <IconLoop />
-          </button>
-        )}
+        <button
+          className={`${styles.btn} ${isLooping ? styles.btnActive : ""}`}
+          title={isLooping ? "Loop: On" : "Loop: Off"}
+          aria-label={isLooping ? "Loop: On" : "Loop: Off"}
+          aria-pressed={isLooping}
+          onClick={onLoopToggle}
+        >
+          <IconLoop />
+        </button>
       </div>
       <div className={styles.frameInfo}>
         <span className={styles.frameLabel}>
