@@ -129,6 +129,7 @@ interface MacNativeMenuParams {
   tiledMode: boolean;
   showTileGrid: boolean;
   animationMode: boolean;
+  paletteAnimationActive: boolean;
 
   // Animation playback
   onPlayPause: () => void;
@@ -138,6 +139,8 @@ interface MacNativeMenuParams {
   onNextAnimation: () => void;
   openImportSpritesheetFramesDialog: () => void;
   handleExportSpritesheetJson: () => void;
+  handleExportPaletteAnimationJson: () => void;
+  openExportAnimationFramesDialog: () => void;
 }
 
 export function useMacNativeMenu(params: MacNativeMenuParams): void {
@@ -223,6 +226,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     tiledMode,
     showTileGrid,
     animationMode,
+    paletteAnimationActive,
     onPlayPause,
     onPrevFrame,
     onNextFrame,
@@ -230,6 +234,8 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     onNextAnimation,
     openImportSpritesheetFramesDialog,
     handleExportSpritesheetJson,
+    handleExportPaletteAnimationJson,
+    openExportAnimationFramesDialog,
   } = params;
 
   // A ref that holds the latest action dispatcher (avoids stale closures in the IPC listener).
@@ -528,6 +534,12 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
         case "exportSpritesheetJson":
           handleExportSpritesheetJson();
           break;
+        case "exportPaletteAnimationJson":
+          handleExportPaletteAnimationJson();
+          break;
+        case "exportAnimationFrames":
+          openExportAnimationFramesDialog();
+          break;
         case "preferences":
           openPreferencesDialog();
           break;
@@ -635,6 +647,8 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       onNextAnimation,
       openImportSpritesheetFramesDialog,
       handleExportSpritesheetJson,
+      handleExportPaletteAnimationJson,
+      openExportAnimationFramesDialog,
     ],
   );
 
@@ -683,19 +697,34 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       playPause: animationMode,
       prevFrame: animationMode,
       nextFrame: animationMode,
-      prevAnimation: animationMode,
-      nextAnimation: animationMode,
+      // Prev/Next Animation are spritesheet-only — palette animation has
+      // no concept of "next animation".
+      prevAnimation: animationMode && !paletteAnimationActive,
+      nextAnimation: animationMode && !paletteAnimationActive,
       importSpritesheetFrames: animationMode,
       exportSpritesheetJson: animationMode,
+      exportPaletteAnimationJson: animationMode,
+      exportAnimationFrames: animationMode,
+      // Top-level Adjustments / Effects / Filters menus are off-limits in
+      // indexed8 — none of those operations work on palette indices.
+      "menu:adjustments": pixelFormat !== "indexed8",
+      "menu:effects": pixelFormat !== "indexed8",
+      "menu:filters": pixelFormat !== "indexed8",
     };
+    // None of these operate on palette indices, so disable every entry in
+    // indexed8 mode regardless of the underlying isAdjustmentMenuEnabled
+    // gate. (Electron's macOS native menu doesn't reliably grey out a
+    // top-level entry via `enabled`, hence belt-and-braces.)
+    const blockedByIndexed8 = pixelFormat === "indexed8";
     for (const ai of ADJUSTMENT_MENU_ITEMS)
       enabled[`adj:${ai.type}`] =
+        !blockedByIndexed8 &&
         isAdjustmentMenuEnabled &&
         !(ai.type === "reduce-colors" && pixelFormat !== "rgba8");
     for (const ei of EFFECTS_MENU_ITEMS)
-      enabled[`adj:${ei.type}`] = isAdjustmentMenuEnabled;
+      enabled[`adj:${ei.type}`] = !blockedByIndexed8 && isAdjustmentMenuEnabled;
     for (const fi of FILTER_MENU_ITEMS)
-      enabled[`filter:${fi.key}`] = isAdjustmentMenuEnabled;
+      enabled[`filter:${fi.key}`] = !blockedByIndexed8 && isAdjustmentMenuEnabled;
     window.api.setMenuItemEnabled(enabled);
   }, [
     isMac,
@@ -707,6 +736,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     adjustments,
     pixelFormat,
     animationMode,
+    paletteAnimationActive,
   ]);
 
   // Sync Show Grid and tiled mode checkbox states.

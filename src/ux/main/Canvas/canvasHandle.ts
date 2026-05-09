@@ -160,6 +160,11 @@ export interface CanvasHandle {
    * the same format returned by `getLayerPixels`. Does NOT push to undo history.
    */
   writeLayerPixels: (layerId: string, pixels: Uint8Array) => void;
+  /** Re-flush every indexed8 layer with the supplied palette and re-render.
+   *  Used by the palette-animation playback loop to swap the displayed
+   *  colours without touching the underlying index buffer. No-op when there
+   *  are no indexed8 layers. */
+  repaintIndexedLayers: (palette: readonly RGBAColor[]) => void;
   /**
    * Register a baked selection mask for an adjustment layer.
    * selPixels is a full-canvas Uint8Array (1 byte per pixel, 255 = selected) from selectionStore.mask.
@@ -822,6 +827,18 @@ export function useCanvasHandle({
         }
         renderer.flushLayer(layer);
         renderFromPlan();
+      },
+
+      repaintIndexedLayers: (palette) => {
+        const renderer = rendererRef.current;
+        if (!renderer) return;
+        let any = false;
+        for (const layer of glLayersRef.current.values()) {
+          if (layer.format !== "indexed8") continue;
+          renderer.flushLayer(layer, palette as RGBAColor[]);
+          any = true;
+        }
+        if (any) renderFromPlan();
       },
 
       registerAdjustmentSelectionMask: (layerId, selPixels) => {

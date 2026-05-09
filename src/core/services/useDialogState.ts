@@ -24,10 +24,16 @@ export function useDialogState() {
     showImportSpritesheetFramesDialog,
     setShowImportSpritesheetFramesDialog,
   ] = useState(false);
+  const [
+    showExportAnimationFramesDialog,
+    setShowExportAnimationFramesDialog,
+  ] = useState(false);
 
   return {
     showImportSpritesheetFramesDialog,
     setShowImportSpritesheetFramesDialog,
+    showExportAnimationFramesDialog,
+    setShowExportAnimationFramesDialog,
     showNewImageDialog,
     setShowNewImageDialog,
     showExportDialog,

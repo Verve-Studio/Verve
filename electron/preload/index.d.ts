@@ -9,8 +9,9 @@ declare global {
       saveFile: () => Promise<string | null>
       openverveDialog: () => Promise<string | null>
       openImagesMultiDialog: () => Promise<string[] | null>
-      saveSpritesheetJsonDialog: (defaultName?: string) => Promise<string | null>
-      writeSpritesheetJsonFile: (path: string, data: string) => Promise<void>
+      saveJsonDialog: (defaultName?: string) => Promise<string | null>
+      openDirectoryDialog: () => Promise<string | null>
+      writeJsonFile: (path: string, data: string) => Promise<void>
       saveverveDialog: (defaultPath?: string) => Promise<string | null>
       openverveFile: (path: string) => Promise<string>
       saveverveFile: (path: string, data: string) => Promise<void>

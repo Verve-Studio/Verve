@@ -267,20 +267,43 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
 
     // Adjustments
     {
+      id: 'menu:adjustments',
       label: 'Adjustments',
       submenu: groupedItems(payload.adjustments, 'adj:'),
     },
 
     // Effects
     {
+      id: 'menu:effects',
       label: 'Effects',
       submenu: groupedItems(payload.effects, 'adj:'),
     },
 
     // Filters
     {
+      id: 'menu:filters',
       label: 'Filters',
       submenu: groupedItems(payload.filters, 'filter:'),
+    },
+
+    // Animation
+    {
+      label: 'Animation',
+      submenu: [
+        { id: 'playPause',     label: 'Play / Pause',       accelerator: 'Space', enabled: false, click: () => send('playPause')     },
+        sep(),
+        { id: 'prevFrame',     label: 'Previous Frame',     accelerator: 'Left',  enabled: false, click: () => send('prevFrame')     },
+        { id: 'nextFrame',     label: 'Next Frame',         accelerator: 'Right', enabled: false, click: () => send('nextFrame')     },
+        sep(),
+        { id: 'prevAnimation', label: 'Previous Animation', accelerator: 'Up',    enabled: false, click: () => send('prevAnimation') },
+        { id: 'nextAnimation', label: 'Next Animation',     accelerator: 'Down',  enabled: false, click: () => send('nextAnimation') },
+        sep(),
+        { id: 'importSpritesheetFrames', label: 'Import Frames Into Spritesheet…', enabled: false, click: () => send('importSpritesheetFrames') },
+        { id: 'exportSpritesheetJson',   label: 'Export Spritesheet JSON…',       enabled: false, click: () => send('exportSpritesheetJson') },
+        { id: 'exportPaletteAnimationJson', label: 'Export Palette Animation JSON…', enabled: false, click: () => send('exportPaletteAnimationJson') },
+        sep(),
+        { id: 'exportAnimationFrames', label: 'Export Animation to Frames…', enabled: false, click: () => send('exportAnimationFrames') },
+      ],
     },
 
     // View
@@ -341,23 +364,6 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         { id: 'togglePanel:HDR',       label: 'HDR',       type: 'checkbox', checked: false, click: () => send('togglePanel:HDR') },
         sep(),
         { label: 'Reset Panel Layout', click: () => send('resetPanelLayout') },
-      ],
-    },
-
-    // Animation
-    {
-      label: 'Animation',
-      submenu: [
-        { id: 'playPause',     label: 'Play / Pause',       accelerator: 'Space', enabled: false, click: () => send('playPause')     },
-        sep(),
-        { id: 'prevFrame',     label: 'Previous Frame',     accelerator: 'Left',  enabled: false, click: () => send('prevFrame')     },
-        { id: 'nextFrame',     label: 'Next Frame',         accelerator: 'Right', enabled: false, click: () => send('nextFrame')     },
-        sep(),
-        { id: 'prevAnimation', label: 'Previous Animation', accelerator: 'Up',    enabled: false, click: () => send('prevAnimation') },
-        { id: 'nextAnimation', label: 'Next Animation',     accelerator: 'Down',  enabled: false, click: () => send('nextAnimation') },
-        sep(),
-        { id: 'importSpritesheetFrames', label: 'Import Frames Into Spritesheet…', enabled: false, click: () => send('importSpritesheetFrames') },
-        { id: 'exportSpritesheetJson',   label: 'Export Spritesheet JSON…',       enabled: false, click: () => send('exportSpritesheetJson') },
       ],
     },
 

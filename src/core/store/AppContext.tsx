@@ -170,6 +170,17 @@ export type AppAction =
       type: "SET_SPRITESHEET";
       payload: Partial<import("@/types").SpritesheetState>;
     }
+  | {
+      type: "SET_PALETTE_ANIMATION";
+      payload: Partial<import("@/types").PaletteAnimationState>;
+    }
+  | {
+      type: "UPDATE_SWATCH_GROUP_CYCLE";
+      payload: {
+        groupId: string;
+        cycle: import("@/types").SwatchGroupCycle | undefined;
+      };
+    }
   | { type: "ADD_ANIMATION"; payload: AnimationDef }
   | { type: "UPDATE_ANIMATION"; payload: AnimationDef }
   | { type: "DELETE_ANIMATION"; payload: string }
@@ -242,6 +253,10 @@ const initialState: AppState = {
     animations: [],
     selectedAnimationId: null,
     selectedFrameId: null,
+  },
+  paletteAnimation: {
+    enabled: false,
+    fps: 8,
   },
 };
 
@@ -753,11 +768,36 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_ANIMATION_MODE":
       return { ...state, animationMode: action.payload };
 
-    case "SET_SPRITESHEET":
+    case "SET_SPRITESHEET": {
+      const next = { ...state.spritesheet, ...action.payload };
+      // Sprite-sheet and palette animation are mutually exclusive — turning
+      // sprite sheet on disables palette animation.
+      const paletteAnimation =
+        next.enabled && state.paletteAnimation.enabled
+          ? { ...state.paletteAnimation, enabled: false }
+          : state.paletteAnimation;
+      return { ...state, spritesheet: next, paletteAnimation };
+    }
+
+    case "SET_PALETTE_ANIMATION": {
+      const next = { ...state.paletteAnimation, ...action.payload };
+      // Mutual exclusion with sprite sheet (see SET_SPRITESHEET).
+      const spritesheet =
+        next.enabled && state.spritesheet.enabled
+          ? { ...state.spritesheet, enabled: false }
+          : state.spritesheet;
+      return { ...state, paletteAnimation: next, spritesheet };
+    }
+
+    case "UPDATE_SWATCH_GROUP_CYCLE": {
+      const { groupId, cycle } = action.payload;
       return {
         ...state,
-        spritesheet: { ...state.spritesheet, ...action.payload },
+        swatchGroups: state.swatchGroups.map((g) =>
+          g.id === groupId ? { ...g, cycle } : g,
+        ),
       };
+    }
 
     case "ADD_ANIMATION":
       return {
@@ -918,6 +958,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
         animationMode: false,
         spritesheet: initialState.spritesheet,
+        paletteAnimation: initialState.paletteAnimation,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -1004,6 +1045,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
         animationMode: false,
         spritesheet: initialState.spritesheet,
+        paletteAnimation: initialState.paletteAnimation,
         canvas: {
           ...state.canvas,
           width: action.payload.width,

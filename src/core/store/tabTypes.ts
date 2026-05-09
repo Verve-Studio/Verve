@@ -9,6 +9,7 @@ import type {
   PixelFormat,
   ToneMappingOperator,
   SpritesheetState,
+  PaletteAnimationState,
 } from "@/types";
 
 // ─── Default swatch palette ───────────────────────────────────────────────────
@@ -53,6 +54,7 @@ export interface TabSnapshot {
   activeBrushId?: string | null;
   pixelFormat: PixelFormat;
   spritesheet?: SpritesheetState;
+  paletteAnimation?: PaletteAnimationState;
 }
 
 // ─── Tab record ───────────────────────────────────────────────────────────────

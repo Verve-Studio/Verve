@@ -2,6 +2,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState, AnimationDef } from "@/types";
+import {
+  computeEffectivePalette,
+  paletteCycleStore,
+} from "@/core/store/paletteCycleStore";
+import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 
 // ─── Public interface ──────────────────────────────────────────────────────────
 
@@ -24,6 +29,7 @@ export interface AnimationPlayback {
 export function useAnimationPlayback(
   state: AppState,
   dispatch: Dispatch<AppAction>,
+  canvasHandleRef: { readonly current: CanvasHandle | null },
 ): AnimationPlayback {
   const ss = state.spritesheet;
 
@@ -183,9 +189,70 @@ export function useAnimationPlayback(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, selectedAnim?.fps, selectedAnim?.id, advanceTick]);
 
+  // ── Palette animation: virtual cycle of indexed8 palette ────────────────
+  // When palette animation is enabled and play is active, tick a counter at
+  // the configured fps and re-flush every indexed8 layer with the cycled
+  // palette. The underlying state.swatches is never mutated.
+  const paletteEnabled = state.paletteAnimation.enabled;
+  const paletteFps = Math.max(1, state.paletteAnimation.fps);
+  const swatches = state.swatches;
+  const swatchGroups = state.swatchGroups;
+  const swatchesRef = useRef(swatches);
+  const swatchGroupsRef = useRef(swatchGroups);
+  swatchesRef.current = swatches;
+  swatchGroupsRef.current = swatchGroups;
+  const repaint = useCallback(
+    (tick: number): void => {
+      const handle = canvasHandleRef.current;
+      if (!handle) return;
+      const eff = computeEffectivePalette(
+        swatchesRef.current,
+        swatchGroupsRef.current,
+        tick,
+      );
+      handle.repaintIndexedLayers(eff);
+    },
+    [canvasHandleRef],
+  );
+  useEffect(() => {
+    if (!paletteEnabled || !isPlaying) return;
+    const interval = Math.round(1000 / paletteFps);
+    const id = setInterval(() => {
+      paletteCycleStore.set(paletteCycleStore.tick + 1);
+      repaint(paletteCycleStore.tick);
+    }, interval);
+    return () => clearInterval(id);
+  }, [paletteEnabled, isPlaying, paletteFps, repaint]);
+
+  // Re-flush whenever palette-anim toggles, the cycle config changes, or
+  // the swatch list changes — keeps the displayed colours in sync without
+  // waiting for the next tick.
+  useEffect(() => {
+    if (paletteEnabled) {
+      repaint(paletteCycleStore.tick);
+    } else {
+      // Restore original palette when the feature is turned off.
+      paletteCycleStore.reset();
+      repaint(0);
+    }
+  }, [paletteEnabled, swatches, swatchGroups, repaint]);
+
   // ── Manual navigation ──────────────────────────────────────────────────────
 
+  const paletteEnabledRef = useRef(paletteEnabled);
+  paletteEnabledRef.current = paletteEnabled;
+
   const handlePrevFrame = useCallback((): void => {
+    if (paletteEnabledRef.current) {
+      // In palette-animation mode "Previous Frame" steps the palette
+      // cycle one tick backward and repaints with the cycled palette.
+      // Pause the cycle so the manual step is preserved.
+      setIsPlaying(false);
+      const next = paletteCycleStore.tick - 1;
+      paletteCycleStore.set(next);
+      repaint(paletteCycleStore.tick);
+      return;
+    }
     const anim = selectedAnimRef.current;
     if (!anim || anim.frames.length === 0) return;
     const len = anim.frames.length;
@@ -207,9 +274,15 @@ export function useAnimationPlayback(
 
     goToFrame(anim, next);
     setIsPlaying(false);
-  }, [goToFrame]);
+  }, [goToFrame, repaint]);
 
   const handleNextFrame = useCallback((): void => {
+    if (paletteEnabledRef.current) {
+      setIsPlaying(false);
+      paletteCycleStore.set(paletteCycleStore.tick + 1);
+      repaint(paletteCycleStore.tick);
+      return;
+    }
     const anim = selectedAnimRef.current;
     if (!anim || anim.frames.length === 0) return;
     const len = anim.frames.length;
@@ -231,9 +304,11 @@ export function useAnimationPlayback(
 
     goToFrame(anim, next);
     setIsPlaying(false);
-  }, [goToFrame]);
+  }, [goToFrame, repaint]);
 
   const handlePrevAnimation = useCallback((): void => {
+    // No-op in palette mode (UI gates the button as well).
+    if (paletteEnabledRef.current) return;
     const anims = ss.animations;
     if (anims.length === 0) return;
     const currentIdx = anims.findIndex((a) => a.id === ss.selectedAnimationId);
@@ -261,6 +336,7 @@ export function useAnimationPlayback(
   }, [ss.animations, ss.selectedAnimationId, goToFrame, dispatch]);
 
   const handleNextAnimation = useCallback((): void => {
+    if (paletteEnabledRef.current) return;
     const anims = ss.animations;
     if (anims.length === 0) return;
     const currentIdx = anims.findIndex((a) => a.id === ss.selectedAnimationId);

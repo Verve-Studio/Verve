@@ -97,6 +97,7 @@ export function useTabs(
       activeBrushId: state.activeBrushId,
       pixelFormat: state.pixelFormat,
       spritesheet: state.spritesheet,
+      paletteAnimation: state.paletteAnimation,
     }),
     [state],
   );
@@ -235,6 +236,13 @@ export function useTabs(
           },
         });
       }
+      dispatch({
+        type: "SET_PALETTE_ANIMATION",
+        payload: toTab.snapshot.paletteAnimation ?? {
+          enabled: false,
+          fps: 8,
+        },
+      });
     },
     [dispatch],
   );

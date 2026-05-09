@@ -30,14 +30,20 @@
   letter-spacing: 0.01em;
   transition: background-color vars.$transition-fast, color vars.$transition-fast;
 
-  &:hover,
-  &.open {
+  &:hover:not(:disabled),
+  &.open:not(:disabled) {
     background-color: vars.$color-surface-hover;
     color: vars.$color-text;
   }
 
   &:focus-visible {
     @include m.focus-ring;
+  }
+
+  &:disabled {
+    color: vars.$color-text-muted;
+    opacity: 0.5;
+    cursor: default;
   }
 }
 

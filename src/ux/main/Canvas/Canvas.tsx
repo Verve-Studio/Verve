@@ -1869,8 +1869,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           ? getPencilBrushPreviewDataUrl(r, g, b, a)
           : getPencilShapePreviewDataUrl(r, g, b, a);
         if (preview) {
-          let canvasX = pos.x,
-            canvasY = pos.y;
+          // Pencil quantises hover positions to the nearest pixel via
+          // `Math.round(pos.x/y)` when stamping (pencil.tsx). Match that
+          // here so the preview lands on the same pixel that will actually
+          // be plotted — otherwise the cursor floats up to half a pixel
+          // off-grid, drifting from the soon-to-be-painted cell.
+          let canvasX = Math.round(pos.x),
+            canvasY = Math.round(pos.y);
           if (
             pencilOptions.pixelBrush &&
             pencilOptions.snapToBrush &&
@@ -1885,8 +1890,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
             "previewH" in preview ? preview.previewH : preview.size;
           const scaledW = (previewW * zoom) / dpr;
           const scaledH = (previewH * zoom) / dpr;
-          const screenX = ((canvasX + 0.5) * zoom) / dpr - scaledW / 2;
-          const screenY = ((canvasY + 0.5) * zoom) / dpr - scaledH / 2;
+          // Match the pencil's discrete footprint: it stamps
+          // `paintBrushPixel(cx + dx, cy + dy)` with dx ∈ [-half, size-half)
+          // where half = floor(size/2). So the top-left pixel of the
+          // footprint sits at canvasX - half. A continuous `+0.5 - size/2`
+          // formulation is half a pixel off for even sizes (pencil biases
+          // even brushes toward the top-left).
+          const halfW = Math.floor(previewW / 2);
+          const halfH = Math.floor(previewH / 2);
+          const screenX = ((canvasX - halfW) * zoom) / dpr;
+          const screenY = ((canvasY - halfH) * zoom) / dpr;
           const el = pixelBrushCursorRef.current;
           el.style.display = "block";
           el.style.left = `${screenX}px`;

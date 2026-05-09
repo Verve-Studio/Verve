@@ -87,10 +87,33 @@ export interface RGBAColor extends RGBColor {
   a: number;
 }
 
+export interface SwatchGroupCycle {
+  /** When true, this group's colours rotate through their slots while the
+   *  palette animation is running. */
+  enabled: boolean;
+  /** How many slots to advance every `ticksPerStep` palette ticks.
+   *  Negative values cycle backwards. */
+  stepsPerStep: number;
+  /** How many palette-animation ticks to wait between advances. 1 = every
+   *  tick. */
+  ticksPerStep: number;
+}
+
 export interface SwatchGroup {
   id: string;
   name: string;
   swatchIndices: number[];
+  /** Optional palette-animation cycle configuration. Absent on groups that
+   *  have never been touched by the palette-animation panel. */
+  cycle?: SwatchGroupCycle;
+}
+
+export interface PaletteAnimationState {
+  /** When true, the palette-cycle pre-pass is applied to the displayed
+   *  indexed8 canvas. Mutually exclusive with `spritesheet.enabled`. */
+  enabled: boolean;
+  /** Cycle ticks per second. */
+  fps: number;
 }
 
 // ─── Geometry ─────────────────────────────────────────────────────────────────
@@ -591,4 +614,5 @@ export interface AppState {
   /** When true, the playback bar is visible and the app is in spritesheet animation mode. */
   animationMode: boolean;
   spritesheet: SpritesheetState;
+  paletteAnimation: PaletteAnimationState;
 }

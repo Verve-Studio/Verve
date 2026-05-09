@@ -35,6 +35,7 @@ import { ExportDialog } from "@/ux/modals/ExportDialog/ExportDialog";
 import { ResizeImageDialog } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import { ResizeCanvasDialog } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
 import { ImportSpritesheetFramesDialog } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
+import { ExportAnimationFramesDialog } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
 import { AboutDialog } from "@/ux/modals/AboutDialog/AboutDialog";
 import { PreferencesDialog } from "@/ux/modals/PreferencesDialog/PreferencesDialog";
 import { HdrLdrExportWarningDialog } from "@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog";
@@ -138,7 +139,28 @@ export interface MainWindowProps {
       "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog"
     ).ImportSpritesheetFramesResult,
   ) => void;
+  showExportAnimationFramesDialog: boolean;
+  setShowExportAnimationFramesDialog: (v: boolean) => void;
+  handleExportAnimationFrames: (
+    settings: import(
+      "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog"
+    ).ExportAnimationFramesSettings,
+    onProgress: (current: number, total: number) => void,
+  ) => Promise<void>;
+  exportAnimationName: string | undefined;
+  exportPaletteGroups:
+    | import(
+        "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog"
+      ).PaletteGroupOption[]
+    | undefined;
+  exportComputeFrameCount: (
+    selectedGroupIds: string[],
+    evaluation: import(
+      "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog"
+    ).PaletteCycleEvaluation,
+  ) => number;
   handleExportSpritesheetJson: () => void;
+  handleExportPaletteAnimationJson: () => void;
   showAboutDialog: boolean;
   setShowAboutDialog: (v: boolean) => void;
   showPreferencesDialog: boolean;
@@ -263,6 +285,7 @@ export interface MainWindowProps {
   onNextFrame: () => void;
   onPrevAnimation: () => void;
   onNextAnimation: () => void;
+  paletteAnimationActive: boolean;
 
   // Animation panel
   onCopyPrevFrame: (animationId: string, frameId: string) => void;
@@ -326,7 +349,14 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     showImportSpritesheetFramesDialog,
     setShowImportSpritesheetFramesDialog,
     handleImportSpritesheetFrames,
+    showExportAnimationFramesDialog,
+    setShowExportAnimationFramesDialog,
+    handleExportAnimationFrames,
+    exportAnimationName,
+    exportPaletteGroups,
+    exportComputeFrameCount,
     handleExportSpritesheetJson,
+    handleExportPaletteAnimationJson,
     showAboutDialog,
     setShowAboutDialog,
     showPreferencesDialog,
@@ -421,6 +451,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     onNextFrame,
     onPrevAnimation,
     onNextAnimation,
+    paletteAnimationActive,
     onCopyPrevFrame,
     onCopyNextFrame,
   } = props;
@@ -491,10 +522,15 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onNextFrame={onNextFrame}
         onPrevAnimation={onPrevAnimation}
         onNextAnimation={onNextAnimation}
+        paletteAnimationActive={paletteAnimationActive}
         onImportSpritesheetFrames={() =>
           setShowImportSpritesheetFramesDialog(true)
         }
         onExportSpritesheetJson={handleExportSpritesheetJson}
+        onExportPaletteAnimationJson={handleExportPaletteAnimationJson}
+        onExportAnimationFrames={() =>
+          setShowExportAnimationFramesDialog(true)
+        }
         onNewLayer={handleNewLayer}
         onNewCompositeLayer={handleCreateCompositeLayer}
         onAddLayerMask={handleAddMaskLayer}
@@ -631,6 +667,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           onNextFrame={onNextFrame}
           onNextAnimation={onNextAnimation}
           onLoopToggle={onLoopToggle}
+          paletteAnimationActive={paletteAnimationActive}
         />
       )}
       <StatusBar />
@@ -720,6 +757,16 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           handleImportSpritesheetFrames(r);
           setShowImportSpritesheetFramesDialog(false);
         }}
+      />
+      <ExportAnimationFramesDialog
+        open={showExportAnimationFramesDialog}
+        animationName={exportAnimationName}
+        paletteGroups={exportPaletteGroups}
+        computeFrameCount={exportComputeFrameCount}
+        onCancel={() => setShowExportAnimationFramesDialog(false)}
+        onConfirm={(s, onProgress) =>
+          handleExportAnimationFrames(s, onProgress)
+        }
       />
       <AboutDialog
         open={showAboutDialog}

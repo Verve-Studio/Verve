@@ -33,7 +33,14 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
-  ipcMain.handle('dialog:saveSpritesheetJson', async (_event, defaultName?: string) => {
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return canceled ? null : filePaths[0]
+  })
+
+  ipcMain.handle('dialog:saveJson', async (_event, defaultName?: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath: defaultName,
       filters: [
@@ -44,7 +51,7 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
-  ipcMain.handle('file:writeSpritesheetJson', async (_event, path: string, data: string) => {
+  ipcMain.handle('file:writeJson', async (_event, path: string, data: string) => {
     await writeFile(path, data, 'utf-8')
   })
 

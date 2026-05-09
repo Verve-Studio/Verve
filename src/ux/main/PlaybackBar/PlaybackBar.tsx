@@ -89,6 +89,9 @@ export interface PlaybackBarProps {
   onNextFrame: () => void;
   onNextAnimation: () => void;
   onLoopToggle: () => void;
+  /** When true, the Prev/Next Animation buttons are disabled — palette
+   *  animation has no concept of "next animation". */
+  paletteAnimationActive?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -104,18 +107,21 @@ export function PlaybackBar({
   onNextFrame,
   onNextAnimation,
   onLoopToggle,
+  paletteAnimationActive,
 }: PlaybackBarProps): React.JSX.Element {
   return (
     <div className={styles.playbackBar}>
       <div className={styles.controls}>
-        <button
-          className={styles.btn}
-          title="Previous Animation"
-          aria-label="Previous Animation"
-          onClick={onPrevAnimation}
-        >
-          <IconPrevAnim />
-        </button>
+        {!paletteAnimationActive && (
+          <button
+            className={styles.btn}
+            title="Previous Animation"
+            aria-label="Previous Animation"
+            onClick={onPrevAnimation}
+          >
+            <IconPrevAnim />
+          </button>
+        )}
         <button
           className={styles.btn}
           title="Previous Frame"
@@ -140,23 +146,27 @@ export function PlaybackBar({
         >
           <IconNextFrame />
         </button>
-        <button
-          className={styles.btn}
-          title="Next Animation"
-          aria-label="Next Animation"
-          onClick={onNextAnimation}
-        >
-          <IconNextAnim />
-        </button>
-        <button
-          className={`${styles.btn} ${isLooping ? styles.btnActive : ""}`}
-          title={isLooping ? "Loop: On" : "Loop: Off"}
-          aria-label={isLooping ? "Loop: On" : "Loop: Off"}
-          aria-pressed={isLooping}
-          onClick={onLoopToggle}
-        >
-          <IconLoop />
-        </button>
+        {!paletteAnimationActive && (
+          <button
+            className={styles.btn}
+            title="Next Animation"
+            aria-label="Next Animation"
+            onClick={onNextAnimation}
+          >
+            <IconNextAnim />
+          </button>
+        )}
+        {!paletteAnimationActive && (
+          <button
+            className={`${styles.btn} ${isLooping ? styles.btnActive : ""}`}
+            title={isLooping ? "Loop: On" : "Loop: Off"}
+            aria-label={isLooping ? "Loop: On" : "Loop: Off"}
+            aria-pressed={isLooping}
+            onClick={onLoopToggle}
+          >
+            <IconLoop />
+          </button>
+        )}
       </div>
       <div className={styles.frameInfo}>
         <span className={styles.frameLabel}>

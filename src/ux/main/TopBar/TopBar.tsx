@@ -62,8 +62,11 @@ interface TopBarProps {
   onNextFrame?: () => void;
   onPrevAnimation?: () => void;
   onNextAnimation?: () => void;
+  paletteAnimationActive?: boolean;
   onImportSpritesheetFrames?: () => void;
   onExportSpritesheetJson?: () => void;
+  onExportPaletteAnimationJson?: () => void;
+  onExportAnimationFrames?: () => void;
   onNewLayer?: () => void;
   onNewLayerGroup?: () => void;
   onNewCompositeLayer?: () => void;
@@ -182,8 +185,11 @@ export function TopBar({
   onNextFrame,
   onPrevAnimation,
   onNextAnimation,
+  paletteAnimationActive,
   onImportSpritesheetFrames,
   onExportSpritesheetJson,
+  onExportPaletteAnimationJson,
+  onExportAnimationFrames,
   onNewLayer,
   onNewLayerGroup,
   onNewCompositeLayer,
@@ -498,6 +504,9 @@ export function TopBar({
       },
       {
         label: "Adjustments",
+        // No adjustments work in indexed8 — disable the whole top-level
+        // entry rather than showing every item greyed out.
+        disabled: pixelFormat === "indexed8",
         items: (() => {
           const result: MenuDef["items"] = [];
           let lastGroup: string | undefined = undefined;
@@ -524,6 +533,7 @@ export function TopBar({
       },
       {
         label: "Effects",
+        disabled: pixelFormat === "indexed8",
         items: (() => {
           const result: MenuDef["items"] = [];
           let lastGroup: string | undefined = undefined;
@@ -574,6 +584,7 @@ export function TopBar({
       },
       {
         label: "Filters",
+        disabled: pixelFormat === "indexed8",
         items: (() => {
           const result: MenuDef["items"] = [];
           let lastGroup: string | undefined = undefined;
@@ -597,6 +608,65 @@ export function TopBar({
           }
           return result;
         })(),
+      },
+      {
+        label: "Animation",
+        items: [
+          {
+            label: isPlaying ? "Pause" : "Play",
+            shortcut: "Space",
+            action: onPlayPause,
+            disabled: !animationMode,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Previous Frame",
+            shortcut: "Left",
+            action: onPrevFrame,
+            disabled: !animationMode,
+          },
+          {
+            label: "Next Frame",
+            shortcut: "Right",
+            action: onNextFrame,
+            disabled: !animationMode,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Previous Animation",
+            shortcut: "Up",
+            action: onPrevAnimation,
+            disabled: !animationMode || paletteAnimationActive,
+          },
+          {
+            label: "Next Animation",
+            shortcut: "Down",
+            action: onNextAnimation,
+            disabled: !animationMode || paletteAnimationActive,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Import Frames Into Spritesheet…",
+            action: onImportSpritesheetFrames,
+            disabled: !animationMode,
+          },
+          {
+            label: "Export Spritesheet JSON…",
+            action: onExportSpritesheetJson,
+            disabled: !animationMode,
+          },
+          {
+            label: "Export Palette Animation JSON…",
+            action: onExportPaletteAnimationJson,
+            disabled: !animationMode,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Export Animation to Frames…",
+            action: onExportAnimationFrames,
+            disabled: !animationMode,
+          },
+        ],
       },
       {
         label: "View",
@@ -681,54 +751,6 @@ export function TopBar({
         ],
       },
       {
-        label: "Animation",
-        items: [
-          {
-            label: isPlaying ? "Pause" : "Play",
-            shortcut: "Space",
-            action: onPlayPause,
-            disabled: !animationMode,
-          },
-          { separator: true, label: "" },
-          {
-            label: "Previous Frame",
-            shortcut: "Left",
-            action: onPrevFrame,
-            disabled: !animationMode,
-          },
-          {
-            label: "Next Frame",
-            shortcut: "Right",
-            action: onNextFrame,
-            disabled: !animationMode,
-          },
-          { separator: true, label: "" },
-          {
-            label: "Previous Animation",
-            shortcut: "Up",
-            action: onPrevAnimation,
-            disabled: !animationMode,
-          },
-          {
-            label: "Next Animation",
-            shortcut: "Down",
-            action: onNextAnimation,
-            disabled: !animationMode,
-          },
-          { separator: true, label: "" },
-          {
-            label: "Import Frames Into Spritesheet…",
-            action: onImportSpritesheetFrames,
-            disabled: !animationMode,
-          },
-          {
-            label: "Export Spritesheet JSON…",
-            action: onExportSpritesheetJson,
-            disabled: !animationMode,
-          },
-        ],
-      },
-      {
         label: "Help",
         items: [
           { label: "About Verve", action: onAbout },
@@ -791,8 +813,11 @@ export function TopBar({
       onNextFrame,
       onPrevAnimation,
       onNextAnimation,
+      paletteAnimationActive,
       onImportSpritesheetFrames,
       onExportSpritesheetJson,
+      onExportPaletteAnimationJson,
+      onExportAnimationFrames,
       onNewLayer,
       onNewLayerGroup,
       onNewCompositeLayer,

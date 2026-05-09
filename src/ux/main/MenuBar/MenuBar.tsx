@@ -14,6 +14,11 @@ export interface MenuItemDef {
 export interface MenuDef {
   label: string;
   items: MenuItemDef[];
+  /** When true, the entry is rendered greyed-out and clicking it does
+   *  nothing. Used for top-level menus that have no applicable items in
+   *  the current document mode (e.g. Adjustments / Effects / Filters in
+   *  Indexed8). */
+  disabled?: boolean;
 }
 
 interface MenuBarProps {
@@ -140,15 +145,22 @@ export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
         <div key={menu.label} className={styles.entry}>
           <button
             className={`${styles.trigger} ${openMenu === menu.label ? styles.open : ""}`}
-            onClick={() => handleTrigger(menu.label)}
-            onMouseEnter={() => handleMouseEnter(menu.label)}
+            onClick={() => {
+              if (menu.disabled) return;
+              handleTrigger(menu.label);
+            }}
+            onMouseEnter={() => {
+              if (menu.disabled) return;
+              handleMouseEnter(menu.label);
+            }}
+            disabled={menu.disabled}
             aria-haspopup="menu"
             aria-expanded={openMenu === menu.label}
           >
             {menu.label}
           </button>
 
-          {openMenu === menu.label && (
+          {openMenu === menu.label && !menu.disabled && (
             <ul className={styles.dropdown} role="menu">
               {menu.items.map((item, i) =>
                 item.separator ? (
