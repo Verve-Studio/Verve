@@ -237,6 +237,13 @@ export interface ShapeLayerState {
   strokeColor: RGBAColor | null;
   /** null = no fill */
   fillColor: RGBAColor | null;
+  /** Optional palette index reference (indexed8 docs). When set, the
+   *  shape rasterises using the *current* `state.swatches[strokeIndex]`
+   *  colour instead of the cached `strokeColor`, so palette edits and
+   *  swap-style cycling live-update the shape. */
+  strokeIndex?: number;
+  /** Same as `strokeIndex` for the fill colour. */
+  fillIndex?: number;
   strokeWidth: number;
   /** Corner radius in canvas pixels. Applies to rectangle. */
   cornerRadius: number;

@@ -882,7 +882,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         } else if ("type" in ls && ls.type === "shape") {
           // Shape layers are full-canvas-sized (rasterized vector data)
           layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
-          rasterizeShapeToLayer(ls, layer, cw, ch);
+          rasterizeShapeToLayer(
+            ls,
+            layer,
+            cw,
+            ch,
+            state.pixelFormat,
+            state.swatches,
+          );
         } else if ("type" in ls && ls.type === "mask") {
           // Mask layers are full-canvas-sized; initialized all-white (fully reveal parent)
           layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
@@ -957,7 +964,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
           const cw = renderer.pixelWidth;
           const ch = renderer.pixelHeight;
           const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
-          rasterizeShapeToLayer(ls, gl, cw, ch);
+          rasterizeShapeToLayer(
+          ls,
+          gl,
+          cw,
+          ch,
+          state.pixelFormat,
+          state.swatches,
+        );
           renderer.flushLayer(gl);
           map.set(ls.id, gl);
         } else if ("type" in ls && ls.type === "frame") {
@@ -1049,7 +1063,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         // Re-rasterize whenever shape parameters change
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
-        rasterizeShapeToLayer(ls, gl, cw, ch);
+        rasterizeShapeToLayer(
+          ls,
+          gl,
+          cw,
+          ch,
+          state.pixelFormat,
+          state.swatches,
+        );
         renderer.flushLayer(gl);
       } else if ("type" in ls && ls.type === "frame") {
         const cw = renderer.pixelWidth;
@@ -1077,6 +1098,32 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   useEffect(() => {
     if (!isActive) return;
+    // Shape layers with a palette-index reference resolve their colour
+    // from `state.swatches` at rasterise time. When swatches change
+    // (e.g. user edits a palette entry, swap, palette-cycle preview),
+    // re-rasterise those shapes so the canvas reflects the new colours.
+    const renderer = rendererRef.current;
+    if (renderer) {
+      const cw = renderer.pixelWidth;
+      const ch = renderer.pixelHeight;
+      const map = glLayersRef.current;
+      for (const ls of state.layers) {
+        if (!("type" in ls) || ls.type !== "shape") continue;
+        if (ls.strokeIndex === undefined && ls.fillIndex === undefined)
+          continue;
+        const gl = map.get(ls.id);
+        if (!gl) continue;
+        rasterizeShapeToLayer(
+          ls,
+          gl,
+          cw,
+          ch,
+          state.pixelFormat,
+          state.swatches,
+        );
+        renderer.flushLayer(gl);
+      }
+    }
     doRender();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.swatches, isActive]);
@@ -1563,7 +1610,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
-        rasterizeShapeToLayer(ls, gl, cw, ch);
+        rasterizeShapeToLayer(
+          ls,
+          gl,
+          cw,
+          ch,
+          state.pixelFormat,
+          state.swatches,
+        );
         renderer.flushLayer(gl);
         glLayersRef.current.set(ls.id, gl);
         doRender();
@@ -1577,7 +1631,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         if (!gl) return;
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
-        rasterizeShapeToLayer(ls, gl, cw, ch);
+        rasterizeShapeToLayer(
+          ls,
+          gl,
+          cw,
+          ch,
+          state.pixelFormat,
+          state.swatches,
+        );
         renderer.flushLayer(gl);
         doRender();
       },

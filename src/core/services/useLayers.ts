@@ -357,7 +357,20 @@ export function useLayers({
           blendMode: src.blendMode,
         };
 
-        handle.prepareNewLayer(newId, src.name, result.data as Uint8Array);
+        // Indexed8 docs: convert the rasterised RGBA back to palette
+        // indices so the new pixel layer plays nicely with palette
+        // cycling, palette swaps, and indexed8-only tools.
+        const { pixelFormat, swatches } = stateRef.current;
+        if (pixelFormat === "indexed8") {
+          const indexData = await matchPaletteIndices(
+            result.data as Uint8Array,
+            swatches,
+            255,
+          );
+          handle.prepareNewLayerIndexed(newId, src.name, indexData);
+        } else {
+          handle.prepareNewLayer(newId, src.name, result.data as Uint8Array);
+        }
 
         const newLayers = layers
           .map((l) => (l.id === layerId ? newPixelLayer : l))

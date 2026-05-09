@@ -1,8 +1,10 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import type { ShapeLayerState, ShapeType, RGBAColor } from "@/types";
 import { useAppContext } from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
+import swatchStyles from "@/ux/widgets/ColorSwatch/ColorSwatch.module.scss";
+import { IndexedPaletteColorPicker } from "@/ux/widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
 import { buildShapePath, rgbaToStr } from "../ux/main/Canvas/shapeRasterizer";
 import type {
   ToolDefinition,
@@ -26,6 +28,9 @@ export const shapeOptions = {
   strokeColor: null as RGBAColor | null,
   /** null = defer to secondary color at draw time */
   fillColor: null as RGBAColor | null,
+  /** Palette-index reference for indexed8 picks. undefined = freeform colour. */
+  strokeIndex: undefined as number | undefined,
+  fillIndex: undefined as number | undefined,
 };
 
 // ─── Color conversion helpers ─────────────────────────────────────────────────
@@ -586,9 +591,16 @@ function createShapeHandler(): ToolHandler {
         fillColor: shapeOptions.useFill
           ? (shapeOptions.fillColor ?? floatToShape(ctx.secondaryColor))
           : null,
+        strokeIndex: shapeOptions.useStroke
+          ? shapeOptions.strokeIndex
+          : undefined,
+        fillIndex: shapeOptions.useFill ? shapeOptions.fillIndex : undefined,
         strokeWidth: shapeOptions.strokeWidth,
         cornerRadius: shapeOptions.cornerRadius,
-        antiAlias: shapeOptions.antiAlias,
+        // Indexed8 has no alpha blending — force AA off so shapes
+        // rasterise to a single palette index per pixel.
+        antiAlias:
+          ctx.pixelFormat === "indexed8" ? false : shapeOptions.antiAlias,
       };
       mode = { t: "draw", id, sx: x, sy: y };
       if (!isLine && ctx.overlayCanvas)
@@ -864,11 +876,33 @@ function ShapeOptions({
     [curStrokeColor.a, activeShape, update],
   );
 
+  // Freeform-colour setter (non-indexed): drop any cached palette index so
+  // the rasterizer doesn't keep resolving to a stale palette entry.
+  const setFreeStrokeColor = useCallback(
+    (hex: string) => {
+      shapeOptions.strokeIndex = undefined;
+      const color = hexToRgba(hex, curStrokeColor.a);
+      shapeOptions.strokeColor = color;
+      if (activeShape) update({ strokeColor: color, strokeIndex: undefined });
+    },
+    [curStrokeColor.a, activeShape, update],
+  );
+
   const setFillColor = useCallback(
     (hex: string) => {
       const color = hexToRgba(hex, curFillColor.a);
       shapeOptions.fillColor = color;
       if (activeShape) update({ fillColor: color });
+    },
+    [curFillColor.a, activeShape, update],
+  );
+
+  const setFreeFillColor = useCallback(
+    (hex: string) => {
+      shapeOptions.fillIndex = undefined;
+      const color = hexToRgba(hex, curFillColor.a);
+      shapeOptions.fillColor = color;
+      if (activeShape) update({ fillColor: color, fillIndex: undefined });
     },
     [curFillColor.a, activeShape, update],
   );
@@ -880,6 +914,40 @@ function ShapeOptions({
     },
     [update],
   );
+
+  // ── Indexed8 palette picker (replaces the freeform EmbedColorPicker) ─────
+  const isIndexed = state.pixelFormat === "indexed8";
+  const [pickerTarget, setPickerTarget] = useState<
+    null | "stroke" | "fill"
+  >(null);
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const strokeBtnRef = useRef<HTMLButtonElement>(null);
+  const fillBtnRef = useRef<HTMLButtonElement>(null);
+  const openIndexedPicker = (
+    target: "stroke" | "fill",
+    el: HTMLButtonElement | null,
+  ): void => {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPickerAnchor({ x: rect.left, y: rect.bottom + 4 });
+    setPickerTarget(target);
+  };
+  const handleIndexedSelect = (idx: number, color: RGBAColor): void => {
+    const hex = rgbaToHex(color);
+    if (pickerTarget === "stroke") {
+      shapeOptions.strokeIndex = idx;
+      setStrokeColor(hex);
+      if (activeShape) update({ strokeIndex: idx });
+    } else if (pickerTarget === "fill") {
+      shapeOptions.fillIndex = idx;
+      setFillColor(hex);
+      if (activeShape) update({ fillIndex: idx });
+    }
+    setPickerTarget(null);
+  };
 
   return (
     <>
@@ -909,13 +977,24 @@ function ShapeOptions({
         <input type="checkbox" checked={curUseStroke} onChange={toggleStroke} />
         Stroke
       </label>
-      {curUseStroke && (
-        <ColorSwatch
-          value={rgbaToHex(curStrokeColor)}
-          title="Stroke color"
-          onChange={setStrokeColor}
-        />
-      )}
+      {curUseStroke &&
+        (isIndexed ? (
+          <button
+            ref={strokeBtnRef}
+            type="button"
+            className={swatchStyles.swatch}
+            style={{ background: rgbaToHex(curStrokeColor) }}
+            title="Stroke color (palette)"
+            onClick={() => openIndexedPicker("stroke", strokeBtnRef.current)}
+            aria-label="Stroke color (palette)"
+          />
+        ) : (
+          <ColorSwatch
+            value={rgbaToHex(curStrokeColor)}
+            title="Stroke color"
+            onChange={setFreeStrokeColor}
+          />
+        ))}
 
       {/* Stroke width */}
       {curUseStroke && (
@@ -938,13 +1017,24 @@ function ShapeOptions({
         <input type="checkbox" checked={curUseFill} onChange={toggleFill} />
         Fill
       </label>
-      {curUseFill && (
-        <ColorSwatch
-          value={rgbaToHex(curFillColor)}
-          title="Fill color"
-          onChange={setFillColor}
-        />
-      )}
+      {curUseFill &&
+        (isIndexed ? (
+          <button
+            ref={fillBtnRef}
+            type="button"
+            className={swatchStyles.swatch}
+            style={{ background: rgbaToHex(curFillColor) }}
+            title="Fill color (palette)"
+            onClick={() => openIndexedPicker("fill", fillBtnRef.current)}
+            aria-label="Fill color (palette)"
+          />
+        ) : (
+          <ColorSwatch
+            value={rgbaToHex(curFillColor)}
+            title="Fill color"
+            onChange={setFreeFillColor}
+          />
+        ))}
 
       <div className={styles.optSep} />
 
@@ -963,15 +1053,27 @@ function ShapeOptions({
         </>
       )}
 
-      {/* Anti-alias */}
-      <label className={styles.optCheckLabel}>
-        <input
-          type="checkbox"
-          checked={curAntiAlias}
-          onChange={(e) => setAntiAlias(e.target.checked)}
+      {/* Anti-alias — hidden in indexed8 (palette mode never anti-aliases). */}
+      {!isIndexed && (
+        <label className={styles.optCheckLabel}>
+          <input
+            type="checkbox"
+            checked={!curAntiAlias}
+            onChange={(e) => setAntiAlias(!e.target.checked)}
+          />
+          AA
+        </label>
+      )}
+
+      {pickerTarget !== null && pickerAnchor && (
+        <IndexedPaletteColorPicker
+          palette={state.swatches}
+          activeIndex={state.activePaletteIndex}
+          anchorPos={pickerAnchor}
+          onSelect={(idx, color) => handleIndexedSelect(idx, color)}
+          onClose={() => setPickerTarget(null)}
         />
-        AA
-      </label>
+      )}
     </>
   );
 }

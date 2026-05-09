@@ -623,7 +623,6 @@ const INDEXED8_UNSUPPORTED_TOOLS = new Set<Tool>([
   "burn",
   "clone-stamp",
   "text",
-  "shape",
   "frame",
   "blur",
   "sharpen",
@@ -780,10 +779,7 @@ export function Toolbar({
                         >
                           <button
                             className={`${styles.toolBtn} ${activeTool === "shape" ? styles.active : ""}`}
-                            onClick={() => {
-                              if (!indexedModeActive) onToolChange?.("shape");
-                            }}
-                            disabled={indexedModeActive}
+                            onClick={() => onToolChange?.("shape")}
                             aria-label="Shape (U)"
                             aria-pressed={activeTool === "shape"}
                             title="Shape  U"
@@ -793,7 +789,6 @@ export function Toolbar({
                           <button
                             className={styles.shapeCaret}
                             onClick={openShapePicker}
-                            disabled={indexedModeActive}
                             tabIndex={-1}
                             aria-label="Pick shape"
                             title="Choose shape"
