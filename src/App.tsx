@@ -3,11 +3,7 @@ import { AppProvider, useAppContext } from "@/core/store/AppContext";
 import { CanvasProvider } from "@/core/store/CanvasContext";
 import { historyStore } from "@/core/store/historyStore";
 import { viewportCommands } from "@/core/store/viewportCommands";
-import { MemoryLimitError } from "@/core/store/memoryStore";
-import {
-  notificationStore,
-  useNotification,
-} from "@/core/store/notificationStore";
+import { useNotification } from "@/core/store/notificationStore";
 import { useTabs } from "@/core/services/useTabs";
 import { useHistory } from "@/core/services/useHistory";
 import { useFileOps } from "@/core/services/useFileOps";
@@ -30,28 +26,22 @@ import { useViewActions } from "@/core/services/useViewActions";
 import { useTransformGuard } from "@/core/services/useTransformGuard";
 import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
 import { useAnimationPlayback } from "@/core/services/useAnimationPlayback";
-import { cloneStampStore } from "@/core/store/cloneStampStore";
-import { pixelBrushStore } from "@/core/store/pixelBrushStore";
-import { brushStore } from "@/core/store/brushStore";
-import { makeDefaultBrush } from "@/types";
+import { useFormatRemount } from "@/core/services/useFormatRemount";
+import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
+import {
+  useBrushBootstrap,
+  useCloneStampNotification,
+  useMemoryErrorHandler,
+  useSelectionFlag,
+  useRecentFiles,
+  useStartupFile,
+} from "@/core/services/useAppLifecycle";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
-import type { Tool, LayerState, PixelFormat } from "@/types";
-import type { EffectType } from "@/core/effects/effectTypes";
-import type { FilterKey } from "@/types";
+import type { Tool, LayerState } from "@/types";
 import { selectionStore } from "@/core/store/selectionStore";
-import { showOperationError } from "@/utils/userFeedback";
-import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
-import {
-  computeEffectivePalette,
-  paletteCyclePeriod,
-  paletteCycleStore,
-} from "@/core/store/paletteCycleStore";
-import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
@@ -95,115 +85,30 @@ function AppContent(): React.JSX.Element {
   const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
 
   // ── Notification / progress state ────────────────────────────────
-  const [cloneStampNotification, setCloneStampNotification] = useState<
-    string | null
-  >(null);
   const [isContentAwareFilling, setIsContentAwareFilling] = useState(false);
   const [contentAwareFillError, setContentAwareFillError] = useState<
     string | null
   >(null);
   const [contentAwareFillLabel, setContentAwareFillLabel] =
     useState("Filling…");
-  const [hasSelection, setHasSelection] = useState(false);
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
 
-  // ── Pixel brush store init ────────────────────────────────────────
-  useEffect(() => {
-    void pixelBrushStore.init();
-  }, []);
+  // ── Mount-only lifecycle effects ──────────────────────────────────
+  useBrushBootstrap(state.activeBrushId, dispatch);
+  const cloneStampNotification = useCloneStampNotification();
+  useMemoryErrorHandler();
+  const memoryNotification = useNotification();
+  const hasSelection = useSelectionFlag();
+  const { recentFiles, setRecentFiles, clearRecentFiles } = useRecentFiles();
 
-  // ── Paint brush store init + bootstrap default brush ─────────────
-  useEffect(() => {
-    void (async () => {
-      await brushStore.init();
-      if (brushStore.getUserBrushes().length === 0) {
-        await brushStore.addUserBrush(
-          makeDefaultBrush(crypto.randomUUID(), "Default Round"),
-        );
-      }
-      // If no active brush is set yet, pick the first available user brush.
-      if (state.activeBrushId === null) {
-        const first = brushStore.getUserBrushes()[0];
-        if (first) {
-          dispatch({ type: "SET_ACTIVE_BRUSH", payload: first.id });
-        }
-      }
-    })();
-    // Intentionally run once on mount; no dependency array changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Clone stamp source deletion notification ─────────────────────
-  const cloneStampNotifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  // Cleanup timer for content-aware fill error toasts.
   const contentAwareFillErrorTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
-  useEffect(() => {
-    cloneStampStore.onSourceDeleted = () => {
-      setCloneStampNotification(
-        "⚠ Source layer was deleted — Alt+click to set a new source",
-      );
-      if (cloneStampNotifTimerRef.current !== null)
-        clearTimeout(cloneStampNotifTimerRef.current);
-      cloneStampNotifTimerRef.current = setTimeout(
-        () => setCloneStampNotification(null),
-        4000,
-      );
-    };
-    return () => {
-      cloneStampStore.onSourceDeleted = null;
-      if (cloneStampNotifTimerRef.current !== null)
-        clearTimeout(cloneStampNotifTimerRef.current);
-    };
-  }, []);
-
   useEffect(() => {
     return () => {
       if (contentAwareFillErrorTimerRef.current !== null)
         clearTimeout(contentAwareFillErrorTimerRef.current);
     };
-  }, []);
-
-  // ── Global memory-limit error capture ────────────────────────────
-  // Memory-cap violations can bubble up from anywhere (layer creation,
-  // brush growLayerToFit, history restore, GPU texture allocation, etc).
-  // Listen at the window level so we never miss one, regardless of which
-  // call site threw it.
-  useEffect(() => {
-    const onError = (e: ErrorEvent): void => {
-      if (e.error instanceof MemoryLimitError) {
-        notificationStore.error(e.error.message);
-        e.preventDefault();
-      }
-    };
-    const onRejection = (e: PromiseRejectionEvent): void => {
-      if (e.reason instanceof MemoryLimitError) {
-        notificationStore.error(e.reason.message);
-        e.preventDefault();
-      }
-    };
-    window.addEventListener("error", onError);
-    window.addEventListener("unhandledrejection", onRejection);
-    return () => {
-      window.removeEventListener("error", onError);
-      window.removeEventListener("unhandledrejection", onRejection);
-    };
-  }, []);
-
-  const memoryNotification = useNotification();
-
-  // ── Selection state for menu enabled sync ────────────────────────
-  useEffect(() => {
-    const update = (): void => setHasSelection(selectionStore.hasSelection());
-    selectionStore.subscribe(update);
-    return () => selectionStore.unsubscribe(update);
-  }, []);
-
-  // ── Recent files ──────────────────────────────────────────────────
-  useEffect(() => {
-    window.api.getRecentFiles().then(setRecentFiles);
   }, []);
 
   // ── Tab management ────────────────────────────────────────────────
@@ -265,16 +170,7 @@ function AppContent(): React.JSX.Element {
   });
 
   // ── Startup file (CLI arg or macOS open-with) ─────────────────────
-  const handleOpenPathRef = useRef(handleOpenPath);
-  handleOpenPathRef.current = handleOpenPath;
-  useEffect(() => {
-    void window.api.getStartupFile().then((path) => {
-      if (path) void handleOpenPathRef.current(path);
-    });
-    return window.api.onOpenFile((path) => {
-      void handleOpenPathRef.current(path);
-    });
-  }, []); // mount-only
+  useStartupFile(handleOpenPath);
 
   // ── Export operations ────────────────────────────────────────────
   const {
@@ -400,50 +296,13 @@ function AppContent(): React.JSX.Element {
   } = useTransformGuard({ handleTransformApply, handleTransformCancel });
 
   // ── Filters ───────────────────────────────────────────────────────
-  const onCreateFilterAdjLayer = useCallback(
-    (type: EffectType): void => {
-      requireTransformDecision(() => {
-        if (type === "clouds") {
-          const { r: fgR, g: fgG, b: fgB } = state.primaryColor;
-          const { r: bgR, g: bgG, b: bgB } = state.secondaryColor;
-          adjustments.handleCreateAdjustmentLayer("clouds", {
-            seed: (Math.random() * 0xffffffff) >>> 0,
-            fgR,
-            fgG,
-            fgB,
-            bgR,
-            bgG,
-            bgB,
-          });
-          return;
-        }
-        if (type === "add-noise" || type === "film-grain") {
-          adjustments.handleCreateAdjustmentLayer(type, {
-            seed: (Math.random() * 0xffffffff) >>> 0,
-          });
-          return;
-        }
-        adjustments.handleCreateAdjustmentLayer(type);
-      });
-    },
-    [
-      adjustments,
-      requireTransformDecision,
-      state.primaryColor,
-      state.secondaryColor,
-    ],
-  );
-
-  const handleOpenFilterDialog = useCallback(
-    (key: FilterKey): void => {
-      requireTransformDecision(() => {
-        onCreateFilterAdjLayer(key as EffectType);
-      });
-    },
-    [requireTransformDecision, onCreateFilterAdjLayer],
-  );
-
-  const filters = useFilters({ onCreateFilterAdjLayer });
+  const filters = useFilters({
+    adjustments,
+    primaryColor: state.primaryColor,
+    secondaryColor: state.secondaryColor,
+    requireTransformDecision,
+  });
+  const { handleOpenFilterDialog } = filters;
 
   // ── Content-Aware Fill / Delete ────────────────────────────────────
   const { runContentAwareFill, runContentAwareDelete } = useContentAwareFill({
@@ -523,483 +382,21 @@ function AppContent(): React.JSX.Element {
   // ── Playback state ────────────────────────────────────────────────
   const playback = useAnimationPlayback(state, dispatch, canvasHandleRef);
 
-  // ── Import frames into spritesheet ────────────────────────────────
-  const handleImportSpritesheetFrames = useCallback(
-    (result: import(
-      "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog"
-    ).ImportSpritesheetFramesResult): void => {
-      const handle = canvasHandleRef.current;
-      if (!handle) return;
-      const s = stateRef.current;
-      const activeLayerId = s.activeLayerId;
-      if (!activeLayerId) {
-        showOperationError(
-          "Could not import frames.",
-          "No active layer to plot frames onto.",
-        );
-        return;
-      }
-      const cw = s.canvas.width;
-      const ch = s.canvas.height;
-      const { frames, frameWidth, frameHeight } = result;
-      // Start from the active layer's current canvas-space pixels so any
-      // existing content outside the imported cells is preserved.
-      const merged =
-        handle.getLayerPixels(activeLayerId) ?? new Uint8Array(cw * ch * 4);
-      const cols = Math.max(1, Math.floor(cw / frameWidth));
-      for (let i = 0; i < frames.length; i++) {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const dx = col * frameWidth;
-        const dy = row * frameHeight;
-        const src = frames[i];
-        for (let y = 0; y < frameHeight; y++) {
-          const cy = dy + y;
-          if (cy < 0 || cy >= ch) continue;
-          for (let x = 0; x < frameWidth; x++) {
-            const cx = dx + x;
-            if (cx < 0 || cx >= cw) continue;
-            const si = (y * frameWidth + x) * 4;
-            const di = (cy * cw + cx) * 4;
-            merged[di] = src[si];
-            merged[di + 1] = src[si + 1];
-            merged[di + 2] = src[si + 2];
-            merged[di + 3] = src[si + 3];
-          }
-        }
-      }
-      handle.writeLayerPixels(activeLayerId, merged);
+  // ── Spritesheet / animation import & export ──────────────────────
+  const {
+    handleImportSpritesheetFrames,
+    handleExportSpritesheetJson,
+    handleExportPaletteAnimationJson,
+    handleExportAnimationFrames,
+    handleCopyPrevFrame,
+    handleCopyNextFrame,
+  } = useSpritesheetAnimationOps({
+    canvasHandleRef,
+    stateRef,
+    captureHistory,
+    dispatch,
+  });
 
-      // Configure the spritesheet to match the imported frame size and add
-      // an animation containing every frame in import order.
-      dispatch({
-        type: "SET_SPRITESHEET",
-        payload: {
-          enabled: true,
-          cellWidth: frameWidth,
-          cellHeight: frameHeight,
-        },
-      });
-      const newAnimId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      const newFrames = frames.map(() => ({
-        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        duration: 1,
-      }));
-      dispatch({
-        type: "ADD_ANIMATION",
-        payload: {
-          id: newAnimId,
-          name: "Imported Animation",
-          fps: 12,
-          playbackMode: "loop",
-          frames: newFrames,
-        },
-      });
-      dispatch({ type: "SET_SELECTED_ANIMATION", payload: newAnimId });
-      if (newFrames.length > 0) {
-        dispatch({ type: "SET_SELECTED_FRAME", payload: newFrames[0].id });
-      }
-    },
-    [canvasHandleRef, dispatch, stateRef],
-  );
-
-  // ── Export spritesheet animations as JSON ─────────────────────────
-  const handleExportSpritesheetJson = useCallback(async (): Promise<void> => {
-    const s = stateRef.current;
-    const ss = s.spritesheet;
-    if (!ss.enabled || ss.animations.length === 0) {
-      showOperationError(
-        "Could not export spritesheet.",
-        "Enable the spritesheet and add at least one animation first.",
-      );
-      return;
-    }
-    const cw = s.canvas.width;
-    const ch = s.canvas.height;
-    const cellW = Math.max(1, ss.cellWidth);
-    const cellH = Math.max(1, ss.cellHeight);
-    const cols = Math.max(1, Math.floor(cw / cellW));
-
-    let cursor = 0;
-    const animations = ss.animations.map((anim) => {
-      const frames = anim.frames.map((f) => {
-        const idx = cursor++;
-        const col = idx % cols;
-        const row = Math.floor(idx / cols);
-        const x = col * cellW;
-        const y = row * cellH;
-        return {
-          id: f.id,
-          duration: f.duration,
-          // Source pixel rect in canvas coords (top-left + width/height).
-          source: { x, y, width: cellW, height: cellH },
-          // UV rect, normalised against the canvas dimensions, top-left
-          // origin matching the source rect. Half-texel inset so a filtered
-          // sampler can't bleed in from neighbouring cells (the previous
-          // exclusive form sat exactly on the cell boundary, which caused
-          // a 1-pixel halo at the bottom of one frame and a 1-pixel shift
-          // in the next).
-          uv: {
-            u0: (x + 0.5) / cw,
-            v0: (y + 0.5) / ch,
-            u1: (x + cellW - 0.5) / cw,
-            v1: (y + cellH - 0.5) / ch,
-          },
-        };
-      });
-      return {
-        id: anim.id,
-        name: anim.name,
-        fps: anim.fps,
-        playbackMode: anim.playbackMode,
-        frames,
-      };
-    });
-    const doc = {
-      version: 1,
-      canvas: { width: cw, height: ch },
-      cell: { width: cellW, height: cellH },
-      animations,
-    };
-
-    const path = await window.api.saveJsonDialog("spritesheet.json");
-    if (!path) return;
-    try {
-      await window.api.writeJsonFile(path, JSON.stringify(doc, null, 2));
-    } catch (err) {
-      showOperationError("Failed to export spritesheet JSON.", err);
-    }
-  }, [stateRef]);
-
-  // ── Export animation to frame sequence ────────────────────────────
-  const handleExportAnimationFrames = useCallback(
-    async (
-      settings: import(
-        "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog"
-      ).ExportAnimationFramesSettings,
-      onProgress: (current: number, total: number) => void,
-    ): Promise<void> => {
-      const handle = canvasHandleRef.current;
-      if (!handle) return;
-      const s = stateRef.current;
-      const ss = s.spritesheet;
-      const pa = s.paletteAnimation;
-      if (!ss.enabled && !pa.enabled) {
-        showOperationError(
-          "Could not export animation frames.",
-          "Enable Sprite Sheet or Palette Animation in the Animation panel first.",
-        );
-        return;
-      }
-
-      const sep = settings.folder.includes("\\") ? "\\" : "/";
-      const ext =
-        settings.format === "png"
-          ? ".png"
-          : settings.format === "jpeg"
-            ? ".jpg"
-            : settings.format === "webp"
-              ? ".webp"
-              : settings.format === "tga"
-                ? ".tga"
-                : settings.format === "gif"
-                  ? ".gif"
-                  : ".tif";
-      const pad = (n: number, w: number): string => {
-        const t = String(n);
-        return t.length >= w ? t : "0".repeat(w - t.length) + t;
-      };
-
-      const isGif = settings.format === "gif";
-
-      const { exportPng } = await import("@/core/io/exportPng");
-      const { exportJpeg } = await import("@/core/io/exportJpeg");
-      const { exportWebp } = await import("@/core/io/exportWebp");
-      const { exportTga } = await import("@/core/io/exportTga");
-      const { exportTiff } = await import("@/core/io/exportTiff");
-
-      const encode = (
-        data: Uint8Array,
-        w: number,
-        h: number,
-      ): string => {
-        if (settings.format === "png") return exportPng(data, w, h);
-        if (settings.format === "jpeg")
-          return exportJpeg(data, w, h, {
-            quality: settings.jpegQuality,
-            background: "#ffffff",
-          });
-        if (settings.format === "webp")
-          return exportWebp(data, w, h, { quality: settings.webpQuality });
-        if (settings.format === "tga") return exportTga(data, w, h);
-        return exportTiff(data, w, h);
-      };
-
-      // GIF builds a single file at the end — buffer per-frame RGBA
-      // copies plus their dims while the loops run; everything else
-      // writes one file per frame as before.
-      const gifFrames: Uint8Array[] = [];
-      let gifW = 0;
-      let gifH = 0;
-
-      const writeFrame = async (
-        i: number,
-        data: Uint8Array,
-        w: number,
-        h: number,
-      ): Promise<void> => {
-        if (isGif) {
-          // The buffer is reused across frames — copy before queuing.
-          gifFrames.push(new Uint8Array(data));
-          gifW = w;
-          gifH = h;
-          return;
-        }
-        const dataUrl = encode(data, w, h);
-        const filename = `${settings.baseName}${pad(settings.startIndex + i, settings.padDigits)}${ext}`;
-        const filePath = `${settings.folder}${sep}${filename}`;
-        const base64 = dataUrl.replace(/^data:[^;]+;base64,/, "");
-        await window.api.exportImage(filePath, base64);
-      };
-
-      try {
-        if (ss.enabled) {
-          // ── Spritesheet path ──────────────────────────────────────────
-          const selectedAnim =
-            ss.animations.find((a) => a.id === ss.selectedAnimationId) ??
-            ss.animations[0];
-          if (!selectedAnim || selectedAnim.frames.length === 0) {
-            showOperationError(
-              "Could not export animation frames.",
-              "Select an animation with at least one frame.",
-            );
-            return;
-          }
-          const cellW = Math.max(1, ss.cellWidth);
-          const cellH = Math.max(1, ss.cellHeight);
-          const cw = s.canvas.width;
-          const ch = s.canvas.height;
-          const cols = Math.max(1, Math.floor(cw / cellW));
-          let animStart = 0;
-          for (const a of ss.animations) {
-            if (a.id === selectedAnim.id) break;
-            animStart += a.frames.length;
-          }
-
-          // Rasterise the whole canvas once — adjustments / effects /
-          // filters get baked in — then crop each cell out of the result.
-          const flat = await handle.rasterizeLayers(s.layers, "export");
-          const fullPixels: Uint8Array =
-            flat.data instanceof Float32Array
-              ? clampF32ToUint8(flat.data)
-              : flat.data;
-
-          for (let i = 0; i < selectedAnim.frames.length; i++) {
-            const globalIdx = animStart + i;
-            const col = globalIdx % cols;
-            const row = Math.floor(globalIdx / cols);
-            const x = col * cellW;
-            const y = row * cellH;
-            const cropped = new Uint8Array(cellW * cellH * 4);
-            for (let yy = 0; yy < cellH; yy++) {
-              const cy = y + yy;
-              if (cy < 0 || cy >= ch) continue;
-              const srcStart = (cy * cw + x) * 4;
-              const srcEnd = srcStart + cellW * 4;
-              cropped.set(
-                fullPixels.subarray(srcStart, srcEnd),
-                yy * cellW * 4,
-              );
-            }
-            await writeFrame(i, cropped, cellW, cellH);
-            onProgress(i + 1, selectedAnim.frames.length);
-          }
-        } else {
-          // ── Palette animation path ────────────────────────────────────
-          // Each frame is one tick of the palette cycle. We tick the
-          // store, repaint indexed layers with the cycled palette, and
-          // rasterise the full canvas (so adjustments / effects / filters
-          // applied on top of the indexed8 layers are also included).
-          //
-          // Only the swatch groups the user picked in the dialog
-          // participate in the cycle — non-selected cycling groups stay
-          // static for the duration of the export.
-          //
-          // Two evaluation modes:
-          //   parallel   — every selected group cycles together for
-          //                lcm(periods) frames.
-          //   sequential — each selected group plays its own period in
-          //                turn while the others stay at tick 0; total
-          //                frame count is the sum of the periods.
-          const selected = new Set(settings.selectedPaletteGroupIds);
-          const cw = s.canvas.width;
-          const ch = s.canvas.height;
-          const savedTick = paletteCycleStore.tick;
-
-          /** Build a swatchGroups variant with cycling allowed only on
-           *  ids in `activeIds`; everything else has cycle disabled. */
-          const groupsActiveOn = (activeIds: Set<string>) =>
-            s.swatchGroups.map((g) =>
-              !g.cycle?.enabled || activeIds.has(g.id)
-                ? g
-                : { ...g, cycle: { ...g.cycle, enabled: false } },
-            );
-
-          if (settings.paletteCycleEvaluation === "sequential") {
-            const sequence: { groupId: string; period: number }[] = [];
-            let total = 0;
-            for (const g of s.swatchGroups) {
-              if (!g.cycle?.enabled || !selected.has(g.id)) continue;
-              const p = paletteCyclePeriod([g]);
-              if (p === 0) continue;
-              sequence.push({ groupId: g.id, period: p });
-              total += p;
-            }
-            if (total === 0) {
-              showOperationError(
-                "Could not export palette animation.",
-                selected.size === 0
-                  ? "Select at least one cycling group in the export dialog."
-                  : "Mark at least one swatch group as cycling in the Animation panel.",
-              );
-              return;
-            }
-            let frameIdx = 0;
-            for (const seg of sequence) {
-              const segGroups = groupsActiveOn(new Set([seg.groupId]));
-              for (let i = 0; i < seg.period; i++) {
-                paletteCycleStore.set(i);
-                const eff = computeEffectivePalette(s.swatches, segGroups, i);
-                handle.repaintIndexedLayers(eff);
-                const flat = await handle.rasterizeLayers(s.layers, "export");
-                const fullPixels: Uint8Array =
-                  flat.data instanceof Float32Array
-                    ? clampF32ToUint8(flat.data)
-                    : flat.data;
-                await writeFrame(frameIdx, fullPixels, cw, ch);
-                frameIdx++;
-                onProgress(frameIdx, total);
-              }
-            }
-          } else {
-            const exportGroups = groupsActiveOn(selected);
-            const period = paletteCyclePeriod(exportGroups);
-            if (period === 0) {
-              showOperationError(
-                "Could not export palette animation.",
-                selected.size === 0
-                  ? "Select at least one cycling group in the export dialog."
-                  : "Mark at least one swatch group as cycling in the Animation panel.",
-              );
-              return;
-            }
-            for (let i = 0; i < period; i++) {
-              paletteCycleStore.set(i);
-              const eff = computeEffectivePalette(s.swatches, exportGroups, i);
-              handle.repaintIndexedLayers(eff);
-              const flat = await handle.rasterizeLayers(s.layers, "export");
-              const fullPixels: Uint8Array =
-                flat.data instanceof Float32Array
-                  ? clampF32ToUint8(flat.data)
-                  : flat.data;
-              await writeFrame(i, fullPixels, cw, ch);
-              onProgress(i + 1, period);
-            }
-          }
-
-          // Restore the cycle position the user was at, with the full
-          // (un-trimmed) group set so the on-canvas preview returns to
-          // exactly what it was before the export ran.
-          paletteCycleStore.set(savedTick);
-          handle.repaintIndexedLayers(
-            computeEffectivePalette(s.swatches, s.swatchGroups, savedTick),
-          );
-        }
-
-        // GIF: encode the buffered frames into a single animated file.
-        if (isGif && gifFrames.length > 0) {
-          const { encodeAnimatedGif } = await import(
-            "@/core/io/encodeAnimatedGif"
-          );
-          const bytes = encodeAnimatedGif({
-            frames: gifFrames,
-            width: gifW,
-            height: gifH,
-            fps: settings.gifFps,
-          });
-          // exportImage expects base64; build it from the raw bytes,
-          // chunked to avoid `Maximum call stack size exceeded` from
-          // String.fromCharCode(...largeArray).
-          let bin = "";
-          const CHUNK = 8192;
-          for (let i = 0; i < bytes.length; i += CHUNK) {
-            bin += String.fromCharCode.apply(
-              null,
-              Array.from(bytes.subarray(i, i + CHUNK)),
-            );
-          }
-          const base64 = btoa(bin);
-          const filename = `${settings.baseName}${ext}`;
-          const filePath = `${settings.folder}${sep}${filename}`;
-          await window.api.exportImage(filePath, base64);
-        }
-      } catch (err) {
-        console.error("[handleExportAnimationFrames]", err);
-        showOperationError("Failed to export animation frames.", err);
-      }
-    },
-    [canvasHandleRef, stateRef],
-  );
-
-  // ── Export palette animation as JSON ──────────────────────────────
-  const handleExportPaletteAnimationJson = useCallback(async (): Promise<void> => {
-    const s = stateRef.current;
-    const pa = s.paletteAnimation;
-    if (!pa.enabled) {
-      showOperationError(
-        "Could not export palette animation.",
-        "Enable palette animation in the Animation panel first.",
-      );
-      return;
-    }
-    const cyclingGroups = s.swatchGroups.filter((g) => g.cycle?.enabled);
-    if (cyclingGroups.length === 0) {
-      showOperationError(
-        "Could not export palette animation.",
-        "Mark at least one swatch group as cycling in the Animation panel.",
-      );
-      return;
-    }
-    const doc = {
-      version: 1,
-      fps: pa.fps,
-      // Original, untouched palette — the receiving runtime should apply
-      // the per-group cycle on top of these colours.
-      palette: s.swatches.map((c) => ({ r: c.r, g: c.g, b: c.b, a: c.a })),
-      // Only groups participating in the animation.
-      groups: cyclingGroups.map((g) => ({
-        id: g.id,
-        name: g.name,
-        indices: g.swatchIndices.slice(),
-        cycle: {
-          stepsPerStep: g.cycle?.stepsPerStep ?? 1,
-          ticksPerStep: g.cycle?.ticksPerStep ?? 1,
-        },
-      })),
-    };
-    const path = await window.api.saveJsonDialog(
-      "palette-animation.json",
-    );
-    if (!path) return;
-    try {
-      await window.api.writeJsonFile(
-        path,
-        JSON.stringify(doc, null, 2),
-      );
-    } catch (err) {
-      showOperationError("Failed to export palette animation JSON.", err);
-    }
-  }, [stateRef]);
 
   // ── Sync state.pixelFormat → active TabRecord.pixelFormat ────────
   // SET_PIXEL_FORMAT updates state but not the tabs array; keep them in sync.
@@ -1014,54 +411,14 @@ function AppContent(): React.JSX.Element {
   }, [state.pixelFormat, activeTabId, setTabs]);
 
   // ── Color mode ────────────────────────────────────────────────────
-  const handleFormatRemount = useCallback(
-    (toFormat: PixelFormat): void => {
-      const handle = canvasHandleRef.current;
-      if (!handle) return;
-      const layerGeo = handle.captureAllLayerGeometry();
-      const encoded = new Map<string, string>();
-      for (const ls of stateRef.current.layers) {
-        if ("type" in ls) continue;
-        const raw = handle.getLayerRawData(ls.id);
-        if (!raw) continue;
-        const geo = layerGeo.get(ls.id);
-        if (geo) encoded.set(`${ls.id}:geo`, JSON.stringify(geo));
-        const CHUNK = 65535;
-        if (toFormat === "rgba32f") {
-          // Store the typed array directly — avoids ~576 MB of base64/atob intermediaries for large images.
-          f32TransferStore.set(ls.id, raw as Float32Array);
-          encoded.set(ls.id, `data:raw/f32-ref;id=${ls.id}`);
-        } else if (toFormat === "indexed8") {
-          const u8 = raw as Uint8Array;
-          let b64 = "";
-          for (let i = 0; i < u8.length; i += CHUNK) {
-            b64 += btoa(
-              String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))),
-            );
-          }
-          encoded.set(ls.id, `data:raw/indexed8;base64,${b64}`);
-        } else {
-          u8TransferStore.set(ls.id, raw as Uint8Array);
-          encoded.set(ls.id, `data:raw/rgba8-ref;id=${ls.id}`);
-        }
-      }
-      setPendingLayerData(encoded);
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === activeTabId ? { ...t, canvasKey: t.canvasKey + 1 } : t,
-        ),
-      );
-      captureHistory("Convert Color Mode");
-    },
-    [
-      canvasHandleRef,
-      stateRef,
-      activeTabId,
-      setTabs,
-      setPendingLayerData,
-      captureHistory,
-    ],
-  );
+  const handleFormatRemount = useFormatRemount({
+    canvasHandleRef,
+    stateRef,
+    activeTabId,
+    setTabs,
+    setPendingLayerData,
+    captureHistory,
+  });
 
   const colorMode = useColorMode({
     canvasHandleRef,
@@ -1120,10 +477,7 @@ function AppContent(): React.JSX.Element {
     for (const id of ids) handleCloseTab(id);
   }, [tabs, activeTabId, handleCloseTab]);
 
-  const handleClearRecentFiles = useCallback(async (): Promise<void> => {
-    await window.api.clearRecentFiles();
-    setRecentFiles([]);
-  }, []);
+  const handleClearRecentFiles = clearRecentFiles;
 
   // ── Keyboard shortcuts ────────────────────────────────────────────
   useKeyboardShortcuts({
@@ -1540,73 +894,8 @@ function AppContent(): React.JSX.Element {
         onPrevAnimation={playback.onPrevAnimation}
         onNextAnimation={playback.onNextAnimation}
         paletteAnimationActive={state.paletteAnimation.enabled}
-        onCopyPrevFrame={useCallback(
-          (animationId: string, frameId: string) => {
-            const ss = stateRef.current.spritesheet;
-            const anim = ss.animations.find((a) => a.id === animationId);
-            if (!anim) return;
-            const fi = anim.frames.findIndex((f) => f.id === frameId);
-            if (fi <= 0) return; // no previous frame
-            const cellW = Math.max(1, ss.cellWidth);
-            const cellH = Math.max(1, ss.cellHeight);
-            const cols = Math.max(1, Math.floor(state.canvas.width / cellW));
-            // compute global indices for prev and current frames
-            let animStart = 0;
-            for (const a of ss.animations) {
-              if (a.id === animationId) break;
-              animStart += a.frames.length;
-            }
-            const srcIdx = animStart + fi - 1;
-            const dstIdx = animStart + fi;
-            const srcX = (srcIdx % cols) * cellW,
-              srcY = Math.floor(srcIdx / cols) * cellH;
-            const dstX = (dstIdx % cols) * cellW,
-              dstY = Math.floor(dstIdx / cols) * cellH;
-            captureHistory("Copy From Previous Frame");
-            canvasHandleRef.current?.copyCellRect(
-              srcX,
-              srcY,
-              dstX,
-              dstY,
-              cellW,
-              cellH,
-            );
-          },
-          [stateRef, state.canvas.width, captureHistory, canvasHandleRef],
-        )}
-        onCopyNextFrame={useCallback(
-          (animationId: string, frameId: string) => {
-            const ss = stateRef.current.spritesheet;
-            const anim = ss.animations.find((a) => a.id === animationId);
-            if (!anim) return;
-            const fi = anim.frames.findIndex((f) => f.id === frameId);
-            if (fi < 0 || fi >= anim.frames.length - 1) return; // no next frame
-            const cellW = Math.max(1, ss.cellWidth);
-            const cellH = Math.max(1, ss.cellHeight);
-            const cols = Math.max(1, Math.floor(state.canvas.width / cellW));
-            let animStart = 0;
-            for (const a of ss.animations) {
-              if (a.id === animationId) break;
-              animStart += a.frames.length;
-            }
-            const srcIdx = animStart + fi + 1;
-            const dstIdx = animStart + fi;
-            const srcX = (srcIdx % cols) * cellW,
-              srcY = Math.floor(srcIdx / cols) * cellH;
-            const dstX = (dstIdx % cols) * cellW,
-              dstY = Math.floor(dstIdx / cols) * cellH;
-            captureHistory("Copy From Next Frame");
-            canvasHandleRef.current?.copyCellRect(
-              srcX,
-              srcY,
-              dstX,
-              dstY,
-              cellW,
-              cellH,
-            );
-          },
-          [stateRef, state.canvas.width, captureHistory, canvasHandleRef],
-        )}
+        onCopyPrevFrame={handleCopyPrevFrame}
+        onCopyNextFrame={handleCopyNextFrame}
         handleSelectAll={handleSelectAll}
         handleDeselect={handleDeselect}
         handleSelectAllLayers={handleSelectAllLayers}
