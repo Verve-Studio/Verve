@@ -68,6 +68,22 @@ function applyRepeat(t: number, repeat: typeof gradientOptions.repeat): number {
 
 // ─── Indexed8 gradient rasteriser ─────────────────────────────────────────────
 
+/**
+ * Rasterise a gradient by walking the swatch group's palette indices across
+ * the drag axis.  The indexed8 path never blends — each pixel snaps to one
+ * palette slot (optionally ordered-dithered between adjacent slots).
+ *
+ * Implementation rules to avoid the symptoms we were chasing earlier:
+ *  - Build a fresh full-canvas index buffer from scratch (no in-place mutation
+ *    of `layer.data`, which can be racy when the renderer has just grown the
+ *    layer or replaced its texture mid-conversion).
+ *  - Composite into the existing layer pixels: pixels outside the active
+ *    selection (or where this layer has no coverage) keep their previous
+ *    indices instead of being silently zeroed.
+ *  - Replace the layer's data + texture in one shot via `replaceLayerData`
+ *    (which clears `dirtyRect` and forces a full upload), so no stale partial
+ *    upload from a previous tool can mask the new gradient.
+ */
 function renderIndexedGradient(
   ctx: ToolContext,
   x0: number,
@@ -75,88 +91,126 @@ function renderIndexedGradient(
   x1: number,
   y1: number,
 ): void {
-  const { renderer, layer, layers, selectionMask, render, growLayerToFit } =
-    ctx;
+  const { renderer, layer, layers, selectionMask, render } = ctx;
 
-  // Pick the active palette group. Caller-selected wins; fall back to the
-  // first group with ≥ 2 indices.
+  // ── 1. Resolve the swatch group ──────────────────────────────────────────
   const groups = ctx.swatchGroups;
+  const palette = ctx.swatches;
   const selected =
     groups.find((g) => g.id === gradientOptions.paletteGroupId) ??
     groups.find((g) => g.swatchIndices.length >= 2);
-  if (!selected || selected.swatchIndices.length < 2) return;
+  if (!selected) return;
 
-  // Direction reverses the colour order; the spatial axis still comes from
-  // the user's drag.
+  // Filter to indices that actually point to a colour in the current palette.
+  // This guards against stale group entries that reference deleted swatches
+  // (which would otherwise expand to (0,0,0,0) → invisible "transparent"
+  // stripes) and against the 255 sentinel sneaking into the output.
+  const validIndices = selected.swatchIndices.filter(
+    (i) => Number.isInteger(i) && i >= 0 && i < palette.length && i !== 255,
+  );
+  if (validIndices.length < 2) return;
+
   const indices =
     gradientOptions.direction === "reverse"
-      ? [...selected.swatchIndices].reverse()
-      : selected.swatchIndices.slice();
+      ? validIndices.slice().reverse()
+      : validIndices;
   const N = indices.length;
 
-  // Grow layer to full canvas coverage.
-  const cw = renderer.pixelWidth;
-  const ch = renderer.pixelHeight;
-  growLayerToFit(0, 0);
-  growLayerToFit(cw - 1, 0);
-  growLayerToFit(0, ch - 1);
-  growLayerToFit(cw - 1, ch - 1);
-
+  // ── 2. Drag-axis maths ────────────────────────────────────────────────────
   const dx = x1 - x0;
   const dy = y1 - y0;
   const lenSq = dx * dx + dy * dy;
   if (lenSq === 0) return;
+  const dragLen = Math.sqrt(lenSq);
 
   const dither = gradientOptions.dither;
   const ditherRangePx = Math.max(1, Math.round(gradientOptions.ditherRange));
-  // Convert dither range from pixels along drag axis to stripe-fraction
-  // (pf is 0..N along axis; one stripe is (drag-length)/N pixels wide, so
-  // range_in_pf = ditherRangePx * N / drag-length).
-  const dragLen = Math.sqrt(lenSq);
   const ditherStripeFrac = (ditherRangePx * N) / dragLen;
+  const halfStripe = ditherStripeFrac / 2;
 
-  const indexedData = layer.data as Uint8Array;
-  for (let ly = 0; ly < layer.layerHeight; ly++) {
-    for (let lx = 0; lx < layer.layerWidth; lx++) {
-      const cx = lx + layer.offsetX;
-      const cy = ly + layer.offsetY;
-      if (selectionMask && selectionMask[cy * cw + cx] === 0) continue;
+  // ── 3. Read the existing layer pixels into a canvas-sized buffer.  Pixels
+  //    outside the layer's current rect default to 255 (transparent
+  //    sentinel), matching the indexed8 convention. ─────────────────────────
+  const cw = renderer.pixelWidth;
+  const ch = renderer.pixelHeight;
+  const out = new Uint8Array(cw * ch);
+  out.fill(255);
 
-      // Project pixel onto the gradient axis. t ∈ [0, 1] with clamping.
+  const oldData = layer.data;
+  if (
+    layer.format === "indexed8" &&
+    oldData instanceof Uint8Array &&
+    oldData.length === layer.layerWidth * layer.layerHeight
+  ) {
+    const lw = layer.layerWidth;
+    const lh = layer.layerHeight;
+    const ox = layer.offsetX;
+    const oy = layer.offsetY;
+    for (let ly = 0; ly < lh; ly++) {
+      const dstY = ly + oy;
+      if (dstY < 0 || dstY >= ch) continue;
+      const dstRow = dstY * cw;
+      const srcRow = ly * lw;
+      for (let lx = 0; lx < lw; lx++) {
+        const dstX = lx + ox;
+        if (dstX < 0 || dstX >= cw) continue;
+        out[dstRow + dstX] = oldData[srcRow + lx];
+      }
+    }
+  }
+
+  // ── 4. Write the gradient into `out` (canvas-space) ──────────────────────
+  for (let cy = 0; cy < ch; cy++) {
+    const rowStart = cy * cw;
+    for (let cx = 0; cx < cw; cx++) {
+      if (selectionMask && selectionMask[rowStart + cx] === 0) continue;
+
+      // Project canvas pixel onto the drag axis, clamped to [0, 1].
       let t = ((cx - x0) * dx + (cy - y0) * dy) / lenSq;
       if (t < 0) t = 0;
       else if (t > 1) t = 1;
 
-      // Continuous stripe position 0..N. Boundaries between consecutive
+      // Continuous stripe position 0..N.  Boundaries between adjacent
       // colours sit at integer values (1, 2, …, N-1).
       const pf = t * N;
       let stripe = Math.floor(pf);
       if (stripe >= N) stripe = N - 1;
 
-      if (dither && ditherStripeFrac > 0) {
-        // Distance to the nearest boundary, expressed in stripe-fraction.
-        const fracInStripe = pf - stripe; // 0..1 within current stripe
-        const distToPrevBoundary = fracInStripe;
-        const distToNextBoundary = 1 - fracInStripe;
-        const half = ditherStripeFrac / 2;
+      if (dither && halfStripe > 0) {
+        const fracInStripe = pf - stripe;
+        const distPrev = fracInStripe;
+        const distNext = 1 - fracInStripe;
         const threshold = BAYER8[cy & 7][cx & 7] / 64;
 
-        if (distToPrevBoundary < half && stripe > 0) {
-          // Mix probability of "previous stripe" decreases linearly from
-          // 0.5 at boundary to 0 at half-range away.
-          const probPrev = 0.5 * (1 - distToPrevBoundary / half);
+        if (distPrev < halfStripe && stripe > 0) {
+          const probPrev = 0.5 * (1 - distPrev / halfStripe);
           if (threshold < probPrev) stripe -= 1;
-        } else if (distToNextBoundary < half && stripe < N - 1) {
-          const probNext = 0.5 * (1 - distToNextBoundary / half);
+        } else if (distNext < halfStripe && stripe < N - 1) {
+          const probNext = 0.5 * (1 - distNext / halfStripe);
           if (threshold < probNext) stripe += 1;
         }
       }
 
-      indexedData[ly * layer.layerWidth + lx] = indices[stripe];
+      out[rowStart + cx] = indices[stripe];
     }
   }
 
-  renderer.flushLayer(layer, ctx.swatches as RGBAColor[]);
+  // ── 5. Promote the layer to full canvas size and swap in the new buffer.
+  //    `replaceLayerData` reallocates the GPU texture and clears any stale
+  //    `dirtyRect`, then immediately flushes — so no half-uploaded prior
+  //    state can mask the new gradient. ──────────────────────────────────
+  if (
+    layer.layerWidth !== cw ||
+    layer.layerHeight !== ch ||
+    layer.offsetX !== 0 ||
+    layer.offsetY !== 0
+  ) {
+    layer.layerWidth = cw;
+    layer.layerHeight = ch;
+    layer.offsetX = 0;
+    layer.offsetY = 0;
+  }
+  renderer.replaceLayerData(layer, out, "indexed8", palette as RGBAColor[]);
   render(layers);
 }
 

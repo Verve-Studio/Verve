@@ -64,6 +64,11 @@ export type AppAction =
         height: number;
         backgroundFill: BackgroundFill;
         pixelFormat?: PixelFormat;
+        // Document-owned palette + groups.  When omitted on `NEW_CANVAS`,
+        // both reset to defaults so a new untitled document never inherits
+        // swatches/groups from whatever document was previously active.
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -74,6 +79,8 @@ export type AppAction =
         layers: LayerState[];
         activeLayerId: string | null;
         pixelFormat?: PixelFormat;
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -88,6 +95,8 @@ export type AppAction =
         tiledMode: boolean;
         showTileGrid: boolean;
         pixelFormat?: PixelFormat;
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -102,6 +111,12 @@ export type AppAction =
         tiledMode: boolean;
         showTileGrid: boolean;
         pixelFormat?: PixelFormat;
+        // Per-document palette + groups.  Required by callers that have a
+        // tab snapshot to swap in; omitted in unit-test/code paths that just
+        // want layer-state replacement (in which case the existing palette
+        // carries over).
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -956,6 +971,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: "layer-0",
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
+        // A new untitled doc gets a fresh palette + empty groups so it
+        // never inherits whatever was active on the previous document.
+        swatches: action.payload.swatches ?? DEFAULT_SWATCHES,
+        swatchGroups: action.payload.swatchGroups ?? [],
         animationMode: false,
         spritesheet: initialState.spritesheet,
         paletteAnimation: initialState.paletteAnimation,
@@ -980,6 +999,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
+        swatches: action.payload.swatches ?? DEFAULT_SWATCHES,
+        swatchGroups: action.payload.swatchGroups ?? [],
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -1012,8 +1033,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         },
       };
 
-    case "RESTORE_TAB":
-      return {
+    case "RESTORE_TAB": {
+      const next = {
         ...state,
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
@@ -1033,11 +1054,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
         },
         history: { canUndo: false, canRedo: false },
       };
+      // Swap palette + groups atomically when the caller knows them, so
+      // restoring a tab never leaves the previous document's palette in
+      // state for a render frame.
+      if (action.payload.swatches !== undefined)
+        next.swatches = action.payload.swatches;
+      if (action.payload.swatchGroups !== undefined)
+        next.swatchGroups = action.payload.swatchGroups;
+      return next;
+    }
 
-    case "SWITCH_TAB":
+    case "SWITCH_TAB": {
       // Same as RESTORE_TAB but does NOT increment canvas.key and does NOT reset history.
       // Used for fast tab switching where the Canvas stays mounted.
-      return {
+      const next = {
         ...state,
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
@@ -1056,6 +1086,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
           showTileGrid: action.payload.showTileGrid ?? false,
         },
       };
+      if (action.payload.swatches !== undefined)
+        next.swatches = action.payload.swatches;
+      if (action.payload.swatchGroups !== undefined)
+        next.swatchGroups = action.payload.swatchGroups;
+      return next;
+    }
 
     case "ADD_LAYER_GROUP": {
       const { id, name, aboveLayerId } = action.payload;

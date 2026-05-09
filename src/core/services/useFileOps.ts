@@ -401,6 +401,8 @@ export function useFileOps({
             zoom: 1,
             tiledMode: false,
             showTileGrid: false,
+            swatches: newSnapshot.swatches,
+            swatchGroups: newSnapshot.swatchGroups,
           },
         });
         const updatedRecent = await window.api.addRecentFile(path);
@@ -507,6 +509,8 @@ export function useFileOps({
               tiledMode: false,
               showTileGrid: false,
               pixelFormat: "rgba32f",
+              swatches: newSnapshot.swatches,
+              swatchGroups: newSnapshot.swatchGroups,
             },
           });
           const updatedRecent = await window.api.addRecentFile(path);
@@ -603,6 +607,8 @@ export function useFileOps({
               tiledMode: false,
               showTileGrid: false,
               pixelFormat: "rgba32f",
+              swatches: newSnapshot.swatches,
+              swatchGroups: newSnapshot.swatchGroups,
             },
           });
           const updatedRecent = await window.api.addRecentFile(path);
@@ -682,6 +688,8 @@ export function useFileOps({
             zoom: 1,
             tiledMode: false,
             showTileGrid: false,
+            swatches: newSnapshot.swatches,
+            swatchGroups: newSnapshot.swatchGroups,
           },
         });
         const updatedRecent = await window.api.addRecentFile(path);
@@ -879,10 +887,10 @@ export function useFileOps({
           tiledMode: false,
           showTileGrid: false,
           pixelFormat: docPixelFormat,
+          swatches: docSwatches,
+          swatchGroups: docSwatchGroups,
         },
       });
-      dispatch({ type: "SET_SWATCHES", payload: docSwatches });
-      dispatch({ type: "SET_SWATCH_GROUPS", payload: docSwatchGroups });
       dispatch({ type: "SET_PIXEL_BRUSHES", payload: docPixelBrushes });
       if (docSpritesheet) {
         dispatch({ type: "SET_SPRITESHEET", payload: docSpritesheet });

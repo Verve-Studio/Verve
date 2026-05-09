@@ -182,6 +182,10 @@ export function useTabs(
       setActiveTabId(toId);
       displayStore.setEV(toTab.exposureEV ?? 0);
       displayStore.setOperator(toTab.toneMappingOperator ?? "reinhard");
+      // Swap palette + groups in the same action that swaps layers/canvas
+      // so state never has the outgoing tab's swatchGroups paired with the
+      // incoming tab's layers (which would invalidate any group-id-keyed
+      // tool state, e.g. the gradient tool's selected swatch group).
       dispatch({
         type: "SWITCH_TAB",
         payload: {
@@ -194,19 +198,13 @@ export function useTabs(
           tiledMode: toTab.tiledMode ?? false,
           showTileGrid: toTab.showTileGrid ?? false,
           pixelFormat: toTab.snapshot.pixelFormat ?? "rgba8",
+          swatches: toTab.snapshot.swatches ?? DEFAULT_SWATCHES,
+          swatchGroups: toTab.snapshot.swatchGroups ?? [],
         },
       });
       dispatch({
         type: "SET_ANIMATION_MODE",
         payload: toTab.animationMode ?? false,
-      });
-      dispatch({
-        type: "SET_SWATCHES",
-        payload: toTab.snapshot.swatches ?? DEFAULT_SWATCHES,
-      });
-      dispatch({
-        type: "SET_SWATCH_GROUPS",
-        payload: toTab.snapshot.swatchGroups ?? [],
       });
       dispatch({
         type: "SET_PIXEL_BRUSHES",
