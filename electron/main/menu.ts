@@ -344,6 +344,23 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
       ],
     },
 
+    // Animation
+    {
+      label: 'Animation',
+      submenu: [
+        { id: 'playPause',     label: 'Play / Pause',       accelerator: 'Space', enabled: false, click: () => send('playPause')     },
+        sep(),
+        { id: 'prevFrame',     label: 'Previous Frame',     accelerator: 'Left',  enabled: false, click: () => send('prevFrame')     },
+        { id: 'nextFrame',     label: 'Next Frame',         accelerator: 'Right', enabled: false, click: () => send('nextFrame')     },
+        sep(),
+        { id: 'prevAnimation', label: 'Previous Animation', accelerator: 'Up',    enabled: false, click: () => send('prevAnimation') },
+        { id: 'nextAnimation', label: 'Next Animation',     accelerator: 'Down',  enabled: false, click: () => send('nextAnimation') },
+        sep(),
+        { id: 'importSpritesheetFrames', label: 'Import Frames Into Spritesheet…', enabled: false, click: () => send('importSpritesheetFrames') },
+        { id: 'exportSpritesheetJson',   label: 'Export Spritesheet JSON…',       enabled: false, click: () => send('exportSpritesheetJson') },
+      ],
+    },
+
     // Help
     {
       label: 'Help',

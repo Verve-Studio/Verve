@@ -56,6 +56,14 @@ interface TopBarProps {
   showTileGrid?: boolean;
   onSetAnimationMode?: (enabled: boolean) => void;
   animationMode?: boolean;
+  isPlaying?: boolean;
+  onPlayPause?: () => void;
+  onPrevFrame?: () => void;
+  onNextFrame?: () => void;
+  onPrevAnimation?: () => void;
+  onNextAnimation?: () => void;
+  onImportSpritesheetFrames?: () => void;
+  onExportSpritesheetJson?: () => void;
   onNewLayer?: () => void;
   onNewLayerGroup?: () => void;
   onNewCompositeLayer?: () => void;
@@ -168,6 +176,14 @@ export function TopBar({
   showTileGrid,
   onSetAnimationMode,
   animationMode,
+  isPlaying,
+  onPlayPause,
+  onPrevFrame,
+  onNextFrame,
+  onPrevAnimation,
+  onNextAnimation,
+  onImportSpritesheetFrames,
+  onExportSpritesheetJson,
   onNewLayer,
   onNewLayerGroup,
   onNewCompositeLayer,
@@ -665,6 +681,54 @@ export function TopBar({
         ],
       },
       {
+        label: "Animation",
+        items: [
+          {
+            label: isPlaying ? "Pause" : "Play",
+            shortcut: "Space",
+            action: onPlayPause,
+            disabled: !animationMode,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Previous Frame",
+            shortcut: "Left",
+            action: onPrevFrame,
+            disabled: !animationMode,
+          },
+          {
+            label: "Next Frame",
+            shortcut: "Right",
+            action: onNextFrame,
+            disabled: !animationMode,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Previous Animation",
+            shortcut: "Up",
+            action: onPrevAnimation,
+            disabled: !animationMode,
+          },
+          {
+            label: "Next Animation",
+            shortcut: "Down",
+            action: onNextAnimation,
+            disabled: !animationMode,
+          },
+          { separator: true, label: "" },
+          {
+            label: "Import Frames Into Spritesheet…",
+            action: onImportSpritesheetFrames,
+            disabled: !animationMode,
+          },
+          {
+            label: "Export Spritesheet JSON…",
+            action: onExportSpritesheetJson,
+            disabled: !animationMode,
+          },
+        ],
+      },
+      {
         label: "Help",
         items: [
           { label: "About Verve", action: onAbout },
@@ -721,6 +785,14 @@ export function TopBar({
       showTileGrid,
       onSetAnimationMode,
       animationMode,
+      isPlaying,
+      onPlayPause,
+      onPrevFrame,
+      onNextFrame,
+      onPrevAnimation,
+      onNextAnimation,
+      onImportSpritesheetFrames,
+      onExportSpritesheetJson,
       onNewLayer,
       onNewLayerGroup,
       onNewCompositeLayer,

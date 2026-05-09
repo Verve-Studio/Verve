@@ -181,44 +181,45 @@ export function AnimationPanel({
             />
           </div>
 
-          <div
-            className={`${styles.row} ${!ss.enabled ? styles.rowDisabled : ""}`}
-          >
-            <span className={styles.label}>Cell W</span>
-            <SliderInput
-              value={ss.cellWidth}
-              min={1}
-              max={Math.max(1, canvasW)}
-              step={1}
-              inputWidth={42}
-              suffix="px"
-              disabled={!ss.enabled}
-              onChange={(v) =>
-                dispatch({ type: "SET_SPRITESHEET", payload: { cellWidth: v } })
-              }
-            />
-          </div>
+          {ss.enabled && (
+            <>
+              <div className={styles.row}>
+                <span className={styles.label}>Cell W</span>
+                <SliderInput
+                  value={ss.cellWidth}
+                  min={1}
+                  max={Math.max(1, canvasW)}
+                  step={1}
+                  inputWidth={42}
+                  suffix="px"
+                  onChange={(v) =>
+                    dispatch({
+                      type: "SET_SPRITESHEET",
+                      payload: { cellWidth: v },
+                    })
+                  }
+                />
+              </div>
 
-          <div
-            className={`${styles.row} ${!ss.enabled ? styles.rowDisabled : ""}`}
-          >
-            <span className={styles.label}>Cell H</span>
-            <SliderInput
-              value={ss.cellHeight}
-              min={1}
-              max={Math.max(1, canvasH)}
-              step={1}
-              inputWidth={42}
-              suffix="px"
-              disabled={!ss.enabled}
-              onChange={(v) =>
-                dispatch({
-                  type: "SET_SPRITESHEET",
-                  payload: { cellHeight: v },
-                })
-              }
-            />
-          </div>
+              <div className={styles.row}>
+                <span className={styles.label}>Cell H</span>
+                <SliderInput
+                  value={ss.cellHeight}
+                  min={1}
+                  max={Math.max(1, canvasH)}
+                  step={1}
+                  inputWidth={42}
+                  suffix="px"
+                  onChange={(v) =>
+                    dispatch({
+                      type: "SET_SPRITESHEET",
+                      payload: { cellHeight: v },
+                    })
+                  }
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Animations ────────────────────────────────────── */}

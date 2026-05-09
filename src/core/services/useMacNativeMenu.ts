@@ -129,6 +129,15 @@ interface MacNativeMenuParams {
   tiledMode: boolean;
   showTileGrid: boolean;
   animationMode: boolean;
+
+  // Animation playback
+  onPlayPause: () => void;
+  onPrevFrame: () => void;
+  onNextFrame: () => void;
+  onPrevAnimation: () => void;
+  onNextAnimation: () => void;
+  openImportSpritesheetFramesDialog: () => void;
+  handleExportSpritesheetJson: () => void;
 }
 
 export function useMacNativeMenu(params: MacNativeMenuParams): void {
@@ -214,6 +223,13 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     tiledMode,
     showTileGrid,
     animationMode,
+    onPlayPause,
+    onPrevFrame,
+    onNextFrame,
+    onPrevAnimation,
+    onNextAnimation,
+    openImportSpritesheetFramesDialog,
+    handleExportSpritesheetJson,
   } = params;
 
   // A ref that holds the latest action dispatcher (avoids stale closures in the IPC listener).
@@ -491,6 +507,27 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
         case "toggleTileGrid":
           handleToggleTileGrid();
           break;
+        case "playPause":
+          onPlayPause();
+          break;
+        case "prevFrame":
+          onPrevFrame();
+          break;
+        case "nextFrame":
+          onNextFrame();
+          break;
+        case "prevAnimation":
+          onPrevAnimation();
+          break;
+        case "nextAnimation":
+          onNextAnimation();
+          break;
+        case "importSpritesheetFrames":
+          openImportSpritesheetFramesDialog();
+          break;
+        case "exportSpritesheetJson":
+          handleExportSpritesheetJson();
+          break;
         case "preferences":
           openPreferencesDialog();
           break;
@@ -591,6 +628,13 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       activeLayerId,
       effectiveSelectedIds,
       colorMode,
+      onPlayPause,
+      onPrevFrame,
+      onNextFrame,
+      onPrevAnimation,
+      onNextAnimation,
+      openImportSpritesheetFramesDialog,
+      handleExportSpritesheetJson,
     ],
   );
 
@@ -636,6 +680,13 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       mergeSelected: isMergeSelectedEnabled,
       contentAwareFill: hasSelection && !isContentAwareFilling,
       contentAwareDelete: hasSelection && !isContentAwareFilling,
+      playPause: animationMode,
+      prevFrame: animationMode,
+      nextFrame: animationMode,
+      prevAnimation: animationMode,
+      nextAnimation: animationMode,
+      importSpritesheetFrames: animationMode,
+      exportSpritesheetJson: animationMode,
     };
     for (const ai of ADJUSTMENT_MENU_ITEMS)
       enabled[`adj:${ai.type}`] =
@@ -655,6 +706,7 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     isContentAwareFilling,
     adjustments,
     pixelFormat,
+    animationMode,
   ]);
 
   // Sync Show Grid and tiled mode checkbox states.

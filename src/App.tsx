@@ -41,6 +41,7 @@ import type { Tool, LayerState, PixelFormat } from "@/types";
 import type { EffectType } from "@/core/effects/effectTypes";
 import type { FilterKey } from "@/types";
 import { selectionStore } from "@/core/store/selectionStore";
+import { showOperationError } from "@/utils/userFeedback";
 import {
   f32TransferStore,
   u8TransferStore,
@@ -79,6 +80,8 @@ function AppContent(): React.JSX.Element {
     setContentAwareFillOptionsMode,
     pendingConversion,
     setPendingConversion,
+    showImportSpritesheetFramesDialog,
+    setShowImportSpritesheetFramesDialog,
   } = useDialogState();
 
   const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
@@ -512,6 +515,154 @@ function AppContent(): React.JSX.Element {
   // ── Playback state ────────────────────────────────────────────────
   const playback = useAnimationPlayback(state, dispatch);
 
+  // ── Import frames into spritesheet ────────────────────────────────
+  const handleImportSpritesheetFrames = useCallback(
+    (result: import(
+      "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog"
+    ).ImportSpritesheetFramesResult): void => {
+      const handle = canvasHandleRef.current;
+      if (!handle) return;
+      const s = stateRef.current;
+      const activeLayerId = s.activeLayerId;
+      if (!activeLayerId) {
+        showOperationError(
+          "Could not import frames.",
+          "No active layer to plot frames onto.",
+        );
+        return;
+      }
+      const cw = s.canvas.width;
+      const ch = s.canvas.height;
+      const { frames, frameWidth, frameHeight } = result;
+      // Start from the active layer's current canvas-space pixels so any
+      // existing content outside the imported cells is preserved.
+      const merged =
+        handle.getLayerPixels(activeLayerId) ?? new Uint8Array(cw * ch * 4);
+      const cols = Math.max(1, Math.floor(cw / frameWidth));
+      for (let i = 0; i < frames.length; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const dx = col * frameWidth;
+        const dy = row * frameHeight;
+        const src = frames[i];
+        for (let y = 0; y < frameHeight; y++) {
+          const cy = dy + y;
+          if (cy < 0 || cy >= ch) continue;
+          for (let x = 0; x < frameWidth; x++) {
+            const cx = dx + x;
+            if (cx < 0 || cx >= cw) continue;
+            const si = (y * frameWidth + x) * 4;
+            const di = (cy * cw + cx) * 4;
+            merged[di] = src[si];
+            merged[di + 1] = src[si + 1];
+            merged[di + 2] = src[si + 2];
+            merged[di + 3] = src[si + 3];
+          }
+        }
+      }
+      handle.writeLayerPixels(activeLayerId, merged);
+
+      // Configure the spritesheet to match the imported frame size and add
+      // an animation containing every frame in import order.
+      dispatch({
+        type: "SET_SPRITESHEET",
+        payload: {
+          enabled: true,
+          cellWidth: frameWidth,
+          cellHeight: frameHeight,
+        },
+      });
+      const newAnimId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      const newFrames = frames.map(() => ({
+        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        duration: 1,
+      }));
+      dispatch({
+        type: "ADD_ANIMATION",
+        payload: {
+          id: newAnimId,
+          name: "Imported Animation",
+          fps: 12,
+          playbackMode: "loop",
+          frames: newFrames,
+        },
+      });
+      dispatch({ type: "SET_SELECTED_ANIMATION", payload: newAnimId });
+      if (newFrames.length > 0) {
+        dispatch({ type: "SET_SELECTED_FRAME", payload: newFrames[0].id });
+      }
+    },
+    [canvasHandleRef, dispatch, stateRef],
+  );
+
+  // ── Export spritesheet animations as JSON ─────────────────────────
+  const handleExportSpritesheetJson = useCallback(async (): Promise<void> => {
+    const s = stateRef.current;
+    const ss = s.spritesheet;
+    if (!ss.enabled || ss.animations.length === 0) {
+      showOperationError(
+        "Could not export spritesheet.",
+        "Enable the spritesheet and add at least one animation first.",
+      );
+      return;
+    }
+    const cw = s.canvas.width;
+    const ch = s.canvas.height;
+    const cellW = Math.max(1, ss.cellWidth);
+    const cellH = Math.max(1, ss.cellHeight);
+    const cols = Math.max(1, Math.floor(cw / cellW));
+
+    let cursor = 0;
+    const animations = ss.animations.map((anim) => {
+      const frames = anim.frames.map((f) => {
+        const idx = cursor++;
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const x = col * cellW;
+        const y = row * cellH;
+        return {
+          id: f.id,
+          duration: f.duration,
+          // Source pixel rect in canvas coords (top-left + width/height).
+          source: { x, y, width: cellW, height: cellH },
+          // UV rect, normalised against the canvas dimensions, top-left
+          // origin matching the source rect. Half-texel inset so a filtered
+          // sampler can't bleed in from neighbouring cells (the previous
+          // exclusive form sat exactly on the cell boundary, which caused
+          // a 1-pixel halo at the bottom of one frame and a 1-pixel shift
+          // in the next).
+          uv: {
+            u0: (x + 0.5) / cw,
+            v0: (y + 0.5) / ch,
+            u1: (x + cellW - 0.5) / cw,
+            v1: (y + cellH - 0.5) / ch,
+          },
+        };
+      });
+      return {
+        id: anim.id,
+        name: anim.name,
+        fps: anim.fps,
+        playbackMode: anim.playbackMode,
+        frames,
+      };
+    });
+    const doc = {
+      version: 1,
+      canvas: { width: cw, height: ch },
+      cell: { width: cellW, height: cellH },
+      animations,
+    };
+
+    const path = await window.api.saveSpritesheetJsonDialog("spritesheet.json");
+    if (!path) return;
+    try {
+      await window.api.writeSpritesheetJsonFile(path, JSON.stringify(doc, null, 2));
+    } catch (err) {
+      showOperationError("Failed to export spritesheet JSON.", err);
+    }
+  }, [stateRef]);
+
   // ── Sync state.pixelFormat → active TabRecord.pixelFormat ────────
   // SET_PIXEL_FORMAT updates state but not the tabs array; keep them in sync.
   useEffect(() => {
@@ -817,6 +968,14 @@ function AppContent(): React.JSX.Element {
     showRulers: state.canvas.showRulers,
     showGuides: state.canvas.showGuides,
     animationMode: state.animationMode,
+    onPlayPause: playback.onPlayPause,
+    onPrevFrame: playback.onPrevFrame,
+    onNextFrame: playback.onNextFrame,
+    onPrevAnimation: playback.onPrevAnimation,
+    onNextAnimation: playback.onNextAnimation,
+    openImportSpritesheetFramesDialog: () =>
+      setShowImportSpritesheetFramesDialog(true),
+    handleExportSpritesheetJson: () => void handleExportSpritesheetJson(),
   });
 
   return (
@@ -879,6 +1038,12 @@ function AppContent(): React.JSX.Element {
         setShowResizeDialog={setShowResizeDialog}
         showResizeCanvasDialog={showResizeCanvasDialog}
         setShowResizeCanvasDialog={setShowResizeCanvasDialog}
+        showImportSpritesheetFramesDialog={showImportSpritesheetFramesDialog}
+        setShowImportSpritesheetFramesDialog={
+          setShowImportSpritesheetFramesDialog
+        }
+        handleImportSpritesheetFrames={handleImportSpritesheetFrames}
+        handleExportSpritesheetJson={() => void handleExportSpritesheetJson()}
         showAboutDialog={showAboutDialog}
         setShowAboutDialog={setShowAboutDialog}
         showPreferencesDialog={showPreferencesDialog}

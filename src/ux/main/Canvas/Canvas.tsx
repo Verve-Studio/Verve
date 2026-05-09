@@ -2078,14 +2078,22 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                   // Translate canvas so pixel (cellX, cellY) aligns with the scroll
                   // centre (padding = cellW/H on each side of viewportInner).
                   // clip-path hides every pixel outside the selected frame cell.
-                  const top = cellY * z;
-                  const right = (width - cellX - cellW) * z;
-                  const bottom = (height - cellY - cellH) * z;
-                  const left = cellX * z;
+                  // Snap each value to whole device pixels — at fractional
+                  // z (e.g. Retina DPR=2 at zoom=1 → z=0.5, or scroll-wheel
+                  // zoom like 1.33), sub-pixel CSS edges anti-alias and let
+                  // the row/column above-or-below the cell bleed in (visible
+                  // as a 1-px halo on one frame and a 1-px shift on the next).
+                  const dpr = window.devicePixelRatio;
+                  const snap = (cssPx: number): number =>
+                    Math.round(cssPx * dpr) / dpr;
+                  const top = snap(cellY * z);
+                  const right = snap((width - cellX - cellW) * z);
+                  const bottom = snap((height - cellY - cellH) * z);
+                  const left = snap(cellX * z);
                   return {
                     position: "absolute" as const,
-                    left: (frameClipInfo.cellW - cellX) * z,
-                    top: (frameClipInfo.cellH - cellY) * z,
+                    left: snap((frameClipInfo.cellW - cellX) * z),
+                    top: snap((frameClipInfo.cellH - cellY) * z),
                     width: w,
                     height: h,
                     clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px)`,

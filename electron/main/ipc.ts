@@ -33,6 +33,32 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
+  ipcMain.handle('dialog:saveSpritesheetJson', async (_event, defaultName?: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return canceled ? null : filePath
+  })
+
+  ipcMain.handle('file:writeSpritesheetJson', async (_event, path: string, data: string) => {
+    await writeFile(path, data, 'utf-8')
+  })
+
+  ipcMain.handle('dialog:openImagesMulti', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return canceled ? null : filePaths
+  })
+
   ipcMain.handle('dialog:openverve', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],

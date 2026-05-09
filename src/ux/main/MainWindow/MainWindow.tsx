@@ -34,6 +34,7 @@ import { NewImageDialog } from "@/ux/modals/NewImageDialog/NewImageDialog";
 import { ExportDialog } from "@/ux/modals/ExportDialog/ExportDialog";
 import { ResizeImageDialog } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import { ResizeCanvasDialog } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
+import { ImportSpritesheetFramesDialog } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
 import { AboutDialog } from "@/ux/modals/AboutDialog/AboutDialog";
 import { PreferencesDialog } from "@/ux/modals/PreferencesDialog/PreferencesDialog";
 import { HdrLdrExportWarningDialog } from "@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog";
@@ -130,6 +131,14 @@ export interface MainWindowProps {
   setShowResizeDialog: (v: boolean) => void;
   showResizeCanvasDialog: boolean;
   setShowResizeCanvasDialog: (v: boolean) => void;
+  showImportSpritesheetFramesDialog: boolean;
+  setShowImportSpritesheetFramesDialog: (v: boolean) => void;
+  handleImportSpritesheetFrames: (
+    result: import(
+      "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog"
+    ).ImportSpritesheetFramesResult,
+  ) => void;
+  handleExportSpritesheetJson: () => void;
   showAboutDialog: boolean;
   setShowAboutDialog: (v: boolean) => void;
   showPreferencesDialog: boolean;
@@ -314,6 +323,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showImportSpritesheetFramesDialog,
+    setShowImportSpritesheetFramesDialog,
+    handleImportSpritesheetFrames,
+    handleExportSpritesheetJson,
     showAboutDialog,
     setShowAboutDialog,
     showPreferencesDialog,
@@ -472,6 +485,16 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         showTileGrid={showTileGrid}
         onSetAnimationMode={handleSetAnimationMode}
         animationMode={animationMode}
+        isPlaying={isPlaying}
+        onPlayPause={onPlayPause}
+        onPrevFrame={onPrevFrame}
+        onNextFrame={onNextFrame}
+        onPrevAnimation={onPrevAnimation}
+        onNextAnimation={onNextAnimation}
+        onImportSpritesheetFrames={() =>
+          setShowImportSpritesheetFramesDialog(true)
+        }
+        onExportSpritesheetJson={handleExportSpritesheetJson}
         onNewLayer={handleNewLayer}
         onNewCompositeLayer={handleCreateCompositeLayer}
         onAddLayerMask={handleAddMaskLayer}
@@ -686,6 +709,16 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onConfirm={(s) => {
           handleResizeCanvas(s);
           setShowResizeCanvasDialog(false);
+        }}
+      />
+      <ImportSpritesheetFramesDialog
+        open={showImportSpritesheetFramesDialog}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+        onCancel={() => setShowImportSpritesheetFramesDialog(false)}
+        onConfirm={(r) => {
+          handleImportSpritesheetFrames(r);
+          setShowImportSpritesheetFramesDialog(false);
         }}
       />
       <AboutDialog

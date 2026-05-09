@@ -7,6 +7,12 @@ const api = {
   openFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
   saveFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:saveFile'),
   openverveDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openverve'),
+  openImagesMultiDialog: (): Promise<string[] | null> =>
+    ipcRenderer.invoke('dialog:openImagesMulti'),
+  saveSpritesheetJsonDialog: (defaultName?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:saveSpritesheetJson', defaultName),
+  writeSpritesheetJsonFile: (path: string, data: string): Promise<void> =>
+    ipcRenderer.invoke('file:writeSpritesheetJson', path, data),
   saveverveDialog: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveverve', defaultPath),
   openverveFile: (path: string): Promise<string> => ipcRenderer.invoke('file:openverve', path),
