@@ -1,75 +1,96 @@
 import type { Tool } from "@/types";
-import type { ToolDefinition } from "./types";
-import { pencilTool } from "./pencil";
-import { brushTool } from "./brush";
-import { eraserTool } from "./eraser";
-import { selectTool } from "./select";
-import { lassoTool } from "./lasso";
-import { magicWandTool } from "./magicWand";
-import { polygonalSelectionTool } from "./polygonalSelection";
-import { objectSelectionTool } from "./objectSelection";
-import { fillTool } from "./fill";
-import { eyedropperTool } from "./eyedropper";
-import { zoomTool } from "./zoom";
-import { cropTool } from "./crop";
-import { moveTool } from "./move";
-import { pickTool } from "./pick";
-import { gradientTool } from "./gradient";
-import { dodgeTool, burnTool } from "./dodge";
-import { textTool } from "./text";
-import { shapeTool } from "./shape";
-import { transformTool } from "./transform";
-import { cloneStampTool } from "./cloneStamp";
-import { frameTool } from "./frame";
-import { liquifyTool } from "./liquify";
-import { handTool } from "./hand";
-import { blurTool } from "./blur";
-import { sharpenTool } from "./sharpen";
-import { smudgeTool } from "./smudge";
-import { patchTool } from "./patch";
-import { healingBrushTool } from "./healingBrush";
-import { measureTool } from "./measure";
-import { quickSelectTool } from "./quickSelect";
+import type { ITool } from "./_shared/ITool";
+import { toolRegistry } from "./toolRegistry";
 
-export const TOOL_REGISTRY: Record<Tool, ToolDefinition> = {
-  pencil: pencilTool,
-  brush: brushTool,
-  eraser: eraserTool,
-  "clone-stamp": cloneStampTool,
-  select: selectTool,
-  lasso: lassoTool,
-  "polygonal-selection": polygonalSelectionTool,
-  "object-selection": objectSelectionTool,
-  "magic-wand": magicWandTool,
-  fill: fillTool,
-  eyedropper: eyedropperTool,
-  zoom: zoomTool,
-  // ── Not yet implemented ────────────────────────────────────────────────────
-  move: moveTool,
-  pick: pickTool,
-  crop: cropTool,
-  frame: frameTool,
-  gradient: gradientTool,
-  dodge: dodgeTool,
-  burn: burnTool,
-  text: textTool,
-  shape: shapeTool,
-  liquify: liquifyTool,
-  blur: blurTool,
-  sharpen: sharpenTool,
-  smudge: smudgeTool,
-  patch: patchTool,
-  "healing-brush": healingBrushTool,
-  measure: measureTool,
-  "quick-select": quickSelectTool,
-  hand: handTool,
-  transform: transformTool,
-};
+import { pencilTool } from "./Pencil/Pencil";
+import { brushTool } from "./Brush/Brush";
+import { eraserTool } from "./Eraser/Eraser";
+import { selectTool } from "./Select/Select";
+import { lassoTool } from "./Lasso/Lasso";
+import { magicWandTool } from "./MagicWand/MagicWand";
+import { polygonalSelectionTool } from "./PolygonalSelection/PolygonalSelection";
+import { objectSelectionTool } from "./ObjectSelection/ObjectSelection";
+import { fillTool } from "./Fill/Fill";
+import { eyedropperTool } from "./Eyedropper/Eyedropper";
+import { zoomTool } from "./Zoom/Zoom";
+import { cropTool } from "./Crop/Crop";
+import { moveTool } from "./Move/Move";
+import { pickTool } from "./Pick/Pick";
+import { gradientTool } from "./Gradient/Gradient";
+import { dodgeTool, burnTool } from "./Dodge/Dodge";
+import { textTool } from "./Text/Text";
+import { shapeTool } from "./Shape/Shape";
+import { transformTool } from "./Transform/Transform";
+import { cloneStampTool } from "./CloneStamp/CloneStamp";
+import { frameTool } from "./Frame/Frame";
+import { liquifyTool } from "./Liquify/Liquify";
+import { handTool } from "./Hand/Hand";
+import { blurTool } from "./Blur/Blur";
+import { sharpenTool } from "./Sharpen/Sharpen";
+import { smudgeTool } from "./Smudge/Smudge";
+import { patchTool } from "./Patch/Patch";
+import { healingBrushTool } from "./HealingBrush/HealingBrush";
+import { measureTool } from "./Measure/Measure";
+import { quickSelectTool } from "./QuickSelect/QuickSelect";
 
+const ALL_TOOLS: readonly ITool[] = [
+  moveTool,
+  pickTool,
+  selectTool,
+  lassoTool,
+  polygonalSelectionTool,
+  quickSelectTool,
+  magicWandTool,
+  objectSelectionTool,
+  brushTool,
+  pencilTool,
+  eraserTool,
+  fillTool,
+  gradientTool,
+  textTool,
+  shapeTool,
+  cropTool,
+  frameTool,
+  eyedropperTool,
+  measureTool,
+  cloneStampTool,
+  healingBrushTool,
+  patchTool,
+  dodgeTool,
+  burnTool,
+  blurTool,
+  sharpenTool,
+  smudgeTool,
+  liquifyTool,
+  handTool,
+  zoomTool,
+  transformTool,
+];
+
+for (const tool of ALL_TOOLS) {
+  toolRegistry.register(tool);
+}
+
+/**
+ * Back-compat lookup map. New code should call `toolRegistry.get(id)` /
+ * `toolRegistry.require(id)` directly; this re-exposes the registry as a
+ * `Record<Tool, ITool>` for callers that index by tool id.
+ */
+export const TOOL_REGISTRY: Record<Tool, ITool> = ALL_TOOLS.reduce(
+  (acc, t) => {
+    acc[t.id] = t;
+    return acc;
+  },
+  {} as Record<Tool, ITool>,
+);
+
+export { toolRegistry } from "./toolRegistry";
+export type { ITool, ToolPlacement, ToolButtonRenderProps } from "./_shared/ITool";
+export { ToolGroup } from "./_shared/ITool";
 export type {
   ToolDefinition,
   ToolHandler,
   ToolContext,
   ToolPointerPos,
   ToolOptionsStyles,
-} from "./types";
+} from "./_shared/types";

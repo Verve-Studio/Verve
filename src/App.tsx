@@ -1,47 +1,48 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppProvider, useAppContext } from "@/core/store/AppContext";
-import { CanvasProvider } from "@/core/store/CanvasContext";
-import { historyStore } from "@/core/store/historyStore";
-import { viewportCommands } from "@/core/store/viewportCommands";
-import { useNotification } from "@/core/store/notificationStore";
-import { useTabs } from "@/core/services/useTabs";
-import { useHistory } from "@/core/services/useHistory";
-import { useFileOps } from "@/core/services/useFileOps";
-import { useExportOps } from "@/core/services/useExportOps";
-import { useClipboard } from "@/core/services/useClipboard";
-import { useLayers } from "@/core/services/useLayers";
-import { useLayerGroups } from "@/core/services/useLayerGroups";
-import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
-import { useLayerArrange } from "@/core/services/useLayerArrange";
-import { useKeyboardShortcuts } from "@/core/services/useKeyboardShortcuts";
 import { useAdjustments } from "@/core/services/useAdjustments";
-import { useFilters } from "@/core/services/useFilters";
-import { useTransform } from "@/core/services/useTransform";
-import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
-import { useObjectSelection } from "@/core/services/useObjectSelection";
-import { useContentAwareFill } from "@/core/services/useContentAwareFill";
-import { useColorMode } from "@/core/services/useColorMode";
-import { useDialogState } from "@/core/services/useDialogState";
-import { useViewActions } from "@/core/services/useViewActions";
-import { useTransformGuard } from "@/core/services/useTransformGuard";
-import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
 import { useAnimationPlayback } from "@/core/services/useAnimationPlayback";
-import { useFormatRemount } from "@/core/services/useFormatRemount";
-import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
 import {
   useBrushBootstrap,
   useCloneStampNotification,
   useMemoryErrorHandler,
-  useSelectionFlag,
   useRecentFiles,
+  useSelectionFlag,
   useStartupFile,
 } from "@/core/services/useAppLifecycle";
-import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
-import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
-import type { TabInfo } from "@/ux/main/TabBar/TabBar";
-import type { Tool, LayerState } from "@/types";
-import { selectionStore } from "@/core/store/selectionStore";
+import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
+import { useClipboard } from "@/core/services/useClipboard";
+import { useColorMode } from "@/core/services/useColorMode";
+import { useContentAwareFill } from "@/core/services/useContentAwareFill";
+import { useDialogState } from "@/core/services/useDialogState";
+import { useExportOps } from "@/core/services/useExportOps";
+import { useFileOps } from "@/core/services/useFileOps";
+import { useFilters } from "@/core/services/useFilters";
+import { useFormatRemount } from "@/core/services/useFormatRemount";
+import { useHistory } from "@/core/services/useHistory";
+import { useKeyboardShortcuts } from "@/core/services/useKeyboardShortcuts";
+import { useLayerArrange } from "@/core/services/useLayerArrange";
+import { useLayerGroups } from "@/core/services/useLayerGroups";
+import { useLayers } from "@/core/services/useLayers";
+import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
+import { useObjectSelection } from "@/core/services/useObjectSelection";
+import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
+import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
+import { useTabs } from "@/core/services/useTabs";
+import { useTransform } from "@/core/services/useTransform";
+import { useTransformGuard } from "@/core/services/useTransformGuard";
+import { useViewActions } from "@/core/services/useViewActions";
+import { AppProvider, useAppContext } from "@/core/store/AppContext";
+import { CanvasProvider } from "@/core/store/CanvasContext";
+import { historyStore } from "@/core/store/historyStore";
+import { useNotification } from "@/core/store/notificationStore";
 import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
+import { selectionStore } from "@/core/store/selectionStore";
+import { viewportCommands } from "@/core/store/viewportCommands";
+import { toolRegistry } from "@/tools/toolRegistry";
+import type { LayerState, Tool } from "@/types";
+import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
+import type { TabInfo } from "@/ux/main/TabBar/TabBar";
+import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
@@ -512,15 +513,18 @@ function AppContent(): React.JSX.Element {
     ),
     handleFindLayers,
     handleCycleLasso: useCallback(() => {
-      const current = stateRef.current.activeTool;
-      const next =
-        current === "polygonal-selection" ? "lasso" : "polygonal-selection";
-      handleToolChange(next);
+      const next = toolRegistry.resolveShortcutCycle(
+        "L",
+        stateRef.current.activeTool,
+      );
+      if (next) handleToolChange(next);
     }, [handleToolChange]),
     handleCycleWand: useCallback(() => {
-      const current = stateRef.current.activeTool;
-      const next = current === "magic-wand" ? "object-selection" : "magic-wand";
-      handleToolChange(next);
+      const next = toolRegistry.resolveShortcutCycle(
+        "W",
+        stateRef.current.activeTool,
+      );
+      if (next) handleToolChange(next);
     }, [handleToolChange]),
     handleNew: useCallback(() => setShowNewImageDialog(true), []),
     handleOpen: useCallback(() => {

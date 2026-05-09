@@ -1,14 +1,17 @@
 import React, { useState } from "react";
-import { eraseQuadBezier, eraseThickLine } from "./algorithm/eraseStroke";
-import { bresenham } from "./algorithm/primitives";
+import { eraseQuadBezier, eraseThickLine } from "./eraseStroke";
+import { bresenham } from "../_shared/primitives";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import eraserIconSvg from "./eraser.svg?raw";
 import { stampIndexedShape } from "@/utils/indexedColorUtils";
 
 // ─── Module-level options ────────────────────────────────────
@@ -375,8 +378,22 @@ function EraserOptions({
   );
 }
 
-export const eraserTool: ToolDefinition = {
-  createHandler: createEraserHandler,
-  Options: EraserOptions,
-  modifiesPixels: true,
-};
+class EraserTool implements ITool {
+  readonly id = "eraser";
+  readonly label = "Eraser";
+  readonly shortcut = "E";
+  readonly icon = <SvgIcon src={eraserIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Painting,
+    row: 1,
+    column: 0,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  createHandler(): ToolHandler {
+    return createEraserHandler();
+  }
+  readonly Options = EraserOptions;
+}
+
+export const eraserTool: ITool = new EraserTool();

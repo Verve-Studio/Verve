@@ -1,17 +1,18 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 import {
   forEachBrushPixel,
   forEachStamp,
   markBrushDirty,
-} from "./algorithm/localBrush";
+} from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -302,8 +303,59 @@ function SmudgeOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const smudgeTool: ToolDefinition = {
-  createHandler: createSmudgeHandler,
-  Options: SmudgeOptions,
-  modifiesPixels: true,
-};
+class SmudgeTool implements ITool {
+  readonly id = "smudge";
+  readonly label = "Smudge";
+  readonly shortcut = "R";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M2 7.5 L7 5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          fill="none"
+        />
+        <path
+          d="M7 5
+             C 7 3.6, 8 3, 8.7 3
+             C 9.4 3, 10 3.6, 10 4.3
+             L 10 6.5
+             C 10.6 6.3, 11.2 6.6, 11.3 7.2
+             L 11.5 8
+             C 12.1 7.9, 12.7 8.3, 12.7 8.9
+             L 12.7 11.5
+             C 12.7 12.6, 11.8 13.5, 10.7 13.5
+             L 8.5 13.5
+             C 7.4 13.5, 6.5 12.6, 6.5 11.5
+             L 6.5 7.5
+             C 6.5 6.5, 6.7 5.7, 7 5
+             Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.LocalEffect,
+    row: 1,
+    column: 0,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createSmudgeHandler();
+  }
+  readonly Options = SmudgeOptions;
+}
+
+export const smudgeTool: ITool = new SmudgeTool();

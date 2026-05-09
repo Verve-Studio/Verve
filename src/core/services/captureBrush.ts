@@ -8,7 +8,7 @@
  * of the source bitmap's resolution.
  */
 import type { BrushTipShape } from "@/types";
-import { computeSdfFromRgba, sdfToBase64 } from "@/tools/algorithm/sdf";
+import { computeSdfFromRgba, sdfToBase64 } from "@/tools/_shared/sdf";
 
 export interface CaptureBrushArgs {
   canvasWidth: number;

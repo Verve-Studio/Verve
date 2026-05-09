@@ -12,15 +12,18 @@ import {
   applyStrokeWetEdges,
   type StrokeStampState,
   type StrokePoseInputs,
-} from "./algorithm/stampEngine";
-import { getCachedTipSampler } from "./algorithm/tipSampler";
+} from "./stampEngine";
+import { getCachedTipSampler } from "./tipSampler";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import brushIconSvg from "./brush.svg?raw";
 
 // ─── Synchronous mirror of the active brush ──────────────────────────────────
 //
@@ -624,9 +627,24 @@ function BrushOptions({
   );
 }
 
-export const brushTool: ToolDefinition = {
-  createHandler: createBrushHandler,
-  Options: BrushOptions,
-  modifiesPixels: true,
-  paintsOntoPixelLayer: true,
-};
+class BrushTool implements ITool {
+  readonly id = "brush";
+  readonly label = "Brush";
+  readonly shortcut = "B";
+  readonly icon = <SvgIcon src={brushIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Painting,
+    row: 0,
+    column: 0,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly paintsOntoPixelLayer = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createBrushHandler();
+  }
+  readonly Options = BrushOptions;
+}
+
+export const brushTool: ITool = new BrushTool();

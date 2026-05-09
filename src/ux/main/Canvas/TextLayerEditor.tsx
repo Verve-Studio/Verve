@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import ReactDOM from "react-dom";
 import type { LayerState, TextLayerState } from "@/types";
-import { getTextBounds } from "@/tools/text";
+import { getTextBounds } from "@/tools/Text/Text";
 import styles from "./Canvas.module.scss";
 
 export interface TextLayerEditorProps {

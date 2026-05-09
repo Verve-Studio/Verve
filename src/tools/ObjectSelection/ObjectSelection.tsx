@@ -3,11 +3,14 @@ import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import React, { useEffect, useState } from "react";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolOptionsStyles,
   ToolPointerPos,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import objectSelectIconSvg from "./object-select.svg?raw";
 
 // ─── Module-level options ──────────────────────────────────────────────────────
 
@@ -377,7 +380,21 @@ function ObjectSelectionOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const objectSelectionTool: ToolDefinition = {
-  createHandler: createObjectSelectionHandler,
-  Options: ObjectSelectionOptions,
-};
+class ObjectSelectionTool implements ITool {
+  readonly id = "object-selection";
+  readonly label = "Object Selection";
+  readonly shortcut = "W";
+  readonly icon = <SvgIcon src={objectSelectIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Selection,
+    row: 2,
+    column: 1,
+  } as const;
+  readonly shortcutCycle = "magic-wand" as const;
+  createHandler(): ToolHandler {
+    return createObjectSelectionHandler();
+  }
+  readonly Options = ObjectSelectionOptions;
+}
+
+export const objectSelectionTool: ITool = new ObjectSelectionTool();

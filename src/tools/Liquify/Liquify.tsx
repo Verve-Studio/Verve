@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -452,8 +453,48 @@ function LiquifyOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const liquifyTool: ToolDefinition = {
-  createHandler: createLiquifyHandler,
-  Options: LiquifyOptions,
-  modifiesPixels: true,
-};
+class LiquifyTool implements ITool {
+  readonly id = "liquify";
+  readonly label = "Liquify";
+  readonly shortcut = "Q";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M3 11 C 3 6, 13 6, 13 11"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <path
+          d="M3 8 C 3 4, 13 4, 13 8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          opacity="0.5"
+        />
+        <circle cx="8" cy="11" r="1.3" fill="currentColor" />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.Distortion,
+    row: 0,
+    column: 0,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createLiquifyHandler();
+  }
+  readonly Options = LiquifyOptions;
+}
+
+export const liquifyTool: ITool = new LiquifyTool();

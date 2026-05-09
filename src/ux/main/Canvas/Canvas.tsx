@@ -22,21 +22,21 @@ import type {
 } from "@/types";
 import { TOOL_REGISTRY } from "@/tools";
 import type { ToolContext, ToolHandler } from "@/tools";
-import { brushOptions } from "@/tools/brush";
+import { brushOptions } from "@/tools/Brush/Brush";
 import {
   pencilOptions,
   getPencilBrushPreviewDataUrl,
   getPencilShapePreviewDataUrl,
-} from "@/tools/pencil";
-import { eraserOptions } from "@/tools/eraser";
-import { liquifyOptions } from "@/tools/liquify";
-import { blurOptions } from "@/tools/blur";
-import { sharpenOptions } from "@/tools/sharpen";
-import { smudgeOptions } from "@/tools/smudge";
-import { healingBrushOptions } from "@/tools/healingBrush";
-import { quickSelectOptions } from "@/tools/quickSelect";
-import { cloneStampOptions } from "@/tools/cloneStamp";
-import { dodgeOptions, burnOptions } from "@/tools/dodge";
+} from "@/tools/Pencil/Pencil";
+import { eraserOptions } from "@/tools/Eraser/Eraser";
+import { liquifyOptions } from "@/tools/Liquify/Liquify";
+import { blurOptions } from "@/tools/Blur/Blur";
+import { sharpenOptions } from "@/tools/Sharpen/Sharpen";
+import { smudgeOptions } from "@/tools/Smudge/Smudge";
+import { healingBrushOptions } from "@/tools/HealingBrush/HealingBrush";
+import { quickSelectOptions } from "@/tools/QuickSelect/QuickSelect";
+import { cloneStampOptions } from "@/tools/CloneStamp/CloneStamp";
+import { dodgeOptions, burnOptions } from "@/tools/Dodge/Dodge";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
 import { drawCloneStampOverlay } from "./cloneStampOverlay";
 import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
@@ -45,7 +45,7 @@ import { selectionStore } from "@/core/store/selectionStore";
 import { measureStore } from "@/core/store/measureStore";
 import { cursorStore } from "@/core/store/cursorStore";
 import { transformStore } from "@/core/store/transformStore";
-import { drawTransformOverlay } from "@/tools/transform";
+import { drawTransformOverlay } from "@/tools/Transform/Transform";
 import { TextLayerEditor } from "./TextLayerEditor";
 import { rasterizeTextToLayer } from "./textRasterizer";
 import { rasterizeShapeToLayer } from "./shapeRasterizer";

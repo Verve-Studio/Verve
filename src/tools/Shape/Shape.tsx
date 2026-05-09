@@ -1,19 +1,22 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ShapeLayerState, ShapeType, RGBAColor } from "@/types";
 import { useAppContext } from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import swatchStyles from "@/ux/widgets/ColorSwatch/ColorSwatch.module.scss";
 import { IndexedPaletteColorPicker } from "@/ux/widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
-import { buildShapePath, rgbaToStr } from "../ux/main/Canvas/shapeRasterizer";
+import { buildShapePath, rgbaToStr } from "../../ux/main/Canvas/shapeRasterizer";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
-import { resizeCursorForHandle } from "./algorithm/resizeCursor";
+} from "../_shared/types";
+import type { ITool, ToolButtonRenderProps } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import shapeIconSvg from "./shape.svg?raw";
+import { resizeCursorForHandle } from "../_shared/resizeCursor";
 
 // ─── Module-level defaults for new shapes ────────────────────────────────────
 
@@ -1080,9 +1083,216 @@ function ShapeOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const shapeTool: ToolDefinition = {
-  createHandler: createShapeHandler,
-  Options: ShapeOptions,
-  modifiesPixels: false,
-  skipAutoHistory: true,
-};
+// ─── Shape picker definitions (toolbar flyout) ────────────────────────────────
+
+interface ShapeDef {
+  id: ShapeType;
+  label: string;
+  icon: React.JSX.Element;
+}
+
+const SHAPE_DEFS: ShapeDef[] = [
+  {
+    id: "rectangle",
+    label: "Rectangle",
+    icon: (
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <rect x="1.5" y="3.5" width="13" height="9" rx="0.5" />
+      </svg>
+    ),
+  },
+  {
+    id: "ellipse",
+    label: "Ellipse",
+    icon: (
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <ellipse cx="8" cy="8" rx="6.5" ry="4.5" />
+      </svg>
+    ),
+  },
+  {
+    id: "triangle",
+    label: "Triangle",
+    icon: (
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      >
+        <polygon points="8,1.5 14.5,14.5 1.5,14.5" />
+      </svg>
+    ),
+  },
+  {
+    id: "line",
+    label: "Line",
+    icon: (
+      <svg
+        viewBox="0 0 16 16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
+        <line x1="2.5" y1="13.5" x2="13.5" y2="2.5" />
+      </svg>
+    ),
+  },
+  {
+    id: "diamond",
+    label: "Diamond",
+    icon: (
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      >
+        <polygon points="8,1.5 14.5,8 8,14.5 1.5,8" />
+      </svg>
+    ),
+  },
+  {
+    id: "star",
+    label: "Star",
+    icon: (
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      >
+        <polygon points="8,1.5 9.47,5.98 13.23,6.3 10.38,8.77 11.23,12.45 8,10.5 4.77,12.45 5.62,8.77 2.77,6.3 6.53,5.98" />
+      </svg>
+    ),
+  },
+];
+
+function getShapeIcon(shape: ShapeType): React.JSX.Element {
+  return SHAPE_DEFS.find((s) => s.id === shape)?.icon ?? SHAPE_DEFS[0].icon;
+}
+
+/**
+ * Toolbar button for the Shape tool — shows the active-shape's icon and a
+ * caret that opens the per-shape picker flyout. Self-contained: closes on
+ * outside click without help from the toolbar.
+ */
+function ShapeToolButton({
+  active,
+  disabled,
+  styles,
+  onActivate,
+}: ToolButtonRenderProps): React.JSX.Element {
+  const { state, dispatch } = useAppContext();
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLDivElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const [flyoutY, setFlyoutY] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        flyoutRef.current?.contains(target) ||
+        buttonRef.current?.contains(target)
+      )
+        return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const toggle = (): void => {
+    if (buttonRef.current) {
+      setFlyoutY(buttonRef.current.getBoundingClientRect().top);
+    }
+    setOpen((o) => !o);
+  };
+
+  const selectShape = (shape: ShapeType): void => {
+    dispatch({ type: "SET_SHAPE", payload: shape });
+    onActivate();
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <div className={styles.shapeCell} ref={buttonRef}>
+        <button
+          className={`${styles.toolBtn} ${active ? styles.active : ""}`}
+          onClick={onActivate}
+          disabled={disabled}
+          aria-label="Shape (U)"
+          aria-pressed={active}
+          title="Shape  U"
+        >
+          {getShapeIcon(state.activeShape)}
+        </button>
+        <button
+          className={styles.shapeCaret}
+          onClick={toggle}
+          tabIndex={-1}
+          aria-label="Pick shape"
+          title="Choose shape"
+        >
+          <svg viewBox="0 0 5 3" fill="currentColor" width="5" height="3">
+            <polygon points="0,0 5,0 2.5,3" />
+          </svg>
+        </button>
+      </div>
+      {open && (
+        <div
+          ref={flyoutRef}
+          className={styles.shapeFlyout}
+          style={{ top: flyoutY }}
+        >
+          {SHAPE_DEFS.map((shape) => (
+            <button
+              key={shape.id}
+              className={`${styles.shapeFlyoutBtn} ${state.activeShape === shape.id ? styles.active : ""}`}
+              onClick={() => selectShape(shape.id)}
+              title={shape.label}
+              aria-label={shape.label}
+            >
+              {shape.icon}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+class ShapeTool implements ITool {
+  readonly id = "shape";
+  readonly label = "Shape";
+  readonly shortcut = "U";
+  readonly icon = <SvgIcon src={shapeIconSvg} />;
+  readonly placement = { group: ToolGroup.Type, row: 0, column: 1 } as const;
+  readonly modifiesPixels = false;
+  readonly skipAutoHistory = true;
+  customRender(props: ToolButtonRenderProps): React.JSX.Element {
+    return <ShapeToolButton {...props} />;
+  }
+  createHandler(): ToolHandler {
+    return createShapeHandler();
+  }
+  readonly Options = ShapeOptions;
+}
+
+export const shapeTool: ITool = new ShapeTool();

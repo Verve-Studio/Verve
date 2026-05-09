@@ -1,14 +1,17 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { selectionStore } from "../core/store/selectionStore";
-import type { SelectionMode } from "../core/store/selectionStore";
+import { selectionStore } from "../../core/store/selectionStore";
+import type { SelectionMode } from "../../core/store/selectionStore";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import magicWandIconSvg from "./magic-wand.svg?raw";
 import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
 import { useAppContext } from "@/core/store/AppContext";
 
@@ -201,7 +204,21 @@ function MagicWandOptions({
   );
 }
 
-export const magicWandTool: ToolDefinition = {
-  createHandler: createMagicWandHandler,
-  Options: MagicWandOptions,
-};
+class MagicWandTool implements ITool {
+  readonly id = "magic-wand";
+  readonly label = "Magic Wand";
+  readonly shortcut = "W";
+  readonly icon = <SvgIcon src={magicWandIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Selection,
+    row: 2,
+    column: 0,
+  } as const;
+  readonly shortcutCycle = "object-selection" as const;
+  createHandler(): ToolHandler {
+    return createMagicWandHandler();
+  }
+  readonly Options = MagicWandOptions;
+}
+
+export const magicWandTool: ITool = new MagicWandTool();

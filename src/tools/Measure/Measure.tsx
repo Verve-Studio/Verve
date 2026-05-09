@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { measureStore, type Point } from "@/core/store/measureStore";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -233,9 +234,48 @@ function MeasureOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const measureTool: ToolDefinition = {
-  createHandler: createMeasureHandler,
-  Options: MeasureOptions,
+class MeasureTool implements ITool {
+  readonly id = "measure";
+  readonly label = "Measure";
+  readonly shortcut = "I";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <g transform="rotate(-30 8 8)">
+          <rect
+            x="1.5"
+            y="6.2"
+            width="13"
+            height="3.6"
+            rx="0.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.1"
+          />
+          <path
+            d="M3 6.2 L3 8 M5 6.2 L5 7.4 M7 6.2 L7 8 M9 6.2 L9 7.4 M11 6.2 L11 8 M13 6.2 L13 7.4"
+            stroke="currentColor"
+            strokeWidth="0.9"
+          />
+        </g>
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.Sampling,
+    row: 0,
+    column: 1,
+  } as const;
   // Operate on any layer — this tool reads no pixels and writes no pixels.
-  worksOnAllLayers: true,
-};
+  readonly worksOnAllLayers = true;
+  createHandler(): ToolHandler {
+    return createMeasureHandler();
+  }
+  readonly Options = MeasureOptions;
+}
+
+export const measureTool: ITool = new MeasureTool();

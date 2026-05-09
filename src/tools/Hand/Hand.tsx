@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { viewportCommands } from "@/core/store/viewportCommands";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -84,11 +85,41 @@ function HandOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const handTool: ToolDefinition = {
-  createHandler: createHandHandler,
-  Options: HandOptions,
+class HandTool implements ITool {
+  readonly id = "hand";
+  readonly label = "Hand";
+  readonly shortcut = "H";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M5 8 V4.2 a1 1 0 0 1 2 0 V7.5 M7 4 V3 a1 1 0 0 1 2 0 V7.5 M9 3.5 V3 a1 1 0 0 1 2 0 V8 M11 5 V4.2 a1 1 0 0 1 2 0 V10 a4 4 0 0 1 -8 0 V7"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.Navigation,
+    row: 0,
+    column: 0,
+  } as const;
   // Pan/zoom never write pixels — but they need to operate on any layer
   // (including text/shape/frame), so flag worksOnAllLayers so Canvas's
   // parametric-layer guard doesn't suppress events.
-  worksOnAllLayers: true,
-};
+  readonly worksOnAllLayers = true;
+  createHandler(): ToolHandler {
+    return createHandHandler();
+  }
+  readonly Options = HandOptions;
+}
+
+export const handTool: ITool = new HandTool();

@@ -2,12 +2,15 @@ import React, { useState } from "react";
 import { floodFill, floodFillF32 } from "@/wasm";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import paintBucketIconSvg from "./paint-bucket.svg?raw";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -398,10 +401,20 @@ function FillOptions({
   );
 }
 
-export const fillTool: ToolDefinition = {
-  createHandler: createFillHandler,
-  Options: FillOptions,
-  modifiesPixels: true,
-  skipAutoHistory: true,
-  paintsOntoPixelLayer: true,
-};
+class FillTool implements ITool {
+  readonly id = "fill";
+  readonly label = "Paint Bucket";
+  readonly shortcut = "G";
+  readonly icon = <SvgIcon src={paintBucketIconSvg} />;
+  readonly placement = { group: ToolGroup.Fill, row: 0, column: 0 } as const;
+  readonly modifiesPixels = true;
+  readonly skipAutoHistory = true;
+  readonly paintsOntoPixelLayer = true;
+  readonly pixelOnly = true;
+  createHandler(): ToolHandler {
+    return createFillHandler();
+  }
+  readonly Options = FillOptions;
+}
+
+export const fillTool: ITool = new FillTool();

@@ -2,8 +2,8 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { blendPixelOver } from "./primitives";
-import type { SelMask } from "./primitives";
+import { blendPixelOver } from "../_shared/primitives";
+import type { SelMask } from "../_shared/primitives";
 
 /**
  * Paints a clone-stamp capsule segment from (x0,y0) to (x1,y1).

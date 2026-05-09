@@ -2,12 +2,15 @@ import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useAppContext } from "@/core/store/AppContext";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import gradientIconSvg from "./gradient.svg?raw";
 import type { RGBAColor } from "@/types";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -618,9 +621,19 @@ function GradientOptions({
   );
 }
 
-export const gradientTool: ToolDefinition = {
-  createHandler: createGradientHandler,
-  Options: GradientOptions,
-  modifiesPixels: true,
-  paintsOntoPixelLayer: true,
-};
+class GradientTool implements ITool {
+  readonly id = "gradient";
+  readonly label = "Gradient";
+  readonly shortcut = "G";
+  readonly icon = <SvgIcon src={gradientIconSvg} />;
+  readonly placement = { group: ToolGroup.Fill, row: 0, column: 1 } as const;
+  readonly modifiesPixels = true;
+  readonly paintsOntoPixelLayer = true;
+  readonly pixelOnly = true;
+  createHandler(): ToolHandler {
+    return createGradientHandler();
+  }
+  readonly Options = GradientOptions;
+}
+
+export const gradientTool: ITool = new GradientTool();

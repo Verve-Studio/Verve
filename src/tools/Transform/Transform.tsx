@@ -7,14 +7,14 @@ import type {
   TransformInterpolation,
 } from "@/types";
 import styles from "./transform.module.scss";
-import { resizeCursorForHandle } from "./algorithm/resizeCursor";
+import { resizeCursorForHandle } from "../_shared/resizeCursor";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
 
 // ─── Matrix helpers ───────────────────────────────────────────────────────────
 
@@ -1347,7 +1347,18 @@ function TransformOptions(_props: {
   return <TransformToolbar />;
 }
 
-export const transformTool: ToolDefinition = {
-  createHandler: createTransformHandler,
-  Options: TransformOptions,
-};
+class TransformTool implements ITool {
+  readonly id = "transform";
+  readonly label = "Free Transform";
+  readonly shortcut = "";
+  // Transform is invoked via Ctrl+T / menu — never appears on the toolbar,
+  // so we use a no-op icon and null placement.
+  readonly icon = <></>;
+  readonly placement = null;
+  createHandler(): ToolHandler {
+    return createTransformHandler();
+  }
+  readonly Options = TransformOptions;
+}
+
+export const transformTool: ITool = new TransformTool();

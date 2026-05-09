@@ -3,12 +3,13 @@ import { useAppContext } from "@/core/store/AppContext";
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -99,9 +100,51 @@ function ZoomOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const zoomTool: ToolDefinition = {
-  createHandler: createZoomHandler,
-  Options: ZoomOptions,
+class ZoomTool implements ITool {
+  readonly id = "zoom";
+  readonly label = "Zoom";
+  readonly shortcut = "Z";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <circle
+          cx="7"
+          cy="7"
+          r="4.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M10 10 L13.5 13.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+        <path
+          d="M5 7 L9 7 M7 5 L7 9"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.Navigation,
+    row: 0,
+    column: 1,
+  } as const;
   // Operate regardless of the active layer's type — zoom doesn't touch pixels.
-  worksOnAllLayers: true,
-};
+  readonly worksOnAllLayers = true;
+  createHandler(): ToolHandler {
+    return createZoomHandler();
+  }
+  readonly Options = ZoomOptions;
+}
+
+export const zoomTool: ITool = new ZoomTool();

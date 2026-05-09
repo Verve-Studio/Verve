@@ -10,13 +10,16 @@ import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { loadImagePixels } from "@/core/io/imageLoader";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
-import { resizeCursorForHandle } from "./algorithm/resizeCursor";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import frameIconSvg from "./frame.svg?raw";
+import { resizeCursorForHandle } from "../_shared/resizeCursor";
 
 // ─── Module-level defaults for new frames ─────────────────────────────────────
 
@@ -895,10 +898,20 @@ function FrameOptions({
 
 // ─── Tool definition ──────────────────────────────────────────────────────────
 
-export const frameTool: ToolDefinition = {
-  createHandler: createFrameHandler,
-  Options: FrameOptions,
+class FrameTool implements ITool {
+  readonly id = "frame";
+  readonly label = "Frame";
+  readonly shortcut = "K";
+  readonly icon = <SvgIcon src={frameIconSvg} />;
+  readonly placement = { group: ToolGroup.Crop, row: 0, column: 1 } as const;
   // Frame layers are parametric and rasterized by the canvas — the tool needs
   // to be allowed to operate on its own (non-pixel) layer type.
-  worksOnAllLayers: true,
-};
+  readonly worksOnAllLayers = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createFrameHandler();
+  }
+  readonly Options = FrameOptions;
+}
+
+export const frameTool: ITool = new FrameTool();

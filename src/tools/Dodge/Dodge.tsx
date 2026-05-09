@@ -1,14 +1,18 @@
 import React, { useState } from "react";
-import { dodgeBurnThickLine } from "./algorithm/dodgeBurn";
-import type { DodgeBurnRange } from "./algorithm/dodgeBurn";
+import { dodgeBurnThickLine } from "./dodgeBurn";
+import type { DodgeBurnRange } from "./dodgeBurn";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import dodgeIconSvg from "./dodge.svg?raw";
+import burnIconSvg from "./burn.svg?raw";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -225,18 +229,41 @@ function DodgeBurnOptions({
 
 // ─── Tool exports ─────────────────────────────────────────────────────────────
 
-export const dodgeTool: ToolDefinition = {
-  createHandler: createDodgeBurnHandler(dodgeOptions, 1),
-  Options: ({ styles }) => (
+class DodgeTool implements ITool {
+  readonly id = "dodge";
+  readonly label = "Dodge";
+  readonly shortcut = "O";
+  readonly icon = <SvgIcon src={dodgeIconSvg} />;
+  readonly placement = { group: ToolGroup.Tonal, row: 0, column: 0 } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  private readonly handlerFactory = createDodgeBurnHandler(dodgeOptions, 1);
+  createHandler(): ToolHandler {
+    return this.handlerFactory();
+  }
+  readonly Options = ({ styles }: { styles: ToolOptionsStyles }) => (
     <DodgeBurnOptions opts={dodgeOptions} styles={styles} />
-  ),
-  modifiesPixels: true,
-};
+  );
+}
 
-export const burnTool: ToolDefinition = {
-  createHandler: createDodgeBurnHandler(burnOptions, -1),
-  Options: ({ styles }) => (
+class BurnTool implements ITool {
+  readonly id = "burn";
+  readonly label = "Burn";
+  readonly shortcut = "O";
+  readonly icon = <SvgIcon src={burnIconSvg} />;
+  readonly placement = { group: ToolGroup.Tonal, row: 0, column: 1 } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  private readonly handlerFactory = createDodgeBurnHandler(burnOptions, -1);
+  createHandler(): ToolHandler {
+    return this.handlerFactory();
+  }
+  readonly Options = ({ styles }: { styles: ToolOptionsStyles }) => (
     <DodgeBurnOptions opts={burnOptions} styles={styles} />
-  ),
-  modifiesPixels: true,
-};
+  );
+}
+
+export const dodgeTool: ITool = new DodgeTool();
+export const burnTool: ITool = new BurnTool();

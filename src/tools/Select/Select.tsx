@@ -1,14 +1,17 @@
 import React, { useState } from "react";
-import { selectionStore } from "../core/store/selectionStore";
-import type { SelectionMode } from "../core/store/selectionStore";
+import { selectionStore } from "../../core/store/selectionStore";
+import type { SelectionMode } from "../../core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import marqueeRectIconSvg from "./marquee-rect.svg?raw";
 
 // ─── Shared options ───────────────────────────────────────────────────────────
 
@@ -216,7 +219,20 @@ function SelectOptions({
   );
 }
 
-export const selectTool: ToolDefinition = {
-  createHandler: createSelectHandler,
-  Options: SelectOptions,
-};
+class SelectTool implements ITool {
+  readonly id = "select";
+  readonly label = "Marquee";
+  readonly shortcut = "M";
+  readonly icon = <SvgIcon src={marqueeRectIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Selection,
+    row: 0,
+    column: 0,
+  } as const;
+  createHandler(): ToolHandler {
+    return createSelectHandler();
+  }
+  readonly Options = SelectOptions;
+}
+
+export const selectTool: ITool = new SelectTool();

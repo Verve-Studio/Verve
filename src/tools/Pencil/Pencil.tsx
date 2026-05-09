@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { bresenham, blendPixelOver } from "./algorithm/primitives";
-import { walkQuadBezier, stampAirbrush } from "./algorithm/brushStroke";
-import type { BrushShape } from "./algorithm/brushStroke";
+import { bresenham, blendPixelOver } from "../_shared/primitives";
+import { walkQuadBezier, stampAirbrush } from "./brushStroke";
+import type { BrushShape } from "./brushStroke";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useAppContext } from "@/core/store/AppContext";
 import { selectionStore } from "@/core/store/selectionStore";
@@ -13,12 +13,15 @@ import type { PixelBrush } from "@/types";
 import type { WebGPURenderer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import pencilIconSvg from "./pencil.svg?raw";
 import {
   resolveNearestPaletteIndex,
   writeIndexToLayer,
@@ -1664,12 +1667,26 @@ function PencilOptions({
   );
 }
 
-export const pencilTool: ToolDefinition = {
-  createHandler: createPencilHandler,
-  Options: PencilOptions,
-  modifiesPixels: true,
-  paintsOntoPixelLayer: true,
-};
+class PencilTool implements ITool {
+  readonly id = "pencil";
+  readonly label = "Pencil";
+  readonly shortcut = "N";
+  readonly icon = <SvgIcon src={pencilIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Painting,
+    row: 0,
+    column: 1,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly paintsOntoPixelLayer = true;
+  readonly pixelOnly = true;
+  createHandler(): ToolHandler {
+    return createPencilHandler();
+  }
+  readonly Options = PencilOptions;
+}
+
+export const pencilTool: ITool = new PencilTool();
 
 // Expose for potential reuse by other tools
 export { createPencilHandler };

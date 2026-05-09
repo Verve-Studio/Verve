@@ -16,7 +16,7 @@
  * interpolated at sample time.
  */
 import type { BrushTipShape } from "@/types";
-import { computeSdfFromRgba, sdfFromBase64, sdfToBase64 } from "./sdf";
+import { computeSdfFromRgba, sdfFromBase64, sdfToBase64 } from "../_shared/sdf";
 
 export interface TipSampler {
   /** Aspect ratio of the source bitmap (height / width). 1 for procedural. */

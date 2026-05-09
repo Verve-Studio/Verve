@@ -1,17 +1,18 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 import {
   forEachBrushPixel,
   forEachStamp,
   markBrushDirty,
-} from "./algorithm/localBrush";
+} from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -288,8 +289,45 @@ function SharpenOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const sharpenTool: ToolDefinition = {
-  createHandler: createSharpenHandler,
-  Options: SharpenOptions,
-  modifiesPixels: true,
-};
+class SharpenTool implements ITool {
+  readonly id = "sharpen";
+  readonly label = "Sharpen";
+  readonly shortcut = "R";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M8 2.5 L4.5 13.5 L11.5 13.5 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M6.5 9 L9.5 9"
+          stroke="currentColor"
+          strokeWidth="1"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.LocalEffect,
+    row: 0,
+    column: 1,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createSharpenHandler();
+  }
+  readonly Options = SharpenOptions;
+}
+
+export const sharpenTool: ITool = new SharpenTool();

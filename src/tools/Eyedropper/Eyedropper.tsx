@@ -5,12 +5,15 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { RGBAColor } from "@/types";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolOptionsStyles,
   ToolContext,
   ToolPointerPos,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import colorPickerIconSvg from "./color-picker.svg?raw";
 
 // ─── Module-level options (read synchronously inside pointer events) ──────────
 
@@ -198,7 +201,20 @@ function EyedropperOptions({
   );
 }
 
-export const eyedropperTool: ToolDefinition = {
-  createHandler: createEyedropperHandler,
-  Options: EyedropperOptions,
-};
+class EyedropperTool implements ITool {
+  readonly id = "eyedropper";
+  readonly label = "Eyedropper";
+  readonly shortcut = "I";
+  readonly icon = <SvgIcon src={colorPickerIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Sampling,
+    row: 0,
+    column: 0,
+  } as const;
+  createHandler(): ToolHandler {
+    return createEyedropperHandler();
+  }
+  readonly Options = EyedropperOptions;
+}
+
+export const eyedropperTool: ITool = new EyedropperTool();

@@ -2,12 +2,15 @@ import React, { useEffect, useState } from "react";
 import { cropStore } from "@/core/store/cropStore";
 import type { CropRect } from "@/core/store/cropStore";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import cropIconSvg from "./crop.svg?raw";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +77,16 @@ function CropOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const cropTool: ToolDefinition = {
-  createHandler: createCropHandler,
-  Options: CropOptions,
-};
+class CropTool implements ITool {
+  readonly id = "crop";
+  readonly label = "Crop";
+  readonly shortcut = "C";
+  readonly icon = <SvgIcon src={cropIconSvg} />;
+  readonly placement = { group: ToolGroup.Crop, row: 0, column: 0 } as const;
+  createHandler(): ToolHandler {
+    return createCropHandler();
+  }
+  readonly Options = CropOptions;
+}
+
+export const cropTool: ITool = new CropTool();

@@ -2,8 +2,8 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { bresenham, wuLine } from "./primitives";
-import type { SelMask } from "./primitives";
+import { bresenham, wuLine } from "../_shared/primitives";
+import type { SelMask } from "../_shared/primitives";
 
 /**
  * Apply one erase pixel operation in canvas-space.

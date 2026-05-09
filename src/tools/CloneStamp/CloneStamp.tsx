@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { stampCloneSegment } from "./algorithm/cloneStamp";
+import { stampCloneSegment } from "./cloneStampStroke";
 import { cloneStampStore } from "@/core/store/cloneStampStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import cloneStampIconSvg from "./clone-stamp.svg?raw";
 
 // ─── Module-level options ────────────────────────────────────────────────────
 
@@ -360,9 +363,24 @@ const SOURCE_DOT_STYLE: React.CSSProperties = {
   display: "inline-block",
 };
 
-export const cloneStampTool: ToolDefinition = {
-  createHandler: createCloneStampHandler,
-  Options: CloneStampOptions,
-  modifiesPixels: true,
-  paintsOntoPixelLayer: true,
-};
+class CloneStampTool implements ITool {
+  readonly id = "clone-stamp";
+  readonly label = "Clone Stamp";
+  readonly shortcut = "S";
+  readonly icon = <SvgIcon src={cloneStampIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Retouching,
+    row: 0,
+    column: 0,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly paintsOntoPixelLayer = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createCloneStampHandler();
+  }
+  readonly Options = CloneStampOptions;
+}
+
+export const cloneStampTool: ITool = new CloneStampTool();

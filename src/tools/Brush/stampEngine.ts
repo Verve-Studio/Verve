@@ -40,7 +40,7 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { blendPixelOver } from "./primitives";
+import { blendPixelOver } from "../_shared/primitives";
 import type { TipSampler } from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
 import {

@@ -11,12 +11,15 @@ import type {
   WebGPURenderer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import moveIconSvg from "./move.svg?raw";
 
 // ─── Snap-to-guide options ────────────────────────────────────────────────────
 
@@ -708,9 +711,18 @@ function MoveOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const moveTool: ToolDefinition = {
-  createHandler: createMoveHandler,
-  Options: MoveOptions,
-  modifiesPixels: true,
-  worksOnAllLayers: true,
-};
+class MoveTool implements ITool {
+  readonly id = "move";
+  readonly label = "Move";
+  readonly shortcut = "V";
+  readonly icon = <SvgIcon src={moveIconSvg} />;
+  readonly placement = { group: ToolGroup.Move, row: 0, column: 0 } as const;
+  readonly modifiesPixels = true;
+  readonly worksOnAllLayers = true;
+  createHandler(): ToolHandler {
+    return createMoveHandler();
+  }
+  readonly Options = MoveOptions;
+}
+
+export const moveTool: ITool = new MoveTool();

@@ -6,11 +6,14 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import type {
   ToolContext,
-  ToolDefinition,
   ToolHandler,
   ToolOptionsStyles,
   ToolPointerPos,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import textIconSvg from "./text.svg?raw";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -810,9 +813,19 @@ function TextOptions({
 
 // ─── Tool export ─────────────────────────────────────────────────────────────
 
-export const textTool: ToolDefinition = {
-  createHandler: createTextHandler,
-  Options: TextOptions,
-  modifiesPixels: false,
-  skipAutoHistory: true,
-};
+class TextTool implements ITool {
+  readonly id = "text";
+  readonly label = "Type";
+  readonly shortcut = "T";
+  readonly icon = <SvgIcon src={textIconSvg} />;
+  readonly placement = { group: ToolGroup.Type, row: 0, column: 0 } as const;
+  readonly modifiesPixels = false;
+  readonly skipAutoHistory = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createTextHandler();
+  }
+  readonly Options = TextOptions;
+}
+
+export const textTool: ITool = new TextTool();

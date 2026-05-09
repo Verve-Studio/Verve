@@ -1,5 +1,5 @@
 import React from "react";
-import type { ToolDefinition, ToolHandler, ToolOptionsStyles } from "./types";
+import type { ToolDefinition, ToolHandler, ToolOptionsStyles } from "../_shared/types";
 
 // Stub for tools not yet implemented — no canvas behavior, no options UI.
 const noopHandler: ToolHandler = {

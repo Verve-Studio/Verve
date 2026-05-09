@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { selectionStore } from "../core/store/selectionStore";
+import { selectionStore } from "../../core/store/selectionStore";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 import {
   forEachStamp,
   markBrushDirty,
-} from "./algorithm/localBrush";
+} from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -585,8 +586,59 @@ function HealingBrushOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const healingBrushTool: ToolDefinition = {
-  createHandler: createHealingBrushHandler,
-  Options: HealingBrushOptions,
-  modifiesPixels: true,
-};
+class HealingBrushTool implements ITool {
+  readonly id = "healing-brush";
+  readonly label = "Healing Brush";
+  readonly shortcut = "J";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <g transform="rotate(-45 8 8)">
+          <rect
+            x="2.2"
+            y="6.2"
+            width="11.6"
+            height="3.6"
+            rx="1.2"
+            ry="1.2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <rect
+            x="6"
+            y="6.6"
+            width="4"
+            height="2.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="0.8"
+            opacity="0.6"
+          />
+          <circle cx="3.6" cy="7.4" r="0.4" fill="currentColor" />
+          <circle cx="3.6" cy="8.6" r="0.4" fill="currentColor" />
+          <circle cx="12.4" cy="7.4" r="0.4" fill="currentColor" />
+          <circle cx="12.4" cy="8.6" r="0.4" fill="currentColor" />
+        </g>
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.Retouching,
+    row: 0,
+    column: 1,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createHealingBrushHandler();
+  }
+  readonly Options = HealingBrushOptions;
+}
+
+export const healingBrushTool: ITool = new HealingBrushTool();

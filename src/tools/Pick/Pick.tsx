@@ -3,13 +3,14 @@ import type { ShapeLayerState, TextLayerState, Tool } from "@/types";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { useAppContext } from "@/core/store/AppContext";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
-import { getTextBounds } from "./text";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { getTextBounds } from "../Text/Text";
 
 // ─── Pixel-accurate alpha sampling ────────────────────────────────────────────
 
@@ -211,11 +212,36 @@ function PickOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const pickTool: ToolDefinition = {
-  createHandler: createPickHandler,
-  Options: PickOptions,
+class PickTool implements ITool {
+  readonly id = "pick";
+  readonly label = "Pick";
+  readonly shortcut = "A";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M2.5 2 L2.5 12.5 L5.2 9.8 L7.0 13.6 L8.6 12.8 L6.8 9.0 L10.5 9.0 Z"
+          fill="currentColor"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1"
+        />
+      </svg>
+    </span>
+  );
+  readonly placement = { group: ToolGroup.Move, row: 0, column: 1 } as const;
   // Pick doesn't write pixels — but it does need to operate on text/shape/frame
   // layers and any layer in the stack, so flag worksOnAllLayers so Canvas's
   // parametric-layer guard doesn't suppress events.
-  worksOnAllLayers: true,
-};
+  readonly worksOnAllLayers = true;
+  createHandler(): ToolHandler {
+    return createPickHandler();
+  }
+  readonly Options = PickOptions;
+}
+
+export const pickTool: ITool = new PickTool();

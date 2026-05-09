@@ -1,17 +1,18 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 import {
   forEachBrushPixel,
   forEachStamp,
   markBrushDirty,
-} from "./algorithm/localBrush";
+} from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -293,8 +294,39 @@ function BlurOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const blurTool: ToolDefinition = {
-  createHandler: createBlurHandler,
-  Options: BlurOptions,
-  modifiesPixels: true,
-};
+class BlurTool implements ITool {
+  readonly id = "blur";
+  readonly label = "Blur";
+  readonly shortcut = "R";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M8 2.5 C 5 6.5, 4 8.5, 4 11 a4 4 0 0 0 8 0 c 0 -2.5 -1 -4.5 -4 -8.5 z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.LocalEffect,
+    row: 0,
+    column: 0,
+  } as const;
+  readonly modifiesPixels = true;
+  readonly pixelOnly = true;
+  readonly indexed8Unsupported = true;
+  createHandler(): ToolHandler {
+    return createBlurHandler();
+  }
+  readonly Options = BlurOptions;
+}
+
+export const blurTool: ITool = new BlurTool();

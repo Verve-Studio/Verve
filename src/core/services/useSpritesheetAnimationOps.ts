@@ -12,6 +12,12 @@ import {
 } from "@/core/store/paletteCycleStore";
 import type { ImportSpritesheetFramesResult } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
 import type { ExportAnimationFramesSettings } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
+import { exportPng } from "@/core/io/exportPng";
+import { exportJpeg } from "@/core/io/exportJpeg";
+import { exportWebp } from "@/core/io/exportWebp";
+import { exportTga } from "@/core/io/exportTga";
+import { exportTiff } from "@/core/io/exportTiff";
+import { encodeAnimatedGif } from "@/core/io/encodeAnimatedGif";
 
 interface UseSpritesheetAnimationOpsOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
@@ -252,12 +258,6 @@ export function useSpritesheetAnimationOps({
 
       const isGif = settings.format === "gif";
 
-      const { exportPng } = await import("@/core/io/exportPng");
-      const { exportJpeg } = await import("@/core/io/exportJpeg");
-      const { exportWebp } = await import("@/core/io/exportWebp");
-      const { exportTga } = await import("@/core/io/exportTga");
-      const { exportTiff } = await import("@/core/io/exportTiff");
-
       const encode = (
         data: Uint8Array,
         w: number,
@@ -444,9 +444,6 @@ export function useSpritesheetAnimationOps({
         }
 
         if (isGif && gifFrames.length > 0) {
-          const { encodeAnimatedGif } = await import(
-            "@/core/io/encodeAnimatedGif"
-          );
           const bytes = encodeAnimatedGif({
             frames: gifFrames,
             width: gifW,

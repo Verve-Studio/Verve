@@ -2,8 +2,8 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { blendPixelOver } from "./primitives";
-import type { SelMask } from "./primitives";
+import { blendPixelOver } from "../_shared/primitives";
+import type { SelMask } from "../_shared/primitives";
 
 /** Brush shape metric used by the airbrush stamp. */
 export type BrushShape = "round" | "square" | "diamond";

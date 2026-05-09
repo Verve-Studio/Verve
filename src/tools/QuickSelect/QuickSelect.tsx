@@ -4,16 +4,17 @@ import type { SelectionMode } from "@/core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
 import {
   forEachStamp,
   markBrushDirty as _markBrushDirty,
-} from "./algorithm/localBrush";
+} from "../_shared/localBrush";
 void _markBrushDirty;
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -372,7 +373,44 @@ function QuickSelectOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const quickSelectTool: ToolDefinition = {
-  createHandler: createQuickSelectHandler,
-  Options: QuickSelectOptions,
-};
+class QuickSelectTool implements ITool {
+  readonly id = "quick-select";
+  readonly label = "Quick Selection";
+  readonly shortcut = "W";
+  readonly icon = (
+    <span style={{ display: "block", width: "100%", height: "100%" }}>
+      <svg
+        viewBox="0 0 16 16"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <path
+          d="M2 11 C 4 6, 12 6, 14 11"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+          strokeDasharray="1.6 1.6"
+        />
+        <path
+          d="M9 3 L13 7"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <circle cx="9" cy="3" r="1.4" fill="currentColor" />
+      </svg>
+    </span>
+  );
+  readonly placement = {
+    group: ToolGroup.Selection,
+    row: 1,
+    column: 1,
+  } as const;
+  createHandler(): ToolHandler {
+    return createQuickSelectHandler();
+  }
+  readonly Options = QuickSelectOptions;
+}
+
+export const quickSelectTool: ITool = new QuickSelectTool();

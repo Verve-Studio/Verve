@@ -3,12 +3,15 @@ import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
 import type { SelectionMode } from "@/core/store/selectionStore";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import polygonSelectIconSvg from "./polygon-select.svg?raw";
 
 // ─── Module-level options ──────────────────────────────────────────────────────
 
@@ -244,7 +247,21 @@ function PolygonalSelectionOptions({
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export const polygonalSelectionTool: ToolDefinition = {
-  createHandler: createPolygonalSelectionHandler,
-  Options: PolygonalSelectionOptions,
-};
+class PolygonalSelectionTool implements ITool {
+  readonly id = "polygonal-selection";
+  readonly label = "Polygonal Lasso";
+  readonly shortcut = "L";
+  readonly icon = <SvgIcon src={polygonSelectIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Selection,
+    row: 1,
+    column: 0,
+  } as const;
+  readonly shortcutCycle = "lasso" as const;
+  createHandler(): ToolHandler {
+    return createPolygonalSelectionHandler();
+  }
+  readonly Options = PolygonalSelectionOptions;
+}
+
+export const polygonalSelectionTool: ITool = new PolygonalSelectionTool();

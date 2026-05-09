@@ -1,14 +1,17 @@
 import React, { useState } from "react";
-import { selectionStore } from "../core/store/selectionStore";
-import type { SelectionMode } from "../core/store/selectionStore";
+import { selectionStore } from "../../core/store/selectionStore";
+import type { SelectionMode } from "../../core/store/selectionStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
-  ToolDefinition,
   ToolHandler,
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
-} from "./types";
+} from "../_shared/types";
+import type { ITool } from "../_shared/ITool";
+import { ToolGroup } from "../_shared/ITool";
+import { SvgIcon } from "../_shared/SvgIcon";
+import lassoIconSvg from "./lasso.svg?raw";
 
 // ─── Shared options ────────────────────────────────────────────────────────────────
 
@@ -92,7 +95,21 @@ function LassoOptions({
   );
 }
 
-export const lassoTool: ToolDefinition = {
-  createHandler: createLassoHandler,
-  Options: LassoOptions,
-};
+class LassoTool implements ITool {
+  readonly id = "lasso";
+  readonly label = "Lasso";
+  readonly shortcut = "L";
+  readonly icon = <SvgIcon src={lassoIconSvg} />;
+  readonly placement = {
+    group: ToolGroup.Selection,
+    row: 0,
+    column: 1,
+  } as const;
+  readonly shortcutCycle = "polygonal-selection" as const;
+  createHandler(): ToolHandler {
+    return createLassoHandler();
+  }
+  readonly Options = LassoOptions;
+}
+
+export const lassoTool: ITool = new LassoTool();
