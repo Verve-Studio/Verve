@@ -1377,6 +1377,20 @@ function AppContent(): React.JSX.Element {
         setShowNewImageDialog={setShowNewImageDialog}
         showExportDialog={showExportDialog}
         setShowExportDialog={setShowExportDialog}
+        exportableLayers={state.layers
+          .filter((l) => {
+            if (!("type" in l)) return true; // pixel
+            const t = (l as { type: string }).type;
+            // Only pixel-bearing leaves; group containers and parametric
+            // helpers (mask, adjustment) aren't directly exportable.
+            return (
+              t === "text" ||
+              t === "shape" ||
+              t === "frame" ||
+              t === "composite"
+            );
+          })
+          .map((l) => ({ id: l.id, name: l.name }))}
         showResizeDialog={showResizeDialog}
         setShowResizeDialog={setShowResizeDialog}
         showResizeCanvasDialog={showResizeCanvasDialog}

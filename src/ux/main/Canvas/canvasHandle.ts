@@ -528,6 +528,7 @@ export function useCanvasHandle({
         const layer = glLayersRef.current.get(layerId);
         if (!renderer || !layer) return;
         const w = renderer.pixelWidth;
+        const indexed = layer.format === "indexed8";
         for (let i = 0; i < mask.length; i++) {
           if (!mask[i]) continue;
           const cx = i % w;
@@ -541,6 +542,13 @@ export function useCanvasHandle({
             ly >= layer.layerHeight
           )
             continue;
+          if (indexed) {
+            // Indexed8 has 1 byte per pixel; 255 is the transparent sentinel.
+            // No partial alpha — any selected pixel is wiped to transparent.
+            const pi = ly * layer.layerWidth + lx;
+            (layer.data as Uint8Array)[pi] = 255;
+            continue;
+          }
           const pi = (ly * layer.layerWidth + lx) * 4;
           const f = 1 - mask[i] / 255;
           if (layer.format === "rgba32f") {
@@ -555,7 +563,14 @@ export function useCanvasHandle({
             layer.data[pi + 3] = Math.round(layer.data[pi + 3] * f);
           }
         }
-        renderer.flushLayer(layer);
+        if (indexed) {
+          renderer.flushLayer(
+            layer,
+            swatchesRef.current as import("@/types").RGBAColor[],
+          );
+        } else {
+          renderer.flushLayer(layer);
+        }
         renderFromPlan();
       },
 

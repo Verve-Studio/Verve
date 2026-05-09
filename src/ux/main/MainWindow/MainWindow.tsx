@@ -128,6 +128,9 @@ export interface MainWindowProps {
   setShowNewImageDialog: (v: boolean) => void;
   showExportDialog: boolean;
   setShowExportDialog: (v: boolean) => void;
+  exportableLayers: import(
+    "@/ux/modals/ExportDialog/ExportDialog"
+  ).ExportableLayerOption[];
   showResizeDialog: boolean;
   setShowResizeDialog: (v: boolean) => void;
   showResizeCanvasDialog: boolean;
@@ -343,6 +346,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     setShowNewImageDialog,
     showExportDialog,
     setShowExportDialog,
+    exportableLayers,
     showResizeDialog,
     setShowResizeDialog,
     showResizeCanvasDialog,
@@ -724,6 +728,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         isHdrDocument={pixelFormat === "rgba32f"}
         documentWidth={canvasWidth}
         documentHeight={canvasHeight}
+        exportableLayers={exportableLayers}
         onCancel={() => setShowExportDialog(false)}
         onConfirm={async (settings) => {
           setShowExportDialog(false);
