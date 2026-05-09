@@ -551,8 +551,11 @@ export type {
   PaperTexture,
   DynamicCurve,
   DynamicSource,
-} from "./brush";
-export { makeDefaultBrush, identityCurve } from "./brush";
+} from "@/core/tools/Brush/brushPreset";
+export {
+  makeDefaultBrush,
+  identityCurve,
+} from "@/core/tools/Brush/brushPreset";
 
 export type ToneMappingOperator = "reinhard" | "clamp";
 
@@ -600,7 +603,7 @@ export interface AppState {
   /** Pixel brushes stored with this document (travel with the .verve file). */
   pixelBrushes: PixelBrush[];
   /** Paint brushes stored with this document (travel with the .verve file). */
-  brushes: import("./brush").Brush[];
+  brushes: import("@/core/tools/Brush/brushPreset").Brush[];
   /** Currently selected paint brush id (looked up first in document, then user store). */
   activeBrushId: string | null;
   layers: LayerState[];
