@@ -112,6 +112,8 @@ export class WebGPURenderer {
       offsetX: number;
       offsetY: number;
       baseMaskVersion: number; // -1 when there is no base mask
+      baseMaskOffsetX: number;
+      baseMaskOffsetY: number;
       paramsKey: string;
       tex: GPUTexture;
       lastEncodeTime: number; // performance.now() of the last real recompute
@@ -1496,7 +1498,9 @@ export class WebGPURenderer {
       if (entry.kind === "layer") {
         if (!entry.layer.visible || entry.layer.opacity === 0) continue;
         const l = entry.layer;
-        const maskPart = entry.mask ? `:M${entry.mask.contentVersion}` : "";
+        const maskPart = entry.mask
+          ? `:M${entry.mask.contentVersion}:${entry.mask.offsetX}:${entry.mask.offsetY}`
+          : "";
         out.push(
           `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`,
         );
@@ -1531,9 +1535,11 @@ export class WebGPURenderer {
         const baseMaskVersion = entry.baseMask
           ? entry.baseMask.contentVersion
           : -1;
+        const baseMaskOx = entry.baseMask ? entry.baseMask.offsetX : 0;
+        const baseMaskOy = entry.baseMask ? entry.baseMask.offsetY : 0;
         const paramsKey = computeAdjGroupParamsKey(entry.adjustments);
         out.push(
-          `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`,
+          `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${baseMaskOx}:${baseMaskOy}:${paramsKey}`,
         );
       } else {
         // EffectRenderOp (standalone effect)
@@ -2159,14 +2165,23 @@ export class WebGPURenderer {
         const baseMaskVersion = entry.baseMask
           ? entry.baseMask.contentVersion
           : -1;
+        const baseMaskOx = entry.baseMask ? entry.baseMask.offsetX : 0;
+        const baseMaskOy = entry.baseMask ? entry.baseMask.offsetY : 0;
 
         if (this.adjGroupCacheEnabled) {
           const cached = this.adjGroupCache.get(entry.parentLayerId);
 
-          const paramsAndMaskMatch =
+          // Params + mask buffer identity match (mask buffer pixels and
+          // version match — mask position is checked separately below).
+          const paramsAndMaskBufferMatch =
             !!cached &&
             cached.baseMaskVersion === baseMaskVersion &&
             cached.paramsKey === paramsKey;
+          // Stricter: mask is also at the exact same offset.
+          const paramsAndMaskMatch =
+            paramsAndMaskBufferMatch &&
+            cached!.baseMaskOffsetX === baseMaskOx &&
+            cached!.baseMaskOffsetY === baseMaskOy;
           const positionAndParamsMatch =
             paramsAndMaskMatch &&
             cached!.offsetX === entry.baseLayer.offsetX &&
@@ -2181,18 +2196,27 @@ export class WebGPURenderer {
           // re-runs exactly once on pointer-up, never mid-stroke on idle.
           const throttledMatch =
             !fullMatch && positionAndParamsMatch && this.strokeActive;
-          // Move-drag: only the layer offset changed (params, content, mask
-          // identical). The cached canvas-sized adj output already contains
-          // the layer's adjusted pixels at the OLD offset — shift the blit by
+          // Move-drag: layer offset changed and the mask either didn't
+          // move OR moved by the exact same delta as the layer (the move
+          // tool moves a mask along with its parent in lockstep). The
+          // cached canvas-sized adj output already contains the layer's
+          // adjusted pixels at the OLD offset — shift the blit by
           // (current - cached) to draw it at the NEW position. Free move.
-          // Selection masks are anchored to canvas coords so they will appear
-          // to drag with the layer for the duration of the drag; the next
-          // non-preview frame (pointer-up) re-encodes correctly.
+          const layerDx = cached
+            ? entry.baseLayer.offsetX - cached.offsetX
+            : 0;
+          const layerDy = cached
+            ? entry.baseLayer.offsetY - cached.offsetY
+            : 0;
+          const maskDx = cached ? baseMaskOx - cached.baseMaskOffsetX : 0;
+          const maskDy = cached ? baseMaskOy - cached.baseMaskOffsetY : 0;
+          const maskFollowsLayer = layerDx === maskDx && layerDy === maskDy;
           const moveOnlyMatch =
             !fullMatch &&
             !throttledMatch &&
             this.previewMode &&
-            paramsAndMaskMatch &&
+            paramsAndMaskBufferMatch &&
+            maskFollowsLayer &&
             cached!.baseContentVersion === entry.baseLayer.contentVersion;
 
           if (fullMatch) {
@@ -2213,7 +2237,7 @@ export class WebGPURenderer {
             );
             [src, dst] = [dst, src];
             srcIsEmpty = false;
-            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${paramsKey}`;
+            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${baseMaskOx}:${baseMaskOy}:${paramsKey}`;
             continue;
           } else if (moveOnlyMatch) {
             // Composite the cached tex with an offset delta and skip the
@@ -2234,7 +2258,7 @@ export class WebGPURenderer {
             );
             [src, dst] = [dst, src];
             srcIsEmpty = false;
-            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${paramsKey}`;
+            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${baseMaskOx}:${baseMaskOy}:${paramsKey}`;
             continue;
           } else {
             // Cache miss: run all adjustment passes.
@@ -2263,6 +2287,8 @@ export class WebGPURenderer {
               offsetX: entry.baseLayer.offsetX,
               offsetY: entry.baseLayer.offsetY,
               baseMaskVersion,
+              baseMaskOffsetX: baseMaskOx,
+              baseMaskOffsetY: baseMaskOy,
               paramsKey,
               tex: cacheTex,
               lastEncodeTime: performance.now(),
@@ -2304,7 +2330,7 @@ export class WebGPURenderer {
         [src, dst] = [dst, src];
         srcIsEmpty = false;
         const l = entry.baseLayer;
-        inputFp += `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${paramsKey}`;
+        inputFp += `|AG:${entry.parentLayerId}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:M${baseMaskVersion}:${baseMaskOx}:${baseMaskOy}:${paramsKey}`;
       } else {
         // EffectRenderOp — visible guard already handled per-op in EffectEncoder
         if (!entry.visible) continue;
@@ -2590,10 +2616,10 @@ export class WebGPURenderer {
     //   offset  0: opacity    : f32
     //   offset  4: blendMode  : u32
     //   offset  8: (pad to align dstRect to 16)
-    //   offset 16: dstRect    : vec4f  (4x4 = 16 bytes)
+    //   offset 16: dstRect    : vec4f  (16 bytes)
     //   offset 32: hasMask    : u32
-    //   offset 36: (pad to align _pad to 16)
-    //   offset 48: _pad       : vec3u  (12 bytes)
+    //   offset 36: (pad to align maskRect to 16)
+    //   offset 48: maskRect   : vec4f  (16 bytes; mask rect in canvas-normalised coords)
     //   total size: 64 bytes
     // Acquire a reusable (uniform, vertex) buffer pair from the pool.
     const slot = this.acquireCompositeBuffers();
@@ -2606,7 +2632,19 @@ export class WebGPURenderer {
     unifView.setFloat32(24, lw / w, true); // dstRect.z
     unifView.setFloat32(28, lh / h, true); // dstRect.w
     unifView.setUint32(32, maskLayer ? 1 : 0, true);
-    // _pad at offset 48: left as zero
+    // maskRect: where the mask buffer covers in canvas-normalised coords.
+    // Outside this rect the shader treats the mask as 0 (parent hidden).
+    if (maskLayer) {
+      unifView.setFloat32(48, maskLayer.offsetX / w, true);
+      unifView.setFloat32(52, maskLayer.offsetY / h, true);
+      unifView.setFloat32(56, maskLayer.layerWidth / w, true);
+      unifView.setFloat32(60, maskLayer.layerHeight / h, true);
+    } else {
+      unifView.setFloat32(48, 0, true);
+      unifView.setFloat32(52, 0, true);
+      unifView.setFloat32(56, 1, true);
+      unifView.setFloat32(60, 1, true);
+    }
 
     writeUniformBuffer(device, unifBuf, this.compositeUnifAB);
 

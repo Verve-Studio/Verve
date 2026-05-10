@@ -1,9 +1,11 @@
 struct CompositeUniforms {
   opacity   : f32,
   blendMode : u32,
-  dstRect   : vec4f,
+  dstRect   : vec4f,    // layer rect in canvas-normalised coords (xy=offset, zw=size)
   hasMask   : u32,
-  _pad      : vec3u,
+  maskRect  : vec4f,    // mask rect in canvas-normalised coords; sampled at the
+                        // dstUV transformed into mask-local UV. Outside [0,1]
+                        // → mask treated as 0 (parent hidden).
 }
 
 struct VertexOutput {
@@ -56,7 +58,12 @@ fn fs_composite(in: VertexOutput) -> @location(0) vec4f {
   src.a *= u.opacity;
   let dstUV = u.dstRect.xy + in.uv * u.dstRect.zw;
   if (u.hasMask != 0u) {
-    let maskVal = textureSample(maskTex, imageSampler, dstUV).r;
+    // Transform the canvas-space dstUV into mask-local UV. Mask buffer
+    // covers `maskRect` in canvas-normalised coords; outside that rect
+    // the mask is treated as 0 (parent fully hidden).
+    let maskUV = (dstUV - u.maskRect.xy) / u.maskRect.zw;
+    let inside = step(vec2f(0.0), maskUV) * step(maskUV, vec2f(1.0));
+    let maskVal = textureSample(maskTex, imageSampler, maskUV).r * inside.x * inside.y;
     src.a *= maskVal;
   }
   let dst = textureSample(dstTex, imageSampler, dstUV);

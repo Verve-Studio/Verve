@@ -8,10 +8,7 @@ import type {
   LayerState,
 } from "@/types";
 import { isContainerLayer } from "@/types";
-import type {
-  GpuLayer,
-  WebGPURenderer,
-} from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -188,14 +185,11 @@ function snapDelta(
 //
 // When a layer is moved, all of its descendants must move with it — masks
 // follow their parent, group/composite children follow their container.
-// Followers fall into two flavours:
-//   - Offset followers: any layer with a normal `offsetX/Y` GpuLayer (pixel,
-//     text, shape, frame). Shifted by adjusting offsetX/Y.
-//   - Mask followers: full-canvas mask GpuLayers. Shifted by translating
-//     their pixel buffer in place via `applyMaskTranslate`.
+// Every follower (pixel, text, shape, frame, AND mask) shifts via its
+// `offsetX/Y` — the composite shader factors mask offset into its sampling
+// transform, so a mask is just another GpuLayer with a position.
 // Adjustment layers carry no spatial offset and are skipped. Group /
-// composite containers themselves have no GpuLayer; we descend into their
-// `childIds`.
+// composite containers have no GpuLayer; we descend into their `childIds`.
 
 interface OffsetFollower {
   gl: GpuLayer;
@@ -204,18 +198,12 @@ interface OffsetFollower {
   ls: LayerState;
 }
 
-interface MaskFollower {
-  gl: GpuLayer;
-  origData: Uint8Array;
-}
-
 function collectFollowers(
   rootIds: readonly string[],
   ctx: ToolContext,
   excludeFromFollowers: readonly string[] = [],
-): { offsetFollowers: OffsetFollower[]; maskFollowers: MaskFollower[] } {
+): { offsetFollowers: OffsetFollower[] } {
   const offsetFs: OffsetFollower[] = [];
-  const maskFs: MaskFollower[] = [];
   const visited = new Set<string>();
   const excludeSet = new Set(excludeFromFollowers);
 
@@ -242,20 +230,13 @@ function collectFollowers(
     // its own GpuLayer offset), its mask child still gets pulled along.
     const skipSelf = excludeSet.has(id);
 
-    if ("type" in ls && ls.type === "mask") {
-      if (!skipSelf) {
-        const gl = ctx.getGpuLayer(id);
-        if (gl) {
-          maskFs.push({ gl, origData: (gl.data as Uint8Array).slice() });
-        }
-      }
-    } else if ("type" in ls && ls.type === "adjustment") {
+    if ("type" in ls && ls.type === "adjustment") {
       // Adjustments have no spatial offset.
     } else if (isContainerLayer(ls)) {
       // Container — descend into children. Containers themselves have no GpuLayer.
       for (const childId of ls.childIds) visit(childId);
     } else if (!skipSelf) {
-      // Pixel / text / shape / frame — track offsetX/Y.
+      // Pixel / text / shape / frame / mask — track offsetX/Y.
       const gl = ctx.getGpuLayer(id);
       if (gl) {
         offsetFs.push({ gl, origX: gl.offsetX, origY: gl.offsetY, ls });
@@ -268,40 +249,7 @@ function collectFollowers(
   };
 
   for (const id of rootIds) visit(id);
-  return { offsetFollowers: offsetFs, maskFollowers: maskFs };
-}
-
-/**
- * Translate a full-canvas mask GpuLayer's pixel buffer by (dx, dy) relative
- * to its captured snapshot, and flush to GPU. Keeps the mask spatially
- * aligned with its parent layer as the parent moves.
- */
-function applyMaskTranslate(
-  follower: MaskFollower,
-  dx: number,
-  dy: number,
-  renderer: WebGPURenderer,
-): void {
-  const { gl, origData } = follower;
-  const w = renderer.pixelWidth;
-  const h = renderer.pixelHeight;
-  const dst = gl.data as Uint8Array;
-  dst.fill(0);
-  for (let sy = 0; sy < h; sy++) {
-    const ty = sy + dy;
-    if (ty < 0 || ty >= h) continue;
-    for (let sx = 0; sx < w; sx++) {
-      const tx = sx + dx;
-      if (tx < 0 || tx >= w) continue;
-      const si = (sy * w + sx) * 4;
-      const di = (ty * w + tx) * 4;
-      dst[di] = origData[si];
-      dst[di + 1] = origData[si + 1];
-      dst[di + 2] = origData[si + 2];
-      dst[di + 3] = origData[si + 3];
-    }
-  }
-  renderer.flushLayer(gl);
+  return { offsetFollowers: offsetFs };
 }
 
 // ─── Display store (live position/size for options bar) ───────────────────────
@@ -365,7 +313,6 @@ function createMoveHandler(): ToolHandler {
   // explicitly selected layers + all of their descendants (mask children,
   // group/composite contents, recursively). Computed at pointer-down.
   let offsetFollowers: OffsetFollower[] = [];
-  let maskFollowers: MaskFollower[] = [];
   // For text layer move: track original ls.x / ls.y
   let textLayerSnapshot: TextLayerState | null = null;
   let textLayerOrigX = 0;
@@ -468,7 +415,6 @@ function createMoveHandler(): ToolHandler {
         originalOffsetX = 0;
         originalOffsetY = 0;
         offsetFollowers = [];
-        maskFollowers = [];
         cachedVisibleBounds = null;
       } else {
         // Whole-layer move (and parametric paths): set up followers.
@@ -496,13 +442,14 @@ function createMoveHandler(): ToolHandler {
         const exclude = isActiveParametric ? [ctx.layer.id] : [];
         const followers = collectFollowers(rootIds, ctx, exclude);
         offsetFollowers = followers.offsetFollowers;
-        maskFollowers = followers.maskFollowers;
 
         // Visible-bounds union across every offset-follower for snap-to-guide.
         // Mask followers are full-canvas and don't contribute a meaningful
         // visual bound. Parametric active layers are included when present
         // (their GpuLayer holds the rasterised content).
-        const boundsLayers: GpuLayer[] = offsetFollowers.map((f) => f.gl);
+        const boundsLayers: GpuLayer[] = offsetFollowers
+          .filter((f) => !("type" in f.ls && f.ls.type === "mask"))
+          .map((f) => f.gl);
         if (isActiveParametric) boundsLayers.push(ctx.layer);
 
         // The single-layer fast path (layer-local bounds + snapOrigX = the
@@ -622,10 +569,6 @@ function createMoveHandler(): ToolHandler {
         for (const f of offsetFollowers) {
           f.gl.offsetX = f.origX + sdx;
           f.gl.offsetY = f.origY + sdy;
-        }
-        // Translate every mask follower's pixel buffer in lock-step.
-        for (const f of maskFollowers) {
-          applyMaskTranslate(f, sdx, sdy, ctx.renderer);
         }
 
         ctx.render(ctx.layers);
@@ -750,12 +693,7 @@ function createMoveHandler(): ToolHandler {
             }
           }
         }
-        for (const f of maskFollowers) {
-          applyMaskTranslate(f, sdx, sdy, ctx.renderer);
-        }
-
         offsetFollowers = [];
-        maskFollowers = [];
         boundsAreCanvasSpace = false;
         ctx.render(ctx.layers);
       }

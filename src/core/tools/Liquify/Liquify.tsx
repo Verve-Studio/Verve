@@ -29,7 +29,7 @@ export const liquifyOptions = {
   /** Pressure modulates effective brush size. */
   pressureSize: false,
   /** Pressure modulates effective brush strength. */
-  pressureStrength: true,
+  pressureStrength: false,
   /** Used by twirl/pinch/bloat — how fast the rotation/contraction proceeds
    *  per-frame relative to the brush radius. */
   rate: 50,
