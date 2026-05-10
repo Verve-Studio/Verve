@@ -657,7 +657,6 @@ function AppContent(): React.JSX.Element {
     openPreferencesDialog: () => setShowPreferencesDialog(true),
     openLutManagerDialog: () => setShowLutManager(true),
     loadCubeLut: lutOps.loadCubeLut,
-    loadOcioConfig: lutOps.loadOcioConfig,
     setViewTransform: lutOps.setViewTransform,
     activeLayerId: state.activeLayerId,
     effectiveSelectedIds,

@@ -499,7 +499,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onResizeImage={() => setShowResizeDialog(true)}
         onResizeCanvas={() => setShowResizeCanvasDialog(true)}
         onLoadLut={() => void lutOps.loadCubeLut()}
-        onLoadOcioConfig={() => void lutOps.loadOcioConfig()}
         onManageLuts={() => setShowLutManager(true)}
         onSetViewTransform={lutOps.setViewTransform}
         onRotate90CW={() => {

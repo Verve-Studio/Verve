@@ -2,20 +2,17 @@
 //
 // Handles user-initiated load/import flows for the LUT subsystem:
 //   - Pick a `.cube` from disk and register it with `lutStore`.
-//   - Pick an OCIO config directory and import its colour spaces.
 //   - Set the active view-transform LUT.
 //   - Remove a user LUT (built-ins refuse via the store).
 
 import { useCallback } from "react";
 import { lutStore, parseCubeLut, type LutTransform } from "@/core/lut";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
-import { importOcioConfig } from "@/core/lut/ocio/ocioConfigReader";
 
 type Notify = (msg: string, kind?: "info" | "error") => void;
 
 export function useLutOps(notify?: Notify): {
   loadCubeLut: () => Promise<void>;
-  loadOcioConfig: () => Promise<void>;
   setViewTransform: (id: string | null) => void;
   removeLut: (id: string) => void;
 } {
@@ -69,21 +66,6 @@ export function useLutOps(notify?: Notify): {
     if (added > 0) note(`Loaded ${added} LUT${added > 1 ? "s" : ""}`);
   }, [note]);
 
-  const loadOcioConfig = useCallback(async (): Promise<void> => {
-    // Pick + read the OCIO directory tree from the main process so the OS
-    // dialog opens reliably regardless of where this was triggered from.
-    const bundle = await window.api.pickOcioBundle();
-    if (!bundle) return;
-    try {
-      const count = await importOcioConfig(bundle);
-      note(
-        `Imported ${count} colour space${count === 1 ? "" : "s"} from OCIO config`,
-      );
-    } catch (err) {
-      note(`OCIO import failed: ${(err as Error).message}`, "error");
-    }
-  }, [note]);
-
   const setViewTransform = useCallback((id: string | null): void => {
     displayStore.setViewTransformLut(id);
   }, []);
@@ -95,5 +77,5 @@ export function useLutOps(notify?: Notify): {
     lutStore.unregister(id);
   }, []);
 
-  return { loadCubeLut, loadOcioConfig, setViewTransform, removeLut };
+  return { loadCubeLut, setViewTransform, removeLut };
 }

@@ -10,7 +10,7 @@ import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setActiveScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -68,6 +68,25 @@ export function useTabs(
   // Keep refs in sync each render so async closures always see fresh values
   activeTabIdRef.current = activeTabId;
   setTabsRef.current = setTabs;
+
+  // Mirror the active tab's session-only display settings (exposure,
+  // tone-map, view-transform LUT) into the module-level displayStore
+  // whenever the active tab changes. Covers every entry point — explicit
+  // tab switches, file opens, file closes, paste-as-new — without each
+  // path needing to remember to reset displayStore manually. Stale state
+  // from the previously-active tab would otherwise leak into the next
+  // doc's display path (e.g. a Filmic view transform set on Doc A would
+  // still show on Doc B until the user touched the Display panel).
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  useEffect(() => {
+    if (!activeTabId) return;
+    const tab = tabsRef.current.find((t) => t.id === activeTabId);
+    if (!tab) return;
+    displayStore.setEV(tab.exposureEV ?? 0);
+    displayStore.setOperator(tab.toneMappingOperator ?? "reinhard");
+    displayStore.setViewTransformLut(tab.viewTransformLutId ?? null);
+  }, [activeTabId]);
 
   /** Returns a stable callback ref for a given tab id. */
   const tabCanvasRef = useCallback(

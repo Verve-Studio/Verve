@@ -20,6 +20,9 @@
 import type { CubeLut, LutColorSpace, LutTransform, ShaperLut } from "./LUT";
 import { linearToSrgbChannel } from "@/utils/pixelFormatConvert";
 import {
+  ACESCG_TO_REC709,
+  acesCgInvOetf,
+  acesNarkowicz,
   applyMatrix3,
   appleLogInvOetf,
   ARRI_WG_TO_REC709,
@@ -386,7 +389,49 @@ function getCameraIdts(): LutTransform[] {
       invOetf: appleLogInvOetf,
       matrix: REC2020_TO_REC709,
     }),
+    // ACEScg is scene-linear (no log decode), but its primaries are AP1.
+    // The IDT is a pure gamut transform AP1 → linear sRGB (Rec.709).
+    bakeCameraIdt({
+      id: "idt-acescg",
+      name: "ACEScg (AP1) → Linear",
+      inputSpace: "aces-cg",
+      invOetf: acesCgInvOetf,
+      matrix: ACESCG_TO_REC709,
+    }),
   ];
+}
+
+// ─── ACEScg → sRGB display (view transform) ─────────────────────────────────
+//
+// Full ACES-style view transform for ACEScg-tagged content: gamut transform
+// AP1 → linear sRGB primaries, then the Narkowicz approximation of the
+// ACES RRT + sRGB ODT (lightweight tone-map + display encode in one
+// rational function). Output is sRGB-encoded display ready for the swap
+// chain. Use the layer-tag IDT for editing-pipeline correctness; use this
+// view transform when you want the canvas preview to show ACES-graded
+// output.
+
+function bakeAcesCgToSrgb(): LutTransform {
+  const cube = bakeCube((r, g, b) => {
+    // Step 1: AP1 → linear sRGB primaries.
+    const [lr, lg, lb] = applyMatrix3(ACESCG_TO_REC709, [r, g, b]);
+    // Step 2: Narkowicz ACES filmic curve — produces sRGB-encoded
+    // display values directly (already includes the perceptual
+    // non-linearity, like AgX's polynomial output).
+    const sr = Math.max(0, Math.min(1, acesNarkowicz(Math.max(0, lr))));
+    const sg = Math.max(0, Math.min(1, acesNarkowicz(Math.max(0, lg))));
+    const sb = Math.max(0, Math.min(1, acesNarkowicz(Math.max(0, lb))));
+    return [sr, sg, sb];
+  });
+  return {
+    id: "builtin:acescg-to-srgb",
+    name: "ACEScg → sRGB",
+    inputSpace: "aces-cg",
+    outputSpace: "srgb",
+    category: "view-transform",
+    cube,
+    source: { kind: "builtin", key: "acescg-to-srgb" },
+  };
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -402,6 +447,7 @@ export function getBuiltInLuts(): LutTransform[] {
     bakeFilmicToSrgb(),
     bakeRec2020ToSrgb(),
     bakeAgxToSrgb(),
+    bakeAcesCgToSrgb(),
     ...getCameraIdts(),
   ];
   return cached;

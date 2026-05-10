@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
-import { readFile, writeFile, readdir, stat } from 'node:fs/promises'
-import { join, relative, basename } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join, basename } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
 import { registerSamHandlers } from './sam'
@@ -65,85 +65,6 @@ export function registerIpcHandlers(): void {
       }
     }
     return out
-  })
-
-  ipcMain.handle('lut:pickOcioBundle', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'Load OCIO Config',
-      properties: ['openDirectory'],
-    })
-    if (canceled || filePaths.length === 0) return null
-    const root = filePaths[0]
-
-    // Locate config.ocio inside the picked directory (allow it at root or
-    // one level deep, which covers typical ACES bundles).
-    let configPath: string | null = null
-    let configText = ''
-    try {
-      const direct = join(root, 'config.ocio')
-      configText = await readFile(direct, 'utf-8')
-      configPath = direct
-    } catch {
-      // Try one level deep — many ACES distributions ship the config
-      // inside a versioned subdirectory.
-      try {
-        const entries = await readdir(root)
-        for (const entry of entries) {
-          const candidate = join(root, entry, 'config.ocio')
-          try {
-            configText = await readFile(candidate, 'utf-8')
-            configPath = candidate
-            break
-          } catch {
-            // not here, keep trying
-          }
-        }
-      } catch {
-        // unreadable root
-      }
-    }
-    if (!configPath) {
-      throw new Error(`config.ocio not found in ${root}`)
-    }
-
-    // Walk the config's containing directory and collect every `.cube`
-    // (and a few common LUT siblings the FileTransform resolver supports).
-    // Bounded depth prevents pathological symlink loops.
-    const configDir = configPath.slice(0, -('config.ocio'.length + 1))
-    const collected: Array<{ relPath: string; text: string }> = []
-    async function walk(dir: string, depth: number): Promise<void> {
-      if (depth > 6) return
-      let entries: string[] = []
-      try {
-        entries = await readdir(dir)
-      } catch {
-        return
-      }
-      for (const entry of entries) {
-        const p = join(dir, entry)
-        let s
-        try {
-          s = await stat(p)
-        } catch {
-          continue
-        }
-        if (s.isDirectory()) {
-          await walk(p, depth + 1)
-        } else if (/\.(cube)$/i.test(entry)) {
-          try {
-            collected.push({
-              relPath: relative(configDir, p),
-              text: await readFile(p, 'utf-8'),
-            })
-          } catch {
-            // unreadable file — skip
-          }
-        }
-      }
-    }
-    await walk(configDir, 0)
-
-    return { configPath, configText, files: collected }
   })
 
   ipcMain.handle('dialog:saveJson', async (_event, defaultName?: string) => {

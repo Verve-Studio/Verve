@@ -135,6 +135,40 @@ export const REC2020_TO_REC709: readonly (readonly number[])[] = [
   [-0.0182, -0.1006, 1.1187],
 ];
 
+// ─── ACES AP1 (ACEScg) → linear sRGB ─────────────────────────────────────────
+
+/** ACEScg is scene-linear with no transfer-function encode — the "inverse
+ *  OETF" is identity. Provided as a callable so ACEScg slots into the same
+ *  IDT bake helper used by the camera log spaces. */
+export function acesCgInvOetf(x: number): number {
+  return x;
+}
+
+/** ACES AP1 (ACEScg primaries) → linear sRGB (Rec.709) primary matrix.
+ *  Standard reference values from the Academy's published transforms. */
+export const ACESCG_TO_REC709: readonly (readonly number[])[] = [
+  [1.70505, -0.62179, -0.08326],
+  [-0.13026, 1.1408, -0.01055],
+  [-0.02401, -0.12897, 1.15297],
+];
+
+/** Narkowicz' ACES Filmic tone-mapping curve. Approximates the ACES
+ *  RRT + sRGB ODT in a single 6-coefficient rational function. Input is
+ *  linear sRGB scene-linear; output is sRGB-encoded display in [0,1].
+ *
+ *  Reference: Krzysztof Narkowicz, "ACES Filmic Tone Mapping Curve" (2015).
+ *  Used by Unreal, Unity HDR, and many engines as the lightweight ACES
+ *  view transform. Not a substitute for the reference RRT+ODT — but
+ *  produces visually close results for soft-proofing and previews. */
+export function acesNarkowicz(x: number): number {
+  const a = 2.51,
+    b = 0.03,
+    c = 2.43,
+    d = 0.59,
+    e = 0.14;
+  return (x * (a * x + b)) / (x * (c * x + d) + e);
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function applyMatrix3(

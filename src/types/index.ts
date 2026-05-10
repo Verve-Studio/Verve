@@ -183,7 +183,8 @@ export type LayerColorSpace =
   | "vlog"
   | "red-log3g10"
   | "clog3"
-  | "apple-log";
+  | "apple-log"
+  | "aces-cg";
 
 export interface PixelLayerState {
   id: string;

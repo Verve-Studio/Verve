@@ -2,9 +2,8 @@
 //
 // Lists every LUT in `lutStore` with its source, input/output spaces, and
 // affordances to remove user LUTs or set one as the active view transform.
-// The actual "Load LUT…" / "Load OCIO Config…" pickers live on the menu
-// (they don't need to be inside the modal), but we surface buttons here
-// for convenience.
+// The actual "Load LUT…" picker lives on the menu (it doesn't need to be
+// inside the modal), but we surface a button here for convenience.
 
 import React, { useEffect, useState } from "react";
 import { ModalDialog } from "../ModalDialog/ModalDialog";
@@ -37,6 +36,8 @@ function describeSource(lut: LutTransform): string {
     case "cube-file":
       return `.cube · ${lut.source.path}`;
     case "ocio":
+      // Retained on the type for back-compat with previously-saved
+      // sessions; no path can produce one in the current build.
       return `OCIO · ${lut.source.colorspace}`;
   }
 }
@@ -54,8 +55,7 @@ export function LutManagerDialog({
     displayStore.subscribe(fn);
     return () => displayStore.unsubscribe(fn);
   }, []);
-  const { loadCubeLut, loadOcioConfig, setViewTransform, removeLut } =
-    useLutOps();
+  const { loadCubeLut, setViewTransform, removeLut } = useLutOps();
 
   return (
     <ModalDialog open={open} title="LUT Manager" width={640} onClose={onClose}>
@@ -63,9 +63,6 @@ export function LutManagerDialog({
         <div className={styles.toolbar}>
           <DialogButton onClick={() => void loadCubeLut()}>
             Load .cube…
-          </DialogButton>
-          <DialogButton onClick={() => void loadOcioConfig()}>
-            Load OCIO Config…
           </DialogButton>
           <span className={styles.flex} />
           <DialogButton

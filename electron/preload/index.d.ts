@@ -12,14 +12,6 @@ declare global {
       saveJsonDialog: (defaultName?: string) => Promise<string | null>
       openDirectoryDialog: () => Promise<string | null>
       pickCubeLutFiles: () => Promise<Array<{ name: string; text: string }> | null>
-      pickOcioBundle: () => Promise<
-        | {
-            configPath: string
-            configText: string
-            files: Array<{ relPath: string; text: string }>
-          }
-        | null
-      >
       writeJsonFile: (path: string, data: string) => Promise<void>
       saveverveDialog: (defaultPath?: string) => Promise<string | null>
       openverveFile: (path: string) => Promise<string>

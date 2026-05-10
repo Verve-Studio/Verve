@@ -316,7 +316,6 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
         },
         sep(),
         item('Load LUT…',         'lut:loadCube'),
-        item('Load OCIO Config…', 'lut:loadOcio'),
         item('Manage LUTs…',      'lut:manage'),
         {
           label: 'View Transform',

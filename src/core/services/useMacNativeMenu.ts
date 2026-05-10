@@ -118,7 +118,6 @@ interface MacNativeMenuParams {
   openPreferencesDialog: () => void;
   openLutManagerDialog: () => void;
   loadCubeLut: () => Promise<void>;
-  loadOcioConfig: () => Promise<void>;
   setViewTransform: (id: string | null) => void;
 
   // State for enabled/checked sync
@@ -221,7 +220,6 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     openPreferencesDialog,
     openLutManagerDialog,
     loadCubeLut,
-    loadOcioConfig,
     setViewTransform,
     activeLayerId,
     effectiveSelectedIds,
@@ -374,9 +372,6 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
           break;
         case "lut:loadCube":
           void loadCubeLut();
-          break;
-        case "lut:loadOcio":
-          void loadOcioConfig();
           break;
         case "lut:manage":
           openLutManagerDialog();
@@ -666,7 +661,6 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       openPreferencesDialog,
       openLutManagerDialog,
       loadCubeLut,
-      loadOcioConfig,
       setViewTransform,
       activeLayerId,
       effectiveSelectedIds,

@@ -41,7 +41,6 @@ interface TopBarProps {
   onResizeImage?: () => void;
   onResizeCanvas?: () => void;
   onLoadLut?: () => void;
-  onLoadOcioConfig?: () => void;
   onManageLuts?: () => void;
   onSetViewTransform?: (id: string | null) => void;
   onRotate90CW?: () => void;
@@ -168,7 +167,6 @@ export function TopBar({
   onResizeImage,
   onResizeCanvas,
   onLoadLut,
-  onLoadOcioConfig,
   onManageLuts,
   onSetViewTransform,
   onRotate90CW,
@@ -531,7 +529,6 @@ export function TopBar({
           },
           { separator: true, label: "" },
           { label: "Load LUT…", action: onLoadLut },
-          { label: "Load OCIO Config…", action: onLoadOcioConfig },
           { label: "Manage LUTs…", action: onManageLuts },
           {
             label: "View Transform",
@@ -865,7 +862,6 @@ export function TopBar({
       onResizeImage,
       onResizeCanvas,
       onLoadLut,
-      onLoadOcioConfig,
       onManageLuts,
       onSetViewTransform,
       luts,

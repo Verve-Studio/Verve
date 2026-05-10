@@ -40,6 +40,8 @@ export function idtLutIdFor(space: LayerColorSpace | undefined): string | null {
       return "builtin:idt-canon-clog3";
     case "apple-log":
       return "builtin:idt-apple-log";
+    case "aces-cg":
+      return "builtin:idt-acescg";
     default:
       return null;
   }
@@ -49,6 +51,7 @@ export const ALL_LAYER_COLOR_SPACES: LayerColorSpace[] = [
   "auto",
   "srgb",
   "linear-srgb",
+  "aces-cg",
   "slog3",
   "logc3",
   "vlog",
@@ -61,6 +64,7 @@ export const LAYER_COLOR_SPACE_LABEL: Record<LayerColorSpace, string> = {
   auto: "Auto (document working space)",
   srgb: "sRGB (display-encoded)",
   "linear-srgb": "Linear sRGB (scene-linear)",
+  "aces-cg": "ACEScg (AP1 primaries, scene-linear)",
   slog3: "Sony S-Log3 / S-Gamut3.Cine",
   logc3: "ARRI LogC3 / Wide Gamut",
   vlog: "Panasonic V-Log / V-Gamut",

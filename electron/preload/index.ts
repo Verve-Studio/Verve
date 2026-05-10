@@ -15,10 +15,6 @@ const api = {
     ipcRenderer.invoke('dialog:openDirectory'),
   pickCubeLutFiles: (): Promise<Array<{ name: string; text: string }> | null> =>
     ipcRenderer.invoke('lut:pickCubeFiles'),
-  pickOcioBundle: (): Promise<
-    | { configPath: string; configText: string; files: Array<{ relPath: string; text: string }> }
-    | null
-  > => ipcRenderer.invoke('lut:pickOcioBundle'),
   writeJsonFile: (path: string, data: string): Promise<void> =>
     ipcRenderer.invoke('file:writeJson', path, data),
   saveverveDialog: (defaultPath?: string): Promise<string | null> =>
