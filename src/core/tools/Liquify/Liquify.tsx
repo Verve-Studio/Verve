@@ -260,16 +260,7 @@ function createLiquifyHandler(): ToolHandler {
     }
 
     // Mark the brush footprint dirty.
-    layer.dirtyRect = layer.dirtyRect ?? {
-      lx: minLx,
-      ly: minLy,
-      rx: maxLx + 1,
-      ry: maxLy + 1,
-    };
-    layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, minLx);
-    layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, minLy);
-    layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, maxLx + 1);
-    layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, maxLy + 1);
+    ctx.renderer.markDirtyRect(layer, minLx, minLy, maxLx + 1, maxLy + 1);
   }
 
   return {

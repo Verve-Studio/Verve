@@ -176,7 +176,7 @@ function smudgeStamp(
     },
   );
 
-  markBrushDirty(layer, cxL, cyL, radius);
+  markBrushDirty(ctx.renderer, layer, cxL, cyL, radius);
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────

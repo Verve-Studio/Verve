@@ -652,16 +652,7 @@ function createPencilHandler(): ToolHandler {
         layer.layerHeight,
         Math.max(lastPx.y, y1) - layer.offsetY + 2,
       );
-      if (layer.dirtyRect === null) {
-        layer.dirtyRect = { lx, ly, rx, ry };
-      } else {
-        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx);
-        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly);
-        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx);
-        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry);
-      }
-    } else {
-      layer.dirtyRect = null;
+      ctx.renderer.markDirtyRect(layer, lx, ly, rx, ry);
     }
 
     lastPx = { x: x1, y: y1 };
@@ -765,16 +756,7 @@ function createPencilHandler(): ToolHandler {
         layer.layerHeight,
         Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1,
       );
-      if (layer.dirtyRect === null) {
-        layer.dirtyRect = { lx, ly, rx, ry };
-      } else {
-        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx);
-        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly);
-        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx);
-        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry);
-      }
-    } else {
-      layer.dirtyRect = null;
+      renderer.markDirtyRect(layer, lx, ly, rx, ry);
     }
 
     renderer.flushLayer(layer);
@@ -921,11 +903,11 @@ function createPencilHandler(): ToolHandler {
             tiledW,
             tiledH,
           );
-          // Single-pixel dot: dirtyRect is a 1×1 patch in layer-local coords.
+          // Single-pixel dot: mark a 1×1 patch in layer-local coords dirty.
           if (!ctx.tiledMode) {
             const lx = Math.max(0, px - layer.offsetX);
             const ly = Math.max(0, py - layer.offsetY);
-            layer.dirtyRect = { lx, ly, rx: lx + 1, ry: ly + 1 };
+            ctx.renderer.markDirtyRect(layer, lx, ly, lx + 1, ly + 1);
           }
         }
         lastPx = { x: px, y: py };

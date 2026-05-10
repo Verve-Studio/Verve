@@ -93,15 +93,12 @@ export function forEachStamp(
 }
 
 /**
- * Mark the full brush footprint as dirty on a layer (the layer's `dirtyRect`
- * gets expanded to include this stamp's bounding rect).
+ * Mark the full brush footprint as dirty on a layer (the layer's pending dirty
+ * rect gets expanded through the renderer to include this stamp's bounding box).
  */
 export function markBrushDirty(
-  layer: {
-    layerWidth: number;
-    layerHeight: number;
-    dirtyRect: { lx: number; ly: number; rx: number; ry: number } | null;
-  },
+  renderer: import("@/graphics/webgpu/rendering/WebGPURenderer").WebGPURenderer,
+  layer: import("@/graphics/webgpu/rendering/WebGPURenderer").GpuLayer,
   cxL: number,
   cyL: number,
   radius: number,
@@ -110,17 +107,5 @@ export function markBrushDirty(
   const maxLx = Math.min(layer.layerWidth - 1, Math.ceil(cxL + radius));
   const minLy = Math.max(0, Math.floor(cyL - radius));
   const maxLy = Math.min(layer.layerHeight - 1, Math.ceil(cyL + radius));
-  if (!layer.dirtyRect) {
-    layer.dirtyRect = {
-      lx: minLx,
-      ly: minLy,
-      rx: maxLx + 1,
-      ry: maxLy + 1,
-    };
-  } else {
-    layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, minLx);
-    layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, minLy);
-    layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, maxLx + 1);
-    layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, maxLy + 1);
-  }
+  renderer.markDirtyRect(layer, minLx, minLy, maxLx + 1, maxLy + 1);
 }

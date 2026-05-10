@@ -272,7 +272,7 @@ function healingStamp(
     }
   }
 
-  markBrushDirty(layer, dCxL, dCyL, radius);
+  markBrushDirty(ctx.renderer, layer, dCxL, dCyL, radius);
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────

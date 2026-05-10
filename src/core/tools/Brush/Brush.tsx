@@ -233,16 +233,7 @@ function createBrushHandler(): ToolHandler {
         layer.layerHeight,
         Math.ceil(segDirtyMaxY - layer.offsetY) + 1,
       );
-      if (layer.dirtyRect === null) {
-        layer.dirtyRect = { lx, ly, rx, ry };
-      } else {
-        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx);
-        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly);
-        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx);
-        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry);
-      }
-    } else {
-      layer.dirtyRect = null;
+      renderer.markDirtyRect(layer, lx, ly, rx, ry);
     }
 
     renderer.flushLayer(layer);
@@ -485,14 +476,13 @@ function createBrushHandler(): ToolHandler {
           brush,
         );
         if (wet.dirty) {
-          if (ctx.layer.dirtyRect === null) {
-            ctx.layer.dirtyRect = { ...wet.dirty };
-          } else {
-            ctx.layer.dirtyRect.lx = Math.min(ctx.layer.dirtyRect.lx, wet.dirty.lx);
-            ctx.layer.dirtyRect.ly = Math.min(ctx.layer.dirtyRect.ly, wet.dirty.ly);
-            ctx.layer.dirtyRect.rx = Math.max(ctx.layer.dirtyRect.rx, wet.dirty.rx);
-            ctx.layer.dirtyRect.ry = Math.max(ctx.layer.dirtyRect.ry, wet.dirty.ry);
-          }
+          ctx.renderer.markDirtyRect(
+            ctx.layer,
+            wet.dirty.lx,
+            wet.dirty.ly,
+            wet.dirty.rx,
+            wet.dirty.ry,
+          );
           ctx.renderer.flushLayer(ctx.layer);
           ctx.render(ctx.layers);
         }

@@ -17,10 +17,9 @@ export interface GpuLayer {
   opacity: number;
   visible: boolean;
   blendMode: string;
-  /** Accumulated dirty region in layer-local texel coords. Expanded by tools; consumed + reset by flushLayer. */
-  dirtyRect: { lx: number; ly: number; rx: number; ry: number } | null;
   /** Incremented by flushLayer() every time pixel content is uploaded to the GPU.
-   *  Used by the render cache to detect content changes without full pixel comparison. */
+   *  Used by the render cache to detect content changes without full pixel comparison.
+   *  Mirror field — authoritative copy lives in LayerTextureStore.getVersion(layer.id). */
   contentVersion: number;
   /** Tagged colour space for this layer's stored pixels. When this differs
    *  from the document working space, the renderer interposes an IDT

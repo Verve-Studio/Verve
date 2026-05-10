@@ -252,12 +252,7 @@ function applyPatch(
     H - 1,
     Math.max(bbox.y + bbox.h, bbox.y + bbox.h + dy) - offY,
   );
-  layer.dirtyRect = {
-    lx: minLx,
-    ly: minLy,
-    rx: maxLx + 1,
-    ry: maxLy + 1,
-  };
+  ctx.renderer.markDirtyRect(layer, minLx, minLy, maxLx + 1, maxLy + 1);
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────

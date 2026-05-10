@@ -104,16 +104,7 @@ function createCloneStampHandler(): ToolHandler {
         layer.layerHeight,
         Math.ceil(Math.max(y0, y1) - layer.offsetY) + pad + 1,
       );
-      if (layer.dirtyRect === null) {
-        layer.dirtyRect = { lx, ly, rx, ry };
-      } else {
-        layer.dirtyRect.lx = Math.min(layer.dirtyRect.lx, lx);
-        layer.dirtyRect.ly = Math.min(layer.dirtyRect.ly, ly);
-        layer.dirtyRect.rx = Math.max(layer.dirtyRect.rx, rx);
-        layer.dirtyRect.ry = Math.max(layer.dirtyRect.ry, ry);
-      }
-    } else {
-      layer.dirtyRect = null;
+      renderer.markDirtyRect(layer, lx, ly, rx, ry);
     }
 
     renderer.flushLayer(layer);
