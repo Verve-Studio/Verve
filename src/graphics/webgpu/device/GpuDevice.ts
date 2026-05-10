@@ -1,9 +1,42 @@
 import { WebGPUUnavailableError } from "../types";
 
+let sharedDevicePromise: Promise<GPUDevice> | null = null;
+
+async function getSharedDevice(): Promise<GPUDevice> {
+  if (!sharedDevicePromise) {
+    sharedDevicePromise = (async () => {
+      const adapter = await navigator.gpu.requestAdapter({
+        powerPreference: "high-performance",
+      });
+      if (!adapter) {
+        sharedDevicePromise = null;
+        throw new WebGPUUnavailableError(
+          "WebGPU adapter could not be obtained. Your GPU driver may not support WebGPU.",
+        );
+      }
+      const device = await adapter.requestDevice({
+        requiredLimits: {
+          maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+          maxBufferSize: adapter.limits.maxBufferSize,
+        },
+      });
+      device.lost.then(() => {
+        sharedDevicePromise = null;
+      });
+      return device;
+    })();
+  }
+  return sharedDevicePromise;
+}
+
 /**
  * Owns the bottom-most WebGPU infrastructure: adapter, device, canvas context,
  * swap-chain configuration, and lost-handling. Pure infrastructure — no
  * domain knowledge of layers, pipelines, or rendering passes.
+ *
+ * The underlying GPUDevice is shared across all GpuDevice instances for the
+ * process lifetime. Each instance owns its canvas context but not the device,
+ * so callers must NOT call `device.destroy()` on disposal.
  */
 export class GpuDevice {
   readonly device: GPUDevice;
@@ -29,20 +62,7 @@ export class GpuDevice {
         "WebGPU is not available in this environment. Verve requires WebGPU to run.",
       );
     }
-    const adapter = await navigator.gpu.requestAdapter({
-      powerPreference: "high-performance",
-    });
-    if (!adapter) {
-      throw new WebGPUUnavailableError(
-        "WebGPU adapter could not be obtained. Your GPU driver may not support WebGPU.",
-      );
-    }
-    const device = await adapter.requestDevice({
-      requiredLimits: {
-        maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
-        maxBufferSize: adapter.limits.maxBufferSize,
-      },
-    });
+    const device = await getSharedDevice();
     const ctx = canvas.getContext("webgpu") as GPUCanvasContext | null;
     if (!ctx) {
       throw new WebGPUUnavailableError(
@@ -53,4 +73,14 @@ export class GpuDevice {
     ctx.configure({ device, format, alphaMode: "premultiplied" });
     return new GpuDevice(device, ctx, format, canvas);
   }
+
+  /**
+   * No-op. The shared GPUDevice persists for the process lifetime and is
+   * reused by subsequent renderers. The canvas context is owned by the canvas
+   * element itself — it cannot be safely unconfigured here, because in
+   * StrictMode dev double-mount two renderers may briefly share the same
+   * canvas context, and unconfiguring it from the first cleanup breaks the
+   * second renderer.
+   */
+  destroy(): void {}
 }

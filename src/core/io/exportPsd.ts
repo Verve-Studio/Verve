@@ -37,7 +37,7 @@ export interface PsdExportGroup {
   /** True = expanded in the Photoshop layers panel. */
   opened: boolean;
   /** Children in **bottom-first** z-order (same convention as the top-level
-   *  layers array). exportPsd reverses to top-first when emitting. */
+   *  layers array, and what ag-psd's `children` already uses). */
   children: PsdExportNode[];
 }
 
@@ -47,7 +47,7 @@ export interface PsdExportInput {
   width: number;
   height: number;
   /** Top-level nodes in **bottom-first** z-order (matches our `state.layers`
-   *  order). exportPsd emits them top-first into the PSD as PSD expects. */
+   *  order and ag-psd's `children` convention — emitted as-is). */
   layers: PsdExportNode[];
 }
 
@@ -92,11 +92,7 @@ function blendModeToPsd(mode: VerveBlendMode): BlendMode {
  *  must be excluded by the caller. */
 function nodeToLayer(node: PsdExportNode): Layer {
   if (node.kind === "group") {
-    // Reverse to top-first for PSD.
-    const children: Layer[] = [];
-    for (let i = node.children.length - 1; i >= 0; i--) {
-      children.push(nodeToLayer(node.children[i]));
-    }
+    const children: Layer[] = node.children.map(nodeToLayer);
     return {
       name: node.name,
       hidden: !node.visible,
@@ -148,11 +144,7 @@ function nodeToLayer(node: PsdExportNode): Layer {
 }
 
 export function exportPsd(input: PsdExportInput): Uint8Array {
-  const layers: Layer[] = [];
-  // Reverse: input is bottom-first, PSD's children are top-first.
-  for (let i = input.layers.length - 1; i >= 0; i--) {
-    layers.push(nodeToLayer(input.layers[i]));
-  }
+  const layers: Layer[] = input.layers.map(nodeToLayer);
 
   const psd: Psd = {
     width: input.width,

@@ -877,21 +877,6 @@ export class RenderPlanExecutor {
       dirty.h > 0 &&
       flatPlan &&
       dirty.w * dirty.h < w * h * 0.6;
-    if (this.previewMode) {
-      const why = canIncremental
-        ? "OK"
-        : !this.hasStableTex
-          ? "no-stableTex"
-          : !dirty
-            ? "no-dirty"
-            : !flatPlan
-              ? "plan-not-flat"
-              : "dirty-too-big";
-      console.log(
-        `[renderPlan] inc=${canIncremental} (${why}), layers=${plan.length}`,
-      );
-    }
-
     const encoder = device.createCommandEncoder();
 
     if (canIncremental && dirty !== null && this.stableTex !== null) {

@@ -675,9 +675,9 @@ export class WebGPURenderer {
    * Release every long-lived GPU resource owned by the renderer. Destroys
    * ping-pong textures, the texcoord vertex buffer, the EffectEncoder,
    * every cached adj-group / baked-locked / standalone-op / composite-layer
-   * texture, and the pooled composite uniform/vertex buffers. Finally calls
-   * `device.destroy()` which invalidates every GPU object derived from it
-   * (so callers must drop their references after this).
+   * texture, and the pooled composite uniform/vertex buffers, then unconfigures
+   * the canvas context. The shared GPUDevice is NOT destroyed — it persists
+   * for the process lifetime and is reused by subsequent renderers.
    */
   destroy(): void {
     this.executor.refreshCallback = null;
@@ -700,6 +700,6 @@ export class WebGPURenderer {
     for (const entry of this.cache.compositeLayer.values())
       destroyTrackedTexture(entry.tex);
     this.cache.compositeLayer.clear();
-    this.device.destroy();
+    this.gpu.destroy();
   }
 }

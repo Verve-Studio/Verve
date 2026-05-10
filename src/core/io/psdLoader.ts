@@ -156,9 +156,10 @@ function readMaskAlpha(
 /** Recursively walk PSD's layer tree, preserving folder structure as
  *  PsdImportedGroup nodes and emitting image-bearing leaves as
  *  PsdImportedLayer. Adjustments / text / shapes / smart objects are
- *  skipped (and flagged via state.hadUnsupported). The returned nodes are
- *  in **bottom-first** z-order — PSD's children are top-first, so each
- *  recursion level is reversed before being returned. */
+ *  skipped (and flagged via state.hadUnsupported). ag-psd's `children` is
+ *  already in **bottom-first** z-order (PSD files store layers bottom-up,
+ *  and ag-psd preserves that), which matches `state.layers`, so no
+ *  reversal is needed. */
 function walkLayers(
   layers: Layer[] | undefined,
   state: { idCounter: number; hadUnsupported: boolean },
@@ -233,8 +234,6 @@ function walkLayers(
       mask,
     });
   }
-  // PSD children are top-first — reverse to bottom-first for our convention.
-  out.reverse();
   return out;
 }
 
