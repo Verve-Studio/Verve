@@ -42,7 +42,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { blendPixelOver } from "../_shared/primitives";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
-import type { TipSampler } from "./tipSampler";
+import { getCachedTipSampler, type TipSampler } from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
 import {
   resolveDynamic,
@@ -54,6 +54,7 @@ import {
 } from "./dynamicsResolver";
 import { resolveStampColor } from "./colorJitter";
 import { sampleGrain } from "./paperTexture";
+import { mixSrgbInOklab } from "./oklch";
 
 interface SelMask {
   mask: Uint8Array;
@@ -268,6 +269,22 @@ interface ResolvedStamp {
   fg: number;
   fb: number;
   fa: number;
+}
+
+/**
+ * Resolved dual-brush parameters for one stamp. Computed in
+ * `emitStampWithCount` (where the resolved primary angle and stroke
+ * direction are known) and consumed by `applyStamp`'s inner pixel loop.
+ */
+interface DualResolved {
+  sampler: TipSampler;
+  /** Total dual angle = primary stamp angle + dualTip.angle (+ stroke direction
+   *  if `directionFollow`). The dual tip is sampled in this rotated frame. */
+  baseAngle: number;
+  /** Dual tip diameter as a fraction of the primary tip's diameter. */
+  sizeRatio: number;
+  /** 0..1 mix between identity (no effect) and full multiply. */
+  mix: number;
 }
 
 /** Per-stamp pen / stroke inputs from brush.tsx. */
@@ -551,6 +568,9 @@ function applyStamp(
    *  ticks). The `touched` map is still updated, so wet edges still work. */
   bypassCap: boolean,
   onStampBbox: ((minX: number, minY: number, maxX: number, maxY: number) => void) | undefined,
+  /** Optional dual-brush mask sampled per-pixel and multiplied into primary
+   *  coverage. `null` when disabled — engine skips the entire dual path. */
+  dual: DualResolved | null,
 ): void {
   const radius = s.size * 0.5;
   if (radius < 0.5) return;
@@ -648,6 +668,20 @@ function applyStamp(
   const motionActive = motionElongation > 1.0001;
   const invElong = motionActive ? 1 / motionElongation : 1;
 
+  // Pre-compute dual-brush transform once per stamp. The dual tip lives in
+  // canvas-space but oriented to its own (rotated, scaled) frame, so each
+  // pixel's offset from the stamp centre maps to dual-tip-local coords via
+  // a rotation by `dual.baseAngle` and a scale by `1 / dualRadius`. Skipped
+  // entirely when the dual radius would be sub-pixel — the mask wouldn't
+  // resolve and the multiplication would be a no-op anyway.
+  const dualRadius = dual !== null ? radius * dual.sizeRatio : 0;
+  const dualActive = dual !== null && dualRadius >= 0.5;
+  const dualInvR = dualActive ? 1 / dualRadius : 0;
+  const dualCosT = dualActive ? Math.cos(dual!.baseAngle) : 1;
+  const dualSinT = dualActive ? Math.sin(dual!.baseAngle) : 0;
+  const dualMix = dualActive ? dual!.mix : 0;
+  const dualSampler = dualActive ? dual!.sampler : null;
+
   for (let py = minY; py <= maxY; py++) {
     const dyBase0 = py - cy;
     for (let px = minX; px <= maxX; px++) {
@@ -698,6 +732,24 @@ function applyStamp(
         const gx = grainFollowsBrush ? lx : px;
         const gy = grainFollowsBrush ? ly : py;
         coverage *= sampleGrain(gx, gy, grainAmount, grainScale);
+      }
+      // Dual brush — multiply the dual tip's alpha into the primary's
+      // coverage. The dual tip rotates with `baseAngle` (independent of
+      // the primary's rotation), so the texture warps with the brush
+      // instead of being canvas-locked like paper grain. With `mix < 1`
+      // the dual mask is lerped against identity, so a low mix only
+      // gently breaks up the silhouette.
+      if (dualSampler !== null) {
+        const dlx = dxBase0 * dualCosT + dyBase0 * dualSinT;
+        const dly = -dxBase0 * dualSinT + dyBase0 * dualCosT;
+        const ddist = dualSampler.sample(dlx * dualInvR, dly * dualInvR) * dualRadius;
+        // Half-pixel AA across the dual silhouette — a fixed soft edge keeps
+        // the mask crisp without strobing on subpixel motion.
+        let dCov: number;
+        if (ddist <= -0.5) dCov = 1;
+        else if (ddist >= 0.5) dCov = 0;
+        else dCov = 0.5 - ddist;
+        coverage *= 1 - dualMix + dualMix * dCov;
       }
       if (coverage <= 0) continue;
       // Per-stamp deposit = flow × ceiling × coverage; ceiling = opacity × coverage.
@@ -804,13 +856,23 @@ function emitStampWithCount(
     if (under) {
       const k = Math.max(0, Math.min(1, brush.smudge.strength));
       const prev = state.smudgeColor;
+      // Pickup carry mixing in OKLab so dragged paint blends like wet
+      // pigment instead of sliding through linear-RGB intermediate
+      // greys. Alpha stays in linear space — opacity isn't perceptual.
       const next = prev
-        ? {
-            r: k * prev.r + (1 - k) * under.r,
-            g: k * prev.g + (1 - k) * under.g,
-            b: k * prev.b + (1 - k) * under.b,
-            a: k * prev.a + (1 - k) * under.a,
-          }
+        ? (() => {
+            const mixed = mixSrgbInOklab(
+              prev.r, prev.g, prev.b,
+              under.r, under.g, under.b,
+              1 - k,
+            );
+            return {
+              r: mixed.r,
+              g: mixed.g,
+              b: mixed.b,
+              a: k * prev.a + (1 - k) * under.a,
+            };
+          })()
         : { ...under };
       state.smudgeColor = next;
       smudgeMix = next;
@@ -866,12 +928,34 @@ function emitStampWithCount(
     };
     if (smudgeMix) {
       // Mix carried color with the (possibly jittered) brush colour by
-      // colorRate. 0 → pure smudge, 1 → pure paint, in-between is "finger
-      // painting" — drag existing pixels while leaking some fresh pigment.
-      resolved.fr = (1 - colorRate) * smudgeMix.r + colorRate * resolved.fr;
-      resolved.fg = (1 - colorRate) * smudgeMix.g + colorRate * resolved.fg;
-      resolved.fb = (1 - colorRate) * smudgeMix.b + colorRate * resolved.fb;
+      // colorRate through OKLab — perceptually-straight wet/paint mixing
+      // instead of muddy linear-RGB averaging. 0 → pure smudge, 1 → pure
+      // paint, in-between is "finger painting" — drag existing pixels
+      // while leaking some fresh pigment.
+      const mixed = mixSrgbInOklab(
+        smudgeMix.r, smudgeMix.g, smudgeMix.b,
+        resolved.fr, resolved.fg, resolved.fb,
+        colorRate,
+      );
+      resolved.fr = mixed.r;
+      resolved.fg = mixed.g;
+      resolved.fb = mixed.b;
       resolved.fa = (1 - colorRate) * smudgeMix.a + colorRate * resolved.fa;
+    }
+    // Resolve dual-brush parameters once per stamp. Skipped when disabled
+    // or zero-mix so the inner loop's pre-cached `dualSampler === null`
+    // gate short-circuits cleanly.
+    let dual: DualResolved | null = null;
+    const dt = brush.dualTip;
+    if (dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0) {
+      let baseAngle = resolved.angle + dt.angle;
+      if (dt.directionFollow) baseAngle += smoothedPose.direction;
+      dual = {
+        sampler: getCachedTipSampler(dt.shape),
+        baseAngle,
+        sizeRatio: dt.sizeRatio,
+        mix: Math.max(0, Math.min(1, dt.mix)),
+      };
     }
     applyStamp(
       renderer,
@@ -884,6 +968,7 @@ function emitStampWithCount(
       state.touched,
       bypassCap,
       onStampBbox,
+      dual,
     );
   }
   state.prevTipX = cx;

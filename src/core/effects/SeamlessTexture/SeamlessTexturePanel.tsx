@@ -143,45 +143,147 @@ export function SeamlessTexturePanel({
         <span className={styles.unitSpacer} />
       </div>
 
-      <div
-        className={styles.row}
-        style={{
+      {(() => {
+        const legacyR = p.borderRadius ?? 32;
+        const rx = p.borderRadiusX ?? legacyR;
+        const ry = p.borderRadiusY ?? legacyR;
+        const linked = p.linkBorderRadius ?? true;
+        const setX = (v: number): void => {
+          const clamped = Math.min(256, Math.max(0, Math.round(v)));
+          up(linked
+            ? { borderRadiusX: clamped, borderRadiusY: clamped }
+            : { borderRadiusX: clamped });
+        };
+        const setY = (v: number): void => {
+          const clamped = Math.min(256, Math.max(0, Math.round(v)));
+          up(linked
+            ? { borderRadiusX: clamped, borderRadiusY: clamped }
+            : { borderRadiusY: clamped });
+        };
+        const toggleLink = (): void => {
+          // When re-linking, snap Y to X so the values match before linked
+          // edits start applying to both.
+          if (!linked) up({ linkBorderRadius: true, borderRadiusY: rx });
+          else up({ linkBorderRadius: false });
+        };
+        const dim = {
           opacity: p.seamlessBorders ? 1 : 0.4,
-          pointerEvents: p.seamlessBorders ? undefined : "none",
-        }}
-      >
-        <span className={styles.label}>Border Radius</span>
-        <div className={styles.trackWrap}>
-          <input
-            type="range"
-            className={styles.track}
-            min={1}
-            max={256}
-            step={1}
-            value={p.borderRadius}
-            style={
-              {
-                "--pct": String((p.borderRadius - 1) / 255),
-              } as React.CSSProperties
-            }
-            onChange={(e) => up({ borderRadius: Number(e.target.value) })}
-          />
-        </div>
-        <input
-          type="number"
-          className={styles.numInput}
-          min={1}
-          max={256}
-          step={1}
-          value={p.borderRadius}
-          onChange={(e) => {
-            const v = e.target.valueAsNumber;
-            if (!isNaN(v))
-              up({ borderRadius: Math.min(256, Math.max(1, Math.round(v))) });
-          }}
-        />
-        <span className={styles.unitLabel}>px</span>
-      </div>
+          pointerEvents: p.seamlessBorders ? undefined : ("none" as const),
+        };
+        return (
+          <>
+            <div className={styles.row} style={dim}>
+              <span className={styles.label}>H Border</span>
+              <div className={styles.trackWrap}>
+                <input
+                  type="range"
+                  className={styles.track}
+                  min={0}
+                  max={256}
+                  step={1}
+                  value={rx}
+                  style={{ "--pct": String(rx / 256) } as React.CSSProperties}
+                  onChange={(e) => setX(Number(e.target.value))}
+                />
+              </div>
+              <input
+                type="number"
+                className={styles.numInput}
+                min={0}
+                max={256}
+                step={1}
+                value={rx}
+                onChange={(e) => {
+                  const v = e.target.valueAsNumber;
+                  if (!isNaN(v)) setX(v);
+                }}
+              />
+              <button
+                className={styles.linkBtn}
+                onClick={toggleLink}
+                title={linked ? "Unlink H/V" : "Link H/V"}
+                aria-pressed={linked}
+              >
+                {linked ? (
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                    <path d="M6.5 9.5l3-3M6 6.5h-1a2.5 2.5 0 100 5h1m4-5h1a2.5 2.5 0 110 5h-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                    <path d="M6 6.5h-1a2.5 2.5 0 100 5h1m4-5h1a2.5 2.5 0 110 5h-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    <path d="M2 2l12 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            <div className={styles.row} style={dim}>
+              <span className={styles.label}>V Border</span>
+              <div className={styles.trackWrap}>
+                <input
+                  type="range"
+                  className={styles.track}
+                  min={0}
+                  max={256}
+                  step={1}
+                  value={ry}
+                  style={{ "--pct": String(ry / 256) } as React.CSSProperties}
+                  onChange={(e) => setY(Number(e.target.value))}
+                />
+              </div>
+              <input
+                type="number"
+                className={styles.numInput}
+                min={0}
+                max={256}
+                step={1}
+                value={ry}
+                onChange={(e) => {
+                  const v = e.target.valueAsNumber;
+                  if (!isNaN(v)) setY(v);
+                }}
+              />
+              <span className={styles.unitSpacer} />
+            </div>
+            {(() => {
+              const strengthPct = Math.round((p.borderStrength ?? 0.5) * 100);
+              const setStrength = (v: number): void => {
+                const clamped = Math.min(100, Math.max(0, Math.round(v)));
+                up({ borderStrength: clamped / 100 });
+              };
+              return (
+                <div className={styles.row} style={dim}>
+                  <span className={styles.label}>Strength</span>
+                  <div className={styles.trackWrap}>
+                    <input
+                      type="range"
+                      className={styles.track}
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={strengthPct}
+                      style={{ "--pct": String(strengthPct / 100) } as React.CSSProperties}
+                      onChange={(e) => setStrength(Number(e.target.value))}
+                    />
+                  </div>
+                  <input
+                    type="number"
+                    className={styles.numInput}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={strengthPct}
+                    onChange={(e) => {
+                      const v = e.target.valueAsNumber;
+                      if (!isNaN(v)) setStrength(v);
+                    }}
+                  />
+                  <span className={styles.unitLabel}>%</span>
+                </div>
+              );
+            })()}
+          </>
+        );
+      })()}
 
       <div className={styles.sep} />
 
@@ -210,7 +312,10 @@ export function SeamlessTexturePanel({
               cellSize: 128,
               blendRadius: 16,
               seamlessBorders: true,
-              borderRadius: 32,
+              borderRadiusX: 32,
+              borderRadiusY: 32,
+              linkBorderRadius: true,
+              borderStrength: 0.5,
               seed: 0,
             })
           }

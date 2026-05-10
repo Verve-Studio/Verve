@@ -231,6 +231,16 @@ export function BrushSettingsPanel({
     update({ noise: { ...activeBrush.noise, ...patch } });
   const setTexture = (patch: Partial<Brush["texture"]>): void =>
     update({ texture: { ...activeBrush.texture, ...patch } });
+  const dualTip = activeBrush.dualTip ?? {
+    enabled: false,
+    shape: { kind: "round" as const },
+    sizeRatio: 1,
+    angle: 0,
+    mix: 1,
+    directionFollow: false,
+  };
+  const setDual = (patch: Partial<NonNullable<Brush["dualTip"]>>): void =>
+    update({ dualTip: { ...dualTip, ...patch } });
   const setWet = (patch: Partial<Brush["wetEdges"]>): void =>
     update({ wetEdges: { ...activeBrush.wetEdges, ...patch } });
   const setBuildUp = (patch: Partial<Brush["buildUp"]>): void =>
@@ -606,6 +616,76 @@ export function BrushSettingsPanel({
               }
             />
             Follow brush
+          </label>
+        </Section>
+
+        {/* ── Dual Brush ──────────────────────────────────────── */}
+        <Section title="Dual Brush">
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={dualTip.enabled}
+              onChange={(e) => setDual({ enabled: e.target.checked })}
+            />
+            Enable
+          </label>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Shape</label>
+            <select
+              value={dualTip.shape.kind}
+              onChange={(e) =>
+                setDual({
+                  shape: { kind: e.target.value as "round" | "square" | "diamond" },
+                })
+              }
+            >
+              <option value="round">Round</option>
+              <option value="square">Square</option>
+              <option value="diamond">Diamond</option>
+            </select>
+          </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Size</label>
+            <SliderInput
+              value={Math.round(dualTip.sizeRatio * 100)}
+              min={5}
+              max={200}
+              suffix="%"
+              inputWidth={42}
+              onChange={(v) => setDual({ sizeRatio: v / 100 })}
+            />
+          </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Mix</label>
+            <SliderInput
+              value={Math.round(dualTip.mix * 100)}
+              min={0}
+              max={100}
+              suffix="%"
+              inputWidth={42}
+              onChange={(v) => setDual({ mix: v / 100 })}
+            />
+          </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Angle</label>
+            <SliderInput
+              value={Math.round((dualTip.angle * 180) / Math.PI)}
+              min={-180}
+              max={180}
+              suffix="°"
+              inputWidth={42}
+              onChange={(v) => setDual({ angle: (v * Math.PI) / 180 })}
+            />
+          </div>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={dualTip.directionFollow}
+              onChange={(e) =>
+                setDual({ directionFollow: e.target.checked })
+              }
+            />
+            Follow stroke direction
           </label>
         </Section>
 

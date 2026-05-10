@@ -114,6 +114,29 @@
   flex-shrink: 0;
 }
 
+.linkBtn {
+  width: 14px;
+  height: 18px;
+  padding: 0;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: vars.$color-text-muted;
+  cursor: default;
+  transition: color vars.$transition-fast, background vars.$transition-fast;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+    color: vars.$color-text;
+  }
+
+  &[aria-pressed="true"] { color: vars.$color-accent-solid; }
+}
+
 .sep {
   height: 1px;
   background: vars.$color-border;

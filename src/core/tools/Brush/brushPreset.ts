@@ -215,6 +215,40 @@ export interface PaperTexture {
   followBrush: boolean;
 }
 
+/**
+ * Photoshop-style "Dual Brush": a second tip whose alpha is multiplied
+ * into the primary tip's alpha per pixel, breaking up the silhouette to
+ * mimic dry-media (charcoal, conte, sponge, oil bristle).
+ *
+ * Differs from `PaperTexture` (canvas-locked grain) in two ways:
+ *  - The dual tip travels with the brush — it lives in tip-local space, so
+ *    the texture warps and rotates with the stamp instead of feeling
+ *    glued to the canvas.
+ *  - It can use any `BrushTipShape` (procedural or captured bitmap),
+ *    making it a mini-brush rather than a tile pattern.
+ *
+ * Each primary stamp gets one dual sample (no inner stamping). The dual
+ * tip is centred on the primary, scaled by `sizeRatio`, rotated by
+ * `angle`, and sampled per pixel. With `mix=0` the dual contributes
+ * nothing; with `mix=1` it fully gates the primary alpha.
+ *
+ * Older brushes lacking this field fall back to a disabled default — the
+ * engine treats `dualTip === undefined` as identity multiplier.
+ */
+export interface DualTipSettings {
+  enabled: boolean;
+  shape: BrushTipShape;
+  /** 0.05..2 — dual tip diameter as a fraction of primary tip diameter. */
+  sizeRatio: number;
+  /** Radians. Constant offset from the primary stamp's angle. */
+  angle: number;
+  /** 0..1 — strength of the dual mask. 0 = primary only, 1 = full multiply. */
+  mix: number;
+  /** When true, dual tip rotates with stroke direction (like primary's
+   *  `pose.directionFollow`). Otherwise it uses `angle` only. */
+  directionFollow: boolean;
+}
+
 // ─── Top-level brush ─────────────────────────────────────────────────────────
 
 export type BrushScope = "document" | "user";
@@ -233,6 +267,9 @@ export interface Brush {
   pose: PoseDynamics;
   noise: NoiseSettings;
   texture: PaperTexture;
+  /** Optional second tip multiplied into the primary alpha per pixel.
+   *  Older brushes lack this field; the engine treats `undefined` as off. */
+  dualTip?: DualTipSettings;
   wetEdges: WetEdgeSettings;
   buildUp: BuildUpSettings;
   smudge: SmudgeSettings;
@@ -309,6 +346,14 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
     },
     noise: { amount: 0, scale: 4 },
     texture: { amount: 0, scale: 64, followBrush: false },
+    dualTip: {
+      enabled: false,
+      shape: { kind: "round" },
+      sizeRatio: 1,
+      angle: 0,
+      mix: 1,
+      directionFollow: false,
+    },
     wetEdges: { enabled: false, amount: 0.5, width: 2 },
     buildUp: { enabled: false, rate: 30 },
     smudge: { enabled: false, strength: 0.6, colorRate: 0 },

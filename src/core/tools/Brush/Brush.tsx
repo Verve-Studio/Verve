@@ -96,11 +96,27 @@ function createBrushHandler(): ToolHandler {
     segDirtyMaxY = -Infinity;
   }
 
+  /**
+   * Default pressure response curve — a gentle smoothstep S-curve that
+   * gives Wacom/Apple Pencil hardware a more "paintable" feel than the
+   * raw linear input. Hardware pressure is too touchy at the low end and
+   * too easy to peg at the top; the cubic Hermite below softens both
+   * extremes while keeping the midrange responsive. Applied centrally in
+   * `makePose` so every consumer of `pose.pressure` (dynamic curves +
+   * `pressureSize`) sees the same shaped value. The user's per-curve
+   * Catmull–Rom editor still applies on top, so brushes that want a
+   * different response just edit their curve.
+   */
+  function shapePressure(p: number): number {
+    const x = Math.max(0, Math.min(1, p));
+    return x * x * (3 - 2 * x);
+  }
+
   /** Snapshot the pen pose for the current sample. */
   function makePose(): StrokePoseInputs {
     const tiltMag = Math.min(1, smoothTilt);
     return {
-      pressure: smoothPressure,
+      pressure: shapePressure(smoothPressure),
       velocity: Math.min(1, smoothSpeed / MAX_TRACKING_SPEED),
       tilt: tiltMag,
       tiltAzimuth: smoothTiltAz,
@@ -253,7 +269,7 @@ function createBrushHandler(): ToolHandler {
     const opacity = brush.opacity;
 
     if (brush.pressureSize) {
-      size = size * Math.max(MIN_PRESSURE_FACTOR, pressure);
+      size = size * Math.max(MIN_PRESSURE_FACTOR, shapePressure(pressure));
     }
 
     return { size, opacity };

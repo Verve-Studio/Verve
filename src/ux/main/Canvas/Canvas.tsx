@@ -1134,6 +1134,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
 
   useEffect(() => {
     if (!isActive) return;
+    // Toggling tiled mode doesn't change the render plan (the renderer
+    // doesn't know about tiled mode — it lives in Canvas.tsx), so without a
+    // dirty marker `renderPlan()` would early-return on fingerprint match
+    // and the GPU canvas would still hold its prior-frame content. The
+    // tiled-overlay path below then `drawImage(gc, …)`s a stale/blank
+    // backing into the overlay until the next plan-changing event (e.g. a
+    // zoom). Mark viewport-dirty so the executor re-blits the stable
+    // composite into the swap chain before the overlay copy.
+    rendererRef.current?.markViewportDirty();
     doRender();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.canvas.tiledMode, state.canvas.showTileGrid, isActive]);
