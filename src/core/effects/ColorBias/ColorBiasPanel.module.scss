@@ -95,6 +95,38 @@
   }
 }
 
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+
+  input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+}
+
+.select {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-surface-hover);
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  color: var(--color-text);
+  outline: none;
+  cursor: pointer;
+
+  &:focus {
+    border-color: #0699fb;
+    box-shadow: 0 0 0 1px rgba(6, 153, 251, 0.45);
+  }
+}
+
 .numInput {
   width: 40px;
   height: 18px;

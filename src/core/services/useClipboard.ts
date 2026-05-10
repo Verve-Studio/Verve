@@ -3,6 +3,7 @@ import type { ClipboardData } from "@/core/store/clipboardStore";
 import { clipboardStore } from "@/core/store/clipboardStore";
 
 import { makeTabId } from "@/core/store/tabTypes";
+import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
@@ -262,14 +263,21 @@ export function useClipboard({
         offsetY,
       } = clipData;
       const newId = makeTabId();
+      // Clipboard data is always RGBA8 bytes. In an f32 doc convert to
+      // Float32 (matching the codebase's `convertRgba8ToF32` convention)
+      // and pass the matching format so the layer is allocated as f32.
+      const docFormat = state.pixelFormat;
+      const pasteData =
+        docFormat === "rgba32f" ? convertRgba8ToF32(srcData) : srcData;
       canvasHandleRef.current?.prepareNewLayer(
         newId,
         "Paste",
-        srcData,
+        pasteData,
         srcW,
         srcH,
         offsetX,
         offsetY,
+        docFormat,
       );
       pendingLayerLabelRef.current = "Paste";
       dispatch({
@@ -359,14 +367,20 @@ export function useClipboard({
       const newId = makeTabId();
       const maskId = makeTabId();
 
+      // Same Uint8 → Float32 conversion as the regular Paste path so the
+      // pasted layer lands correctly in an f32 document.
+      const docFormat = state.pixelFormat;
+      const pasteData =
+        docFormat === "rgba32f" ? convertRgba8ToF32(srcData) : srcData;
       canvasHandleRef.current?.prepareNewLayer(
         newId,
         "Paste Into",
-        srcData,
+        pasteData,
         srcW,
         srcH,
         pasteX,
         pasteY,
+        docFormat,
       );
       canvasHandleRef.current?.prepareMaskLayer(maskId, "Layer Mask", selMask);
 

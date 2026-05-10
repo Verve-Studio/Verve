@@ -31,7 +31,7 @@ export const HueSaturationEffect: IPipelineEffect<
 > = {
   id: "hue-saturation",
   label: "Hue/Saturation…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: { hue: 0, saturation: 0, lightness: 0 },
 
   buildPlanEntry(layer, { mask }) {

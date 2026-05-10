@@ -34,7 +34,7 @@ export const ColorVibranceEffect: IPipelineEffect<
 > = {
   id: "color-vibrance",
   label: "Color Vibrance…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: { vibrance: 0, saturation: 0 },
 
   buildPlanEntry(layer, { mask }) {

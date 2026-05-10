@@ -114,7 +114,7 @@ function ensureLutTextures(
 export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
   id: "curves",
   label: "Curves…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: createDefaultCurvesParams(),
 
   buildPlanEntry(layer, { mask }) {

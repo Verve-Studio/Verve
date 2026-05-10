@@ -57,7 +57,7 @@ export const ColorDitheringEffect: IPipelineEffect<
 > = {
   id: "color-dithering",
   label: "Color Dithering…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-indexed" },
   defaultParams: { style: "bayer4", opacity: 100 },
 
   buildPlanEntry(layer, { mask, swatches }) {

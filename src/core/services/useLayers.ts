@@ -94,7 +94,7 @@ export function useLayers({
           );
           handle.prepareNewLayerIndexed(newId, mergedName, indexData);
         } else {
-          handle.prepareNewLayer(newId, mergedName, merged as Uint8Array);
+          handle.prepareNewLayer(newId, mergedName, merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
         }
 
         const newLayers: LayerState[] = [];
@@ -153,7 +153,7 @@ export function useLayers({
         );
         handle.prepareNewLayerIndexed(newId, mergedName, indexData);
       } else {
-        handle.prepareNewLayer(newId, mergedName, merged as Uint8Array);
+        handle.prepareNewLayer(newId, mergedName, merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
       }
 
       const newLayers: LayerState[] = [];
@@ -211,7 +211,7 @@ export function useLayers({
         );
         handle.prepareNewLayerIndexed(newId, "Merged", indexData);
       } else {
-        handle.prepareNewLayer(newId, "Merged", merged as Uint8Array);
+        handle.prepareNewLayer(newId, "Merged", merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
       }
 
       const newLayers: LayerState[] = [];
@@ -294,7 +294,7 @@ export function useLayers({
         );
         handle.prepareNewLayerIndexed(newId, "Background", indexData);
       } else {
-        handle.prepareNewLayer(newId, "Background", merged as Uint8Array);
+        handle.prepareNewLayer(newId, "Background", merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
       }
       dispatch({
         type: "REORDER_LAYERS",
@@ -369,7 +369,20 @@ export function useLayers({
           );
           handle.prepareNewLayerIndexed(newId, src.name, indexData);
         } else {
-          handle.prepareNewLayer(newId, src.name, result.data as Uint8Array);
+          // Pass `pixelFormat` so f32 documents allocate a Float32-backed
+          // GpuLayer for the rasterised result; otherwise the float pixel
+          // data would be value-clamped into a Uint8Array (everything →
+          // 0 → fully transparent).
+          handle.prepareNewLayer(
+            newId,
+            src.name,
+            result.data,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            pixelFormat,
+          );
         }
 
         const newLayers = layers

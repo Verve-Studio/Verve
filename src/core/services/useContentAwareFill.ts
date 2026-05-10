@@ -2,6 +2,7 @@ import type { AppAction } from "@/core/store/AppContext";
 
 import type { AppState } from "@/types";
 import { computeSourceMask } from "@/utils/computeSourceMask";
+import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
 import { extractErrorMessage } from "@/utils/userFeedback";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { getPixelOps, inpaintRegion } from "@/wasm";
@@ -148,9 +149,27 @@ export function useContentAwareFill({
         // uses the correct label instead of 'New Layer'
         pendingLayerLabelRef.current = label;
 
-        // Prepare GPU layer (before dispatching so the sync effect is a no-op)
+        // Prepare GPU layer (before dispatching so the sync effect is a no-op).
+        // The inpainting algorithm always returns RGBA8 bytes; in an f32 doc
+        // we convert to Float32 (using the codebase's naive /255 convention,
+        // matching `convertRgba8ToF32`) and create the layer with the right
+        // format so the float buffer isn't value-clamped into a Uint8Array.
         const newLayerId = `layer-${Date.now()}`;
-        handle.prepareNewLayer(newLayerId, label, fillLayerData);
+        const docFormat = stateRef.current.pixelFormat;
+        const layerData =
+          docFormat === "rgba32f"
+            ? convertRgba8ToF32(fillLayerData)
+            : fillLayerData;
+        handle.prepareNewLayer(
+          newLayerId,
+          label,
+          layerData,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          docFormat,
+        );
 
         // Content-Aware Delete: erase BEFORE REORDER_LAYERS dispatch so that the
         // auto-history-capture triggered by layer count change records the fully

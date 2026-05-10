@@ -48,28 +48,77 @@ for (const effect of effectRegistry.all()) {
 }
 
 /**
- * Stable bucket-by-group: items with the same `group` key become contiguous,
- * preserving group order by first appearance and within-group registration
- * order. Without this the consumers' "insert separator when group changes"
- * logic produces duplicate sections for any group whose effects are scattered
- * across the registration order (e.g. Bloom + Halation both `fx-lenseffects`
- * but registered with other groups between them).
+ * Pinned group order — groups appear in this order in their respective menu;
+ * any group not listed sorts after the pinned ones in alphabetical order.
+ * Within each group, items are alphabetised by label.
  */
-function groupContiguous<T extends { group?: string }>(items: readonly T[]): T[] {
-  const groupOrder: Array<string | undefined> = [];
+const ADJUSTMENT_GROUP_ORDER = [
+  "adj-tone",     // Brightness/Contrast, Curves, Auto Match
+  "adj-color",    // Hue/Saturation, Color Balance, Temperature, Vibrance, Selective Color
+  "adj-style",    // Black & White, Channel Mixer, Color Bias, Color Grading, Invert
+  "adj-indexed",  // Reduce Colors, Color Dithering
+];
+const EFFECTS_GROUP_ORDER = [
+  "fx-color",
+  "fx-lenseffects",
+  "fx-shadow",
+  "fx-distortion",
+];
+const FILTER_GROUP_ORDER = [
+  "blur",
+  "sharpen",
+  "noise",
+  "stylize",
+  "render",
+  "texture",
+];
+
+/**
+ * Bucket items by group, then return them flattened so each group's items
+ * are contiguous (the consumers insert a separator whenever `group` changes).
+ * Groups are emitted in the pinned-order list first, then any unknown groups
+ * in alphabetical order. Within each group, items are alphabetised by label.
+ */
+function organiseMenu<T extends { group?: string; label: string }>(
+  items: readonly T[],
+  pinnedOrder: readonly string[],
+): T[] {
   const buckets = new Map<string | undefined, T[]>();
   for (const item of items) {
-    let bucket = buckets.get(item.group);
-    if (!bucket) {
-      bucket = [];
-      buckets.set(item.group, bucket);
-      groupOrder.push(item.group);
-    }
-    bucket.push(item);
+    const arr = buckets.get(item.group) ?? [];
+    arr.push(item);
+    buckets.set(item.group, arr);
   }
+  // Sort each bucket alphabetically by label (case-insensitive).
+  const labelKey = (v: T): string => v.label.toLocaleLowerCase();
+  for (const arr of buckets.values()) {
+    arr.sort((a, b) => labelKey(a).localeCompare(labelKey(b)));
+  }
+  // Emit pinned groups first (in declared order), then any unknown groups
+  // alphabetically. Items missing a group sink to the end.
+  const known = new Set(pinnedOrder);
+  const unknown = Array.from(buckets.keys())
+    .filter(
+      (g): g is string => typeof g === "string" && !known.has(g),
+    )
+    .sort();
+  const groupOrder: Array<string | undefined> = [
+    ...pinnedOrder.filter((g) => buckets.has(g)),
+    ...unknown,
+  ];
+  if (buckets.has(undefined)) groupOrder.push(undefined);
   return groupOrder.flatMap((g) => buckets.get(g) ?? []);
 }
 
-export const ADJUSTMENT_MENU_ITEMS = groupContiguous(adjustmentItems);
-export const EFFECTS_MENU_ITEMS = groupContiguous(effectsItems);
-export const FILTER_MENU_ITEMS = groupContiguous(filterItems);
+export const ADJUSTMENT_MENU_ITEMS = organiseMenu(
+  adjustmentItems,
+  ADJUSTMENT_GROUP_ORDER,
+);
+export const EFFECTS_MENU_ITEMS = organiseMenu(
+  effectsItems,
+  EFFECTS_GROUP_ORDER,
+);
+export const FILTER_MENU_ITEMS = organiseMenu(
+  filterItems,
+  FILTER_GROUP_ORDER,
+);

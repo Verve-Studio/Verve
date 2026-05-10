@@ -38,7 +38,7 @@ export const BlackAndWhiteEffect: IPipelineEffect<
 > = {
   id: "black-and-white",
   label: "Black and White…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {
     reds: 40,
     yellows: 60,

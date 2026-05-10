@@ -41,7 +41,7 @@ export const ColorBalanceEffect: IPipelineEffect<
 > = {
   id: "color-balance",
   label: "Color Balance…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: {
     shadows: { cr: 0, mg: 0, yb: 0 },
     midtones: { cr: 0, mg: 0, yb: 0 },

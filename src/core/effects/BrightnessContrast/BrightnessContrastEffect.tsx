@@ -38,7 +38,7 @@ export const BrightnessContrastEffect: IPipelineEffect<
 > = {
   id: "brightness-contrast",
   label: "Brightness/Contrast…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: { brightness: 0, contrast: 0 },
 
   buildPlanEntry(layer, { mask }) {

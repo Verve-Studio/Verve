@@ -64,7 +64,7 @@ export const AutoMatchEffect: IPipelineEffect<
 > = {
   id: "auto-match",
   label: "Auto Match…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: {
     samplingDistance: 100,
     strength: 100,

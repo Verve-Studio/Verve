@@ -42,7 +42,7 @@ export const ColorTemperatureEffect: IPipelineEffect<
 > = {
   id: "color-temperature",
   label: "Color Temperature…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: { temperature: 0, tint: 0 },
 
   buildPlanEntry(layer, { mask }) {

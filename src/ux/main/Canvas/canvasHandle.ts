@@ -82,11 +82,16 @@ export interface CanvasHandle {
   prepareNewLayer: (
     layerId: string,
     name: string,
-    data: Uint8Array,
+    data: Uint8Array | Float32Array,
     lw?: number,
     lh?: number,
     ox?: number,
     oy?: number,
+    /** Layer pixel format. Default 'rgba8'. Pass 'rgba32f' when `data` is a
+     *  Float32Array (e.g. result of rasterising in an f32 document) — without
+     *  this the routine creates an rgba8 layer and `Uint8Array.set(Float32Array)`
+     *  clamps every float in [0,1] to 0, producing a transparent black layer. */
+    format?: import("@/types").PixelFormat,
   ) => void;
   /** Zero out every pixel in a layer that is covered by the selection mask (canvas-space), then flush+render. */
   clearLayerPixels: (layerId: string, mask: Uint8Array) => void;
@@ -503,7 +508,7 @@ export function useCanvasHandle({
         return result;
       },
 
-      prepareNewLayer: (layerId, name, data, lw?, lh?, ox?, oy?) => {
+      prepareNewLayer: (layerId, name, data, lw?, lh?, ox?, oy?, format?) => {
         const renderer = rendererRef.current;
         if (!renderer) return;
         const useW = lw ?? renderer.pixelWidth;
@@ -517,8 +522,12 @@ export function useCanvasHandle({
           useH,
           useOx,
           useOy,
+          format,
         );
-        layer.data.set(data);
+        // Both arrays are the same logical kind for set(): Uint8Array→Uint8Array
+        // and Float32Array→Float32Array copy element-wise. The format/data
+        // pairing is the caller's responsibility.
+        (layer.data as Uint8Array | Float32Array).set(data as never);
         renderer.flushLayer(layer);
         glLayersRef.current.set(layerId, layer);
         renderFromPlan();

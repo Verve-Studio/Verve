@@ -46,7 +46,7 @@ export const ChannelMixerEffect: IPipelineEffect<
 > = {
   id: "channel-mixer",
   label: "Channel Mixer…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {
     monochrome: false,
     outputChannel: "red",

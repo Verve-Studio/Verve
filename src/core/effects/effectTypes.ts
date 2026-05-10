@@ -18,6 +18,7 @@ import type { BloomParams } from "./Bloom/BloomEffect";
 import type { ChromaticAberrationParams } from "./ChromaticAberration/ChromaticAberrationEffect";
 import type { HalationParams } from "./Halation/HalationEffect";
 import type { ColorKeyParams } from "./ColorKey/ColorKeyEffect";
+import type { ColorBiasParams } from "./ColorBias/ColorBiasEffect";
 import type { DropShadowParams } from "./DropShadow/DropShadowEffect";
 import type { GlowParams } from "./Glow/GlowEffect";
 import type { OutlineParams } from "./Outline/OutlineEffect";
@@ -75,6 +76,7 @@ export interface EffectParamsMap {
   "chromatic-aberration": ChromaticAberrationParams;
   "halation": HalationParams;
   "color-key": ColorKeyParams;
+  "color-bias": ColorBiasParams;
   "drop-shadow": DropShadowParams;
   "glow": GlowParams;
   "outline": OutlineParams;
