@@ -92,35 +92,53 @@ fn sampleCube(rgb: vec3f) -> vec3f {
 @fragment
 fn fs_blit(in: VertexOutput) -> @location(0) vec4f {
   let sample = textureSample(srcTex, blitSampler, in.uv);
-  // Stage 1: produce an sRGB-encoded display value.
-  //
-  //   - rgba8 doc: source is already sRGB-encoded; pass through.
-  //   - rgba32f doc: source is linear-light; apply exposure, optional
-  //     tone-map, then sRGB encode.
   var displayRgb: vec3f;
-  if (tm.isFp32 < 0.5) {
-    displayRgb = sample.rgb;
-  } else {
-    let scaled = sample.rgb * tm.exposureLinear;
-    var mapped: vec3f;
-    if (tm.tm_operator == 1u) {
-      mapped = tm_reinhard(scaled);
-    } else {
-      mapped = clamp(scaled, vec3f(0.0), vec3f(1.0));
-    }
-    displayRgb = linearToSrgb(clamp(mapped, vec3f(0.0), vec3f(1.0)));
-  }
 
-  // Stage 2: optional canvas-only view-transform LUT. Convert the sRGB-
-  // encoded display value into the LUT's input space, apply shaper + cube,
-  // and convert back to sRGB for the swap chain.
   if (tm.hasViewLut == 1u) {
-    var c = convertSpace(displayRgb, 0u, tm.lutInSpace);
+    // ── View-transform LUT path ──────────────────────────────────────
+    //
+    // The LUT *is* the HDR → display transform (Filmic / AgX / HLG /
+    // Rec.2020 / OCIO views all bake their own contrast curve and
+    // highlight roll-off). Pre-applying the analytic Reinhard / Clamp
+    // here would compress the linear range twice — destroying exactly
+    // the highlight headroom the LUT expects. So we feed the LUT the
+    // raw linear-light value (with exposure applied) and let it do all
+    // the tone-mapping itself.
+    let inputLinear = select(
+      sample.rgb,                          // rgba8 doc — input is sRGB-encoded
+      sample.rgb * tm.exposureLinear,      // rgba32f — linear-light scene; apply EV gain
+      tm.isFp32 >= 0.5,
+    );
+    let inputSpaceId = select(0u, 1u, tm.isFp32 >= 0.5); // 0=sRGB, 1=linear
+    var c = convertSpace(inputLinear, inputSpaceId, tm.lutInSpace);
     if (tm.hasShaper == 1u) {
-      c = vec3f(sampleShaper(c.r, 0u), sampleShaper(c.g, 1u), sampleShaper(c.b, 2u));
+      c = vec3f(
+        sampleShaper(c.r, 0u),
+        sampleShaper(c.g, 1u),
+        sampleShaper(c.b, 2u),
+      );
     }
     c = sampleCube(c);
+    // Output to sRGB-encoded swap chain regardless of source format.
     displayRgb = convertSpace(c, tm.lutOutSpace, 0u);
+  } else {
+    // ── No view LUT: analytic path ───────────────────────────────────
+    //
+    //   - rgba8 doc: source already sRGB-encoded; pass through.
+    //   - rgba32f doc: source is linear-light scene; apply exposure, the
+    //     chosen tone-map operator, then sRGB encode.
+    if (tm.isFp32 < 0.5) {
+      displayRgb = sample.rgb;
+    } else {
+      let scaled = sample.rgb * tm.exposureLinear;
+      var mapped: vec3f;
+      if (tm.tm_operator == 1u) {
+        mapped = tm_reinhard(scaled);
+      } else {
+        mapped = clamp(scaled, vec3f(0.0), vec3f(1.0));
+      }
+      displayRgb = linearToSrgb(clamp(mapped, vec3f(0.0), vec3f(1.0)));
+    }
   }
 
   return vec4f(displayRgb, sample.a);

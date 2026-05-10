@@ -250,35 +250,50 @@ function bakeRec2020ToSrgb(): LutTransform {
 
 // ─── AgX → sRGB ──────────────────────────────────────────────────────────────
 //
-// Simplified AgX: log2 shaper into a polynomial sigmoid tuned to roughly
-// match Sobotka's AgX Base contrast (33-LUT spec'd at ±6.5 stops). For
-// production use the full AgX cube; this is the soft-proof approximation.
+// AgX Base contrast curve (Sobotka). Input is scene-linear sRGB; we
+// log2-encode it over the AgX dynamic range, apply the published 6th-order
+// polynomial, and emit sRGB-encoded display values directly. The polynomial
+// is the public-domain approximation used by Three.js, Filament, and the
+// Blender AgX add-on.
+//
+// HDR values above 1.0 are clipped at the cube's [0,1] input domain — for
+// proper HDR headroom users can apply an exposure adjustment first or load
+// the official AgX `.cube` LUT via Image → Load LUT….
 
 function agxSigmoid(x: number): number {
-  // 7th-order polynomial fit to AgX's Base contrast curve, normalised so
-  // f(0)=0, f(1)=1, with toe and shoulder contrast comparable to AgX Base.
-  // (Coefficients drawn from the public AgX reference in liblcms-style.)
-  const t = Math.max(0, Math.min(1, x));
-  const a = 17.86;
-  const b = -54.20;
-  const c = 60.86;
-  const d = -27.18;
-  const e = 4.06;
-  return ((((a * t + b) * t + c) * t + d) * t + e) * t;
+  // 6th-order polynomial fit of AgX's Base contrast curve. Output is
+  // sRGB-encoded display value — no further encoding needed downstream.
+  // f(0) ≈ -0.002, f(0.6061) ≈ 0.497 (middle gray maps to display
+  // middle gray), f(1) ≈ 1.089. We clamp at the call site.
+  const x2 = x * x;
+  const x4 = x2 * x2;
+  return (
+    15.5 * x4 * x2 -
+    40.14 * x4 * x +
+    31.96 * x4 -
+    6.868 * x2 * x +
+    0.4298 * x2 +
+    0.1191 * x -
+    0.00232
+  );
 }
 
 function bakeAgxToSrgb(): LutTransform {
-  const shaper = bakeLogShaper(64); // ~6.5 stops headroom + toe
+  // AgX Base dynamic range: -12.474 EV (~0.000175) → +4.026 EV (~16.3).
+  // Middle gray (0.18) sits at log2(0.18) = -2.474, mapped to t ≈ 0.606.
+  const minEV = -12.47393;
+  const maxEV = 4.026069;
+  const evRange = maxEV - minEV;
+
   const cube = bakeCube((r, g, b) => {
-    // Map shaper-encoded [0,1] back to log2 space, normalise to AgX
-    // ±6.5 stops centred at middle gray (~0.18 linear → 0.5 log).
-    const stops = 13;
-    const tt = (c: number): number =>
-      Math.max(0, Math.min(1, (Math.log2((c + 1e-6) * Math.pow(2, stops / 2))) / stops));
-    const sr = agxSigmoid(tt(r));
-    const sg = agxSigmoid(tt(g));
-    const sb = agxSigmoid(tt(b));
-    return toSrgb(sr, sg, sb);
+    const apply = (lin: number): number => {
+      const safe = Math.max(lin, 1e-10);
+      const ev = Math.log2(safe);
+      const t = Math.max(0, Math.min(1, (ev - minEV) / evRange));
+      // Polynomial output is already sRGB-encoded — clamp + return.
+      return Math.max(0, Math.min(1, agxSigmoid(t)));
+    };
+    return [apply(r), apply(g), apply(b)];
   });
   return {
     id: "builtin:agx-to-srgb",
@@ -286,7 +301,6 @@ function bakeAgxToSrgb(): LutTransform {
     inputSpace: "linear-srgb",
     outputSpace: "srgb",
     category: "view-transform",
-    shaper,
     cube,
     source: { kind: "builtin", key: "agx-to-srgb" },
   };

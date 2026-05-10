@@ -205,6 +205,7 @@ export function useFileOps({
           pixelFormat: fmt,
           exposureEV: 0,
           toneMappingOperator: "reinhard",
+            viewTransformLutId: null,
           animationMode: false,
         },
       ];
@@ -385,6 +386,7 @@ export function useFileOps({
             pixelFormat: "rgba8" as PixelFormat,
             exposureEV: 0,
             toneMappingOperator: "reinhard",
+            viewTransformLutId: null,
             animationMode: false,
           },
         ];
@@ -493,6 +495,7 @@ export function useFileOps({
               pixelFormat: "rgba32f" as PixelFormat,
               exposureEV: 0,
               toneMappingOperator: "reinhard",
+            viewTransformLutId: null,
               animationMode: false,
             },
           ];
@@ -592,6 +595,7 @@ export function useFileOps({
               pixelFormat: "rgba32f" as PixelFormat,
               exposureEV: 0,
               toneMappingOperator: "reinhard",
+            viewTransformLutId: null,
               animationMode: false,
             },
           ];
@@ -675,6 +679,7 @@ export function useFileOps({
             pixelFormat: "rgba8" as PixelFormat,
             exposureEV: 0,
             toneMappingOperator: "reinhard",
+            viewTransformLutId: null,
             animationMode: false,
           },
         ];
@@ -874,6 +879,7 @@ export function useFileOps({
           pixelFormat: docPixelFormat,
           exposureEV: 0,
           toneMappingOperator: "reinhard" as ToneMappingOperator,
+          viewTransformLutId: null,
           animationMode: false,
         },
       ];

@@ -83,6 +83,12 @@ export interface TabRecord {
   exposureEV: number;
   /** Session-only: tone-mapping operator for this tab. Not persisted. */
   toneMappingOperator: ToneMappingOperator;
+  /** Session-only: id (in `lutStore`) of the active view-transform LUT for
+   *  this tab, or `null` for none. The view transform is canvas-only — it
+   *  affects on-screen display, never exports — so it lives on the tab
+   *  record alongside exposure / tone-map settings rather than in document
+   *  state. Not persisted to disk. */
+  viewTransformLutId: string | null;
   /** Session-only: whether this tab is in animation mode. Not persisted. */
   animationMode: boolean;
 }

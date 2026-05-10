@@ -171,6 +171,7 @@ export function useTabs(
       setActiveTabId(toId);
       displayStore.setEV(toTab.exposureEV ?? 0);
       displayStore.setOperator(toTab.toneMappingOperator ?? "reinhard");
+      displayStore.setViewTransformLut(toTab.viewTransformLutId ?? null);
       // Swap palette + groups in the same action that swaps layers/canvas
       // so state never has the outgoing tab's swatchGroups paired with the
       // incoming tab's layers (which would invalidate any group-id-keyed
@@ -249,6 +250,7 @@ export function useTabs(
               showTileGrid: state.canvas.showTileGrid,
               exposureEV: displayStore.exposureEV,
               toneMappingOperator: displayStore.toneMappingOperator,
+              viewTransformLutId: displayStore.viewTransformLutId,
               animationMode: state.animationMode,
             }
           : t,
