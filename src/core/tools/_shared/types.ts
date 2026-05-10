@@ -8,6 +8,7 @@ import type {
   TextLayerState,
   ShapeLayerState,
   FrameLayerState,
+  LayerState,
   PixelFormat,
   Guide,
   Tool,
@@ -113,10 +114,26 @@ export interface ToolContext {
   /** Current guide list — used by tools that snap to guides. */
   guides: Guide[];
   /**
-   * Map from parent pixel-layer ID → its mask GpuLayer.
-   * Used by tools (e.g. move) that need to keep the mask in sync with the parent.
+   * Map from parent pixel-layer ID → its mask GpuLayer (visible masks only —
+   * built for the rendering pipeline). Tools that need to track *all* mask
+   * GpuLayers regardless of visibility should resolve through `getGpuLayer`
+   * after walking parent→child relations in `layerStates`.
    */
-  maskMap: Map<string, GpuLayer>; /**
+  maskMap: Map<string, GpuLayer>;
+  /**
+   * Full layer-state list for the document (every kind: pixel, text, shape,
+   * frame, mask, adjustment, group, composite). Used by tools that need to
+   * traverse parent/child relationships — e.g. the move tool dragging a
+   * group also drags every descendant.
+   */
+  layerStates: readonly LayerState[];
+  /**
+   * Resolve any layer id to its GpuLayer instance, regardless of whether the
+   * layer is currently in the visible render set. Returns `undefined` if no
+   * GpuLayer has been allocated (e.g. for container layers without pixel
+   * data, or adjustment layers).
+   */
+  getGpuLayer: (id: string) => GpuLayer | undefined; /**
    * IDs of all layers currently selected in the Layers panel (excluding the
    * active layer, which is always implicitly included). Used by the move tool
    * to move all selected layers together.

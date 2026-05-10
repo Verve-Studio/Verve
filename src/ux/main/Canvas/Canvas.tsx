@@ -1689,6 +1689,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       },
       guides: state.canvas.guides,
       maskMap: buildMaskMap(),
+      layerStates: state.layers,
+      getGpuLayer: (id: string): GpuLayer | undefined =>
+        glLayersRef.current.get(id),
       selectedLayerIds: state.selectedLayerIds,
       setActiveLayer: (id: string) => {
         dispatch({ type: "SET_ACTIVE_LAYER", payload: id });

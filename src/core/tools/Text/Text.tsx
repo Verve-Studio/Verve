@@ -281,9 +281,9 @@ function FontPicker({
   const btnStyle: React.CSSProperties = {
     fontFamily: `"${value}", sans-serif`,
     fontSize: 12,
-    background: "#2a2a2a",
-    color: "#e0e0e0",
-    border: "1px solid #555",
+    background: "var(--color-surface)",
+    color: "var(--color-text)",
+    border: "1px solid var(--color-border)",
     borderRadius: 3,
     padding: "0 6px",
     width: 150,
@@ -321,13 +321,13 @@ function FontPicker({
               left: dropPos.left,
               width: 220,
               maxHeight: 300,
-              background: "#2a2a2a",
-              border: "1px solid #555",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
               borderRadius: 4,
               zIndex: 9999,
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.55)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
               overflow: "hidden",
             }}
           >
@@ -343,10 +343,10 @@ function FontPicker({
                 e.stopPropagation();
               }}
               style={{
-                background: "#1e1e1e",
-                color: "#e0e0e0",
+                background: "var(--color-bg)",
+                color: "var(--color-text)",
                 border: "none",
-                borderBottom: "1px solid #444",
+                borderBottom: "1px solid var(--color-border-light)",
                 padding: "5px 8px",
                 fontSize: 12,
                 outline: "none",
@@ -364,20 +364,26 @@ function FontPicker({
                     fontSize: 14,
                     padding: "4px 8px",
                     cursor: "pointer",
-                    color: "#e0e0e0",
+                    color: "var(--color-text)",
                     background:
-                      f === value ? "rgba(0,120,255,0.25)" : "transparent",
+                      f === value
+                        ? "var(--color-surface-selected)"
+                        : "transparent",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                   }}
                   onMouseEnter={(e) => {
                     (e.currentTarget as HTMLElement).style.background =
-                      f === value ? "rgba(0,120,255,0.45)" : "#3d3d3d";
+                      f === value
+                        ? "var(--color-surface-selected)"
+                        : "var(--color-surface-hover)";
                   }}
                   onMouseLeave={(e) => {
                     (e.currentTarget as HTMLElement).style.background =
-                      f === value ? "rgba(0,120,255,0.25)" : "transparent";
+                      f === value
+                        ? "var(--color-surface-selected)"
+                        : "transparent";
                   }}
                   onPointerDown={(e) => {
                     e.preventDefault();
@@ -390,7 +396,13 @@ function FontPicker({
                 </div>
               ))}
               {filtered.length === 0 && (
-                <div style={{ padding: "8px", color: "#888", fontSize: 12 }}>
+                <div
+                  style={{
+                    padding: "8px",
+                    color: "var(--color-text-muted)",
+                    fontSize: 12,
+                  }}
+                >
                   No fonts found
                 </div>
               )}
@@ -776,7 +788,7 @@ function TextOptions({
           width: 22,
           height: 22,
           background: `rgb(${color.r},${color.g},${color.b})`,
-          border: "1px solid #555",
+          border: "1px solid var(--color-border)",
           cursor: "pointer",
           borderRadius: 2,
           flexShrink: 0,

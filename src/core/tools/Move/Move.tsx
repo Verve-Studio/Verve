@@ -5,7 +5,9 @@ import type {
   TextLayerState,
   ShapeLayerState,
   FrameLayerState,
+  LayerState,
 } from "@/types";
+import { isContainerLayer } from "@/types";
 import type {
   GpuLayer,
   WebGPURenderer,
@@ -182,6 +184,126 @@ function snapDelta(
   return [snappedDx, snappedDy];
 }
 
+// ─── Follower collection ────────────────────────────────────────────────────
+//
+// When a layer is moved, all of its descendants must move with it — masks
+// follow their parent, group/composite children follow their container.
+// Followers fall into two flavours:
+//   - Offset followers: any layer with a normal `offsetX/Y` GpuLayer (pixel,
+//     text, shape, frame). Shifted by adjusting offsetX/Y.
+//   - Mask followers: full-canvas mask GpuLayers. Shifted by translating
+//     their pixel buffer in place via `applyMaskTranslate`.
+// Adjustment layers carry no spatial offset and are skipped. Group /
+// composite containers themselves have no GpuLayer; we descend into their
+// `childIds`.
+
+interface OffsetFollower {
+  gl: GpuLayer;
+  origX: number;
+  origY: number;
+  ls: LayerState;
+}
+
+interface MaskFollower {
+  gl: GpuLayer;
+  origData: Uint8Array;
+}
+
+function collectFollowers(
+  rootIds: readonly string[],
+  ctx: ToolContext,
+  excludeFromFollowers: readonly string[] = [],
+): { offsetFollowers: OffsetFollower[]; maskFollowers: MaskFollower[] } {
+  const offsetFs: OffsetFollower[] = [];
+  const maskFs: MaskFollower[] = [];
+  const visited = new Set<string>();
+  const excludeSet = new Set(excludeFromFollowers);
+
+  const layersById = new Map(ctx.layerStates.map((l) => [l.id, l]));
+
+  // Pre-compute parent → ids of mask/adjustment layers that point at it.
+  const parentToImplicitChildren = new Map<string, string[]>();
+  for (const l of ctx.layerStates) {
+    if ("type" in l && (l.type === "mask" || l.type === "adjustment")) {
+      const arr = parentToImplicitChildren.get(l.parentId) ?? [];
+      arr.push(l.id);
+      parentToImplicitChildren.set(l.parentId, arr);
+    }
+  }
+
+  const visit = (id: string): void => {
+    if (visited.has(id)) return;
+    visited.add(id);
+    const ls = layersById.get(id);
+    if (!ls) return;
+
+    // Excluded ids skip self-as-follower but still propagate descent — so
+    // when the active text layer is excluded (its parametric path drives
+    // its own GpuLayer offset), its mask child still gets pulled along.
+    const skipSelf = excludeSet.has(id);
+
+    if ("type" in ls && ls.type === "mask") {
+      if (!skipSelf) {
+        const gl = ctx.getGpuLayer(id);
+        if (gl) {
+          maskFs.push({ gl, origData: (gl.data as Uint8Array).slice() });
+        }
+      }
+    } else if ("type" in ls && ls.type === "adjustment") {
+      // Adjustments have no spatial offset.
+    } else if (isContainerLayer(ls)) {
+      // Container — descend into children. Containers themselves have no GpuLayer.
+      for (const childId of ls.childIds) visit(childId);
+    } else if (!skipSelf) {
+      // Pixel / text / shape / frame — track offsetX/Y.
+      const gl = ctx.getGpuLayer(id);
+      if (gl) {
+        offsetFs.push({ gl, origX: gl.offsetX, origY: gl.offsetY, ls });
+      }
+    }
+
+    // Implicit mask/adjustment children that point at this layer via parentId.
+    const implicit = parentToImplicitChildren.get(id);
+    if (implicit) for (const childId of implicit) visit(childId);
+  };
+
+  for (const id of rootIds) visit(id);
+  return { offsetFollowers: offsetFs, maskFollowers: maskFs };
+}
+
+/**
+ * Translate a full-canvas mask GpuLayer's pixel buffer by (dx, dy) relative
+ * to its captured snapshot, and flush to GPU. Keeps the mask spatially
+ * aligned with its parent layer as the parent moves.
+ */
+function applyMaskTranslate(
+  follower: MaskFollower,
+  dx: number,
+  dy: number,
+  renderer: WebGPURenderer,
+): void {
+  const { gl, origData } = follower;
+  const w = renderer.pixelWidth;
+  const h = renderer.pixelHeight;
+  const dst = gl.data as Uint8Array;
+  dst.fill(0);
+  for (let sy = 0; sy < h; sy++) {
+    const ty = sy + dy;
+    if (ty < 0 || ty >= h) continue;
+    for (let sx = 0; sx < w; sx++) {
+      const tx = sx + dx;
+      if (tx < 0 || tx >= w) continue;
+      const si = (sy * w + sx) * 4;
+      const di = (ty * w + tx) * 4;
+      dst[di] = origData[si];
+      dst[di + 1] = origData[si + 1];
+      dst[di + 2] = origData[si + 2];
+      dst[di + 3] = origData[si + 3];
+    }
+  }
+  renderer.flushLayer(gl);
+}
+
 // ─── Display store (live position/size for options bar) ───────────────────────
 
 const moveDisplay = {
@@ -239,8 +361,11 @@ function createMoveHandler(): ToolHandler {
   // For whole-layer move: store original offset of the active layer
   let originalOffsetX = 0;
   let originalOffsetY = 0;
-  // For multi-layer move: original offsets for ALL selected layers (keyed by layer id)
-  let multiOriginalOffsets: Map<string, { x: number; y: number }> | null = null;
+  // Followers: every layer that should move with the active drag —
+  // explicitly selected layers + all of their descendants (mask children,
+  // group/composite contents, recursively). Computed at pointer-down.
+  let offsetFollowers: OffsetFollower[] = [];
+  let maskFollowers: MaskFollower[] = [];
   // For text layer move: track original ls.x / ls.y
   let textLayerSnapshot: TextLayerState | null = null;
   let textLayerOrigX = 0;
@@ -249,46 +374,11 @@ function createMoveHandler(): ToolHandler {
   let shapeLayerSnapshot: ShapeLayerState | null = null;
   // For frame layer move: track original parametric center
   let frameLayerSnapshot: FrameLayerState | null = null;
-  // For whole-layer move: snapshot of the mask pixel data at pointer-down
-  let originalMaskData: Uint8Array | null = null;
   let isDown = false;
   // Cached visible-pixel bounding box for snap-to-guide (computed at pointer-down)
   let cachedVisibleBounds: VisibleBounds | null = null;
   // When true, cachedVisibleBounds is already in canvas-space (pass origX=0/origY=0 to snapDelta)
   let boundsAreCanvasSpace = false;
-
-  /**
-   * Shift a full-canvas RGBA mask layer's pixel data by (dx, dy) relative to
-   * `originalMaskData` (the snapshot taken at pointer-down) and flush to GPU.
-   * This keeps the mask spatially aligned with its parent layer as it moves.
-   */
-  function applyMaskShift(
-    dx: number,
-    dy: number,
-    maskLayer: GpuLayer,
-    renderer: WebGPURenderer,
-  ): void {
-    if (!originalMaskData) return;
-    const w = renderer.pixelWidth;
-    const h = renderer.pixelHeight;
-    const dst = maskLayer.data as Uint8Array;
-    dst.fill(0);
-    for (let sy = 0; sy < h; sy++) {
-      const ty = sy + dy;
-      if (ty < 0 || ty >= h) continue;
-      for (let sx = 0; sx < w; sx++) {
-        const tx = sx + dx;
-        if (tx < 0 || tx >= w) continue;
-        const si = (sy * w + sx) * 4;
-        const di = (ty * w + tx) * 4;
-        dst[di] = originalMaskData[si];
-        dst[di + 1] = originalMaskData[si + 1];
-        dst[di + 2] = originalMaskData[si + 2];
-        dst[di + 3] = originalMaskData[si + 3];
-      }
-    }
-    renderer.flushLayer(maskLayer);
-  }
 
   function applySelectionMove(dx: number, dy: number, ctx: ToolContext): void {
     const { renderer, layer, layers, render } = ctx;
@@ -377,66 +467,87 @@ function createMoveHandler(): ToolHandler {
         originalMask = selMask.slice();
         originalOffsetX = 0;
         originalOffsetY = 0;
-        multiOriginalOffsets = null;
+        offsetFollowers = [];
+        maskFollowers = [];
         cachedVisibleBounds = null;
       } else {
-        // Whole-layer move: just update the offset
+        // Whole-layer move (and parametric paths): set up followers.
         originalPixels = null;
         originalMask = null;
         originalOffsetX = ctx.layer.offsetX;
         originalOffsetY = ctx.layer.offsetY;
-        cachedVisibleBounds = getVisibleBounds(
-          ctx.layer.data,
-          ctx.layer.layerWidth,
-          ctx.layer.layerHeight,
-          ctx.layer.format,
-        );
-        // Snapshot the mask's pixel data so we can shift it during drag
-        const maskGl = ctx.maskMap.get(ctx.layer.id);
-        originalMaskData = maskGl ? (maskGl.data as Uint8Array).slice() : null;
         if (textLayerSnapshot) {
           textLayerOrigX = textLayerSnapshot.x;
           textLayerOrigY = textLayerSnapshot.y;
         }
-        // Capture offsets for all additional selected layers
-        const extraIds = ctx.selectedLayerIds.filter(
-          (id) => id !== ctx.layer.id,
-        );
-        if (extraIds.length > 0) {
-          multiOriginalOffsets = new Map();
-          multiOriginalOffsets.set(ctx.layer.id, {
-            x: originalOffsetX,
-            y: originalOffsetY,
-          });
-          for (const id of extraIds) {
-            const gl = ctx.layers.find((l) => l.id === id);
-            if (gl)
-              multiOriginalOffsets.set(id, { x: gl.offsetX, y: gl.offsetY });
-          }
-          // Compute union of visible-pixel bounds in canvas-space across all selected layers
-          const allLayers = [
-            ctx.layer,
-            ...(extraIds
-              .map((id) => ctx.layers.find((l) => l.id === id))
-              .filter(Boolean) as (typeof ctx.layer)[]),
-          ];
+
+        // Roots = active layer + extra-selected layers. The active layer
+        // is excluded from offsetFollowers when ctx.layer is parametric
+        // because the parametric path drives ctx.layer's GpuLayer offset
+        // directly during drag and bakes the result on pointer-up.
+        const rootIds = [
+          ctx.layer.id,
+          ...ctx.selectedLayerIds.filter((id) => id !== ctx.layer.id),
+        ];
+        const isActiveParametric =
+          textLayerSnapshot !== null ||
+          shapeLayerSnapshot !== null ||
+          frameLayerSnapshot !== null;
+        const exclude = isActiveParametric ? [ctx.layer.id] : [];
+        const followers = collectFollowers(rootIds, ctx, exclude);
+        offsetFollowers = followers.offsetFollowers;
+        maskFollowers = followers.maskFollowers;
+
+        // Visible-bounds union across every offset-follower for snap-to-guide.
+        // Mask followers are full-canvas and don't contribute a meaningful
+        // visual bound. Parametric active layers are included when present
+        // (their GpuLayer holds the rasterised content).
+        const boundsLayers: GpuLayer[] = offsetFollowers.map((f) => f.gl);
+        if (isActiveParametric) boundsLayers.push(ctx.layer);
+
+        // The single-layer fast path (layer-local bounds + snapOrigX = the
+        // active layer's offset) is only valid when the lone follower IS
+        // the active layer. When it's a *child* of the active layer (e.g.
+        // a group with one pixel layer), the active layer's offset is a
+        // placeholder unrelated to the child's actual position — fall
+        // through to canvas-space union which references each follower's
+        // own offset.
+        if (boundsLayers.length === 0) {
+          cachedVisibleBounds = getVisibleBounds(
+            ctx.layer.data,
+            ctx.layer.layerWidth,
+            ctx.layer.layerHeight,
+            ctx.layer.format,
+          );
+          boundsAreCanvasSpace = false;
+        } else if (
+          boundsLayers.length === 1 &&
+          !isActiveParametric &&
+          boundsLayers[0] === ctx.layer
+        ) {
+          cachedVisibleBounds = getVisibleBounds(
+            boundsLayers[0].data,
+            boundsLayers[0].layerWidth,
+            boundsLayers[0].layerHeight,
+            boundsLayers[0].format,
+          );
+          boundsAreCanvasSpace = false;
+        } else {
           let uMinX = Infinity,
             uMinY = Infinity,
             uMaxX = -Infinity,
             uMaxY = -Infinity;
-          for (const gl of allLayers) {
+          for (const gl of boundsLayers) {
             const b = getVisibleBounds(
               gl.data,
               gl.layerWidth,
               gl.layerHeight,
               gl.format,
             );
-            const ox = gl.offsetX,
-              oy = gl.offsetY;
-            uMinX = Math.min(uMinX, b.minX + ox);
-            uMinY = Math.min(uMinY, b.minY + oy);
-            uMaxX = Math.max(uMaxX, b.maxX + ox);
-            uMaxY = Math.max(uMaxY, b.maxY + oy);
+            uMinX = Math.min(uMinX, b.minX + gl.offsetX);
+            uMinY = Math.min(uMinY, b.minY + gl.offsetY);
+            uMaxX = Math.max(uMaxX, b.maxX + gl.offsetX);
+            uMaxY = Math.max(uMaxY, b.maxY + gl.offsetY);
           }
           cachedVisibleBounds = {
             minX: uMinX,
@@ -445,9 +556,6 @@ function createMoveHandler(): ToolHandler {
             maxY: uMaxY,
           };
           boundsAreCanvasSpace = true;
-        } else {
-          multiOriginalOffsets = null;
-          boundsAreCanvasSpace = false;
         }
       }
       moveDisplay.set(
@@ -468,34 +576,10 @@ function createMoveHandler(): ToolHandler {
 
       if (originalPixels) {
         applySelectionMove(dx, dy, ctx);
-      } else if (textLayerSnapshot) {
-        // Text layer: shift via GPU offset (same as pixel layers) to avoid
-        // re-rasterizing on every frame. Final rasterize happens on pointer-up.
-        ctx.renderer.setPreviewMode(true);
-        ctx.layer.offsetX = dx;
-        ctx.layer.offsetY = dy;
-        ctx.render(ctx.layers);
-      } else if (shapeLayerSnapshot) {
-        // Shape layer: shift via GPU offset (same as pixel layers) to avoid
-        // re-rasterizing on every frame. Final rasterize happens on pointer-up.
-        ctx.renderer.setPreviewMode(true);
-        ctx.layer.offsetX = dx;
-        ctx.layer.offsetY = dy;
-        ctx.render(ctx.layers);
-      } else if (frameLayerSnapshot) {
-        // Frame layer: live-preview the move by translating the parametric
-        // center so both the rasterized content AND the bounding-box overlay
-        // (which is drawn from cx/cy by the frame tool) stay in lock-step.
-        ctx.renderer.setPreviewMode(true);
-        ctx.previewFrameLayer({
-          ...frameLayerSnapshot,
-          cx: frameLayerSnapshot.cx + dx,
-          cy: frameLayerSnapshot.cy + dy,
-        });
       } else {
-        // Update offset in-place (no pixel data change).
-        // Enable preview mode so expensive standalone effects (bloom, halation, etc.)
-        // are skipped during the drag — they rerun at full quality on pointer-up.
+        // Whole-layer / parametric move. Compute snapped delta once and
+        // apply it to: the active layer (via parametric path or offset
+        // shift), every offset-follower, and every mask-follower.
         ctx.renderer.setPreviewMode(true);
         const bounds = cachedVisibleBounds ?? {
           minX: 0,
@@ -514,21 +598,36 @@ function createMoveHandler(): ToolHandler {
           ctx.guides,
           ctx.zoom,
         );
-        ctx.layer.offsetX = originalOffsetX + sdx;
-        ctx.layer.offsetY = originalOffsetY + sdy;
-        // Shift the linked mask layer in lock-step with the parent
-        const maskGl = ctx.maskMap.get(ctx.layer.id);
-        if (maskGl) applyMaskShift(sdx, sdy, maskGl, ctx.renderer);
-        // Move all other selected layers by the same delta
-        if (multiOriginalOffsets) {
-          for (const [id, orig] of multiOriginalOffsets) {
-            if (id === ctx.layer.id) continue;
-            const gl = ctx.layers.find((l) => l.id === id);
-            if (!gl) continue;
-            gl.offsetX = orig.x + sdx;
-            gl.offsetY = orig.y + sdy;
-          }
+
+        if (textLayerSnapshot || shapeLayerSnapshot) {
+          // Active text/shape: shift via GpuLayer offset; final rasterise
+          // happens on pointer-up.
+          ctx.layer.offsetX = sdx;
+          ctx.layer.offsetY = sdy;
+        } else if (frameLayerSnapshot) {
+          // Active frame: live-preview by re-rasterising at the new centre
+          // (so the bounding-box overlay stays in lock-step).
+          ctx.previewFrameLayer({
+            ...frameLayerSnapshot,
+            cx: frameLayerSnapshot.cx + sdx,
+            cy: frameLayerSnapshot.cy + sdy,
+          });
+        } else {
+          // Plain whole-layer move: ctx.layer is in offsetFollowers and
+          // gets shifted by the loop below.
         }
+
+        // Apply (sdx, sdy) to every offset follower (including ctx.layer
+        // for the non-parametric path).
+        for (const f of offsetFollowers) {
+          f.gl.offsetX = f.origX + sdx;
+          f.gl.offsetY = f.origY + sdy;
+        }
+        // Translate every mask follower's pixel buffer in lock-step.
+        for (const f of maskFollowers) {
+          applyMaskTranslate(f, sdx, sdy, ctx.renderer);
+        }
+
         ctx.render(ctx.layers);
       }
       moveDisplay.set(
@@ -551,43 +650,6 @@ function createMoveHandler(): ToolHandler {
           activeScope().selection.translateMask(dx, dy);
         originalPixels = null;
         originalMask = null;
-      } else if (textLayerSnapshot) {
-        // Reset offset before rasterizing so the text bakes its position into
-        // pixel data at offset (0, 0), matching the normal text layer invariant.
-        ctx.layer.offsetX = 0;
-        ctx.layer.offsetY = 0;
-        ctx.renderer.setPreviewMode(false);
-        ctx.previewTextAt(
-          textLayerSnapshot,
-          textLayerOrigX + dx,
-          textLayerOrigY + dy,
-        );
-        ctx.updateTextLayer({
-          ...textLayerSnapshot,
-          x: textLayerOrigX + dx,
-          y: textLayerOrigY + dy,
-        });
-        textLayerSnapshot = null;
-      } else if (shapeLayerSnapshot) {
-        const moved = translateShapeLayer(shapeLayerSnapshot, dx, dy);
-        // Reset offset before rasterizing so the shape bakes its position into
-        // pixel data at offset (0, 0), matching the normal shape layer invariant.
-        ctx.layer.offsetX = 0;
-        ctx.layer.offsetY = 0;
-        ctx.renderer.setPreviewMode(false);
-        ctx.previewShapeLayer(moved);
-        ctx.updateShapeLayer(moved);
-        shapeLayerSnapshot = null;
-      } else if (frameLayerSnapshot) {
-        const moved: FrameLayerState = {
-          ...frameLayerSnapshot,
-          cx: frameLayerSnapshot.cx + dx,
-          cy: frameLayerSnapshot.cy + dy,
-        };
-        ctx.renderer.setPreviewMode(false);
-        ctx.previewFrameLayer(moved);
-        ctx.updateFrameLayer(moved);
-        frameLayerSnapshot = null;
       } else {
         const finalDx = dx !== lastDx || dy !== lastDy ? dx : lastDx;
         const finalDy = dx !== lastDx || dy !== lastDy ? dy : lastDy;
@@ -608,27 +670,93 @@ function createMoveHandler(): ToolHandler {
           ctx.guides,
           ctx.zoom,
         );
-        ctx.layer.offsetX = originalOffsetX + sdx;
-        ctx.layer.offsetY = originalOffsetY + sdy;
-        // Final mask shift (may differ from last pointermove if pointer jumped on up)
-        const maskGl = ctx.maskMap.get(ctx.layer.id);
-        if (maskGl) applyMaskShift(sdx, sdy, maskGl, ctx.renderer);
-        // Commit final offsets for all other selected layers
-        if (multiOriginalOffsets) {
-          for (const [id, orig] of multiOriginalOffsets) {
-            if (id === ctx.layer.id) continue;
-            const gl = ctx.layers.find((l) => l.id === id);
-            if (!gl) continue;
-            gl.offsetX = orig.x + sdx;
-            gl.offsetY = orig.y + sdy;
+
+        ctx.renderer.setPreviewMode(false);
+
+        // Active layer commit — parametric paths bake the offset into the
+        // layer's parametric x/y/cx/cy and reset GpuLayer offset to 0.
+        if (textLayerSnapshot) {
+          ctx.layer.offsetX = 0;
+          ctx.layer.offsetY = 0;
+          ctx.previewTextAt(
+            textLayerSnapshot,
+            textLayerOrigX + sdx,
+            textLayerOrigY + sdy,
+          );
+          ctx.updateTextLayer({
+            ...textLayerSnapshot,
+            x: textLayerOrigX + sdx,
+            y: textLayerOrigY + sdy,
+          });
+          textLayerSnapshot = null;
+        } else if (shapeLayerSnapshot) {
+          const moved = translateShapeLayer(shapeLayerSnapshot, sdx, sdy);
+          ctx.layer.offsetX = 0;
+          ctx.layer.offsetY = 0;
+          ctx.previewShapeLayer(moved);
+          ctx.updateShapeLayer(moved);
+          shapeLayerSnapshot = null;
+        } else if (frameLayerSnapshot) {
+          const moved: FrameLayerState = {
+            ...frameLayerSnapshot,
+            cx: frameLayerSnapshot.cx + sdx,
+            cy: frameLayerSnapshot.cy + sdy,
+          };
+          ctx.previewFrameLayer(moved);
+          ctx.updateFrameLayer(moved);
+          frameLayerSnapshot = null;
+        }
+
+        // Followers — every descendant + extra-selected layer (and the
+        // active layer itself for the non-parametric path). Parametric
+        // followers (text/shape/frame inside a group) need their
+        // parametric coordinates baked, otherwise the next re-rasterise
+        // (e.g. on text edit) places them back at the original position.
+        for (const f of offsetFollowers) {
+          f.gl.offsetX = f.origX + sdx;
+          f.gl.offsetY = f.origY + sdy;
+          if ("type" in f.ls && f.ls.type === "text") {
+            const text = ctx.textLayers.find((t) => t.id === f.ls.id);
+            if (text) {
+              const moved: TextLayerState = {
+                ...text,
+                x: text.x + sdx,
+                y: text.y + sdy,
+              };
+              f.gl.offsetX = 0;
+              f.gl.offsetY = 0;
+              ctx.previewTextAt(moved, moved.x, moved.y);
+              ctx.updateTextLayer(moved);
+            }
+          } else if ("type" in f.ls && f.ls.type === "shape") {
+            const shape = ctx.shapeLayers.find((s) => s.id === f.ls.id);
+            if (shape) {
+              const moved = translateShapeLayer(shape, sdx, sdy);
+              f.gl.offsetX = 0;
+              f.gl.offsetY = 0;
+              ctx.previewShapeLayer(moved);
+              ctx.updateShapeLayer(moved);
+            }
+          } else if ("type" in f.ls && f.ls.type === "frame") {
+            const frame = ctx.frameLayers.find((fr) => fr.id === f.ls.id);
+            if (frame) {
+              const moved: FrameLayerState = {
+                ...frame,
+                cx: frame.cx + sdx,
+                cy: frame.cy + sdy,
+              };
+              ctx.previewFrameLayer(moved);
+              ctx.updateFrameLayer(moved);
+            }
           }
         }
-        multiOriginalOffsets = null;
+        for (const f of maskFollowers) {
+          applyMaskTranslate(f, sdx, sdy, ctx.renderer);
+        }
+
+        offsetFollowers = [];
+        maskFollowers = [];
         boundsAreCanvasSpace = false;
-        originalMaskData = null;
-        // Always exit preview mode and do a full-quality rerender on pointer-up
-        // so standalone effects (bloom, halation, etc.) render at the final position.
-        ctx.renderer.setPreviewMode(false);
         ctx.render(ctx.layers);
       }
     },
