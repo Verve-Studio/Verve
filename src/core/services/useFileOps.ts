@@ -26,6 +26,7 @@ import type { AppAction } from "@/core/store/AppContext";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
 import { activeScope, createDocumentScope, setActiveScope } from "@/core/store/scope";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ export function useFileOps({
       const updated: TabRecord[] = [
         ...tabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, snapshot, savedLayerData }
+            ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
             : t,
         ),
         {
@@ -370,7 +371,7 @@ export function useFileOps({
         const updated: TabRecord[] = [
           ...tabs.map((t) =>
             t.id === activeTabId
-              ? { ...t, snapshot, savedLayerData }
+              ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
               : t,
           ),
           {
@@ -479,7 +480,7 @@ export function useFileOps({
           const updated: TabRecord[] = [
             ...tabs.map((t) =>
               t.id === activeTabId
-                ? { ...t, snapshot, savedLayerData }
+                ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
                 : t,
             ),
             {
@@ -579,7 +580,7 @@ export function useFileOps({
           const updated: TabRecord[] = [
             ...tabs.map((t) =>
               t.id === activeTabId
-                ? { ...t, snapshot, savedLayerData }
+                ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
                 : t,
             ),
             {
@@ -663,7 +664,7 @@ export function useFileOps({
         const updated: TabRecord[] = [
           ...tabs.map((t) =>
             t.id === activeTabId
-              ? { ...t, snapshot, savedLayerData }
+              ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
               : t,
           ),
           {
@@ -863,7 +864,7 @@ export function useFileOps({
       const updated: TabRecord[] = [
         ...tabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, snapshot, savedLayerData }
+            ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
             : t,
         ),
         {
