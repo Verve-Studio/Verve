@@ -371,16 +371,6 @@ export function BrushSettingsPanel({
           <label className={styles.checkRow}>
             <input
               type="checkbox"
-              checked={activeBrush.velocityTracking}
-              onChange={(e) =>
-                update({ velocityTracking: e.target.checked })
-              }
-            />
-            Velocity affects size & opacity
-          </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
               checked={activeBrush.pressureSize}
               onChange={(e) => update({ pressureSize: e.target.checked })}
             />

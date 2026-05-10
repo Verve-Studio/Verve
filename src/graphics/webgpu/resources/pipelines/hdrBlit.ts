@@ -33,7 +33,7 @@ export function createHdrBlitPipeline(
           format,
           blend: {
             color: {
-              srcFactor: "one",
+              srcFactor: "src-alpha",
               dstFactor: "one-minus-src-alpha",
               operation: "add",
             },

@@ -51,8 +51,6 @@ function smoothingToAlpha(s: number): number {
 }
 
 const MAX_TRACKING_SPEED = 5;
-const MIN_SIZE_FACTOR = 0.55;
-const MIN_OPACITY_FACTOR = 0.65;
 const SPEED_SMOOTHING = 0.25;
 const MIN_PRESSURE_FACTOR = 0.05;
 const PRESSURE_SMOOTHING = 0.15;
@@ -248,20 +246,11 @@ function createBrushHandler(): ToolHandler {
   }
 
   function resolveStrokeParams(
-    speed: number,
     pressure: number,
   ): { size: number; opacity: number } {
     const brush = activeBrushRef.current;
     let size = brush.tip.size;
-    let opacity = brush.opacity;
-
-    if (brush.velocityTracking && speed > 0) {
-      const t = Math.min(1, speed / MAX_TRACKING_SPEED);
-      size = size * Math.max(MIN_SIZE_FACTOR, 1 - t * (1 - MIN_SIZE_FACTOR));
-      opacity =
-        opacity *
-        Math.max(MIN_OPACITY_FACTOR, 1 - t * (1 - MIN_OPACITY_FACTOR));
-    }
+    const opacity = brush.opacity;
 
     if (brush.pressureSize) {
       size = size * Math.max(MIN_PRESSURE_FACTOR, pressure);
@@ -318,7 +307,7 @@ function createBrushHandler(): ToolHandler {
       // Each tick is a fresh dose of paint — clear touched so coverage
       // can climb past previous strokes within this tick.
       strokeState.touched = new Map();
-      const { size, opacity } = resolveStrokeParams(0, smoothPressure);
+      const { size, opacity } = resolveStrokeParams(smoothPressure);
       const px = lastBuildUpPoint.x;
       const py = lastBuildUpPoint.y;
       const tickPose = makePose();
@@ -344,7 +333,7 @@ function createBrushHandler(): ToolHandler {
       lastRendered = { x, y };
       lastCtrl = { x, y };
       renderedCursor = { x, y };
-      const { size, opacity } = resolveStrokeParams(0, smoothPressure);
+      const { size, opacity } = resolveStrokeParams(smoothPressure);
       prevSize = size;
       prevOpacity = opacity;
       const downPose = makePose();
@@ -387,10 +376,7 @@ function createBrushHandler(): ToolHandler {
       smoothTwist = (twist * Math.PI) / 180;
       prevTime = now;
 
-      const { size, opacity } = resolveStrokeParams(
-        smoothSpeed,
-        smoothPressure,
-      );
+      const { size, opacity } = resolveStrokeParams(smoothPressure);
       const segStep = Math.max(
         1,
         Math.min(prevSize, size) * (brush.tip.spacing / 100) * 0.5,
@@ -432,10 +418,7 @@ function createBrushHandler(): ToolHandler {
       stopBuildUp();
       const brush = activeBrushRef.current;
       if (lastRendered && lastCtrl) {
-        const { size, opacity } = resolveStrokeParams(
-          smoothSpeed,
-          smoothPressure,
-        );
+        const { size, opacity } = resolveStrokeParams(smoothPressure);
         const dist = Math.hypot(
           lastCtrl.x - lastRendered.x,
           lastCtrl.y - lastRendered.y,

@@ -243,8 +243,6 @@ export interface Brush {
   antiAlias: boolean;
   /** Stamp elongation along stroke direction (0..1). Mirrors current `motionBlur`. */
   motionBlur: number;
-  /** Velocity-driven size/opacity falloff (preserves current behavior). */
-  velocityTracking: boolean;
   /** Pen pressure scales size (preserves current behavior). */
   pressureSize: boolean;
 }
@@ -318,7 +316,6 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
     opacity: 100,
     antiAlias: true,
     motionBlur: 5,
-    velocityTracking: true,
     pressureSize: false,
   };
 }
