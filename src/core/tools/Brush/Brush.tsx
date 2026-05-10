@@ -77,6 +77,11 @@ function createBrushHandler(): ToolHandler {
   let smoothTwist = 0;
   let prevSize = activeBrushRef.current.tip.size;
   let prevOpacity = activeBrushRef.current.opacity;
+  // Previous pose snapshot — paired with prevSize/prevOpacity so segments
+  // can lerp pose-driven dynamics (size/color/scatter jitter that read
+  // velocity/pressure/tilt) smoothly across pointer-event boundaries
+  // instead of stepping at each event. Reset on stroke start.
+  let prevPose: StrokePoseInputs | null = null;
   let segDirtyMinX = Infinity,
     segDirtyMinY = Infinity,
     segDirtyMaxX = -Infinity,
@@ -119,6 +124,8 @@ function createBrushHandler(): ToolHandler {
     opacity0: number,
     size1: number,
     opacity1: number,
+    pose0: StrokePoseInputs,
+    pose1: StrokePoseInputs,
     ctx: ToolContext,
   ): void {
     if (!strokeState) return;
@@ -172,7 +179,6 @@ function createBrushHandler(): ToolHandler {
       if (sy1 > segDirtyMaxY) segDirtyMaxY = sy1;
     };
 
-    const pose = makePose();
     const isDot =
       p0x === p1x && p0y === p1y && p0x === cpx && p0y === cpy;
     if (isDot) {
@@ -191,7 +197,7 @@ function createBrushHandler(): ToolHandler {
         selectionMask,
         ctx.tiledMode,
         strokeState,
-        pose,
+        pose1,
         collect,
       );
     } else {
@@ -216,7 +222,8 @@ function createBrushHandler(): ToolHandler {
         selectionMask,
         tiledMode: ctx.tiledMode,
         state: strokeState,
-        pose,
+        pose0,
+        pose1,
         onStampBbox: collect,
         forceFirst: strokeState.isFirstStamp,
       });
@@ -314,7 +321,8 @@ function createBrushHandler(): ToolHandler {
       const { size, opacity } = resolveStrokeParams(0, smoothPressure);
       const px = lastBuildUpPoint.x;
       const py = lastBuildUpPoint.y;
-      paint(px, py, px, py, px, py, size, opacity, size, opacity, lastPaintCtx);
+      const tickPose = makePose();
+      paint(px, py, px, py, px, py, size, opacity, size, opacity, tickPose, tickPose, lastPaintCtx);
     }, intervalMs);
   }
 
@@ -339,7 +347,9 @@ function createBrushHandler(): ToolHandler {
       const { size, opacity } = resolveStrokeParams(0, smoothPressure);
       prevSize = size;
       prevOpacity = opacity;
-      paint(x, y, x, y, x, y, size, opacity, size, opacity, ctx);
+      const downPose = makePose();
+      prevPose = downPose;
+      paint(x, y, x, y, x, y, size, opacity, size, opacity, downPose, downPose, ctx);
       startBuildUp(ctx, x, y);
     },
 
@@ -388,6 +398,7 @@ function createBrushHandler(): ToolHandler {
       const tipX = (lastCtrl.x + drawX) * 0.5;
       const tipY = (lastCtrl.y + drawY) * 0.5;
       if (Math.hypot(tipX - lastRendered.x, tipY - lastRendered.y) >= segStep) {
+        const movePose = makePose();
         paint(
           lastRendered.x,
           lastRendered.y,
@@ -399,11 +410,14 @@ function createBrushHandler(): ToolHandler {
           prevOpacity,
           size,
           opacity,
+          prevPose ?? movePose,
+          movePose,
           ctx,
         );
         lastRendered = { x: tipX, y: tipY };
         prevSize = size;
         prevOpacity = opacity;
+        prevPose = movePose;
       }
       lastCtrl = { x: drawX, y: drawY };
       // Build-up tracks the latest pointer position so airbrush ticks paint
@@ -426,6 +440,7 @@ function createBrushHandler(): ToolHandler {
           lastCtrl.x - lastRendered.x,
           lastCtrl.y - lastRendered.y,
         );
+        const upPose = makePose();
         if (dist >= 1) {
           paint(
             lastRendered.x,
@@ -438,8 +453,11 @@ function createBrushHandler(): ToolHandler {
             prevOpacity,
             size,
             opacity,
+            prevPose ?? upPose,
+            upPose,
             ctx,
           );
+          prevPose = upPose;
         }
         // Catch-up: if pull-string left us behind the actual pointer, draw the
         // remaining gap so the stroke ends at the user's intended position.
@@ -460,6 +478,8 @@ function createBrushHandler(): ToolHandler {
             prevOpacity,
             size,
             opacity,
+            prevPose ?? upPose,
+            upPose,
             ctx,
           );
         }
@@ -496,6 +516,7 @@ function createBrushHandler(): ToolHandler {
       smoothSpeed = 0;
       prevSize = activeBrushRef.current.tip.size;
       prevOpacity = activeBrushRef.current.opacity;
+      prevPose = null;
       ctx.renderer.strokeEnd();
     },
   };

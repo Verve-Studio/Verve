@@ -138,6 +138,28 @@ function wrapPi(d: number): number {
 }
 
 /**
+ * Lerp pen pose (pressure/tilt/velocity/tiltAzimuth/rotation) at fraction
+ * `t` between `a` and `b`. Linear lerp for magnitudes; shortest-arc lerp
+ * for the angular components so wrap-around at ±π doesn't fling the
+ * dynamic source halfway around the dial. `direction` is left as 0 — the
+ * caller fills it from the Bézier tangent at each stamp position.
+ */
+function lerpPose(
+  a: StrokePoseInputs,
+  b: StrokePoseInputs,
+  t: number,
+): StrokePoseInputs {
+  return {
+    pressure: a.pressure + (b.pressure - a.pressure) * t,
+    velocity: a.velocity + (b.velocity - a.velocity) * t,
+    tilt: a.tilt + (b.tilt - a.tilt) * t,
+    tiltAzimuth: a.tiltAzimuth + wrapPi(b.tiltAzimuth - a.tiltAzimuth) * t,
+    rotation: a.rotation + wrapPi(b.rotation - a.rotation) * t,
+    direction: 0,
+  };
+}
+
+/**
  * Step the smoothed direction toward `next` with a light EMA softening for
  * small wobbles plus a hard rate limit for sharp turns. The EMA-only
  * approach laggesthe brush rotation through corners and produces visible
@@ -288,8 +310,17 @@ export interface StampSegmentParams {
   selectionMask: Uint8Array | null;
   tiledMode: boolean;
   state: StrokeStampState;
-  /** Per-stroke pose inputs (latest snapshot). */
-  pose: StrokePoseInputs;
+  /**
+   * Pen pose at the segment endpoints. The engine lerps pressure/tilt/
+   * velocity/tiltAzimuth/rotation per-stamp between these two snapshots so
+   * pose-driven dynamics (size, color, scatter, …) vary smoothly along the
+   * stroke instead of stepping at each pointer-event boundary. `direction`
+   * is overridden per-stamp from the Bézier tangent and can be left 0.
+   * For dot-style emissions (pointer-down dot, build-up tick) pass the
+   * same snapshot for both.
+   */
+  pose0: StrokePoseInputs;
+  pose1: StrokePoseInputs;
   /**
    * Called for each emitted stamp's canvas-space bounding rect. Caller is
    * expected to union these into the layer's dirtyRect for a single GPU
@@ -597,6 +628,17 @@ function applyStamp(
   // Paper grain — pre-cache enabled flag.
   const grainAmount = brush.texture.amount;
   const grainScale = Math.max(2, brush.texture.scale);
+
+  // Flow vs Opacity: `s.opacity` is the per-stroke ceiling (Photoshop's
+  // Opacity slider) baked with pressure/velocity tracking. `flow` (Photoshop's
+  // Flow) scales the per-stamp deposit independently. With flow=100 the per-
+  // stamp deposit equals the ceiling, so the first stamp at any pixel reaches
+  // it (legacy behaviour). With flow<100 deposit is smaller than the ceiling
+  // and overlapping stamps build up via Porter-Duff `over` toward the
+  // ceiling — the soft, paintable feel of a real brush.
+  // Older saved brushes lack `flow`; treat as 100.
+  const flow = Math.max(0, Math.min(100, brush.tip.flow ?? 100));
+  const flowFraction = flow / 100;
   const grainEnabled = grainAmount > 0;
   const grainFollowsBrush = brush.texture.followBrush;
 
@@ -658,6 +700,14 @@ function applyStamp(
         coverage *= sampleGrain(gx, gy, grainAmount, grainScale);
       }
       if (coverage <= 0) continue;
+      // Per-stamp deposit = flow × ceiling × coverage; ceiling = opacity × coverage.
+      // For flow=100 the two collapse to the same value, so we can save the
+      // function call argument (and skip the cap branch entirely) — preserves
+      // the legacy fast path bit-for-bit. For flow<100 the engine accumulates
+      // toward the ceiling via blendPixelOver's Flow path.
+      const stampOpacity =
+        flow >= 100 ? s.opacity * coverage : s.opacity * coverage * flowFraction;
+      const cap = flow >= 100 ? undefined : s.opacity * coverage;
       blendPixelOver(
         renderer,
         layer,
@@ -667,13 +717,14 @@ function applyStamp(
         g,
         b,
         a,
-        s.opacity * coverage,
+        stampOpacity,
         touched,
         sel,
         tiledW,
         tiledH,
         srcFloat,
         bypassCap,
+        cap,
       );
     }
   }
@@ -862,7 +913,8 @@ export function stampSegment(p: StampSegmentParams): void {
     onStampBbox,
     spacingOverride,
     forceFirst,
-    pose,
+    pose0,
+    pose1,
     brush,
   } = p;
 
@@ -871,15 +923,11 @@ export function stampSegment(p: StampSegmentParams): void {
   const minSize = Math.min(size0, size1);
   const stamp_dx_pixels = Math.max(0.5, (spacingPct / 100) * minSize);
 
-  // Shared per-segment pose snapshot — direction is segment-local.
-  const baseDirection = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, 0.5);
-  const localPose: StrokePoseInputs = {
-    ...pose,
-    direction: baseDirection,
-  };
-
   if (forceFirst && state.isFirstStamp) {
-    emitStampWithCount(p, p0x, p0y, size0, opacity0, localPose, onStampBbox);
+    // Segment-start stamp uses pose0 with the Bézier-tangent direction at t=0.
+    const startPose = lerpPose(pose0, pose1, 0);
+    startPose.direction = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, 0);
+    emitStampWithCount(p, p0x, p0y, size0, opacity0, startPose, onStampBbox);
   }
 
   const chord = Math.hypot(p1x - p0x, p1y - p0y);
@@ -906,18 +954,16 @@ export function stampSegment(p: StampSegmentParams): void {
       const cx = sx + (x - sx) * f;
       const cy = sy + (y - sy) * f;
       const tt = t - (1 - f) * (1 / substeps);
-      const sz = size0 + (size1 - size0) * Math.max(0, Math.min(1, tt));
-      const op = opacity0 + (opacity1 - opacity0) * Math.max(0, Math.min(1, tt));
+      const ttClamped = Math.max(0, Math.min(1, tt));
+      const sz = size0 + (size1 - size0) * ttClamped;
+      const op = opacity0 + (opacity1 - opacity0) * ttClamped;
       const dirAtT = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, tt);
-      emitStampWithCount(
-        p,
-        cx,
-        cy,
-        sz,
-        op,
-        { ...localPose, direction: dirAtT },
-        onStampBbox,
-      );
+      // Pose lerp: smoothly varies pressure/velocity/tilt/rotation along
+      // the segment so dynamic curves driven by these sources don't step
+      // at each pointer-event boundary.
+      const stampPose = lerpPose(pose0, pose1, ttClamped);
+      stampPose.direction = dirAtT;
+      emitStampWithCount(p, cx, cy, sz, op, stampPose, onStampBbox);
       sx = cx;
       sy = cy;
       stepLen -= need;
@@ -973,7 +1019,8 @@ export function stampDot(
       selectionMask,
       tiledMode,
       state,
-      pose,
+      pose0: pose,
+      pose1: pose,
     },
     cx,
     cy,

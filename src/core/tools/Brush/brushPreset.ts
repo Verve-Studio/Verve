@@ -90,6 +90,19 @@ export interface TipSettings {
   /** Mirror tip horizontally / vertically each stamp (Photoshop "Flip X/Y Jitter"). */
   flipXJitter: number; // 0..1 probability
   flipYJitter: number;
+  /**
+   * 0..100 — paint deposited per stamp, separate from `opacity`.
+   *
+   * `opacity` is the per-stroke ceiling at any pixel; `flow` is how much
+   * paint each individual stamp lays down toward that ceiling. With
+   * flow=100, each stamp reaches the ceiling on first contact (the engine's
+   * legacy behaviour). With flow<100, overlapping stamps build up gradually
+   * — the soft "paintable" feel of a real brush. Photoshop, Krita, Procreate
+   * all expose this as a top-level brush setting.
+   *
+   * Older saved brushes without this field are treated as flow=100.
+   */
+  flow: number;
 }
 
 export interface ScatterDynamics {
@@ -268,6 +281,7 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
       angle: 0,
       flipXJitter: 0,
       flipYJitter: 0,
+      flow: 100,
     },
     scatter: {
       amount: 0,

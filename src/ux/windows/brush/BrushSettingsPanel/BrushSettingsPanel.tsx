@@ -349,6 +349,17 @@ export function BrushSettingsPanel({
               onChange={(v) => update({ opacity: v })}
             />
           </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Flow</label>
+            <SliderInput
+              value={activeBrush.tip.flow ?? 100}
+              min={1}
+              max={100}
+              suffix="%"
+              inputWidth={42}
+              onChange={(v) => setTip({ flow: v })}
+            />
+          </div>
           <label className={styles.checkRow}>
             <input
               type="checkbox"

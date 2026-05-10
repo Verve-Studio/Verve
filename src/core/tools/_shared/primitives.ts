@@ -90,13 +90,22 @@ export function drawLine(
  * internally. Silently ignores pixels outside the layer buffer.
  *
  * `touched` is a Map from canvas-pixel-key → max effective-alpha applied.
- * When provided:
- *   - Compute srcA = (a/255) * (opacity/100)
- *   - If srcA <= existing max: skip (pixel is already more fully covered)
- *   - Otherwise apply only the *incremental* alpha needed to go from
- *     existingA to srcA:  incA = (srcA - existingA) / (1 - existingA)
- *     This prevents accumulation while allowing coverage to be upgraded
- *     (fixes ring artifacts from overlapping AA capsule segments).
+ * When provided, two cases:
+ *
+ *  1. `capOpacity` undefined (default — pencil, eraser, every non-flow path):
+ *     The per-stamp opacity *is* the per-stroke ceiling. If srcA <= existing,
+ *     skip; otherwise upgrade existing to srcA via the incremental alpha
+ *     `(srcA - existingA) / (1 - existingA)`. This prevents accumulation
+ *     while allowing AA coverage to be upgraded (fixes ring artifacts from
+ *     overlapping AA capsule segments).
+ *
+ *  2. `capOpacity` provided (brush stamp engine with Flow < Opacity):
+ *     The per-stamp `opacity` is just per-stamp paint *deposit* (Flow);
+ *     `capOpacity` is the per-stroke ceiling (the brush's Opacity). Each
+ *     stamp deposits `min(srcA, upgrade-to-cap)` so overlapping stamps
+ *     accumulate via Porter-Duff `over` toward the ceiling instead of
+ *     reaching it on first contact. With `capOpacity === opacity` this
+ *     reduces exactly to case 1.
  */
 export function blendPixelOver(
   renderer: WebGPURenderer,
@@ -124,6 +133,13 @@ export function blendPixelOver(
    *  map is still updated with `max(existing, srcA)`, preserving its role
    *  as the stroke silhouette for downstream effects (wet edges). */
   bypassTouchedCap?: boolean,
+  /** Per-stroke ceiling for this pixel, in 0..100, already including
+   *  geometric coverage. When undefined, `opacity` is reused as the
+   *  ceiling (legacy behaviour). When supplied, the brush deposits
+   *  `min(srcA, upgrade-to-cap)` per stamp, so overlapping stamps build
+   *  toward the ceiling instead of reaching it on first contact — this
+   *  is what makes Flow-vs-Opacity work for the stamp engine. */
+  capOpacity?: number,
 ): void {
   // Apply modular wrap BEFORE bounds check and touched-map key computation.
   // This ensures a pixel at (-1, 0) and (W-1, 0) share the same touched-map
@@ -170,6 +186,20 @@ export function blendPixelOver(
       // patchy rim.
       const geom = opacity / 100;
       if (geom > existingA) touched.set(key, geom);
+    } else if (capOpacity !== undefined) {
+      // Flow path: srcA = per-stamp deposit, capA = per-stroke ceiling.
+      // Each stamp deposits `min(srcA, upgrade-to-cap)`; the resulting
+      // accumulated alpha (existing + blendA*(1-existing)) approaches
+      // capA asymptotically, so overlapping stamps build up gradually.
+      const capA =
+        srcFloat !== undefined && layer.format === "rgba32f"
+          ? srcFloat[3] * (capOpacity / 100)
+          : (a / 255) * (capOpacity / 100);
+      if (existingA >= capA) return;
+      const upgrade = existingA < 1 ? (capA - existingA) / (1 - existingA) : 0;
+      blendA = srcA < upgrade ? srcA : upgrade;
+      if (blendA <= 0) return;
+      touched.set(key, existingA + blendA * (1 - existingA));
     } else {
       if (srcA <= existingA) return;
       blendA = existingA < 1 ? (srcA - existingA) / (1 - existingA) : 0;
