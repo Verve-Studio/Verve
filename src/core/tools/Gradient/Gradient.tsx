@@ -12,6 +12,7 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import gradientIconSvg from "./gradient.svg?raw";
 import type { RGBAColor } from "@/types";
+import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -290,10 +291,11 @@ function renderGradient(
       // Porter-Duff "over" composite onto existing pixel
       const i = (ly * layer.layerWidth + lx) * 4;
       if (layer.format === "rgba32f") {
-        // gr/gg/gb are already 0.0–1.0 (may be >1 for HDR)
-        const sr = gr,
-          sg = gg,
-          sb = gb;
+        // gr/gg/gb are sRGB-encoded floats from primary/secondary; rgba32f
+        // layers store linear-light, so gamma-decode before compositing.
+        const sr = srgbToLinearChannel(gr);
+        const sg = srgbToLinearChannel(gg);
+        const sb = srgbToLinearChannel(gb);
         const dstR = layer.data[i],
           dstG = layer.data[i + 1],
           dstB = layer.data[i + 2];

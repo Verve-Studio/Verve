@@ -12,6 +12,7 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import paintBucketIconSvg from "./paint-bucket.svg?raw";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
+import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -122,15 +123,16 @@ function createFillHandler(): ToolHandler {
         commitStroke,
         growLayerToFit,
       } = ctx;
-      // primaryColor is float [0,1] (may be >1 for HDR on rgba32f layers)
+      // primaryColor is sRGB-encoded float [0,1] (may be >1 for HDR on rgba32f layers)
       const r = Math.round(Math.min(primaryColor.r, 1) * 255);
       const g = Math.round(Math.min(primaryColor.g, 1) * 255);
       const b = Math.round(Math.min(primaryColor.b, 1) * 255);
       const a = Math.round(primaryColor.a * 255);
-      // float fill values for rgba32f (preserve HDR)
-      const fr = primaryColor.r;
-      const fg = primaryColor.g;
-      const fb = primaryColor.b;
+      // Linear-light float fill values for rgba32f (gamma-decode sRGB → linear;
+      // values > 1 stay > 1 to preserve HDR highlights).
+      const fr = srgbToLinearChannel(primaryColor.r);
+      const fg = srgbToLinearChannel(primaryColor.g);
+      const fb = srgbToLinearChannel(primaryColor.b);
       const fa = primaryColor.a;
 
       // Grow the layer to cover the full canvas so that clicks on transparent

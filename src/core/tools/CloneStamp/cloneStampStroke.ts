@@ -4,6 +4,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { blendPixelOver } from "../_shared/primitives";
 import type { SelMask } from "../_shared/primitives";
+import { linearToSrgbChannel } from "@/utils/pixelFormatConvert";
 
 /**
  * Paints a clone-stamp capsule segment from (x0,y0) to (x1,y1).
@@ -119,24 +120,44 @@ export function stampCloneSegment(
       }
       if (sa === 0) continue;
 
-      // For Float32Array sources (rgba32f), pass values directly as srcFloat so
-      // blendPixelOver skips the /255 normalisation and keeps full float precision.
-      // For Uint8Array sources (rgba8/indexed8), pass as the normal 0-255 path.
+      // Source/destination format matrix:
+      //   src f32 (linear) → dest f32 (linear): pass srcFloat through as-is
+      //   src f32 (linear) → dest rgba8 (sRGB): encode linear → sRGB byte
+      //   src rgba8 (sRGB) → dest f32 (linear): byte path; blendPixelOver
+      //                                          gamma-decodes internally
+      //   src rgba8 (sRGB) → dest rgba8 (sRGB): byte path as-is
+      const destIsF32 = destLayer.format === "rgba32f";
+      let br = sr,
+        bg = sg,
+        bb = sb,
+        ba = sa;
+      let srcFloat: readonly [number, number, number, number] | undefined;
+      if (isF32) {
+        if (destIsF32) {
+          srcFloat = [sr, sg, sb, sa];
+        } else {
+          // Linear-light → sRGB byte for rgba8 destination
+          br = Math.round(Math.max(0, Math.min(1, linearToSrgbChannel(sr))) * 255);
+          bg = Math.round(Math.max(0, Math.min(1, linearToSrgbChannel(sg))) * 255);
+          bb = Math.round(Math.max(0, Math.min(1, linearToSrgbChannel(sb))) * 255);
+          ba = Math.round(Math.max(0, Math.min(1, sa)) * 255);
+        }
+      }
       blendPixelOver(
         renderer,
         destLayer,
         px,
         py,
-        isF32 ? 0 : sr,
-        isF32 ? 0 : sg,
-        isF32 ? 0 : sb,
-        isF32 ? 0 : sa,
+        br,
+        bg,
+        bb,
+        ba,
         opacity * coverage,
         touched,
         sel,
         tiledW,
         tiledH,
-        isF32 ? [sr, sg, sb, sa] : undefined,
+        srcFloat,
       );
     }
   }

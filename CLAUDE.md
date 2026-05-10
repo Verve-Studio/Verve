@@ -261,11 +261,19 @@ Read patterns:
 
 Every layer and every document has a `PixelFormat`:
 
-| Value | `layer.data` type | Bytes/pixel | Notes |
-|---|---|---|---|
-| `'rgba8'` | `Uint8Array` | 4 | Standard 8-bit RGBA (0–255 per channel) |
-| `'rgba32f'` | `Float32Array` | 16 | 32-bit float RGBA (0.0–1.0 per channel; values >1 valid for HDR) |
-| `'indexed8'` | `Uint8Array` | 1 | Palette indices (0–254); 255 = transparent sentinel |
+| Value | `layer.data` type | Bytes/pixel | Colour space | Notes |
+|---|---|---|---|---|
+| `'rgba8'` | `Uint8Array` | 4 | **sRGB-encoded** | 0–255 per channel; alpha is linear |
+| `'rgba32f'` | `Float32Array` | 16 | **linear-light** | 0.0 = black, 1.0 = display white, > 1 valid for HDR; alpha is linear |
+| `'indexed8'` | `Uint8Array` | 1 | sRGB (via palette) | Palette indices (0–254); 255 = transparent sentinel |
+
+**Colour-space convention** — matches industry standards (Photoshop 32-bit, Krita scene-linear, OpenEXR, GPU pipelines): rgba8 stores sRGB-encoded bytes; rgba32f stores **scene-linear** light. Crossing the boundary requires the sRGB transfer function — see `src/utils/pixelFormatConvert.ts` (`srgbToLinearChannel`, `linearToSrgbChannel`, `convertRgba8ToF32`, `convertF32ToRgba8`, `clampF32ToUint8`). Naive `÷255` / `×255` between the formats is wrong: it compresses shadows, lifts midtones, and produces dark-edge artifacts in linear-space compositing.
+
+**When to convert:**
+- **Tools that paint `primaryColor` (sRGB-encoded) onto an rgba32f layer**: gamma-decode via `srgbColorToLinearF32(primaryColor)` (`src/core/tools/_shared/primitives.ts`) before passing as `srcFloat` to `blendPixelOver`.
+- **Sampling rgba8 pixels for blending into rgba32f**: `blendPixelOver`'s byte path gamma-decodes automatically when the destination is rgba32f.
+- **File I/O**: `convertRgba8ToF32` / `clampF32ToUint8` apply the transfer function. Never write a manual `/255` / `*255` conversion between an rgba8 byte and an rgba32f channel.
+- **Display path**: `hdr-blit.wgsl` gamma-encodes linear-light → sRGB before the swap-chain present (rgba8 documents pass through unchanged).
 
 `PixelFormat` is defined in `src/types/index.ts`. `AppState.pixelFormat` holds the document-level format and is set by `SET_PIXEL_FORMAT`, `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB`. `TabRecord.pixelFormat` mirrors it via a `useEffect` in `App.tsx`.
 

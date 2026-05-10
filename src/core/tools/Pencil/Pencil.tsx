@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { bresenham, blendPixelOver } from "../_shared/primitives";
+import { bresenham, blendPixelOver, srgbColorToLinearF32 } from "../_shared/primitives";
 import { walkQuadBezier, stampAirbrush } from "./brushStroke";
 import type { BrushShape } from "./brushStroke";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
@@ -536,7 +536,7 @@ function createPencilHandler(): ToolHandler {
     const a = Math.round(primaryColor.a * 255);
     const srcFloat: [number, number, number, number] | undefined =
       layer.format === "rgba32f"
-        ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a]
+        ? srgbColorToLinearF32(primaryColor)
         : undefined;
     // growLayerToFit is NOT called here — callers must pre-grow before entering
     // the per-pixel loop so we don't pay the bounds check on every Bresenham pixel.
@@ -693,7 +693,7 @@ function createPencilHandler(): ToolHandler {
     const a = Math.round(primaryColor.a * 255);
     const srcFloat: readonly [number, number, number, number] | undefined =
       layer.format === "rgba32f"
-        ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a]
+        ? srgbColorToLinearF32(primaryColor)
         : undefined;
     const padR = Math.ceil(pencilOptions.size / 2) + 2;
     // Skip entirely off-canvas arcs (see brush.tsx for rationale).
@@ -957,7 +957,7 @@ function createPencilHandler(): ToolHandler {
         const a = Math.round(primaryColor.a * 255); // eslint-disable-line @typescript-eslint/no-unused-vars
         const srcFloat: readonly [number, number, number, number] | undefined =
           layer.format === "rgba32f"
-            ? [primaryColor.r, primaryColor.g, primaryColor.b, primaryColor.a]
+            ? srgbColorToLinearF32(primaryColor)
             : undefined;
         const padR = Math.ceil(pencilOptions.size / 2) + 2;
         growLayerToFit(x, y, padR);

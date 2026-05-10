@@ -2,9 +2,34 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 
 // Selection mask shorthand used by draw/erase helpers.
 export type SelMask = { mask: Uint8Array; width: number };
+
+/**
+ * Convert an `RGBAColor` (sRGB-encoded floats in `[0, 1]` — what the colour
+ * picker / state stores) into linear-light floats suitable for painting on
+ * an `rgba32f` layer. RGB channels go through the sRGB transfer function;
+ * alpha is already linear and passes through unchanged.
+ *
+ * Tools that paint into f32 layers should use this when constructing the
+ * `srcFloat` argument to {@link blendPixelOver} — passing sRGB values into
+ * a linear-light layer would compress shadows and lift midtones.
+ */
+export function srgbColorToLinearF32(c: {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}): [number, number, number, number] {
+  return [
+    srgbToLinearChannel(c.r),
+    srgbToLinearChannel(c.g),
+    srgbToLinearChannel(c.b),
+    c.a,
+  ];
+}
 
 /**
  * Bresenham's line algorithm — plots every integer pixel between (x0,y0) and
@@ -87,10 +112,12 @@ export function blendPixelOver(
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
-  /** Native float [r,g,b,a] in [0,1] (or >1 for HDR) for rgba32f layers.
+  /** Native **linear-light** float `[r, g, b, a]` for rgba32f layers
+   * (values in `[0, ∞)`; ≥ 1 for HDR). When the caller has an sRGB-encoded
+   * colour (e.g. straight from the colour picker / state), it must be
+   * gamma-decoded before being passed here — see {@link srgbColorToLinearF32}.
    * When provided, bypasses the r/g/b/a ÷ 255 normalisation so no precision
-   * is lost. HDR paint intensity is still applied to RGB internally.
-   * Ignored for rgba8 and indexed8 layers. */
+   * is lost. Ignored for rgba8 and indexed8 layers. */
   srcFloat?: readonly [number, number, number, number],
   /** When true, the per-stroke alpha cap from `touched` is skipped (so a
    *  smudge stamp can re-blend over a previously stamped pixel) but the
@@ -153,12 +180,18 @@ export function blendPixelOver(
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
   if (layer.format === "rgba32f") {
-    // samplePixel/drawPixel operate in [0.0, 1.0] for rgba32f.
-    // When srcFloat is provided, use it directly (no precision loss from 0-255 round-trip).
-    // Otherwise normalise the 0-255 integer inputs.
-    const sr = srcFloat !== undefined ? srcFloat[0] : r / 255;
-    const sg = srcFloat !== undefined ? srcFloat[1] : g / 255;
-    const sb = srcFloat !== undefined ? srcFloat[2] : b / 255;
+    // rgba32f layers store linear-light values; samplePixel / drawPixel
+    // operate in linear `[0.0, ∞)`. When srcFloat is provided the caller
+    // is responsible for already having gamma-decoded sRGB inputs (so we
+    // use it as-is — no precision loss from a 0–255 round-trip). When
+    // only the byte path is supplied, those bytes are sRGB-encoded and
+    // must be gamma-decoded before they enter the linear blend.
+    const sr =
+      srcFloat !== undefined ? srcFloat[0] : srgbToLinearChannel(r / 255);
+    const sg =
+      srcFloat !== undefined ? srcFloat[1] : srgbToLinearChannel(g / 255);
+    const sb =
+      srcFloat !== undefined ? srcFloat[2] : srgbToLinearChannel(b / 255);
     const dstA = ea; // already 0.0-1.0
     const outA = blendA + dstA * (1 - blendA);
     if (outA <= 0) {

@@ -36,12 +36,26 @@ fn tm_reinhard(c: vec3f) -> vec3f {
   return c / (c + vec3f(1.0));
 }
 
+// Linear-light → sRGB transfer (per-channel). Mirrors the JS
+// `linearToSrgbChannel` used by `pixelFormatConvert.ts`.
+fn linearToSrgb(c: vec3f) -> vec3f {
+  let cutoff = vec3f(0.0031308);
+  let lo = c * 12.92;
+  let hi = 1.055 * pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.4)) - 0.055;
+  return select(hi, lo, c <= cutoff);
+}
+
 @fragment
 fn fs_blit(in: VertexOutput) -> @location(0) vec4f {
   let sample = textureSample(srcTex, blitSampler, in.uv);
   if (tm.isFp32 < 0.5) {
+    // rgba8 documents already sit in sRGB-encoded display space. The
+    // composite intermediate kept their values unchanged, so pass through.
     return sample;
   }
+  // rgba32f documents are linear-light. Apply exposure + tone-map, then
+  // gamma-encode to sRGB so the swap-chain (sRGB-display) shows the
+  // correct perceptual brightness.
   let scaled = sample.rgb * tm.exposureLinear;
   var mapped: vec3f;
   if (tm.tm_operator == 1u) {
@@ -49,5 +63,6 @@ fn fs_blit(in: VertexOutput) -> @location(0) vec4f {
   } else {
     mapped = clamp(scaled, vec3f(0.0), vec3f(1.0));
   }
-  return vec4f(mapped, sample.a);
+  let encoded = linearToSrgb(clamp(mapped, vec3f(0.0), vec3f(1.0)));
+  return vec4f(encoded, sample.a);
 }

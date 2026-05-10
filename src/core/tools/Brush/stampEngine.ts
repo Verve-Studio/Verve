@@ -41,6 +41,7 @@ import type {
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { blendPixelOver } from "../_shared/primitives";
+import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 import type { TipSampler } from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
 import {
@@ -580,8 +581,18 @@ function applyStamp(
 
   // Pre-resolve byte color and float color for blendPixelOver.
   const { r, g, b, a } = floatToBytes(s.fr, s.fg, s.fb, s.fa);
+  // Stamp colour `s.fr/fg/fb` is sRGB-encoded (it descends from primaryColor
+  // with per-stamp jitter applied). For an rgba32f layer we must gamma-decode
+  // before passing to blendPixelOver — the layer stores linear-light values.
   const srcFloat: readonly [number, number, number, number] | undefined =
-    layer.format === "rgba32f" ? [s.fr, s.fg, s.fb, s.fa] : undefined;
+    layer.format === "rgba32f"
+      ? [
+          srgbToLinearChannel(s.fr),
+          srgbToLinearChannel(s.fg),
+          srgbToLinearChannel(s.fb),
+          s.fa,
+        ]
+      : undefined;
 
   // Paper grain — pre-cache enabled flag.
   const grainAmount = brush.texture.amount;

@@ -14,6 +14,10 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import colorPickerIconSvg from "./color-picker.svg?raw";
+import {
+  linearToSrgbChannel,
+  srgbToLinearChannel,
+} from "@/utils/pixelFormatConvert";
 
 // ─── Module-level options (read synchronously inside pointer events) ──────────
 
@@ -44,12 +48,21 @@ function sampleCompositedPixel(
     );
     if (sa_raw === 0) continue;
 
-    // Normalize to [0,1]: samplePixel returns 0-255 for rgba8, 0.0-1.0 for rgba32f
-    const scale = layer.format === "rgba32f" ? 1 : 255;
-    const sr = sr_raw / scale,
-      sg = sg_raw / scale,
-      sb = sb_raw / scale,
-      sa = sa_raw / scale;
+    // Compositing happens in linear-light space. rgba32f layers already
+    // store linear; rgba8 layers store sRGB-encoded bytes — gamma-decode
+    // them before they enter the blend. Alpha is linear in both formats.
+    let sr: number, sg: number, sb: number, sa: number;
+    if (layer.format === "rgba32f") {
+      sr = sr_raw;
+      sg = sg_raw;
+      sb = sb_raw;
+      sa = sa_raw;
+    } else {
+      sr = srgbToLinearChannel(sr_raw / 255);
+      sg = srgbToLinearChannel(sg_raw / 255);
+      sb = srgbToLinearChannel(sb_raw / 255);
+      sa = sa_raw / 255;
+    }
 
     const srcA = sa * layer.opacity;
     const outA = srcA + dstA * (1 - srcA);
@@ -61,12 +74,13 @@ function sampleCompositedPixel(
     dstA = outA;
   }
 
-  // dstR/G/B are now in [0,1] (or >1 for HDR); return as 0-255 range for sampleArea
+  // dstR/G/B are linear-light in [0,1] (or >1 for HDR). Encode to sRGB
+  // bytes for sampleArea — primaryColor downstream is sRGB-encoded.
   return [
-    Math.round(dstR * 255),
-    Math.round(dstG * 255),
-    Math.round(dstB * 255),
-    Math.round(dstA * 255),
+    Math.round(Math.max(0, Math.min(1, linearToSrgbChannel(dstR))) * 255),
+    Math.round(Math.max(0, Math.min(1, linearToSrgbChannel(dstG))) * 255),
+    Math.round(Math.max(0, Math.min(1, linearToSrgbChannel(dstB))) * 255),
+    Math.round(Math.max(0, Math.min(1, dstA)) * 255),
   ];
 }
 
