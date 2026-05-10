@@ -102,15 +102,29 @@ export function useViewActions({
     [dispatch, stateRef],
   );
 
+  /**
+   * Fit-to-window after a mode change must wait for React to commit the new
+   * mode flags AND for the canvas's imperative handle to rebuild against the
+   * fresh `tiledMode` / `animationMode` (its dep array picks up `tiledMode`).
+   * rAF lands after both, so the fitToWindow call sees the new geometry.
+   */
+  const fitAfterCommit = useCallback(() => {
+    requestAnimationFrame(() => {
+      canvasHandleRef.current?.fitToWindow();
+    });
+  }, [canvasHandleRef]);
+
   const handleSetNormalMode = useCallback(() => {
     dispatch({ type: "SET_TILED_MODE", payload: false });
     dispatch({ type: "SET_ANIMATION_MODE", payload: false });
-  }, [dispatch]);
+    fitAfterCommit();
+  }, [dispatch, fitAfterCommit]);
 
   const handleSetTiledMode = useCallback(() => {
     dispatch({ type: "SET_TILED_MODE", payload: true });
     dispatch({ type: "SET_ANIMATION_MODE", payload: false });
-  }, [dispatch]);
+    fitAfterCommit();
+  }, [dispatch, fitAfterCommit]);
 
   const handleToggleTileGrid = useCallback(() => {
     dispatch({
@@ -145,8 +159,9 @@ export function useViewActions({
   const handleSetAnimationMode = useCallback(
     (enabled: boolean): void => {
       dispatch({ type: "SET_ANIMATION_MODE", payload: enabled });
+      fitAfterCommit();
     },
-    [dispatch],
+    [dispatch, fitAfterCommit],
   );
 
   return {

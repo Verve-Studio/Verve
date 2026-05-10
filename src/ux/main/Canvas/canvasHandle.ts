@@ -1084,6 +1084,6 @@ export function useCanvasHandle({
         renderFromPlan();
       },
     }),
-    [width, height],
+    [width, height, tiledMode],
   ); // eslint-disable-line react-hooks/exhaustive-deps
 }

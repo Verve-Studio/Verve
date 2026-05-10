@@ -1215,9 +1215,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     if (!viewport) return;
     const dpr = window.devicePixelRatio;
     const zoom = zoomRef.current;
-    // padding = canvasSize*zoom/dpr; middle tile starts at padding + 1×tile = 2×tile
-    viewport.scrollLeft = (2 * width * zoom) / dpr;
-    viewport.scrollTop = (2 * height * zoom) / dpr;
+    const z = zoom / dpr;
+    // Wrapper sits at left = 3W in tiled mode (= its own width) so the
+    // middle tile starts at 3W + W = 4W. Centre that tile in the viewport.
+    const tileW = width * z;
+    const tileH = height * z;
+    viewport.scrollLeft =
+      4 * tileW + tileW / 2 - viewport.clientWidth / 2;
+    viewport.scrollTop =
+      4 * tileH + tileH / 2 - viewport.clientHeight / 2;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.canvas.tiledMode, isActive]);
 
@@ -2150,9 +2156,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
               const logW = frameClipInfo ? frameClipInfo.cellW : width;
               const logH = frameClipInfo ? frameClipInfo.cellH : height;
               const z = state.canvas.zoom / window.devicePixelRatio;
+              // Inner = 3× the rendered content, mirroring normal mode (which
+              // uses 3× one canvas). Tiled mode's rendered content is the 3×3
+              // grid, so the inner becomes 9× canvas — same proportional
+              // padding.
+              const tileFactor = state.canvas.tiledMode ? 3 : 1;
               return {
-                width: `max(100%, ${3 * logW * z}px)`,
-                height: `max(100%, ${3 * logH * z}px)`,
+                width: `max(100%, ${3 * tileFactor * logW * z}px)`,
+                height: `max(100%, ${3 * tileFactor * logH * z}px)`,
                 // Clip absolutely-positioned canvasWrapper so it cannot widen the scroll area
                 overflow: frameClipInfo ? "hidden" : undefined,
               };
@@ -2191,10 +2202,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
                     clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px)`,
                   };
                 }
+                // Match normal mode's padding/centering pattern using the
+                // wrapper's *actual* size (`w`/`h`) — in tiled mode that's
+                // 3× canvas, not 1×.
                 return {
                   position: "absolute" as const,
-                  left: `max(${width * z}px, calc(50% - ${(width * z) / 2}px))`,
-                  top: `max(${height * z}px, calc(50% - ${(height * z) / 2}px))`,
+                  left: `max(${w}px, calc(50% - ${w / 2}px))`,
+                  top: `max(${h}px, calc(50% - ${h / 2}px))`,
                   width: w,
                   height: h,
                 };
