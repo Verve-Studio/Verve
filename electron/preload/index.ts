@@ -13,6 +13,12 @@ const api = {
     ipcRenderer.invoke('dialog:saveJson', defaultName),
   openDirectoryDialog: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openDirectory'),
+  pickCubeLutFiles: (): Promise<Array<{ name: string; text: string }> | null> =>
+    ipcRenderer.invoke('lut:pickCubeFiles'),
+  pickOcioBundle: (): Promise<
+    | { configPath: string; configText: string; files: Array<{ relPath: string; text: string }> }
+    | null
+  > => ipcRenderer.invoke('lut:pickOcioBundle'),
   writeJsonFile: (path: string, data: string): Promise<void> =>
     ipcRenderer.invoke('file:writeJson', path, data),
   saveverveDialog: (defaultPath?: string): Promise<string | null> =>
@@ -137,10 +143,17 @@ const api = {
 
   /** Send the full menu structure to the main process to build the native macOS menu. */
   buildNativeMenu: (payload: {
-    adjustments: Array<{ id: string; label: string; group?: string }>
-    effects:     Array<{ id: string; label: string; group?: string }>
-    filters:     Array<{ id: string; label: string; instant?: boolean; group?: string }>
-    recentFiles: string[]
+    adjustments:      Array<{ id: string; label: string; group?: string }>
+    effects:          Array<{ id: string; label: string; group?: string }>
+    filters:          Array<{ id: string; label: string; instant?: boolean; group?: string }>
+    recentFiles:      string[]
+    luts?:            Array<{
+      id: string
+      label: string
+      builtin?: boolean
+      category?: 'view-transform' | 'camera-idt' | 'creative' | 'ocio'
+    }>
+    activeViewLutId?: string | null
   }): void => {
     ipcRenderer.send('menu:build', payload)
   },

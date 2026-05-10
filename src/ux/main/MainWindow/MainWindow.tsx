@@ -37,6 +37,8 @@ import { ResizeCanvasDialog } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasD
 import { ImportSpritesheetFramesDialog } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
 import { ExportAnimationFramesDialog } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
 import { AboutDialog } from "@/ux/modals/AboutDialog/AboutDialog";
+import { LutManagerDialog } from "@/ux/modals/LutManagerDialog/LutManagerDialog";
+import { useLutOps } from "@/core/services/useLutOps";
 import { PreferencesDialog } from "@/ux/modals/PreferencesDialog/PreferencesDialog";
 import { HdrLdrExportWarningDialog } from "@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog";
 import { KeyboardShortcutsDialog } from "@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog";
@@ -136,6 +138,8 @@ export interface MainWindowProps {
   setShowResizeDialog: (v: boolean) => void;
   showResizeCanvasDialog: boolean;
   setShowResizeCanvasDialog: (v: boolean) => void;
+  showLutManager: boolean;
+  setShowLutManager: (v: boolean) => void;
   showImportSpritesheetFramesDialog: boolean;
   setShowImportSpritesheetFramesDialog: (v: boolean) => void;
   handleImportSpritesheetFrames: (
@@ -352,6 +356,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showLutManager,
+    setShowLutManager,
     showImportSpritesheetFramesDialog,
     setShowImportSpritesheetFramesDialog,
     handleImportSpritesheetFrames,
@@ -463,6 +469,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     onCopyNextFrame,
   } = props;
 
+  const lutOps = useLutOps();
+
   return (
     <div className={styles.app}>
       <TopBar
@@ -490,6 +498,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onDelete={handleDelete}
         onResizeImage={() => setShowResizeDialog(true)}
         onResizeCanvas={() => setShowResizeCanvasDialog(true)}
+        onLoadLut={() => void lutOps.loadCubeLut()}
+        onLoadOcioConfig={() => void lutOps.loadOcioConfig()}
+        onManageLuts={() => setShowLutManager(true)}
+        onSetViewTransform={lutOps.setViewTransform}
         onRotate90CW={() => {
           void handleRotate("90cw");
         }}
@@ -777,6 +789,10 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           handleExportAnimationFrames(s, onProgress)
         }
       />
+      <LutManagerDialog
+        open={showLutManager}
+        onClose={() => setShowLutManager(false)}
+      />
       <AboutDialog
         open={showAboutDialog}
         onClose={() => setShowAboutDialog(false)}
@@ -886,8 +902,11 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           open={true}
           fromFormat={pixelFormat}
           toFormat={pendingConversion}
-          onConfirm={() => {
-            void colorMode.executeConversion(pendingConversion);
+          onConfirm={(sourceColorSpace) => {
+            void colorMode.executeConversion(
+              pendingConversion,
+              sourceColorSpace,
+            );
             setPendingConversion(null);
           }}
           onCancel={() => setPendingConversion(null)}

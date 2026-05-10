@@ -54,6 +54,7 @@ import type { RippleParams } from "./Ripple/RippleEffect";
 import type { ShearParams } from "./Shear/ShearEffect";
 import type { TwirlParams } from "./Twirl/TwirlEffect";
 import type { DisplaceParams } from "./Displace/DisplaceEffect";
+import type { LutAdjustmentParams } from "./LutAdjustment/LutAdjustmentEffect";
 
 /** Type-level twin of `effectRegistry`: every registered effect contributes a
  *  params shape here. Adding a new effect = one import line + one map entry. */
@@ -112,6 +113,7 @@ export interface EffectParamsMap {
   "shear": ShearParams;
   "twirl": TwirlParams;
   "displace": DisplaceParams;
+  "lut": LutAdjustmentParams;
 }
 
 /** Union of every registered effect's id literal. */

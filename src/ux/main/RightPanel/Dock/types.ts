@@ -24,7 +24,7 @@ export const PANEL_LABELS: Record<PanelId, string> = {
   Layers: "Layers",
   History: "History",
   Info: "Info",
-  HDR: "HDR",
+  HDR: "Display",
 };
 
 export interface DockRowConfig {

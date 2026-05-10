@@ -30,6 +30,10 @@ export type AppAction =
   | { type: "TOGGLE_LAYER_LOCK"; payload: string }
   | { type: "SET_LAYER_OPACITY"; payload: { id: string; opacity: number } }
   | { type: "SET_LAYER_BLEND"; payload: { id: string; blendMode: BlendMode } }
+  | {
+      type: "SET_LAYER_COLOR_SPACE";
+      payload: { id: string; colorSpace: import("@/types").LayerColorSpace };
+    }
   | { type: "RENAME_LAYER"; payload: { id: string; name: string } }
   | { type: "REORDER_LAYERS"; payload: LayerState[] }
   | { type: "ADD_TEXT_LAYER"; payload: TextLayerState }
@@ -626,6 +630,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
         layers: state.layers.map((l) =>
           l.id === action.payload.id
             ? { ...l, blendMode: action.payload.blendMode }
+            : l,
+        ),
+      };
+
+    case "SET_LAYER_COLOR_SPACE":
+      // Tag-only operation: pixel data is left untouched, the renderer
+      // re-decodes via the IDT pre-pass on the next frame. Only meaningful
+      // on pixel layers; the type guard via "in" keeps the reducer
+      // tolerant if a non-pixel layer somehow receives the action.
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.payload.id && !("type" in l)
+            ? { ...l, colorSpace: action.payload.colorSpace }
             : l,
         ),
       };

@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { LayerState, BlendMode, MaskLayerState, GroupLayerState, CompositeLayerState } from "@/types";
+import type {
+  LayerState,
+  BlendMode,
+  LayerColorSpace,
+  MaskLayerState,
+  GroupLayerState,
+  CompositeLayerState,
+} from "@/types";
+import {
+  ALL_LAYER_COLOR_SPACES,
+  LAYER_COLOR_SPACE_LABEL,
+} from "@/core/lut/layerColorSpace";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isCompositeLayer, isContainerLayer } from "@/types";
 import { useAppContext } from "@/core/store/AppContext";
@@ -335,6 +346,12 @@ export function Layers({
   };
   const onLayerBlendChange = (id: string, blendMode: BlendMode): void => {
     dispatch({ type: "SET_LAYER_BLEND", payload: { id, blendMode } });
+  };
+  const onLayerColorSpaceChange = (
+    id: string,
+    colorSpace: LayerColorSpace,
+  ): void => {
+    dispatch({ type: "SET_LAYER_COLOR_SPACE", payload: { id, colorSpace } });
   };
   const onLayerRename = (id: string, name: string): void => {
     dispatch({ type: "RENAME_LAYER", payload: { id, name } });
@@ -1060,6 +1077,35 @@ export function Layers({
       ].join(" ")}
     >
       {/* ── Blend mode + Opacity ──────────────────────────────────────── */}
+      {/* ── Color Space (rgba32f docs only, pixel layers only) ──────── */}
+      {state.pixelFormat === "rgba32f" &&
+        activeLayer &&
+        !("type" in activeLayer) && (
+          <div className={styles.blendRow}>
+            <label className={styles.numLabel} title="Input colour space — drives the IDT decode pre-pass">
+              Color Space:
+            </label>
+            <select
+              className={styles.blendSelect}
+              value={
+                (activeLayer as { colorSpace?: LayerColorSpace }).colorSpace ??
+                "auto"
+              }
+              onChange={(e) =>
+                onLayerColorSpaceChange(
+                  activeLayer.id,
+                  e.target.value as LayerColorSpace,
+                )
+              }
+            >
+              {ALL_LAYER_COLOR_SPACES.map((s) => (
+                <option key={s} value={s}>
+                  {LAYER_COLOR_SPACE_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       <div className={styles.blendRow}>
         <select
           className={styles.blendSelect}

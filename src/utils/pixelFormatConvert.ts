@@ -48,6 +48,19 @@ export function convertRgba8ToF32(src: Uint8Array): Float32Array {
   return out;
 }
 
+/** Convert an RGBA8 Uint8Array to a Float32Array **without** any transfer-
+ *  function decode — just `/255` per channel. Use this when the source
+ *  bytes are *not* sRGB-encoded display values: camera log encodings
+ *  (S-Log3, LogC3, V-Log, …), already-linear data, or any other custom
+ *  encoding the renderer's IDT pre-pass will decode at composite time
+ *  via the layer's `colorSpace` tag. Applying the sRGB curve to log
+ *  values would mangle them irrecoverably. */
+export function convertRgba8ToF32Raw(src: Uint8Array): Float32Array {
+  const out = new Float32Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = src[i] / 255;
+  return out;
+}
+
 /** Convert a Float32Array (linear-light) to an RGBA8 Uint8Array (sRGB-
  *  encoded bytes). Applies the sRGB transfer function to RGB channels;
  *  alpha is scaled with `*255` only. Values > 1 are clamped at the sRGB

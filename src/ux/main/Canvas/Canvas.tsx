@@ -915,6 +915,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
         layer.opacity = "opacity" in ls ? ls.opacity : 1;
         layer.visible = ls.visible;
         layer.blendMode = "blendMode" in ls ? ls.blendMode : "normal";
+        layer.colorSpace =
+          "colorSpace" in ls && ls.colorSpace ? ls.colorSpace : "auto";
         if (isStale()) return;
         renderer.flushLayer(
           layer,
@@ -1052,6 +1054,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       gl.opacity = "opacity" in ls ? ls.opacity : 1;
       gl.visible = ls.visible;
       gl.blendMode = "blendMode" in ls ? ls.blendMode : "normal";
+      gl.colorSpace =
+        "colorSpace" in ls && ls.colorSpace ? ls.colorSpace : "auto";
       // Re-rasterize text layers whenever their state changes (text, style, position, color).
       if ("type" in ls && ls.type === "text") {
         // Always reset offset — move tool may have shifted it temporarily for preview.

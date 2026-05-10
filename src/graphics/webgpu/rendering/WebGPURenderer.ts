@@ -28,6 +28,30 @@ import {
 import { unpackRows, unpackF32Rows } from "./readbackUnpack";
 import { expandIndicesToRgba8 } from "./indexedColorExpand";
 import { encodeClearTexture, copyOutsideRect } from "./copyEncoders";
+import { ensureLutOnGpu } from "@/core/lut/lutGpu";
+import { lutStore } from "@/core/lut/lutStore";
+import {
+  effectiveColorSpace,
+  idtLutIdFor,
+} from "@/core/lut/layerColorSpace";
+
+// IEEE-754 binary16 encoder (round-to-nearest-even-ish); used to upload the
+// renderer's identity LUT placeholders as rgba16float.
+const _f32buf = new ArrayBuffer(4);
+const _f32arr = new Float32Array(_f32buf);
+const _u32arr = new Uint32Array(_f32buf);
+function floatToHalf16(value: number): number {
+  _f32arr[0] = value;
+  const x = _u32arr[0];
+  const sign = (x >>> 16) & 0x8000;
+  const mant = x & 0x7fffff;
+  let exp = (x >>> 23) & 0xff;
+  if (exp === 0xff) return sign | 0x7c00 | (mant !== 0 ? 0x0200 : 0);
+  exp = exp - 127 + 15;
+  if (exp >= 31) return sign | 0x7c00;
+  if (exp <= 0) return sign;
+  return sign | (exp << 10) | (mant >>> 13);
+}
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
@@ -86,20 +110,26 @@ export class WebGPURenderer {
     cachedLayerTex: GPUTexture | null;
     cachedSrcTex: GPUTexture | null;
     cachedMaskTex: GPUTexture | null;
+    /** Identity of the inline-IDT cube + shaper textures used in the
+     *  cached bind group — invalidates when the layer's tag picks a
+     *  different LUT bundle (or moves between identity placeholder and
+     *  a real cube). */
+    cachedCubeTex: GPUTexture | null;
+    cachedShaperTex: GPUTexture | null;
   }[] = [];
   private compositeBufferIndex = 0;
 
   // Pre-allocated scratch objects reused each frame to avoid GC pressure.
   // encodeCompositeLayer writes into compositeUnifAB synchronously before writeBuffer,
   // so a single instance can be safely shared across all pool slots within one frame.
-  private readonly compositeUnifAB = new ArrayBuffer(64);
+  // 80 bytes — see CompositeUniforms in composite.wgsl. Last 16 bytes
+  // hold the inline IDT params (transformMode, cubeSize, hasShaper, _pad).
+  private readonly compositeUnifAB = new ArrayBuffer(80);
   private readonly compositeUnifView = new DataView(this.compositeUnifAB);
   private readonly compositeQuadF32 = new Float32Array(12);
-  // encodeBlitToView scratch (16 bytes: exposureLinear f32, isFp32 f32, operator u32, _pad f32)
-  private readonly blitUnifAB = new ArrayBuffer(16);
+  // encodeBlitToView scratch — 32 bytes (see hdr-blit.wgsl ToneMappingUniforms).
+  private readonly blitUnifAB = new ArrayBuffer(32);
   private readonly blitUnifView = new DataView(this.blitUnifAB);
-  // Per-srcTex blit bind-group cache. Only two entries ever exist (ping / pong).
-  private readonly blitBindGroupCache = new Map<GPUTexture, GPUBindGroup>();
 
   // ─── Render cache ──────────────────────────────────────────────────────────
   // Per-adjustment-group output textures: skip re-running adjustment passes when
@@ -620,6 +650,32 @@ export class WebGPURenderer {
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
           buffer: { type: "uniform" },
         },
+        // Inline IDT bindings — always present (identity placeholders for
+        // default-tagged layers) so the BGL stays static while still
+        // covering the camera-log decode path.
+        {
+          binding: 6,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float",
+            viewDimension: "2d",
+            multisampled: false,
+          },
+        },
+        {
+          binding: 7,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float",
+            viewDimension: "2d",
+            multisampled: false,
+          },
+        },
+        {
+          binding: 8,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: "filtering" },
+        },
       ],
     });
     this.hdrBlitBGL = device.createBindGroupLayout({
@@ -648,6 +704,31 @@ export class WebGPURenderer {
           visibility: GPUShaderStage.FRAGMENT,
           buffer: { type: "uniform" },
         },
+        // Optional view-transform LUT bindings — always bound (identity
+        // textures when no LUT is active) to keep the BGL static.
+        {
+          binding: 4,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float",
+            viewDimension: "2d",
+            multisampled: false,
+          },
+        },
+        {
+          binding: 5,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float",
+            viewDimension: "2d",
+            multisampled: false,
+          },
+        },
+        {
+          binding: 6,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: "filtering" },
+        },
       ],
     });
     this.compositePipeline = createCompositePipeline(
@@ -661,14 +742,19 @@ export class WebGPURenderer {
       canvasFormat,
       this.hdrBlitBGL,
     );
-    this.hdrUniformBuffer = createUniformBuffer(device, 16);
-    // Initialize: exposureLinear=1.0, isFp32=0.0, operator=1 (Reinhard), _pad=0
-    const initData = new ArrayBuffer(16);
+    this.hdrUniformBuffer = createUniformBuffer(device, 32);
+    // Initialize: exposureLinear=1.0, isFp32=0.0, operator=1 (Reinhard),
+    // hasViewLut=0, cubeSize=1, lutInSpace=0, lutOutSpace=0, hasShaper=0.
+    const initData = new ArrayBuffer(32);
     const initView = new DataView(initData);
     initView.setFloat32(0, 1.0, true);
     initView.setFloat32(4, 0.0, true);
     initView.setUint32(8, 1, true);
-    initView.setFloat32(12, 0.0, true);
+    initView.setUint32(12, 0, true);
+    initView.setFloat32(16, 1, true);
+    initView.setUint32(20, 0, true);
+    initView.setUint32(24, 0, true);
+    initView.setUint32(28, 0, true);
     writeUniformBuffer(device, this.hdrUniformBuffer, initData);
     this.checkerBindGroup = device.createBindGroup({
       layout: this.checkerPipeline.getBindGroupLayout(0),
@@ -684,7 +770,71 @@ export class WebGPURenderer {
     );
 
     initGrabCutCompute(this.device);
+
+    // ── View-transform LUT identity placeholders ───────────────────────────
+    // Always-bound textures + sampler so the hdr-blit BGL stays static. When
+    // no view transform is active, these turn the LUT branch into a no-op.
+    this.identityLutCube = device.createTexture({
+      size: { width: 2, height: 4, depthOrArrayLayers: 1 },
+      format: "rgba16float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.identityLutShaper = device.createTexture({
+      size: { width: 2, height: 3, depthOrArrayLayers: 1 },
+      format: "rgba16float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    // Identity 2³ cube (R varies along atlasX, G/B along atlasY = b*2+g).
+    const cubeData = new Uint16Array(2 * 4 * 4);
+    for (let bi = 0; bi < 2; bi++) {
+      for (let gi = 0; gi < 2; gi++) {
+        for (let ri = 0; ri < 2; ri++) {
+          const off = ((bi * 2 + gi) * 2 + ri) * 4;
+          cubeData[off] = floatToHalf16(ri);
+          cubeData[off + 1] = floatToHalf16(gi);
+          cubeData[off + 2] = floatToHalf16(bi);
+          cubeData[off + 3] = floatToHalf16(1);
+        }
+      }
+    }
+    device.queue.writeTexture(
+      { texture: this.identityLutCube },
+      cubeData.buffer,
+      { bytesPerRow: 2 * 4 * 2, rowsPerImage: 4 },
+      { width: 2, height: 4, depthOrArrayLayers: 1 },
+    );
+    const shaperData = new Uint16Array(2 * 3 * 4);
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 2; i++) {
+        const o = (row * 2 + i) * 4;
+        const v = floatToHalf16(i);
+        shaperData[o] = v;
+        shaperData[o + 1] = v;
+        shaperData[o + 2] = v;
+        shaperData[o + 3] = floatToHalf16(1);
+      }
+    }
+    device.queue.writeTexture(
+      { texture: this.identityLutShaper },
+      shaperData.buffer,
+      { bytesPerRow: 2 * 4 * 2, rowsPerImage: 3 },
+      { width: 2, height: 3, depthOrArrayLayers: 1 },
+    );
+    this.identityLutCubeView = this.identityLutCube.createView();
+    this.identityLutShaperView = this.identityLutShaper.createView();
+    this.lutBlitSampler = device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
   }
+
+  private readonly identityLutCube!: GPUTexture;
+  private readonly identityLutShaper!: GPUTexture;
+  private readonly identityLutCubeView!: GPUTextureView;
+  private readonly identityLutShaperView!: GPUTextureView;
+  private readonly lutBlitSampler!: GPUSampler;
 
   /** GPU texture format used for the renderer's internal compositing buffers
    *  (rgba8unorm for SDR pipelines, rgba32float for HDR). External callers
@@ -758,6 +908,7 @@ export class WebGPURenderer {
       blendMode: "normal",
       dirtyRect: null,
       contentVersion: 0,
+      colorSpace: "auto",
     };
   }
 
@@ -1502,7 +1653,7 @@ export class WebGPURenderer {
           ? `:M${entry.mask.contentVersion}:${entry.mask.offsetX}:${entry.mask.offsetY}`
           : "";
         out.push(
-          `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`,
+          `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:CS${l.colorSpace}${maskPart}`,
         );
       } else if (entry.kind === "layer-group") {
         if (!entry.visible) continue;
@@ -1734,13 +1885,17 @@ export class WebGPURenderer {
     cachedLayerTex: GPUTexture | null;
     cachedSrcTex: GPUTexture | null;
     cachedMaskTex: GPUTexture | null;
+    cachedCubeTex: GPUTexture | null;
+    cachedShaperTex: GPUTexture | null;
   } {
     const i = this.compositeBufferIndex++;
     let pair = this.compositeBufferPool[i];
     if (!pair) {
       pair = {
         unif: this.device.createBuffer({
-          size: 64,
+          // 80 bytes — matches CompositeUniforms in composite.wgsl
+          // (last 16 bytes are the inline IDT params).
+          size: 80,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }),
         pos: this.device.createBuffer({
@@ -1751,6 +1906,8 @@ export class WebGPURenderer {
         cachedLayerTex: null,
         cachedSrcTex: null,
         cachedMaskTex: null,
+        cachedCubeTex: null,
+        cachedShaperTex: null,
       };
       this.compositeBufferPool[i] = pair;
     }
@@ -1798,7 +1955,7 @@ export class WebGPURenderer {
         srcIsEmpty = false;
         const l = entry.layer;
         const maskPart = entry.mask ? `:M${entry.mask.contentVersion}` : "";
-        inputFp += `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}${maskPart}`;
+        inputFp += `|L:${l.id}:${l.contentVersion}:${l.opacity}:${l.blendMode}:${l.offsetX}:${l.offsetY}:CS${l.colorSpace}${maskPart}`;
       } else if (entry.kind === "layer-group") {
         if (!entry.visible) continue;
         // Empty group: nothing to composite. Skip to avoid allocating + clearing
@@ -2482,34 +2639,49 @@ export class WebGPURenderer {
     srcTex: GPUTexture,
     view: GPUTextureView,
   ): void {
-    // Update HDR tone-mapping uniforms before the blit
+    // Update HDR tone-mapping + view-transform uniforms before the blit.
     const exposureLinear = Math.pow(2, displayStore.exposureEV);
     const isFp32 = this.pixelFormat === "rgba32f" ? 1.0 : 0.0;
     const operatorId =
       OPERATOR_SHADER_ID[displayStore.toneMappingOperator] ?? 1;
+
+    const viewLut = displayStore.viewTransformLutId
+      ? lutStore.get(displayStore.viewTransformLutId)
+      : undefined;
+    const viewBundle = viewLut
+      ? ensureLutOnGpu(this.device, viewLut)
+      : null;
+
     const tmView = this.blitUnifView;
     tmView.setFloat32(0, exposureLinear, true);
     tmView.setFloat32(4, isFp32, true);
     tmView.setUint32(8, operatorId, true);
-    tmView.setFloat32(12, 0.0, true);
+    tmView.setUint32(12, viewBundle ? 1 : 0, true);
+    tmView.setFloat32(16, viewBundle ? viewBundle.cubeSize : 1, true);
+    tmView.setUint32(20, viewLut?.inputSpace === "srgb" ? 0 : 1, true);
+    tmView.setUint32(24, viewLut?.outputSpace === "srgb" ? 0 : 1, true);
+    tmView.setUint32(28, viewBundle?.hasShaper ? 1 : 0, true);
     this.device.queue.writeBuffer(this.hdrUniformBuffer, 0, this.blitUnifAB);
 
-    // Cache the blit bind group by srcTex identity. It is only ever one of two textures
-    // (ping / pong) and the sampler + buffers never change object identity, so the BG
-    // can be reused every frame once built.
-    let bindGroup = this.blitBindGroupCache.get(srcTex);
-    if (!bindGroup) {
-      bindGroup = this.device.createBindGroup({
-        layout: this.hdrBlitBGL,
-        entries: [
-          { binding: 0, resource: this.sampler },
-          { binding: 1, resource: srcTex.createView() },
-          { binding: 2, resource: { buffer: this.frameUniformBuf } },
-          { binding: 3, resource: { buffer: this.hdrUniformBuffer } },
-        ],
-      });
-      this.blitBindGroupCache.set(srcTex, bindGroup);
-    }
+    const lutCubeView = viewBundle?.cubeView ?? this.identityLutCubeView;
+    const lutShaperView = viewBundle?.shaperView ?? this.identityLutShaperView;
+
+    // The blit bind group includes the active view-transform LUT textures,
+    // which can change at runtime (display-store toggle). Rebuild per frame
+    // — it's a few descriptor allocations, well below the cost of the blit
+    // itself.
+    const bindGroup = this.device.createBindGroup({
+      layout: this.hdrBlitBGL,
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 1, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: this.frameUniformBuf } },
+        { binding: 3, resource: { buffer: this.hdrUniformBuffer } },
+        { binding: 4, resource: lutCubeView },
+        { binding: 5, resource: lutShaperView },
+        { binding: 6, resource: this.lutBlitSampler },
+      ],
+    });
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -2530,6 +2702,64 @@ export class WebGPURenderer {
     }
     pass.draw(6);
     pass.end();
+  }
+
+  // ─── Inline IDT resolver ────────────────────────────────────────────────
+  //
+  // The composite shader applies the layer's tagged → working-space
+  // transform inline (no scratch texture). This helper turns a layer's
+  // colour-space tag into the GPU resources + uniforms the shader needs:
+  // a transform mode, an optional 3D-LUT cube, an optional 1D shaper.
+  //
+  //   transformMode == 0 → passthrough (stored == working space)
+  //   transformMode == 1 → analytic sRGB → linear-srgb
+  //   transformMode == 2 → camera-log → linear-srgb (shaper + 3D cube)
+  //
+  // Only rgba32f documents apply non-zero transforms; in rgba8 / indexed8
+  // docs the tag is descriptive (no working-space conversion to do).
+
+  private resolveLayerIdt(layer: GpuLayer): {
+    transformMode: 0 | 1 | 2;
+    cubeView: GPUTextureView;
+    shaperView: GPUTextureView;
+    cubeTex: GPUTexture;
+    shaperTex: GPUTexture;
+    cubeSize: number;
+    hasShaper: boolean;
+  } {
+    const identity = {
+      transformMode: 0 as const,
+      cubeView: this.identityLutCubeView,
+      shaperView: this.identityLutShaperView,
+      cubeTex: this.identityLutCube,
+      shaperTex: this.identityLutShaper,
+      cubeSize: 2,
+      hasShaper: false,
+    };
+    if (this.pixelFormat !== "rgba32f") return identity;
+
+    const space = effectiveColorSpace(layer.colorSpace, layer.format);
+    if (space === "linear-srgb") return identity;
+    if (space === "srgb") {
+      // Analytic decode — no LUT cube needed, identity placeholders are
+      // bound but never sampled (transformMode 1 uses srgbToLinear()).
+      return { ...identity, transformMode: 1 };
+    }
+    // Camera-log: bind the matching IDT cube + shaper.
+    const lutId = idtLutIdFor(layer.colorSpace);
+    if (!lutId) return identity;
+    const lut = lutStore.get(lutId);
+    if (!lut) return identity;
+    const bundle = ensureLutOnGpu(this.device, lut);
+    return {
+      transformMode: 2,
+      cubeView: bundle.cubeView,
+      shaperView: bundle.shaperView,
+      cubeTex: bundle.cubeTex,
+      shaperTex: bundle.shaperTex,
+      cubeSize: bundle.cubeSize,
+      hasShaper: bundle.hasShaper,
+    };
   }
 
   /**
@@ -2555,6 +2785,12 @@ export class WebGPURenderer {
     srcIsEmpty = false,
   ): void {
     const { device, pixelWidth: w, pixelHeight: h } = this;
+    // Resolve the layer's tagged → working-space transform. For default-
+    // tagged layers `idt.transformMode` is 0 (passthrough) and the cube
+    // / shaper bindings point at small identity placeholders — the
+    // composite shader still runs them through the conditional but the
+    // branch short-circuits.
+    const idt = this.resolveLayerIdt(layer);
     const ox = layer.offsetX;
     const oy = layer.offsetY;
     const lw = layer.layerWidth;
@@ -2645,20 +2881,29 @@ export class WebGPURenderer {
       unifView.setFloat32(56, 1, true);
       unifView.setFloat32(60, 1, true);
     }
+    // Inline IDT params (offsets 64..76).
+    unifView.setUint32(64, idt.transformMode, true);
+    unifView.setFloat32(68, idt.cubeSize, true);
+    unifView.setUint32(72, idt.hasShaper ? 1 : 0, true);
+    unifView.setUint32(76, 0, true);
 
     writeUniformBuffer(device, unifBuf, this.compositeUnifAB);
 
     const dummyMaskTex = maskLayer?.texture ?? srcTex; // use any fallback if no mask
 
-    // Reuse the cached bind group when all three texture identities are unchanged.
-    // createBindGroup allocates a GPU descriptor set; at 60 fps with N layers that's
-    // N * 60 descriptor sets/sec — eliminated when the layer stack is stable.
+    // Reuse the cached bind group when all texture identities are unchanged.
+    // createBindGroup allocates a GPU descriptor set; at 60 fps with N layers
+    // that's N * 60 descriptor sets/sec — eliminated when the layer stack is
+    // stable. Cache key now also includes the inline-IDT cube + shaper so a
+    // colour-space tag change invalidates correctly.
     let bindGroup: GPUBindGroup;
     if (
       slot.cachedBG !== null &&
       slot.cachedLayerTex === layer.texture &&
       slot.cachedSrcTex === srcTex &&
-      slot.cachedMaskTex === dummyMaskTex
+      slot.cachedMaskTex === dummyMaskTex &&
+      slot.cachedCubeTex === idt.cubeTex &&
+      slot.cachedShaperTex === idt.shaperTex
     ) {
       bindGroup = slot.cachedBG;
     } else {
@@ -2671,12 +2916,17 @@ export class WebGPURenderer {
           { binding: 3, resource: dummyMaskTex.createView() },
           { binding: 4, resource: { buffer: unifBuf } },
           { binding: 5, resource: { buffer: this.frameUniformBuf } },
+          { binding: 6, resource: idt.cubeView },
+          { binding: 7, resource: idt.shaperView },
+          { binding: 8, resource: this.lutBlitSampler },
         ],
       });
       slot.cachedBG = bindGroup;
       slot.cachedLayerTex = layer.texture;
       slot.cachedSrcTex = srcTex;
       slot.cachedMaskTex = dummyMaskTex;
+      slot.cachedCubeTex = idt.cubeTex;
+      slot.cachedShaperTex = idt.shaperTex;
     }
 
     // Position quad covering only the layer's canvas-space rect
@@ -2755,6 +3005,7 @@ export class WebGPURenderer {
       blendMode,
       dirtyRect: null,
       contentVersion: 0,
+      colorSpace: "auto",
     };
     this.encodeCompositeLayer(
       encoder,

@@ -21,6 +21,46 @@
   }
 }
 
+// ─── Source colour-space picker ───────────────────────────────────────────────
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+}
+
+.select {
+  height: 24px;
+  padding: 0 6px;
+  background: vars.$color-surface-2;
+  color: vars.$color-text;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  font-size: vars.$font-size-sm;
+
+  &:focus {
+    outline: none;
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.hint {
+  margin: 2px 0 0;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  line-height: 1.4;
+
+  strong {
+    color: vars.$color-text-dim;
+    font-weight: 600;
+  }
+}
+
 // ─── Warning banner ───────────────────────────────────────────────────────────
 
 .warning {

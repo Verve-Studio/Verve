@@ -162,6 +162,29 @@ export type BlendMode =
   | "color-burn"
   | "pass-through";
 
+/** Colour-space tag for a pixel layer. Drives an IDT pre-pass in the renderer
+ *  that decodes the layer's stored values into the document's working space
+ *  before any adjustment / composite runs.
+ *
+ *  - `'auto'` (default) — use the document working space directly:
+ *      • rgba8 / indexed8 docs → sRGB-encoded display values
+ *      • rgba32f docs → scene-linear sRGB primaries
+ *    No pre-pass; existing behaviour preserved.
+ *  - `'srgb'` / `'linear-srgb'` — explicit non-default tags.
+ *  - `'slog3'` … `'apple-log'` — camera log encodings. The renderer applies
+ *    the matching built-in IDT (vendor inverse OETF + gamut → sRGB) before
+ *    the layer enters the composite. This is the "input transform" stage. */
+export type LayerColorSpace =
+  | "auto"
+  | "srgb"
+  | "linear-srgb"
+  | "slog3"
+  | "logc3"
+  | "vlog"
+  | "red-log3g10"
+  | "clog3"
+  | "apple-log";
+
 export interface PixelLayerState {
   id: string;
   name: string;
@@ -169,6 +192,10 @@ export interface PixelLayerState {
   opacity: number;
   locked: boolean;
   blendMode: BlendMode;
+  /** Colour-space tag; `undefined` is treated as `'auto'`. Stored on
+   *  `PixelLayerState` only — generative layer types (text, shape, frame,
+   *  effect) emit pixels already in the document working space. */
+  colorSpace?: LayerColorSpace;
 }
 
 export type TextAlign = "left" | "center" | "right" | "justify";

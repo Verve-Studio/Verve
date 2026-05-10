@@ -1,4 +1,11 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  lutCategory,
+  lutStore,
+  type LutCategory,
+  type LutTransform,
+} from "@/core/lut";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import { MenuBar } from "../MenuBar/MenuBar";
 import type { MenuDef } from "../MenuBar/MenuBar";
 import type { FilterKey, PixelFormat } from "@/types";
@@ -33,6 +40,10 @@ interface TopBarProps {
   onDelete?: () => void;
   onResizeImage?: () => void;
   onResizeCanvas?: () => void;
+  onLoadLut?: () => void;
+  onLoadOcioConfig?: () => void;
+  onManageLuts?: () => void;
+  onSetViewTransform?: (id: string | null) => void;
   onRotate90CW?: () => void;
   onRotate180?: () => void;
   onRotate270CW?: () => void;
@@ -156,6 +167,10 @@ export function TopBar({
   onDelete,
   onResizeImage,
   onResizeCanvas,
+  onLoadLut,
+  onLoadOcioConfig,
+  onManageLuts,
+  onSetViewTransform,
   onRotate90CW,
   onRotate180,
   onRotate270CW,
@@ -246,6 +261,20 @@ export function TopBar({
   isMac,
 }: TopBarProps): React.JSX.Element {
   const dockLayout = useDockLayout();
+  // Live LUT list + active view-transform — both update outside React
+  // (lutStore + displayStore are module singletons), so subscribe and
+  // mirror into local state to drive menu rebuilds.
+  const [luts, setLuts] = useState<LutTransform[]>(() => lutStore.all());
+  useEffect(() => lutStore.subscribe(() => setLuts(lutStore.all())), []);
+  const [activeViewLut, setActiveViewLut] = useState<string | null>(
+    () => displayStore.viewTransformLutId,
+  );
+  useEffect(() => {
+    const fn = (): void => setActiveViewLut(displayStore.viewTransformLutId);
+    displayStore.subscribe(fn);
+    return () => displayStore.unsubscribe(fn);
+  }, []);
+
   const menus = useMemo(
     (): MenuDef[] => [
       {
@@ -499,6 +528,52 @@ export function TopBar({
               { label: "Horizontal", action: onFlipHorizontal },
               { label: "Vertical", action: onFlipVertical },
             ],
+          },
+          { separator: true, label: "" },
+          { label: "Load LUT…", action: onLoadLut },
+          { label: "Load OCIO Config…", action: onLoadOcioConfig },
+          { label: "Manage LUTs…", action: onManageLuts },
+          {
+            label: "View Transform",
+            submenu: (() => {
+              const items: typeof menus extends Array<infer M>
+                ? M extends { items: infer I }
+                  ? I
+                  : never
+                : never = [
+                {
+                  label: "None",
+                  checked: activeViewLut === null,
+                  action: () => onSetViewTransform?.(null),
+                },
+              ];
+              const order: LutCategory[] = [
+                "view-transform",
+                "camera-idt",
+                "creative",
+                "ocio",
+              ];
+              const grouped = new Map<LutCategory, LutTransform[]>();
+              for (const l of luts) {
+                const cat = lutCategory(l);
+                const list = grouped.get(cat) ?? [];
+                list.push(l);
+                grouped.set(cat, list);
+              }
+              for (const cat of order) {
+                const list = grouped.get(cat);
+                if (!list || list.length === 0) continue;
+                items.push({ separator: true, label: "" });
+                for (const l of list) {
+                  items.push({
+                    label: l.name,
+                    checked: activeViewLut === l.id,
+                    action: () => onSetViewTransform?.(l.id),
+                  });
+                }
+              }
+              return items;
+            })(),
           },
         ],
       },
@@ -789,6 +864,12 @@ export function TopBar({
       onDelete,
       onResizeImage,
       onResizeCanvas,
+      onLoadLut,
+      onLoadOcioConfig,
+      onManageLuts,
+      onSetViewTransform,
+      luts,
+      activeViewLut,
       onRotate90CW,
       onRotate180,
       onRotate270CW,

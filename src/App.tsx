@@ -23,6 +23,7 @@ import { useLayerArrange } from "@/core/services/useLayerArrange";
 import { useLayerGroups } from "@/core/services/useLayerGroups";
 import { useLayers } from "@/core/services/useLayers";
 import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
+import { useLutOps } from "@/core/services/useLutOps";
 import { useObjectSelection } from "@/core/services/useObjectSelection";
 import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
 import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
@@ -62,6 +63,8 @@ function AppContent(): React.JSX.Element {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showLutManager,
+    setShowLutManager,
     showAboutDialog,
     setShowAboutDialog,
     showShortcutsDialog,
@@ -582,6 +585,7 @@ function AppContent(): React.JSX.Element {
 
   // ── macOS native menu ─────────────────────────────────────────────
   const isMac = window.api.platform === "darwin";
+  const lutOps = useLutOps();
 
   useMacNativeMenu({
     isMac,
@@ -651,6 +655,10 @@ function AppContent(): React.JSX.Element {
     openSystemInfoDialog: () => setShowSystemInfoDialog(true),
     openColorDitheringSetup: () => setShowColorDitheringSetup(true),
     openPreferencesDialog: () => setShowPreferencesDialog(true),
+    openLutManagerDialog: () => setShowLutManager(true),
+    loadCubeLut: lutOps.loadCubeLut,
+    loadOcioConfig: lutOps.loadOcioConfig,
+    setViewTransform: lutOps.setViewTransform,
     activeLayerId: state.activeLayerId,
     effectiveSelectedIds,
     isFreeTransformEnabled,
@@ -754,6 +762,8 @@ function AppContent(): React.JSX.Element {
         setShowResizeDialog={setShowResizeDialog}
         showResizeCanvasDialog={showResizeCanvasDialog}
         setShowResizeCanvasDialog={setShowResizeCanvasDialog}
+        showLutManager={showLutManager}
+        setShowLutManager={setShowLutManager}
         showImportSpritesheetFramesDialog={showImportSpritesheetFramesDialog}
         setShowImportSpritesheetFramesDialog={
           setShowImportSpritesheetFramesDialog

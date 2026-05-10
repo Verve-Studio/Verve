@@ -82,6 +82,9 @@ export function AdjustmentPanel({
     case "lens-distortion":
       panelWidth = 360;
       break;
+    case "lut":
+      panelWidth = 300;
+      break;
     default:
       panelWidth = 236;
   }

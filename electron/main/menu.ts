@@ -8,6 +8,17 @@ export interface MenuBuildPayload {
   effects: Array<{ id: string; label: string; group?: string }>
   filters: Array<{ id: string; label: string; instant?: boolean; group?: string }>
   recentFiles: string[]
+  /** All LUTs registered in the renderer's `lutStore`. */
+  luts?: Array<{
+    id: string
+    label: string
+    builtin?: boolean
+    /** Coarse role tag — used to split the View Transform submenu into
+     *  sections (View Transforms / Camera IDTs / Loaded LUTs / OCIO). */
+    category?: 'view-transform' | 'camera-idt' | 'creative' | 'ocio'
+  }>
+  /** Currently-active view-transform LUT id (or null when none). */
+  activeViewLutId?: string | null
 }
 
 // ─── Internal state ───────────────────────────────────────────────────────────
@@ -48,6 +59,47 @@ function item(label: string, id: string, opts: ItemOpts = {}): MenuItemConstruct
 
 function sep(): MenuItemConstructorOptions {
   return { type: 'separator' }
+}
+
+function buildViewTransformSubmenu(
+  payload: MenuBuildPayload,
+): MenuItemConstructorOptions[] {
+  const luts = payload.luts ?? []
+  const active = payload.activeViewLutId ?? null
+  const out: MenuItemConstructorOptions[] = [
+    {
+      ...item('None', 'lut:setView:'),
+      type: 'checkbox',
+      checked: active === null,
+    },
+  ]
+  // Group LUTs by category — same order the in-app menu uses.
+  const order: Array<NonNullable<MenuBuildPayload['luts']>[number]['category']> = [
+    'view-transform',
+    'camera-idt',
+    'creative',
+    'ocio',
+  ]
+  const grouped = new Map<string, MenuBuildPayload['luts']>()
+  for (const lut of luts) {
+    const cat = lut.category ?? 'view-transform'
+    const list = grouped.get(cat) ?? []
+    list!.push(lut)
+    grouped.set(cat, list)
+  }
+  for (const cat of order) {
+    const list = grouped.get(cat ?? 'view-transform')
+    if (!list || list.length === 0) continue
+    out.push(sep())
+    for (const lut of list) {
+      out.push({
+        ...item(lut.label, `lut:setView:${lut.id}`),
+        type: 'checkbox',
+        checked: active === lut.id,
+      })
+    }
+  }
+  return out
 }
 
 function groupedItems(
@@ -261,6 +313,14 @@ export function buildAndSetMacMenu(payload: MenuBuildPayload): void {
             item('Horizontal', 'flipHorizontal'),
             item('Vertical',   'flipVertical'),
           ],
+        },
+        sep(),
+        item('Load LUT…',         'lut:loadCube'),
+        item('Load OCIO Config…', 'lut:loadOcio'),
+        item('Manage LUTs…',      'lut:manage'),
+        {
+          label: 'View Transform',
+          submenu: buildViewTransformSubmenu(payload),
         },
       ],
     },

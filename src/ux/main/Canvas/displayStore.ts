@@ -17,6 +17,11 @@ type Listener = () => void;
 class DisplayStore {
   exposureEV: number = 0;
   toneMappingOperator: ToneMappingOperator = "clamp";
+  /** id of the LUT (in `lutStore`) used as the canvas-only view transform.
+   *  `null` → no view transform (default behaviour: tone-map + sRGB encode
+   *  for f32 docs, pass-through for rgba8 docs). View transforms only
+   *  affect on-screen display, never exports. */
+  viewTransformLutId: string | null = null;
 
   private listeners = new Set<Listener>();
 
@@ -37,6 +42,11 @@ class DisplayStore {
 
   setOperator(op: ToneMappingOperator): void {
     this.toneMappingOperator = op;
+    this.notify();
+  }
+
+  setViewTransformLut(id: string | null): void {
+    this.viewTransformLutId = id;
     this.notify();
   }
 

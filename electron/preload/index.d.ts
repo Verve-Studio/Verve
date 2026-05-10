@@ -11,6 +11,15 @@ declare global {
       openImagesMultiDialog: () => Promise<string[] | null>
       saveJsonDialog: (defaultName?: string) => Promise<string | null>
       openDirectoryDialog: () => Promise<string | null>
+      pickCubeLutFiles: () => Promise<Array<{ name: string; text: string }> | null>
+      pickOcioBundle: () => Promise<
+        | {
+            configPath: string
+            configText: string
+            files: Array<{ relPath: string; text: string }>
+          }
+        | null
+      >
       writeJsonFile: (path: string, data: string) => Promise<void>
       saveverveDialog: (defaultPath?: string) => Promise<string | null>
       openverveFile: (path: string) => Promise<string>
@@ -87,10 +96,17 @@ declare global {
       platform: string
       onMenuAction: (callback: (actionId: string) => void) => (() => void)
       buildNativeMenu: (payload: {
-        adjustments:  Array<{ id: string; label: string; group?: string }>
-        effects:      Array<{ id: string; label: string; group?: string }>
-        filters:      Array<{ id: string; label: string; instant?: boolean; group?: string }>
-        recentFiles:  string[]
+        adjustments:    Array<{ id: string; label: string; group?: string }>
+        effects:        Array<{ id: string; label: string; group?: string }>
+        filters:        Array<{ id: string; label: string; instant?: boolean; group?: string }>
+        recentFiles:    string[]
+        luts?:          Array<{
+          id: string
+          label: string
+          builtin?: boolean
+          category?: 'view-transform' | 'camera-idt' | 'creative' | 'ocio'
+        }>
+        activeViewLutId?: string | null
       }) => void
       setMenuItemEnabled: (updates: Record<string, boolean>) => void
       setMenuItemChecked: (updates: Record<string, boolean>) => void

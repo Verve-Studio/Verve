@@ -28,8 +28,11 @@ export function useDialogState() {
     showExportAnimationFramesDialog,
     setShowExportAnimationFramesDialog,
   ] = useState(false);
+  const [showLutManager, setShowLutManager] = useState(false);
 
   return {
+    showLutManager,
+    setShowLutManager,
     showImportSpritesheetFramesDialog,
     setShowImportSpritesheetFramesDialog,
     showExportAnimationFramesDialog,

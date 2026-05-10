@@ -28,6 +28,7 @@ import { ColorTemperatureEffect } from "./ColorTemperature/ColorTemperatureEffec
 import { HalftoneEffect } from "./Halftone/HalftoneEffect";
 import { ColorKeyEffect } from "./ColorKey/ColorKeyEffect";
 import { ColorBiasEffect } from "./ColorBias/ColorBiasEffect";
+import { LutAdjustmentEffect } from "./LutAdjustment/LutAdjustmentEffect";
 import { ChromaticAberrationEffect } from "./ChromaticAberration/ChromaticAberrationEffect";
 import { VignetteEffect } from "./Vignette/VignetteEffect";
 import { LensDistortionEffect } from "./LensDistortion/LensDistortionEffect";
@@ -86,6 +87,7 @@ effectRegistry.register(ColorTemperatureEffect);
 effectRegistry.register(HalftoneEffect);
 effectRegistry.register(ColorKeyEffect);
 effectRegistry.register(ColorBiasEffect);
+effectRegistry.register(LutAdjustmentEffect);
 effectRegistry.register(ChromaticAberrationEffect);
 effectRegistry.register(VignetteEffect);
 effectRegistry.register(LensDistortionEffect);

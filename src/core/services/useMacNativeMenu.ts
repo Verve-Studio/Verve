@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FilterKey, PixelFormat } from "@/types";
 import type { EffectType } from "@/core/effects/effectTypes";
 import type { GuidePreset } from "./useViewActions";
@@ -11,6 +11,8 @@ import {
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
 import type { PanelId } from "@/ux/main/RightPanel/Dock/types";
 import { activeScope } from "@/core/store/scope";
+import { lutCategory, lutStore, type LutTransform } from "@/core/lut";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 
 interface MacNativeMenuParams {
   isMac: boolean;
@@ -114,6 +116,10 @@ interface MacNativeMenuParams {
   openSystemInfoDialog: () => void;
   openColorDitheringSetup: () => void;
   openPreferencesDialog: () => void;
+  openLutManagerDialog: () => void;
+  loadCubeLut: () => Promise<void>;
+  loadOcioConfig: () => Promise<void>;
+  setViewTransform: (id: string | null) => void;
 
   // State for enabled/checked sync
   activeLayerId: string | null;
@@ -213,6 +219,10 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     openSystemInfoDialog,
     openColorDitheringSetup,
     openPreferencesDialog,
+    openLutManagerDialog,
+    loadCubeLut,
+    loadOcioConfig,
+    setViewTransform,
     activeLayerId,
     effectiveSelectedIds,
     isFreeTransformEnabled,
@@ -266,6 +276,13 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
         } else {
           handleOpenFilterDialog(key);
         }
+        return;
+      }
+      // Dynamic: view-transform LUT picks. `lut:setView:` (empty tail) means
+      // clear; `lut:setView:<id>` activates that LUT.
+      if (actionId.startsWith("lut:setView:")) {
+        const id = actionId.slice("lut:setView:".length);
+        setViewTransform(id === "" ? null : id);
         return;
       }
       // Dynamic: recent files
@@ -354,6 +371,15 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
           break;
         case "flipVertical":
           void handleFlip("vertical");
+          break;
+        case "lut:loadCube":
+          void loadCubeLut();
+          break;
+        case "lut:loadOcio":
+          void loadOcioConfig();
+          break;
+        case "lut:manage":
+          openLutManagerDialog();
           break;
         case "layer:rotate90CW":
           void handleRotateSelectedLayers("90cw");
@@ -638,6 +664,10 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
       openSystemInfoDialog,
       openColorDitheringSetup,
       openPreferencesDialog,
+      openLutManagerDialog,
+      loadCubeLut,
+      loadOcioConfig,
+      setViewTransform,
       activeLayerId,
       effectiveSelectedIds,
       colorMode,
@@ -653,7 +683,24 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
     ],
   );
 
-  // Build the native menu once on mount (sends the dynamic items list to the main process).
+  // Mirror the LUT registry + active view-transform into local state so the
+  // native menu rebuilds whenever the user loads a `.cube`, imports an OCIO
+  // config, or changes the active view transform.
+  const [luts, setLuts] = useState<LutTransform[]>(() => lutStore.all());
+  useEffect(() => lutStore.subscribe(() => setLuts(lutStore.all())), []);
+  const [activeViewLutId, setActiveViewLutId] = useState<string | null>(
+    () => displayStore.viewTransformLutId,
+  );
+  useEffect(() => {
+    const fn = (): void =>
+      setActiveViewLutId(displayStore.viewTransformLutId);
+    displayStore.subscribe(fn);
+    return () => displayStore.unsubscribe(fn);
+  }, []);
+
+  // Build the native menu (sends the dynamic items list to the main process).
+  // Re-runs whenever recentFiles, the LUT registry, or the active view
+  // transform changes — the macOS menu mirrors all three live.
   useEffect(() => {
     if (!isMac) return;
     window.api.buildNativeMenu({
@@ -673,8 +720,15 @@ export function useMacNativeMenu(params: MacNativeMenuParams): void {
         group: i.group,
       })),
       recentFiles,
+      luts: luts.map((l) => ({
+        id: l.id,
+        label: l.name,
+        builtin: l.source.kind === "builtin",
+        category: lutCategory(l),
+      })),
+      activeViewLutId,
     });
-  }, [isMac, recentFiles]);
+  }, [isMac, recentFiles, luts, activeViewLutId]);
 
   // Register the IPC action listener once. Handler is always fresh via the ref.
   useEffect(() => {

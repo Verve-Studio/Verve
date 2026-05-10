@@ -1,4 +1,4 @@
-import type { PixelFormat } from "@/types";
+import type { LayerColorSpace, PixelFormat } from "@/types";
 import type { EffectParamsMap } from "@/core/effects/effectTypes";
 import type { CurvesLuts } from "@/core/effects/Curves/curves";
 
@@ -22,6 +22,11 @@ export interface GpuLayer {
   /** Incremented by flushLayer() every time pixel content is uploaded to the GPU.
    *  Used by the render cache to detect content changes without full pixel comparison. */
   contentVersion: number;
+  /** Tagged colour space for this layer's stored pixels. When this differs
+   *  from the document working space, the renderer interposes an IDT
+   *  decode pre-pass that produces a working-space scratch texture used
+   *  for adjustments + composite. Default `'auto'` → no pre-pass. */
+  colorSpace: LayerColorSpace;
 }
 
 export const BLEND_MODE_INDEX: Record<string, number> = {
