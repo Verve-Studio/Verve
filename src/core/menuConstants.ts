@@ -71,6 +71,7 @@ const FILTER_GROUP_ORDER = [
   "stylize",
   "render",
   "texture",
+  "artistic",
 ];
 
 /**

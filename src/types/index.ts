@@ -365,7 +365,16 @@ export type FilterKey =
   | "pixelate"
   | "seamless-texture"
   | "offset"
-  | "repeat";
+  | "repeat"
+  | "colored-pencil"
+  | "cutout"
+  | "dry-brush"
+  | "fresco"
+  | "neon-glow"
+  | "paint-daubs"
+  | "palette-knife"
+  | "plastic-wrap"
+  | "poster-edges";
 
 export type CurvesChannel = "rgb" | "red" | "green" | "blue";
 
