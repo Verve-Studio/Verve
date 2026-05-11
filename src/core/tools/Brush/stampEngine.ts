@@ -40,7 +40,11 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { blendPixelOver } from "../_shared/primitives";
+import {
+  blendPixelOver,
+  type TouchedBuffer,
+} from "../_shared/primitives";
+import { getPixelOpsSync, runBrushStamp } from "@/wasm";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 import { getCachedTipSampler, type TipSampler } from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
@@ -71,8 +75,20 @@ export interface StrokeStampState {
   /** Last emitted stamp position (canvas-space). */
   prevTipX: number;
   prevTipY: number;
-  /** Per-stroke touched map prevents opacity accumulation within one stroke. */
-  touched: Map<number, number>;
+  /** Per-stroke "max coverage so far" buffer — prevents opacity accumulation
+   *  within one stroke and is read by the wet-edges pass at stroke end. */
+  touched: TouchedBuffer;
+  /**
+   * Inclusive canvas-space bbox of every pixel that any stamp in this stroke
+   * touched. Lets the wet-edges pass scan only the stroke's footprint
+   * instead of the entire canvas (which would be O(W·H) on the flat
+   * `touched` buffer). `null` until the first stamp.
+   */
+  strokeBboxLx: number;
+  strokeBboxLy: number;
+  strokeBboxRx: number;
+  strokeBboxRy: number;
+  strokeBboxValid: boolean;
   /** True until the first stamp has been laid down. */
   isFirstStamp: boolean;
   /**
@@ -109,6 +125,7 @@ export interface StrokeStampState {
 
 export function makeStrokeStampState(
   primary: RGBAColor,
+  touched: TouchedBuffer,
   seed?: number,
 ): StrokeStampState {
   return {
@@ -117,7 +134,7 @@ export function makeStrokeStampState(
     arcAccum: 0,
     prevTipX: 0,
     prevTipY: 0,
-    touched: new Map(),
+    touched,
     isFirstStamp: true,
     strokeColor: {
       r: primary.r,
@@ -128,6 +145,11 @@ export function makeStrokeStampState(
     smudgeColor: null,
     smoothDirection: null,
     prevStampColor: null,
+    strokeBboxLx: 0,
+    strokeBboxLy: 0,
+    strokeBboxRx: 0,
+    strokeBboxRy: 0,
+    strokeBboxValid: false,
   };
 }
 
@@ -549,6 +571,11 @@ function resolveStamp(
   };
 }
 
+/** Cheap inline of `motionElongation > 1.0001` used by the WASM gate. */
+function motionActiveCheck(motionElongation: number): boolean {
+  return motionElongation > 1.0001;
+}
+
 /**
  * Apply one fully-resolved stamp at (cx, cy). Iterates the stamp's
  * canvas-space bounding box, samples the tip SDF, applies wet-edge
@@ -563,7 +590,7 @@ function applyStamp(
   s: ResolvedStamp,
   selectionMask: Uint8Array | null,
   tiledMode: boolean,
-  touched: Map<number, number>,
+  touched: TouchedBuffer,
   /** When true, consecutive stamps re-blend over each other (smudge / build-up
    *  ticks). The `touched` map is still updated, so wet edges still work. */
   bypassCap: boolean,
@@ -661,6 +688,97 @@ function applyStamp(
   const flowFraction = flow / 100;
   const grainEnabled = grainAmount > 0;
   const grainFollowsBrush = brush.texture.followBrush;
+
+  // ─── WASM fast path ──────────────────────────────────────────────────────
+  // The C++ kernel (see wasm/src/brush_stamp.cpp) handles the inner pixel
+  // loop ~3× faster than even the optimised JS path AND now natively
+  // handles dual brush + paper grain. We still fall back for: smudge
+  // (stateful per-stamp pickup), motion-blur elongation (rare; awkward
+  // inverse transform), tiled mode (kernel sees a slice, can't wrap),
+  // indexed8 (palette write). Bitmap tips work too — the SDF data is
+  // exposed on the TipSampler interface.
+  // The WASM module is loaded async at app startup; until it's ready we
+  // fall back to JS.
+  const wasmEligible =
+    !bypassCap &&
+    !motionActiveCheck(motionElongation) &&
+    !tiledMode &&
+    layer.format !== "indexed8";
+  const wasmModule = wasmEligible ? getPixelOpsSync() : null;
+  if (wasmModule !== null) {
+    // Per-stamp deposit and per-stroke cap mirror the JS code below: with
+    // flow=100 the deposit equals the cap so the WASM kernel can take its
+    // legacy "stamp == cap" branch (capOpacity = -1). With flow<100 we
+    // pass the cap explicitly.
+    const stampOpacity = flow >= 100 ? s.opacity : s.opacity * flowFraction;
+    const capOpacity = flow >= 100 ? -1 : s.opacity;
+    runBrushStamp(wasmModule, {
+      cx,
+      cy,
+      radius,
+      roundness,
+      angle,
+      shear,
+      flipX,
+      flipY,
+      aaWidth,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      tipKind: sampler.tipKind,
+      sdfData: sampler.bitmapSdf,
+      sdfW: sampler.bitmapSdfW,
+      sdfH: sampler.bitmapSdfH,
+      r,
+      g,
+      b,
+      a,
+      // Pre-linearise for rgba32f (the C++ kernel writes the floats
+      // straight into the layer, so they must already be linear-light
+      // — same convention as the JS srcFloat path).
+      fr: layer.format === "rgba32f" ? srgbToLinearChannel(s.fr) : s.fr,
+      fg: layer.format === "rgba32f" ? srgbToLinearChannel(s.fg) : s.fg,
+      fb: layer.format === "rgba32f" ? srgbToLinearChannel(s.fb) : s.fb,
+      fa: s.fa,
+      opacity: stampOpacity,
+      capOpacity,
+      bypassCap: false,
+      layerData: layer.data,
+      layerOffsetX: layer.offsetX,
+      layerOffsetY: layer.offsetY,
+      layerW: layer.layerWidth,
+      layerH: layer.layerHeight,
+      layerFormat: layer.format === "rgba32f" ? 1 : 0,
+      // Zero-copy fast path when both buffers live in the WASM heap —
+      // the kernel reads/writes them in place via these ptrs and we
+      // skip the per-stamp slice marshalling entirely.
+      layerWasmPtr: layer.wasmPtr,
+      touchedData: touched.data,
+      touchedW: touched.width,
+      touchedH: touched.height,
+      touchedWasmPtr: touched.wasmPtr,
+      selMask: selectionMask ?? undefined,
+      canvasW: renderer.pixelWidth,
+      canvasH: renderer.pixelHeight,
+      // Dual brush — pass the resolved sampler's tip kind + (for bitmap)
+      // its SDF data. baseAngle is already the rotated total
+      // (primary angle + dual.angle + direction follow).
+      dualActive: dual !== null,
+      dualTipKind: dual?.sampler.tipKind,
+      dualSizeRatio: dual?.sizeRatio,
+      dualBaseAngle: dual?.baseAngle,
+      dualMix: dual?.mix,
+      dualSdfData: dual?.sampler.bitmapSdf,
+      dualSdfW: dual?.sampler.bitmapSdfW,
+      dualSdfH: dual?.sampler.bitmapSdfH,
+      // Paper grain
+      grainAmount,
+      grainScale,
+      grainFollowBrush: grainFollowsBrush,
+    });
+    return;
+  }
 
   // Pre-compute the inverse motion-blur transform: rotate into the
   // stroke-aligned frame, compress along-stroke by 1/elongation, rotate back.
@@ -807,6 +925,24 @@ function emitStampWithCount(
   onStampBbox: ((minX: number, minY: number, maxX: number, maxY: number) => void) | undefined,
 ): void {
   const { brush, renderer, layer, sampler, primary, secondary, state, selectionMask, tiledMode } = p;
+  // Wrap the caller's bbox callback so we also accumulate the stroke-level
+  // bbox in `state` — `applyStrokeWetEdges` uses it to scope its scan to
+  // the stroke's actual footprint instead of the entire canvas.
+  const captureBbox = (minX: number, minY: number, maxX: number, maxY: number): void => {
+    if (state.strokeBboxValid) {
+      if (minX < state.strokeBboxLx) state.strokeBboxLx = minX;
+      if (minY < state.strokeBboxLy) state.strokeBboxLy = minY;
+      if (maxX > state.strokeBboxRx) state.strokeBboxRx = maxX;
+      if (maxY > state.strokeBboxRy) state.strokeBboxRy = maxY;
+    } else {
+      state.strokeBboxLx = minX;
+      state.strokeBboxLy = minY;
+      state.strokeBboxRx = maxX;
+      state.strokeBboxRy = maxY;
+      state.strokeBboxValid = true;
+    }
+    onStampBbox?.(minX, minY, maxX, maxY);
+  };
 
   // ─── Direction smoothing ─────────────────────────────────────────────────
   // Three failure modes to avoid:
@@ -967,7 +1103,7 @@ function emitStampWithCount(
       tiledMode,
       state.touched,
       bypassCap,
-      onStampBbox,
+      captureBbox,
       dual,
     );
   }
@@ -1165,18 +1301,24 @@ const WET_EXTERIOR_THRESHOLD = 0.05;
 export function applyStrokeWetEdges(
   renderer: WebGPURenderer,
   layer: GpuLayer,
-  touched: Map<number, number>,
+  touched: TouchedBuffer,
   brush: Brush,
+  strokeBbox: { lx: number; ly: number; rx: number; ry: number } | null,
 ): { dirty: { lx: number; ly: number; rx: number; ry: number } | null } {
   if (!brush.wetEdges.enabled) return { dirty: null };
   const amount = Math.max(0, Math.min(1, brush.wetEdges.amount));
   if (amount <= 0) return { dirty: null };
   // Indexed8 is palette-based — multiplicative darkening doesn't make sense.
   if (layer.format === "indexed8") return { dirty: null };
+  if (!strokeBbox) return { dirty: null };
 
   const wetWidth = Math.max(1, brush.wetEdges.width);
   const w = renderer.pixelWidth;
   const h = renderer.pixelHeight;
+  const tdata = touched.data;
+  // Quantised thresholds (the buffer stores 0..255 bytes now).
+  const interiorByte = (WET_INTERIOR_THRESHOLD * 255 + 0.5) | 0;
+  const exteriorByte = (WET_EXTERIOR_THRESHOLD * 255 + 0.5) | 0;
 
   // Sample at four ascending radii so we pick up the smallest distance to
   // unpainted territory with reasonable accuracy.
@@ -1190,69 +1332,78 @@ export function applyStrokeWetEdges(
   let dyHi = 0;
   let anyDirty = false;
 
-  for (const [pixelKey, coverage] of touched) {
-    if (coverage < WET_INTERIOR_THRESHOLD) continue;
-    const px = pixelKey % w;
-    const py = (pixelKey - px) / w;
+  // Scan only the stroke's footprint. The previous implementation iterated
+  // the sparse Map's entries directly; with a flat Uint8Array we'd otherwise
+  // walk the entire canvas. Clamp to canvas bounds defensively.
+  const sx0 = Math.max(0, strokeBbox.lx);
+  const sy0 = Math.max(0, strokeBbox.ly);
+  const sx1 = Math.min(w - 1, strokeBbox.rx);
+  const sy1 = Math.min(h - 1, strokeBbox.ry);
 
-    // Find the smallest radius at which we hit unpainted territory.
-    let dist = wetWidth + 1;
-    for (let ri = 0; ri < radii.length; ri++) {
-      const r = radii[ri];
-      let foundEdge = false;
-      for (let di = 0; di < WET_RING_DIRS.length; di++) {
-        const dx = WET_RING_DIRS[di][0];
-        const dy = WET_RING_DIRS[di][1];
-        const nx = Math.round(px + dx * r);
-        const ny = Math.round(py + dy * r);
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
-          foundEdge = true;
-          break;
+  for (let py = sy0; py <= sy1; py++) {
+    const rowBase = py * w;
+    for (let px = sx0; px <= sx1; px++) {
+      const coverByte = tdata[rowBase + px];
+      if (coverByte < interiorByte) continue;
+
+      // Find the smallest radius at which we hit unpainted territory.
+      let dist = wetWidth + 1;
+      for (let ri = 0; ri < radii.length; ri++) {
+        const r = radii[ri];
+        let foundEdge = false;
+        for (let di = 0; di < WET_RING_DIRS.length; di++) {
+          const dx = WET_RING_DIRS[di][0];
+          const dy = WET_RING_DIRS[di][1];
+          const nx = Math.round(px + dx * r);
+          const ny = Math.round(py + dy * r);
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+            foundEdge = true;
+            break;
+          }
+          if (tdata[ny * w + nx] < exteriorByte) {
+            foundEdge = true;
+            break;
+          }
         }
-        const ncov = touched.get(ny * w + nx) ?? 0;
-        if (ncov < WET_EXTERIOR_THRESHOLD) {
-          foundEdge = true;
+        if (foundEdge) {
+          dist = r;
           break;
         }
       }
-      if (foundEdge) {
-        dist = r;
-        break;
+      if (dist > wetWidth) continue;
+
+      // Smoothstep falloff: 1 (max darkening) at the silhouette → 0 at wetWidth.
+      const t = 1 - dist / wetWidth;
+      const falloff = t * t * (3 - 2 * t);
+      const factor = 1 - amount * falloff;
+      if (factor >= 0.999) continue;
+
+      const lx = px - layer.offsetX;
+      const ly = py - layer.offsetY;
+      if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)
+        continue;
+
+      const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
+      if (layer.format === "rgba32f") {
+        renderer.drawPixel(layer, lx, ly, er * factor, eg * factor, eb * factor, ea);
+      } else {
+        renderer.drawPixel(
+          layer,
+          lx,
+          ly,
+          Math.round(er * factor),
+          Math.round(eg * factor),
+          Math.round(eb * factor),
+          ea,
+        );
       }
+
+      if (lx < dxLo) dxLo = lx;
+      if (ly < dyLo) dyLo = ly;
+      if (lx + 1 > dxHi) dxHi = lx + 1;
+      if (ly + 1 > dyHi) dyHi = ly + 1;
+      anyDirty = true;
     }
-    if (dist > wetWidth) continue;
-
-    // Smoothstep falloff: 1 (max darkening) at the silhouette → 0 at wetWidth.
-    const t = 1 - dist / wetWidth;
-    const falloff = t * t * (3 - 2 * t);
-    const factor = 1 - amount * falloff;
-    if (factor >= 0.999) continue;
-
-    const lx = px - layer.offsetX;
-    const ly = py - layer.offsetY;
-    if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)
-      continue;
-
-    const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
-    if (layer.format === "rgba32f") {
-      renderer.drawPixel(layer, lx, ly, er * factor, eg * factor, eb * factor, ea);
-    } else {
-      renderer.drawPixel(
-        layer,
-        lx,
-        ly,
-        Math.round(er * factor),
-        Math.round(eg * factor),
-        Math.round(eb * factor),
-        ea,
-      );
-    }
-
-    if (lx < dxLo) dxLo = lx;
-    if (ly < dyLo) dyLo = ly;
-    if (lx + 1 > dxHi) dxHi = lx + 1;
-    if (ly + 1 > dyHi) dyHi = ly + 1;
-    anyDirty = true;
   }
 
   if (!anyDirty) return { dirty: null };

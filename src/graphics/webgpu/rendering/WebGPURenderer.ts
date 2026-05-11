@@ -5,20 +5,74 @@ import { LayerTextureStore } from "../layers/LayerTextureStore";
 import { getStrategy } from "../layers/formats";
 import { RenderCache } from "../frame/RenderCache";
 import { DisplayPresenter } from "../frame/DisplayPresenter";
-import { RenderPlanExecutor } from "../frame/RenderPlanExecutor";
+import { RenderPlanExecutor, type RenderPlanResult } from "../frame/RenderPlanExecutor";
 import { PixelReadback } from "../pixelio/PixelReadback";
 import { EffectEncoder } from "../EffectEncoder";
 import { initGrabCutCompute } from "../compute/grabcutCompute";
 import { destroyTrackedTexture } from "@/core/store/memoryStore";
 import { encodeClearTexture } from "./copyEncoders";
+import {
+  makeTouchedBuffer,
+  clearTouchedBuffer,
+  type TouchedBuffer,
+} from "@/core/tools/_shared/primitives";
+import {
+  getPixelOpsSync,
+  allocWasmU8,
+  allocWasmF32,
+  freeWasm,
+} from "@/wasm";
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
 export type { GpuLayer, EffectRenderOp, RenderPlanEntry } from "../types";
+export type { RenderPlanResult } from "../frame/RenderPlanExecutor";
+export type { TouchedBuffer } from "@/core/tools/_shared/primitives";
 export { BLEND_MODE_INDEX, WebGPUUnavailableError } from "../types";
 
 import type { GpuLayer, RenderPlanEntry } from "../types";
 import type { PixelFormat, RGBAColor } from "@/types";
+
+/**
+ * If the WASM module is loaded, copy `layer.data`'s bytes into a fresh
+ * WASM-heap allocation and replace `layer.data` with a view into it.
+ * Sets `layer.wasmPtr` so kernels can read/write the layer in-place
+ * without slice marshalling. The growth-refresh callback rebinds
+ * `layer.data` if WASM memory grows later. No-op when WASM isn't loaded
+ * yet or the alloc fails — layer stays JS-heap-backed.
+ */
+function pinLayerToWasm(layer: GpuLayer): void {
+  const m = getPixelOpsSync();
+  if (!m) return;
+  const src = layer.data;
+  if (layer.format === "rgba32f") {
+    const f32 = src as Float32Array;
+    const got = allocWasmF32(m, f32.length, (newView) => {
+      layer.data = newView;
+    });
+    if (!got) return;
+    got.view.set(f32);
+    layer.data = got.view;
+    layer.wasmPtr = got.ptr;
+  } else {
+    const u8 = src as Uint8Array;
+    const got = allocWasmU8(m, u8.length, (newView) => {
+      layer.data = newView;
+    });
+    if (!got) return;
+    got.view.set(u8);
+    layer.data = got.view;
+    layer.wasmPtr = got.ptr;
+  }
+}
+
+/** Release a layer's WASM-heap allocation if it was pinned. */
+function unpinLayerFromWasm(layer: GpuLayer): void {
+  if (layer.wasmPtr === undefined) return;
+  const m = getPixelOpsSync();
+  if (m) freeWasm(m, layer.wasmPtr);
+  layer.wasmPtr = undefined;
+}
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
@@ -103,6 +157,49 @@ export class WebGPURenderer {
   readonly pixelHeight: number;
   private readonly internalFormat: GPUTextureFormat;
   deferFlush = false;
+  /** Lazily-allocated per-stroke max-coverage buffer, shared across tools.
+   *  See {@link acquireTouchedBuffer}. */
+  private touchedBuffer: TouchedBuffer | null = null;
+
+  /**
+   * Hand the active tool a fresh-zeroed `TouchedBuffer` sized to the canvas.
+   * Allocated once per renderer (16 MB at 4K, 2 MB at 1080p), reused across
+   * strokes — `Uint8Array.fill(0)` is memcpy-speed. Only one tool is active
+   * at a time so a single shared instance is safe.
+   */
+  acquireTouchedBuffer(): TouchedBuffer {
+    if (
+      !this.touchedBuffer ||
+      this.touchedBuffer.width !== this.pixelWidth ||
+      this.touchedBuffer.height !== this.pixelHeight
+    ) {
+      // Free any previous WASM-pinned buffer before reallocating so we
+      // don't leak the heap pages on canvas resize.
+      if (this.touchedBuffer?.wasmPtr !== undefined) {
+        const m = getPixelOpsSync();
+        if (m) freeWasm(m, this.touchedBuffer.wasmPtr);
+      }
+      this.touchedBuffer = makeTouchedBuffer(this.pixelWidth, this.pixelHeight);
+      // Try to pin to WASM heap so the brush kernel can read/write
+      // touched in-place via its ptr — no slice marshalling per stamp.
+      const m = getPixelOpsSync();
+      if (m) {
+        const buf = this.touchedBuffer;
+        const got = allocWasmU8(m, buf.data.length, (newView) => {
+          // Heap grew; re-bind the view so any external readers see the
+          // current memory.
+          buf.data = newView as Uint8Array;
+        });
+        if (got) {
+          buf.data = got.view;
+          buf.wasmPtr = got.ptr;
+        }
+      }
+    } else {
+      clearTouchedBuffer(this.touchedBuffer);
+    }
+    return this.touchedBuffer;
+  }
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -224,14 +321,11 @@ export class WebGPURenderer {
     oy = 0,
     format: PixelFormat = "rgba8",
   ): GpuLayer {
-    const data = getStrategy(format).allocateBuffer(lw, lh);
-    // Texture allocation happens in the store. The GpuLayer.texture field is
-    // populated by store.register() as a backwards-compat mirror.
     const layer: GpuLayer = {
       id,
       name,
       texture: null as unknown as GPUTexture, // overwritten by register()
-      data,
+      data: getStrategy(format).allocateBuffer(lw, lh),
       format,
       layerWidth: lw,
       layerHeight: lh,
@@ -243,6 +337,10 @@ export class WebGPURenderer {
       contentVersion: 0,
       colorSpace: "auto",
     };
+    // Promote layer storage to the WASM heap when the module is loaded.
+    // Lets the brush kernel (and any future per-pixel kernel) read/write
+    // the layer in-place — no slice marshalling per stamp.
+    pinLayerToWasm(layer);
     this.layerTextures.register(layer);
     return layer;
   }
@@ -303,8 +401,12 @@ export class WebGPURenderer {
       null,
       textureFormat,
     );
+    // Re-pin to WASM heap so the new buffer is in shared memory too
+    // (the brush kernel checks `wasmPtr` to decide on the zero-copy path).
+    unpinLayerFromWasm(layer);
     layer.data = newData;
     layer.format = newFormat;
+    pinLayerToWasm(layer);
     this.layerTextures.replaceTexture(
       layer,
       newTex,
@@ -324,6 +426,7 @@ export class WebGPURenderer {
   destroyLayer(layer: GpuLayer): void {
     this.layerTextures.dispose(layer.id);
     this.cache.disposeFor(layer.id);
+    unpinLayerFromWasm(layer);
   }
 
   /**
@@ -415,11 +518,16 @@ export class WebGPURenderer {
     );
     strategy.uploadAfterGrow(this.device, newTex, newW, newH, newData);
 
+    // Grow swaps the entire pixel buffer; re-pin the new one to WASM heap
+    // so kernel zero-copy stays available after the layer extends past
+    // its previous bounds (common during long brush strokes).
+    unpinLayerFromWasm(layer);
     layer.data = newData;
     layer.layerWidth = newW;
     layer.layerHeight = newH;
     layer.offsetX = newX;
     layer.offsetY = newY;
+    pinLayerToWasm(layer);
     this.layerTextures.replaceTexture(layer, newTex, newW, newH, layer.format);
     // Bump version since texture content changed.
     layer.contentVersion = this.layerTextures.getVersion(layer.id) + 1;
@@ -546,8 +654,8 @@ export class WebGPURenderer {
    *    layer over the whole canvas, snapshot into stableTex).
    * 4. Snapshot the rendered offsets so the next frame can detect drag deltas.
    */
-  renderPlan(plan: RenderPlanEntry[]): void {
-    this.executor.renderPlan(plan);
+  renderPlan(plan: RenderPlanEntry[]): RenderPlanResult {
+    return this.executor.renderPlan(plan);
   }
 
 

@@ -28,7 +28,7 @@ export const cloneStampOptions = {
 
 function createCloneStampHandler(): ToolHandler {
   let lastPos: { x: number; y: number } | null = null;
-  let touched: Map<number, number> | null = null;
+  let touched: import("../_shared/primitives").TouchedBuffer | null = null;
   let sourceBuffer: Uint8Array | Float32Array | null = null;
   let sourceBounds: {
     offsetX: number;
@@ -153,7 +153,7 @@ function createCloneStampHandler(): ToolHandler {
         strokeOffsetDY = source.y - y;
       }
 
-      touched = new Map();
+      touched = ctx.renderer.acquireTouchedBuffer();
       lastPos = { x, y };
       isStrokeReady = false;
       sourceBuffer = null;

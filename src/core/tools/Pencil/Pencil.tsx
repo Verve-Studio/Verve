@@ -393,7 +393,7 @@ function paintBrushPixel(
   b: number,
   a: number,
   opacity: number,
-  touched: Map<number, number>,
+  touched: import("../_shared/primitives").TouchedBuffer,
   sel?: { mask: Uint8Array; width: number } | null,
   tiledW?: number,
   tiledH?: number,
@@ -436,7 +436,7 @@ function paintBrushStamp(
   opacity: number,
   size: number,
   shape: BrushShape,
-  touched: Map<number, number>,
+  touched: import("../_shared/primitives").TouchedBuffer,
   sel?: { mask: Uint8Array; width: number } | null,
   tiledW?: number,
   tiledH?: number,
@@ -524,7 +524,7 @@ function createPencilHandler(): ToolHandler {
   let ppPrev: Point | null = null;
   let ppPending: Point | null = null;
 
-  let touched: Map<number, number> | null = null;
+  let touched: import("../_shared/primitives").TouchedBuffer | null = null;
 
   // ── 1px helpers ────────────────────────────────────────────────────────────
 
@@ -770,7 +770,7 @@ function createPencilHandler(): ToolHandler {
       ctx.renderer.strokeStart();
       _renderer = ctx.renderer;
       _layer = ctx.layer;
-      touched = new Map();
+      touched = ctx.renderer.acquireTouchedBuffer();
 
       const brush = pencilOptions.pixelBrush;
 

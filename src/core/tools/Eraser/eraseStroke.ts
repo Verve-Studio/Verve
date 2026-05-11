@@ -3,7 +3,7 @@ import type {
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { bresenham, wuLine } from "../_shared/primitives";
-import type { SelMask } from "../_shared/primitives";
+import type { SelMask, TouchedBuffer } from "../_shared/primitives";
 
 /**
  * Apply one erase pixel operation in canvas-space.
@@ -24,7 +24,7 @@ function erasePixelOp(
   secB: number,
   blendFactor: number, // 0-1  (coverage × strength/100)
   alphaMode: boolean,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -53,12 +53,14 @@ function erasePixelOp(
 
   let incr = blendFactor;
   if (touched !== undefined) {
-    const key = canvasY * renderer.pixelWidth + canvasX;
-    const existing = touched.get(key) ?? 0;
+    const tdata = touched.data;
+    const key = canvasY * touched.width + canvasX;
+    const existingByte = tdata[key];
+    const existing = existingByte / 255;
     if (blendFactor <= existing) return;
     incr = existing < 1 ? (blendFactor - existing) / (1 - existing) : 0;
     if (incr <= 0) return;
-    touched.set(key, blendFactor);
+    tdata[key] = (blendFactor * 255 + 0.5) | 0;
   }
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
@@ -92,7 +94,7 @@ function eraseStampCircle(
   strength: number,
   alphaMode: boolean,
   softness: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -148,7 +150,7 @@ function eraseAASegment(
   strength: number,
   alphaMode: boolean,
   softness: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -232,7 +234,7 @@ export function eraseThickLine(
   alphaMode = false,
   antiAlias = false,
   softness = 0,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -346,7 +348,7 @@ export function eraseQuadBezier(
   alphaMode: boolean,
   antiAlias: boolean,
   softness: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,

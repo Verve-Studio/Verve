@@ -3,7 +3,7 @@ import type {
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { bresenham, wuLine } from "../_shared/primitives";
-import type { SelMask } from "../_shared/primitives";
+import type { SelMask, TouchedBuffer } from "../_shared/primitives";
 
 /** Range channels covered by dodge/burn. */
 export type DodgeBurnRange = "shadows" | "midtones" | "highlights";
@@ -43,7 +43,7 @@ function dodgeBurnPixelOp(
   exposure: number,
   coverage: number,
   range: DodgeBurnRange,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {
@@ -65,10 +65,12 @@ function dodgeBurnPixelOp(
 
   let maxCoverage = coverage;
   if (touched !== undefined) {
-    const key = canvasY * renderer.pixelWidth + canvasX;
-    const prev = touched.get(key) ?? 0;
-    if (prev >= coverage) return;
-    touched.set(key, coverage);
+    const tdata = touched.data;
+    const key = canvasY * touched.width + canvasX;
+    const prevByte = tdata[key];
+    const covByte = (coverage * 255 + 0.5) | 0;
+    if (prevByte >= covByte) return;
+    tdata[key] = covByte;
     maxCoverage = coverage;
   }
 
@@ -117,7 +119,7 @@ function dodgeBurnStampCircle(
   range: DodgeBurnRange,
   hardness: number,
   antiAlias: boolean,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {
@@ -169,7 +171,7 @@ function dodgeBurnAASegment(
   exposure: number,
   range: DodgeBurnRange,
   hardness: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {
@@ -249,7 +251,7 @@ export function dodgeBurnThickLine(
   range: DodgeBurnRange,
   hardness = 100,
   antiAlias = false,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   origData?: Map<number, readonly [number, number, number, number]>,
 ): void {

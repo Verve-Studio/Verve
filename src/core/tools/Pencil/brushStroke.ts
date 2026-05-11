@@ -3,7 +3,7 @@ import type {
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { blendPixelOver } from "../_shared/primitives";
-import type { SelMask } from "../_shared/primitives";
+import type { SelMask, TouchedBuffer } from "../_shared/primitives";
 
 /** Brush shape metric used by the airbrush stamp. */
 export type BrushShape = "round" | "square" | "diamond";
@@ -38,7 +38,7 @@ export function stampAirbrush(
   hardness: number,
   shape: BrushShape,
   antiAlias = false,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -119,7 +119,7 @@ export function drawAirbrushCapsule(
   hardness: number,
   shape: BrushShape,
   antiAlias: boolean,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -217,7 +217,7 @@ export function drawAirbrushSegment(
   opacity: number,
   hardness: number,
   shape: BrushShape,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -313,7 +313,7 @@ export function walkQuadBezier(
   shape: BrushShape,
   antiAlias: boolean,
   motionBlur = 0,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,

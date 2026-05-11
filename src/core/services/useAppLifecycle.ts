@@ -3,6 +3,7 @@ import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import { brushStore } from "@/core/store/brushStore";
 import { pixelBrushStore } from "@/core/store/pixelBrushStore";
+import { kickoffPixelOpsLoad } from "@/wasm";
 
 import { MemoryLimitError } from "@/core/store/memoryStore";
 import { notificationStore } from "@/core/store/notificationStore";
@@ -20,6 +21,10 @@ export function useBrushBootstrap(
   activeBrushIdRef.current = activeBrushId;
   useEffect(() => {
     void pixelBrushStore.init();
+    // Warm the WASM module so the brush stamp engine can use the WASM
+    // inner-loop kernel from the first stroke instead of falling back
+    // to JS until the async load completes.
+    kickoffPixelOpsLoad();
   }, []);
   useEffect(() => {
     void (async () => {

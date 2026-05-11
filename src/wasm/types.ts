@@ -350,6 +350,27 @@ export interface PixelOpsModule {
     outPtr: number,
     outSize: number,
   ): number;
+
+  /**
+   * Apply one brush stamp's inner pixel loop. All scalar parameters travel
+   * in `paramsPtr` — a 116-byte packed `BrushStampParams` struct laid out
+   * by the JS wrapper. Other pointers reference WASM-heap-resident slices
+   * the wrapper has copied in (layer + touched bbox slices, optional
+   * selection-mask, optional bitmap-tip SDF). Mutates layer + touched in
+   * place; the wrapper copies the results back to the JS-side buffers.
+   */
+  _pixelops_brush_stamp(
+    paramsPtr: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,        // 0 = no selection
+    sdfPtr: number,            // 0 if primary tip is procedural
+    sdfW: number,
+    sdfH: number,
+    dualSdfPtr: number,        // 0 if dual is off or procedural
+    dualSdfW: number,
+    dualSdfH: number,
+  ): void;
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

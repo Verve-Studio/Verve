@@ -17,11 +17,30 @@ import type {
   PixelOpsFactory,
   CurvesHistogramResult,
 } from "./types";
+import { syncIfGrew } from "./wasmHeapStorage";
 
 // ─── Module singleton ─────────────────────────────────────────────────────────
 
 let _module: PixelOpsModule | null = null;
 let _initPromise: Promise<PixelOpsModule> | null = null;
+
+/**
+ * Synchronous accessor — returns the cached module if it's already loaded,
+ * `null` otherwise. Lets sync hot paths (brush stamp engine) use WASM
+ * opportunistically and fall back to JS until the async load completes.
+ * Pair with `kickoffPixelOpsLoad()` at app startup so the cache is warm
+ * before the first paint.
+ */
+export function getPixelOpsSync(): PixelOpsModule | null {
+  return _module;
+}
+
+/** Fire-and-forget the WASM load so subsequent `getPixelOpsSync` calls
+ *  succeed. Safe to call multiple times — the underlying loader is
+ *  cached. Errors are swallowed (sync callers handle null gracefully). */
+export function kickoffPixelOpsLoad(): void {
+  void getPixelOps().catch(() => {});
+}
 
 /** Initialise and return the WASM module (idempotent, cached after first call). */
 export async function getPixelOps(): Promise<PixelOpsModule> {
@@ -41,6 +60,20 @@ export async function getPixelOps(): Promise<PixelOpsModule> {
       .default as string;
 
     _module = await factory({ locateFile: () => wasmUrl });
+    // Auto-refresh WASM-backed typed-array views on every `_malloc` so any
+    // allocation that grows the heap (PNG decoder, SDF cache, brush params,
+    // anything else) rebinds detached views via the wasmHeapStorage
+    // registry. Without this, allocations made by code that doesn't go
+    // through `allocWasmU8/F32` can detach previously-pinned layer.data
+    // views and the next .set() throws "detached ArrayBuffer". Has to run
+    // synchronously after malloc so the caller never sees a stale view.
+    const originalMalloc = _module._malloc;
+    const m = _module;
+    _module._malloc = function patchedMalloc(size: number): number {
+      const ptr = originalMalloc.call(this, size);
+      syncIfGrew(m);
+      return ptr;
+    };
     return _module;
   })();
 
@@ -1155,3 +1188,14 @@ export async function maxDdsMipLevels(
   const m = await getPixelOps();
   return m._pixelops_dds_max_mip_levels(width, height, minDim);
 }
+
+// ─── Brush stamp inner loop ──────────────────────────────────────────────────
+export { runBrushStamp, type BrushStampJob } from "./brushStamp";
+
+// ─── WASM-heap-resident typed-array storage ─────────────────────────────────
+export {
+  allocWasmU8,
+  allocWasmF32,
+  freeWasm,
+  syncIfGrew,
+} from "./wasmHeapStorage";

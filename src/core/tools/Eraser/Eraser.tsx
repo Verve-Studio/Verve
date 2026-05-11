@@ -38,7 +38,7 @@ function createEraserHandler(): ToolHandler {
   // Midpoint B-spline state — mirrors brush.tsx for consistent stroke feel.
   let lastRendered: Point | null = null; // endpoint of the last drawn arc
   let lastCtrl: Point | null = null; // last stabilised pointer (B-spline ctrl pt)
-  let touched: Map<number, number> | null = null;
+  let touched: import("../_shared/primitives").TouchedBuffer | null = null;
   let stabX = 0,
     stabY = 0;
 
@@ -198,7 +198,7 @@ function createEraserHandler(): ToolHandler {
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
       ctx.renderer.strokeStart();
-      touched = new Map();
+      touched = ctx.renderer.acquireTouchedBuffer();
       stabX = x;
       stabY = y;
       lastRendered = { x, y };

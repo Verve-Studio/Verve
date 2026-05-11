@@ -139,10 +139,19 @@ export function useTabs(
       const geo = layerGeo.get(id);
       const lw = geo?.layerWidth ?? snap.canvasWidth;
       const lh = geo?.layerHeight ?? snap.canvasHeight;
+      // IMPORTANT: `borrowAllLayerPixels` returns *live* `layer.data` views.
+      // For layers pinned to the WASM heap (the brush kernel's zero-copy
+      // path), those views become DETACHED if the heap grows later — and
+      // since this stash outlives the active tab, a different tab's
+      // allocations will detach our reference. `.slice()` returns a fresh
+      // JS-heap copy that's immune to growth.
       if ((pixels as unknown) instanceof Float32Array) {
         // rgba32f layer — use compound key to avoid cross-tab collisions
         const storeKey = `${tabId}:${id}`;
-        f32TransferStore.set(storeKey, pixels as unknown as Float32Array);
+        f32TransferStore.set(
+          storeKey,
+          (pixels as unknown as Float32Array).slice(),
+        );
         result.set(id, `data:raw/f32-ref;id=${storeKey}`);
       } else if (pixels.length === lw * lh) {
         // indexed8 layer — 1 byte/pixel palette indices, base64-encode
@@ -158,7 +167,7 @@ export function useTabs(
       } else {
         // rgba8 layer — use compound key to avoid cross-tab collisions
         const storeKey = `${tabId}:${id}`;
-        u8TransferStore.set(storeKey, pixels as Uint8Array);
+        u8TransferStore.set(storeKey, (pixels as Uint8Array).slice());
         result.set(id, `data:raw/rgba8-ref;id=${storeKey}`);
       }
       if (geo) result.set(`${id}:geo`, JSON.stringify(geo));
@@ -170,7 +179,8 @@ export function useTabs(
       );
       if (maskPixels) {
         const storeKey = `${tabId}:${layer.id}:mask`;
-        u8TransferStore.set(storeKey, maskPixels as Uint8Array);
+        // Same WASM-pinned-view detachment hazard as above — copy.
+        u8TransferStore.set(storeKey, (maskPixels as Uint8Array).slice());
         result.set(
           `${layer.id}:adjustment-mask`,
           `data:raw/rgba8-ref;id=${storeKey}`,

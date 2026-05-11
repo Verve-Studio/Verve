@@ -3,7 +3,7 @@ import type {
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { blendPixelOver } from "../_shared/primitives";
-import type { SelMask } from "../_shared/primitives";
+import type { SelMask, TouchedBuffer } from "../_shared/primitives";
 import { linearToSrgbChannel } from "@/utils/pixelFormatConvert";
 
 /**
@@ -41,7 +41,7 @@ export function stampCloneSegment(
   canvasW: number,
   canvasH: number,
   opacity: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,

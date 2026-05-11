@@ -273,21 +273,40 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       // write the entire backing every frame (e.g. 278 MB at 7000×9933) only
       // for the browser compositor to clip most of it away.
       renderer.setViewportScissor(computeViewportScissor());
-      renderer.renderPlan(buildRenderPlan());
+      const renderResult = renderer.renderPlan(buildRenderPlan());
       // A render has been submitted to the current swapchain; the mirror path
       // can now safely createImageBitmap without reading uninitialized memory.
       mirrorReadyRef.current = true;
-      // Tiled mode: blit GPU canvas 9 times into the 2D overlay canvas
-      if (state.canvas.tiledMode) {
+      // Tiled mode: blit GPU canvas 9 times into the 2D overlay canvas. We
+      // scope the copy to whatever sub-rect the renderer just changed (often
+      // a tiny brush stamp) instead of redrawing 9 × the full canvas every
+      // frame — at 4K that was 150 MP per frame just for the mirror.
+      if (state.canvas.tiledMode && renderResult.kind !== "noop") {
         const tc = tiledCanvasRef.current;
         const gc = canvasRef.current;
         if (tc && gc) {
           const ctx2d = tc.getContext("2d");
           if (ctx2d) {
-            ctx2d.clearRect(0, 0, tc.width, tc.height);
+            const isFull = renderResult.kind === "full";
+            const r = isFull
+              ? { x: 0, y: 0, w: width, h: height }
+              : renderResult.rect;
+            // Only clear what we're about to overwrite. Full path clears the
+            // whole overlay (all 9 tiles redrawn); incremental path clears
+            // and redraws just the dirty sub-rect in each tile position.
+            if (isFull) {
+              ctx2d.clearRect(0, 0, tc.width, tc.height);
+            }
             for (let row = 0; row < 3; row++) {
               for (let col = 0; col < 3; col++) {
-                ctx2d.drawImage(gc, col * width, row * height, width, height);
+                const dx = col * width + r.x;
+                const dy = row * height + r.y;
+                if (!isFull) ctx2d.clearRect(dx, dy, r.w, r.h);
+                ctx2d.drawImage(
+                  gc,
+                  r.x, r.y, r.w, r.h,
+                  dx, dy, r.w, r.h,
+                );
               }
             }
             if (state.canvas.showTileGrid) {

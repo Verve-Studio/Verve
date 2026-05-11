@@ -9,6 +9,14 @@ export interface GpuLayer {
   name: string;
   texture: GPUTexture;
   data: Uint8Array | Float32Array;
+  /** When set, `data` is a view into the WASM linear-memory heap at this
+   *  pointer. The brush kernel (and any other future WASM kernel) can
+   *  read/write the layer in-place via this ptr — no slice marshalling.
+   *  Updated automatically by `syncIfGrew()` if WASM memory grows
+   *  (the underlying buffer is replaced and `data` gets a fresh view).
+   *  When undefined the layer lives on the JS heap (kernels fall back to
+   *  the slice-copy path). */
+  wasmPtr?: number;
   format: PixelFormat;
   layerWidth: number;
   layerHeight: number;

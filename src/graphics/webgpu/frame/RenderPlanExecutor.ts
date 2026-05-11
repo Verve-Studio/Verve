@@ -26,6 +26,25 @@ import type { GpuLayer, EffectRenderOp } from "../types";
 import { BLEND_MODE_INDEX } from "../types";
 import { writeUniformBuffer } from "../utils";
 
+/**
+ * Outcome of a single `renderPlan` call. Lets downstream consumers (the
+ * tiled-mode 2D mirror, mirror thumbnails, etc.) skip work or scope a copy
+ * to just the changed region instead of redrawing the whole canvas every
+ * frame — critical for big canvases (a 4K tiled paint stroke was copying
+ * 9 × 16 MP per frame just to mirror a few hundred dirty pixels).
+ *
+ *   - `noop`        — render skipped (plan unchanged, viewport not dirty);
+ *                     the swap chain still shows the previous frame.
+ *   - `full`        — entire viewport was repainted; consumers that mirror
+ *                     the canvas need to refresh in full.
+ *   - `incremental` — only `rect` (in canvas-pixel space) changed; consumers
+ *                     can copy just that region.
+ */
+export type RenderPlanResult =
+  | { kind: "noop" }
+  | { kind: "full" }
+  | { kind: "incremental"; rect: { x: number; y: number; w: number; h: number } };
+
 interface CompositeBufferSlot {
   unif: GPUBuffer;
   pos: GPUBuffer;
@@ -849,7 +868,7 @@ export class RenderPlanExecutor {
    *    over the whole canvas, snapshot into stableTex).
    * 4. Snapshot the rendered offsets so the next frame can detect drag deltas.
    */
-  renderPlan(plan: RenderPlanEntry[]): void {
+  renderPlan(plan: RenderPlanEntry[]): RenderPlanResult {
     const { device, pixelWidth: w, pixelHeight: h } = this;
 
     const planFp = this.computePlanFingerprint(plan);
@@ -861,8 +880,11 @@ export class RenderPlanExecutor {
         this.presenter.presentToScreen(reblitEnc, this.stableTex, screenView);
         device.queue.submit([reblitEnc.finish()]);
         this.presenter.viewportDirty = false;
+        // Re-blit covers the whole viewport, so downstream consumers (e.g.
+        // the tiled-mode 2D mirror) need to refresh their full output too.
+        return { kind: "full" };
       }
-      return;
+      return { kind: "noop" };
     }
 
     this.detectDragDirty(plan);
@@ -879,6 +901,7 @@ export class RenderPlanExecutor {
       dirty.w * dirty.h < w * h * 0.6;
     const encoder = device.createCommandEncoder();
 
+    let result: RenderPlanResult;
     if (canIncremental && dirty !== null && this.stableTex !== null) {
       const zeroTex = createTrackedTexture(device, {
         size: { width: dirty.w, height: dirty.h },
@@ -923,6 +946,7 @@ export class RenderPlanExecutor {
 
       device.queue.submit([encoder.finish()]);
       this.flushPendingDestroys();
+      result = { kind: "incremental", rect: { x: dirty.x, y: dirty.y, w: dirty.w, h: dirty.h } };
     } else {
       this.adjGroupCacheEnabled = true;
       const finalTex = this.encodePlanToComposite(encoder, plan);
@@ -951,12 +975,14 @@ export class RenderPlanExecutor {
       device.queue.submit([encoder.finish()]);
       this.flushPendingDestroys();
       this.hasStableTex = true;
+      result = { kind: "full" };
     }
 
     this.lastPlanFp = planFp;
     this.frameDirtyCanvasRect = null;
     this.updateLastRenderedOffsets(plan);
     this.presenter.viewportDirty = false;
+    return result;
   }
 
   /** Composite an entire plan into one of the ping-pong textures and return

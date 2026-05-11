@@ -20,6 +20,7 @@ import type {
   ToolContext,
   ToolOptionsStyles,
 } from "../_shared/types";
+import type { WebGPURenderer, GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
@@ -88,6 +89,65 @@ function createBrushHandler(): ToolHandler {
   let buildUpTimer: ReturnType<typeof setInterval> | null = null;
   let lastPaintCtx: ToolContext | null = null;
   let lastBuildUpPoint: Point | null = null;
+  // ── rAF-coalesced flushLayer + render ──────────────────────────────────
+  // High-poll-rate tablets fire 120+ pointer events/sec. Each event
+  // previously paid the full GPU sync (texture upload + composite + present)
+  // even though the screen only refreshes at 60–120 Hz. We accumulate the
+  // CPU-side dirty rect across events (markDirtyRect unions multiple
+  // calls) and defer the actual upload+present to a single requestAnimationFrame.
+  // Pixel writes still happen synchronously inside paint(); only the GPU
+  // commit is deferred. The drainPendingFlush() helper makes pointer-up /
+  // wet-edges run their final commit synchronously so the stroke ends with
+  // a fully-presented frame.
+  let pendingFlushRAF: number | null = null;
+  let pendingFlushRenderer: WebGPURenderer | null = null;
+  let pendingFlushLayer: GpuLayer | null = null;
+  let pendingFlushLayers: GpuLayer[] | null = null;
+  let pendingFlushRender: ((layers?: GpuLayer[]) => void) | null = null;
+
+  function commitPendingFlush(): void {
+    if (
+      !pendingFlushRenderer ||
+      !pendingFlushLayer ||
+      !pendingFlushLayers ||
+      !pendingFlushRender
+    ) {
+      return;
+    }
+    pendingFlushRenderer.flushLayer(pendingFlushLayer);
+    pendingFlushRender(pendingFlushLayers);
+    pendingFlushRenderer = null;
+    pendingFlushLayer = null;
+    pendingFlushLayers = null;
+    pendingFlushRender = null;
+  }
+
+  function scheduleFlushAndRender(
+    renderer: WebGPURenderer,
+    layer: GpuLayer,
+    layers: GpuLayer[],
+    render: (layers?: GpuLayer[]) => void,
+  ): void {
+    // Always update to the latest references so the deferred commit uses
+    // the freshest layer state.
+    pendingFlushRenderer = renderer;
+    pendingFlushLayer = layer;
+    pendingFlushLayers = layers;
+    pendingFlushRender = render;
+    if (pendingFlushRAF !== null) return;
+    pendingFlushRAF = requestAnimationFrame(() => {
+      pendingFlushRAF = null;
+      commitPendingFlush();
+    });
+  }
+
+  function drainPendingFlush(): void {
+    if (pendingFlushRAF !== null) {
+      cancelAnimationFrame(pendingFlushRAF);
+      pendingFlushRAF = null;
+    }
+    commitPendingFlush();
+  }
 
   function resetSegDirty(): void {
     segDirtyMinX = Infinity;
@@ -257,8 +317,7 @@ function createBrushHandler(): ToolHandler {
       renderer.markDirtyRect(layer, lx, ly, rx, ry);
     }
 
-    renderer.flushLayer(layer);
-    render(layers);
+    scheduleFlushAndRender(renderer, layer, layers, render);
   }
 
   function resolveStrokeParams(
@@ -322,7 +381,8 @@ function createBrushHandler(): ToolHandler {
       if (!strokeState || !lastPaintCtx || !lastBuildUpPoint) return;
       // Each tick is a fresh dose of paint — clear touched so coverage
       // can climb past previous strokes within this tick.
-      strokeState.touched = new Map();
+      strokeState.touched.data.fill(0);
+      strokeState.strokeBboxValid = false;
       const { size, opacity } = resolveStrokeParams(smoothPressure);
       const px = lastBuildUpPoint.x;
       const py = lastBuildUpPoint.y;
@@ -337,7 +397,12 @@ function createBrushHandler(): ToolHandler {
       ctx: ToolContext,
     ) {
       ctx.renderer.strokeStart();
-      strokeState = makeStrokeStampState(ctx.primaryColor);
+      // Renderer owns the per-stroke max-coverage buffer (single shared
+      // Uint8Array, reused across strokes via memcpy-zero at this call).
+      strokeState = makeStrokeStampState(
+        ctx.primaryColor,
+        ctx.renderer.acquireTouchedBuffer(),
+      );
       smoothSpeed = 0;
       smoothPressure = pressure;
       smoothTilt = Math.hypot(tiltX, tiltY) / 90;
@@ -493,6 +558,14 @@ function createBrushHandler(): ToolHandler {
           ctx.layer,
           strokeState.touched,
           brush,
+          strokeState.strokeBboxValid
+            ? {
+                lx: strokeState.strokeBboxLx,
+                ly: strokeState.strokeBboxLy,
+                rx: strokeState.strokeBboxRx,
+                ry: strokeState.strokeBboxRy,
+              }
+            : null,
         );
         if (wet.dirty) {
           ctx.renderer.markDirtyRect(
@@ -502,10 +575,21 @@ function createBrushHandler(): ToolHandler {
             wet.dirty.rx,
             wet.dirty.ry,
           );
-          ctx.renderer.flushLayer(ctx.layer);
-          ctx.render(ctx.layers);
+          // Don't fire the GPU sync inline — let `drainPendingFlush()`
+          // below commit segments + wet-edges in one go.
+          scheduleFlushAndRender(
+            ctx.renderer,
+            ctx.layer,
+            ctx.layers,
+            ctx.render,
+          );
         }
       }
+      // Force the final commit synchronously so the stroke ends with a
+      // fully-presented frame. Any unflushed segment work from a still-
+      // pending rAF is unioned into the same flushLayer call (the dirty
+      // rect on the layer accumulates across markDirtyRect calls).
+      drainPendingFlush();
       lastRendered = null;
       lastCtrl = null;
       renderedCursor = null;

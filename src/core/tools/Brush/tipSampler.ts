@@ -26,12 +26,23 @@ export interface TipSampler {
    * = outside, ~0 on silhouette. Out-of-range returns a large positive.
    */
   sample(u: number, v: number): number;
+  /**
+   * For bitmap tips only — the precomputed pixel-distance SDF. The WASM
+   * brush kernel reads it directly to avoid the JS sample callback. Procedural
+   * samplers leave this undefined (the kernel branches on `tipKind`). */
+  readonly bitmapSdf?: Float32Array;
+  readonly bitmapSdfW?: number;
+  readonly bitmapSdfH?: number;
+  /** 0=round, 1=square, 2=diamond, 3=bitmap — used by the WASM kernel
+   *  dispatch to pick the right SDF function. */
+  readonly tipKind: 0 | 1 | 2 | 3;
 }
 
 // ─── Procedural samplers ─────────────────────────────────────────────────────
 
 class RoundSampler implements TipSampler {
   readonly aspect = 1;
+  readonly tipKind = 0 as const;
   sample(u: number, v: number): number {
     return Math.hypot(u, v) - 1;
   }
@@ -39,6 +50,7 @@ class RoundSampler implements TipSampler {
 
 class SquareSampler implements TipSampler {
   readonly aspect = 1;
+  readonly tipKind = 1 as const;
   sample(u: number, v: number): number {
     const ax = Math.abs(u);
     const ay = Math.abs(v);
@@ -48,6 +60,7 @@ class SquareSampler implements TipSampler {
 
 class DiamondSampler implements TipSampler {
   readonly aspect = 1;
+  readonly tipKind = 2 as const;
   sample(u: number, v: number): number {
     return Math.abs(u) + Math.abs(v) - 1;
   }
@@ -61,7 +74,11 @@ const DIAMOND = new DiamondSampler();
 
 class BitmapSdfSampler implements TipSampler {
   readonly aspect: number;
-  /** SDF in pixel units. The unit space (-1..1) maps to (0..w-1, 0..h-1). */
+  readonly tipKind = 3 as const;
+  /** SDF in pixel units. Public so the WASM kernel can read it directly. */
+  readonly bitmapSdf: Float32Array;
+  readonly bitmapSdfW: number;
+  readonly bitmapSdfH: number;
   private readonly sdf: Float32Array;
   private readonly w: number;
   private readonly h: number;
@@ -73,6 +90,9 @@ class BitmapSdfSampler implements TipSampler {
     this.sdf = sdf;
     this.w = w;
     this.h = h;
+    this.bitmapSdf = sdf;
+    this.bitmapSdfW = w;
+    this.bitmapSdfH = h;
     this.aspect = h / w;
     // Use the longer half-edge so the tip's bounding box fits in [-1, 1].
     const halfMax = Math.max(w, h) * 0.5;

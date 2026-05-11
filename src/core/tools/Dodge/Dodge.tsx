@@ -40,7 +40,7 @@ function createDodgeBurnHandler(
 ): () => ToolHandler {
   return function (): ToolHandler {
     let lastPos: { x: number; y: number } | null = null;
-    let touched: Map<number, number> | null = null;
+    let touched: import("../_shared/primitives").TouchedBuffer | null = null;
     let origData: Map<
       number,
       readonly [number, number, number, number]
@@ -107,7 +107,7 @@ function createDodgeBurnHandler(
     return {
       onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
         ctx.renderer.strokeStart();
-        touched = new Map();
+        touched = ctx.renderer.acquireTouchedBuffer();
         origData = new Map();
         lastPos = null;
         stamp(x, y, x, y, ctx);

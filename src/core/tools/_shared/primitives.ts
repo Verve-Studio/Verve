@@ -8,6 +8,46 @@ import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 export type SelMask = { mask: Uint8Array; width: number };
 
 /**
+ * Per-stroke "max-coverage-so-far" buffer keyed by canvas pixel index.
+ *
+ * Replaces the prior `Map<number, number>` representation. The Map became
+ * a hot bottleneck on big brush strokes — large bitmap-backed Maps degrade
+ * to ~100–300 ns per get/set, dwarfing the actual blend math. A flat
+ * `Uint8Array` indexed by `y * width + x` reads/writes in ~5–10 ns and
+ * the 0–255 quantisation is well below the visible threshold for stroke
+ * alpha (Photoshop uses 8-bit internally for the same purpose).
+ *
+ * Allocation: one buffer per renderer, shared across tools (only one
+ * stroke is active at a time). Reset via `clearTouchedBuffer` at
+ * `strokeStart` — `Uint8Array.fill(0)` is memcpy-speed (~0.5 ms for a
+ * 4K canvas).
+ */
+export interface TouchedBuffer {
+  /** Quantised max coverage per pixel, 0..255. Index = y * width + x. */
+  data: Uint8Array;
+  /** Canvas width in pixels — same as the indexer's stride. */
+  width: number;
+  /** Canvas height — only used for sanity checks; index math relies on width. */
+  height: number;
+  /** WASM-heap pointer when `data` is a view into WASM linear memory.
+   *  Undefined when the buffer lives on the JS heap (WASM unavailable or
+   *  alloc fell back). The brush kernel checks this to decide between
+   *  the zero-copy fast path and the slice-marshalling fallback. */
+  wasmPtr?: number;
+}
+
+export function makeTouchedBuffer(
+  width: number,
+  height: number,
+): TouchedBuffer {
+  return { data: new Uint8Array(width * height), width, height };
+}
+
+export function clearTouchedBuffer(buf: TouchedBuffer): void {
+  buf.data.fill(0);
+}
+
+/**
  * Convert an `RGBAColor` (sRGB-encoded floats in `[0, 1]` — what the colour
  * picker / state stores) into linear-light floats suitable for painting on
  * an `rgba32f` layer. RGB channels go through the sRGB transfer function;
@@ -117,7 +157,7 @@ export function blendPixelOver(
   b: number,
   a: number,
   opacity: number, // 0-100, already includes geometric coverage for AA paths
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
   tiledW?: number,
   tiledH?: number,
@@ -173,9 +213,13 @@ export function blendPixelOver(
 
   let blendA = srcA;
   if (touched !== undefined) {
-    // Key in canvas-space so it stays stable across layer growth within a stroke
-    const key = canvasY * renderer.pixelWidth + canvasX;
-    const existingA = touched.get(key) ?? 0;
+    // Key in canvas-space so it stays stable across layer growth within a stroke.
+    // 8-bit quantisation: byte/255 ≈ float, error ≤ 1/255 ≈ 0.4% — invisible
+    // in stroke alpha and well below the precision the eye can resolve.
+    const tdata = touched.data;
+    const key = canvasY * touched.width + canvasX;
+    const existingByte = tdata[key];
+    const existingA = existingByte / 255;
     if (bypassTouchedCap) {
       // Smudge / build-up paths: no cap, but keep the silhouette growing so
       // stroke-level effects (wet edges) still see every painted pixel.
@@ -184,8 +228,8 @@ export function blendPixelOver(
       // gets a clean stroke shape — otherwise a smudged stroke whose carried
       // alpha varies stamp-to-stamp produces noisy silhouette values and a
       // patchy rim.
-      const geom = opacity / 100;
-      if (geom > existingA) touched.set(key, geom);
+      const geomByte = (opacity * 2.55 + 0.5) | 0;
+      if (geomByte > existingByte) tdata[key] = geomByte;
     } else if (capOpacity !== undefined) {
       // Flow path: srcA = per-stamp deposit, capA = per-stroke ceiling.
       // Each stamp deposits `min(srcA, upgrade-to-cap)`; the resulting
@@ -199,12 +243,13 @@ export function blendPixelOver(
       const upgrade = existingA < 1 ? (capA - existingA) / (1 - existingA) : 0;
       blendA = srcA < upgrade ? srcA : upgrade;
       if (blendA <= 0) return;
-      touched.set(key, existingA + blendA * (1 - existingA));
+      const newA = existingA + blendA * (1 - existingA);
+      tdata[key] = (newA * 255 + 0.5) | 0;
     } else {
       if (srcA <= existingA) return;
       blendA = existingA < 1 ? (srcA - existingA) / (1 - existingA) : 0;
       if (blendA <= 0) return;
-      touched.set(key, srcA);
+      tdata[key] = (srcA * 255 + 0.5) | 0;
     }
   }
 
@@ -339,7 +384,7 @@ export function drawAALine(
   b: number,
   a: number,
   opacity = 100,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
 ): void {
   wuLine(x0, y0, x1, y1, (x, y, coverage) => {
     blendPixelOver(
@@ -390,7 +435,7 @@ function stampCircle(
   b: number,
   a: number,
   opacity: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
 ): void {
   const radius = size / 2;
@@ -432,7 +477,7 @@ function drawAAThickSegment(
   b: number,
   a: number,
   opacity: number,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   sel?: SelMask,
 ): void {
   const radius = size / 2;
@@ -497,7 +542,7 @@ export function drawThickLine(
   b: number,
   a: number,
   opacity = 100,
-  touched?: Map<number, number>,
+  touched?: TouchedBuffer,
   antiAlias = false,
   sel?: SelMask,
 ): void {
