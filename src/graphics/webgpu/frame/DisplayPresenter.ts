@@ -189,7 +189,10 @@ export class DisplayPresenter {
     const bindGroup = device.createBindGroup({
       layout: r.hdrBlitBGL,
       entries: [
-        { binding: 0, resource: r.nearestSampler },
+        // `screenBlitSampler`: bilinear when downscaling (zoom < 1)
+        // → smooth overview, crisp nearest when upscaling (zoom ≥ 1)
+        // → pixel-perfect paint view. See ResourceCache for the why.
+        { binding: 0, resource: r.screenBlitSampler },
         { binding: 1, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: r.frameUniformBuf } },
         { binding: 3, resource: { buffer: r.hdrUniformBuffer } },

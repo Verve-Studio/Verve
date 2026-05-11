@@ -149,6 +149,7 @@ function Section({
 function BrushPicker({
   brushes,
   activeId,
+  modifiedIds,
   onSelect,
   onCreate,
   onDelete,
@@ -156,6 +157,10 @@ function BrushPicker({
 }: {
   brushes: Brush[];
   activeId: string;
+  /** Ids of brushes with unsaved overrides in the current document. Rendered
+   *  with a trailing `*` so the artist can see at a glance which brushes
+   *  carry session tweaks. */
+  modifiedIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDelete: (id: string) => void;
@@ -164,20 +169,26 @@ function BrushPicker({
   return (
     <div className={styles.gallery}>
       <div className={styles.galleryItems}>
-        {brushes.map((b) => (
-          <button
-            key={b.id}
-            className={
-              b.id === activeId ? styles.galleryItemActive : styles.galleryItem
-            }
-            onClick={() => onSelect(b.id)}
-            title={`${b.name} (${b.scope})`}
-          >
-            <span className={styles.galleryDot}>●</span>
-            <span className={styles.galleryName}>{b.name}</span>
-            <span className={styles.galleryScope}>{b.scope[0].toUpperCase()}</span>
-          </button>
-        ))}
+        {brushes.map((b) => {
+          const modified = modifiedIds.has(b.id);
+          return (
+            <button
+              key={b.id}
+              className={
+                b.id === activeId ? styles.galleryItemActive : styles.galleryItem
+              }
+              onClick={() => onSelect(b.id)}
+              title={`${b.name}${modified ? " (modified)" : ""} (${b.scope})`}
+            >
+              <span className={styles.galleryDot}>●</span>
+              <span className={styles.galleryName}>
+                {b.name}
+                {modified ? " *" : ""}
+              </span>
+              <span className={styles.galleryScope}>{b.scope[0].toUpperCase()}</span>
+            </button>
+          );
+        })}
       </div>
       <div className={styles.galleryActions}>
         <button onClick={onCreate} title="New brush">+</button>
@@ -208,6 +219,11 @@ export function BrushSettingsPanel({
     updateBrush,
     deleteBrush,
     duplicateBrush,
+    isActiveBrushModified,
+    modifiedBrushIds,
+    saveActiveBrushOverrides,
+    saveActiveBrushAsNew,
+    revertActiveBrushOverrides,
   } = useBrushes();
 
   const update = useCallback(
@@ -265,11 +281,47 @@ export function BrushSettingsPanel({
         <BrushPicker
           brushes={allBrushes}
           activeId={activeBrush.id}
+          modifiedIds={modifiedBrushIds}
           onSelect={selectBrush}
           onCreate={() => void createBrush({}, "user")}
           onDelete={(id) => void deleteBrush(id)}
           onDuplicate={(id) => void duplicateBrush(id, "user")}
         />
+
+        {/* ── Override commit / revert toolbar ────────────────────────────
+            Edits in this panel only mutate a per-document override layer
+            (see `useBrushes` / `BrushOverridesStore`). The canonical brush
+            on disk / in the document is left untouched until the artist
+            explicitly commits. Toolbar only appears when there's something
+            to commit; out of sight when the active brush is pristine. */}
+        {isActiveBrushModified && (
+          <div className={styles.headerRow}>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Write the current tweaks back to the saved brush definition."
+              onClick={() => void saveActiveBrushOverrides()}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Save the current tweaks as a new user brush, leaving the original alone."
+              onClick={() => void saveActiveBrushAsNew()}
+            >
+              Save as new
+            </button>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Discard the current tweaks and restore the saved brush definition."
+              onClick={revertActiveBrushOverrides}
+            >
+              Revert
+            </button>
+          </div>
+        )}
 
         <div className={styles.headerRow}>
           {onCaptureFromSelection && (

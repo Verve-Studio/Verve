@@ -36,6 +36,15 @@ export class ResourceCache {
   // Samplers
   readonly nearestSampler: GPUSampler;
   readonly lutBlitSampler: GPUSampler;
+  /** Final swap-chain blit sampler. When the device has the
+   *  `float32-filterable` feature, this is `min: linear, mag: nearest`
+   *  so we get bilinear downsampling at zoom < 1 (kills the jaggies on
+   *  overview views) AND crisp 1:1 / upscaled rendering at zoom ≥ 1.
+   *  Without that feature, falls back to a nearest sampler (same object
+   *  as `nearestSampler`) — required because rgba32float composites
+   *  can't be filtered. WebGPU picks min vs mag per fragment from the
+   *  UV derivative, so no zoom plumbing is needed at the call site. */
+  readonly screenBlitSampler: GPUSampler;
 
   // Shared geometry
   readonly texCoordBuffer: GPUBuffer;
@@ -76,6 +85,16 @@ export class ResourceCache {
       addressModeU: "clamp-to-edge",
       addressModeV: "clamp-to-edge",
     });
+    this.screenBlitSampler = gpu.hasFloat32Filterable
+      ? device.createSampler({
+          // See field doc above: nearest mag keeps pixel-perfect rendering
+          // at zoom ≥ 1, linear min smooths the downscale at zoom < 1.
+          magFilter: "nearest",
+          minFilter: "linear",
+          addressModeU: "clamp-to-edge",
+          addressModeV: "clamp-to-edge",
+        })
+      : this.nearestSampler; // graceful fall-through on adapters without filterable f32
 
     this.texCoordBuffer = createVertexBuffer(device, QUAD_UVS);
     this.canvasQuadVertBuf = createVertexBuffer(
@@ -106,7 +125,10 @@ export class ResourceCache {
     writeUniformBuffer(device, this.checkerUniformBuf, cuData.buffer);
 
     this.compositeBGL = createCompositeBindGroupLayout(device);
-    this.hdrBlitBGL = createHdrBlitBindGroupLayout(device);
+    this.hdrBlitBGL = createHdrBlitBindGroupLayout(
+      device,
+      gpu.hasFloat32Filterable,
+    );
     this.compositePipeline = createCompositePipeline(
       device,
       internalFormat,

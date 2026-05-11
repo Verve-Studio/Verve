@@ -54,6 +54,7 @@ import { BevelEffect } from "./Bevel/BevelEffect";
 import { InnerShadowEffect } from "./InnerShadow/InnerShadowEffect";
 import { InnerGlowEffect } from "./InnerGlow/InnerGlowEffect";
 import { LensFlareEffect } from "./LensFlare/LensFlareEffect";
+import { ReplaceColorEffect } from "./ReplaceColor/ReplaceColorEffect";
 
 // Eager registration — importing this module is the single side-effecting step
 // that makes registered effects reachable through the plan builder, encoder,
@@ -113,6 +114,7 @@ effectRegistry.register(BevelEffect);
 effectRegistry.register(InnerShadowEffect);
 effectRegistry.register(InnerGlowEffect);
 effectRegistry.register(LensFlareEffect);
+effectRegistry.register(ReplaceColorEffect);
 
 export { effectRegistry } from "./effectRegistry";
 export type {

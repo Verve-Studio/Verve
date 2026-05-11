@@ -22,6 +22,7 @@ import { PolygonalSelectionStore } from "./polygonalSelectionStore";
 import { CloneStampStore } from "./cloneStampStore";
 import { AdjustmentPreviewStore } from "./adjustmentPreviewStore";
 import { PaletteCycleStore } from "./paletteCycleStore";
+import { BrushOverridesStore } from "./brushOverridesStore";
 
 export interface DocumentScope {
   selection: SelectionStore;
@@ -33,6 +34,7 @@ export interface DocumentScope {
   cloneStamp: CloneStampStore;
   adjustmentPreview: AdjustmentPreviewStore;
   paletteCycle: PaletteCycleStore;
+  brushOverrides: BrushOverridesStore;
 }
 
 export function createDocumentScope(): DocumentScope {
@@ -46,6 +48,7 @@ export function createDocumentScope(): DocumentScope {
     cloneStamp: new CloneStampStore(),
     adjustmentPreview: new AdjustmentPreviewStore(),
     paletteCycle: new PaletteCycleStore(),
+    brushOverrides: new BrushOverridesStore(),
   };
 }
 
@@ -82,4 +85,5 @@ export function setActiveScope(scope: DocumentScope): void {
   scope.cloneStamp.notify();
   scope.adjustmentPreview.notify();
   scope.paletteCycle.notify();
+  scope.brushOverrides.notify();
 }

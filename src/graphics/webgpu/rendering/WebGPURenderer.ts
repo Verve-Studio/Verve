@@ -438,6 +438,9 @@ export class WebGPURenderer {
       newFormat,
     );
     this.flushLayer(layer, palette);
+    // Same reason as `growLayerToFit`: `stableTex` was captured against
+    // the old layer texture and is stale for this layer's region.
+    this.executor.invalidateRenderCache();
   }
 
   /**
@@ -571,6 +574,18 @@ export class WebGPURenderer {
     this.layerTextures.replaceTexture(layer, newTex, newW, newH, layer.format);
     // Bump version since texture content changed.
     layer.contentVersion = this.layerTextures.getVersion(layer.id) + 1;
+    // The incremental composite (`stableTex`) was captured against the
+    // OLD layer's offset / extent. After grow, the layer reaches new
+    // canvas pixels and the layer texture is a different object. The
+    // incremental path's `copyOutsideRect` would preserve stale composite
+    // outside the next frame's dirty rect — so stamps painted before the
+    // grow (and reblit into the new buffer) would be present in
+    // `layer.data` but never reach the screen until something else forced
+    // a full re-composite. That's the "brush stroke skips, copy/paste
+    // shows it complete" pattern. Invalidating the cache here forces the
+    // next render to take the full path and rebuild `stableTex` from
+    // scratch with the new layer geometry.
+    this.executor.invalidateRenderCache();
     return true;
   }
 

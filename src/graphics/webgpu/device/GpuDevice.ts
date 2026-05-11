@@ -14,7 +14,18 @@ async function getSharedDevice(): Promise<GPUDevice> {
           "WebGPU adapter could not be obtained. Your GPU driver may not support WebGPU.",
         );
       }
+      // Opt-in features. `float32-filterable` lets the screen-blit sampler
+      // bilinear-filter rgba32float composites at zoom < 1, eliminating the
+      // jaggies you'd otherwise get from nearest sampling on an HDR doc.
+      // Universally supported on modern GPUs (Chromium ships it stable);
+      // we gracefully fall back to nearest sampling on adapters that
+      // don't have it.
+      const optionalFeatures: GPUFeatureName[] = [];
+      if (adapter.features.has("float32-filterable")) {
+        optionalFeatures.push("float32-filterable" as GPUFeatureName);
+      }
       const device = await adapter.requestDevice({
+        requiredFeatures: optionalFeatures,
         requiredLimits: {
           maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
           maxBufferSize: adapter.limits.maxBufferSize,
@@ -43,6 +54,11 @@ export class GpuDevice {
   readonly context: GPUCanvasContext;
   readonly canvasFormat: GPUTextureFormat;
   readonly canvas: HTMLCanvasElement;
+  /** True when the adapter supports filtering rgba32float textures. Drives
+   *  whether the screen-blit pipeline binds a filtering sampler + plain
+   *  "float" texture (smooth downscale on HDR docs at zoom < 1) or falls
+   *  back to non-filtering + "unfilterable-float" (nearest only). */
+  readonly hasFloat32Filterable: boolean;
 
   private constructor(
     device: GPUDevice,
@@ -54,6 +70,7 @@ export class GpuDevice {
     this.context = context;
     this.canvasFormat = canvasFormat;
     this.canvas = canvas;
+    this.hasFloat32Filterable = device.features.has("float32-filterable");
   }
 
   static async create(canvas: HTMLCanvasElement): Promise<GpuDevice> {
