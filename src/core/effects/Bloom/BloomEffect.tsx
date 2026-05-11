@@ -54,20 +54,28 @@ type BloomQuality = "full" | "half" | "quarter";
 // Module-level texture cache for the bloom intermediate buffers.
 let texCache: {
   quality: BloomQuality;
+  format: GPUTextureFormat;
   extractTex: GPUTexture;
   blurATex: GPUTexture;
   blurBTex: GPUTexture;
 } | null = null;
 let usedThisFrame = false;
 
+/** Scratch buffers for extract + downsampled blur ping-pong. Allocated in
+ *  the doc format because the whole point of Bloom on HDR is to bloom
+ *  pixels > 1.0 — clamping the extract output to rgba8 [0,1] would erase
+ *  the highlights the effect is supposed to catch. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
   quality: BloomQuality,
+  format: GPUTextureFormat,
 ): { extractTex: GPUTexture; blurATex: GPUTexture; blurBTex: GPUTexture } {
   usedThisFrame = true;
-  if (texCache && texCache.quality === quality) return texCache;
+  if (texCache && texCache.quality === quality && texCache.format === format) {
+    return texCache;
+  }
   if (texCache) {
     destroyTrackedTexture(texCache.extractTex);
     destroyTrackedTexture(texCache.blurATex);
@@ -84,11 +92,12 @@ function ensureTextures(
   const make = (tw: number, th: number): GPUTexture =>
     createTrackedTexture(device, {
       size: { width: tw, height: th },
-      format: "rgba8unorm",
+      format,
       usage,
     });
   texCache = {
     quality,
+    format,
     extractTex: make(width, height),
     blurATex: make(bw, bh),
     blurBTex: make(bw, bh),
@@ -121,11 +130,14 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     const { runtime } = engine;
     const w = runtime.pixelWidth;
     const h = runtime.pixelHeight;
+    // Scratch is allocated in the doc format so HDR highlights (>1.0)
+    // survive the extract+blur ping-pong without being clamped.
     const { extractTex, blurATex, blurBTex } = ensureTextures(
       runtime.device,
       w,
       h,
       entry.params.quality,
+      format,
     );
 
     const scaleFactor =
@@ -135,11 +147,11 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
 
-    // Pass 1: Extract — needs explicit BGL because srcTex may be rgba32float.
+    // Pass 1: Extract — target format matches the scratch (doc format).
     const extract = runtime.getRenderPipelineWithBGL(
       "bloom-extract",
       "fs_bloom_extract",
-      "rgba8unorm",
+      format,
       STD_BINDINGS,
     );
     const extractParamsBuf = runtime.makeParamsBuf(
@@ -167,7 +179,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
       const downsamplePipeline = runtime.getRenderPipelineAuto(
         "bloom-downsample",
         "fs_bloom_downsample",
-        "rgba8unorm",
+        format,
       );
       const dsParamsBuf = runtime.makeParamsBuf(
         new Uint32Array([scaleFactor, 0, 0, 0]),
@@ -194,12 +206,12 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     const boxH = runtime.getRenderPipelineAuto(
       "bloom-blur-h",
       "fs_bloom_blur_h",
-      "rgba8unorm",
+      format,
     );
     const boxV = runtime.getRenderPipelineAuto(
       "bloom-blur-v",
       "fs_bloom_blur_v",
-      "rgba8unorm",
+      format,
     );
     const blurParamsBuf = runtime.makeParamsBuf(
       new Uint32Array([blurRadius, 0, 0, 0]),

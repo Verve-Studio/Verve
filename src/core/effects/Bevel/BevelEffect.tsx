@@ -23,16 +23,29 @@ export type BevelEffectLayer = EffectLayerOf<"bevel", BevelParams>;
 
 type BevelOp = Extract<EffectRenderOp, { kind: "bevel" }>;
 
-let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
+let texCache: {
+  tempA: GPUTexture;
+  tempB: GPUTexture;
+  format: GPUTextureFormat;
+} | null = null;
 let usedThisFrame = false;
 
+/** Scratch ping-pong for the bevel's erode+blur height-map. Allocated in
+ *  the doc format so the height map keeps full precision on f32 documents
+ *  (no banding in wide soft bevels). */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
+  format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
   usedThisFrame = true;
-  if (texCache) return texCache;
+  if (texCache && texCache.format === format) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.tempA);
+    destroyTrackedTexture(texCache.tempB);
+    texCache = null;
+  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
@@ -41,10 +54,10 @@ function ensureTextures(
   const make = (): GPUTexture =>
     createTrackedTexture(device, {
       size: { width, height },
-      format: "rgba8unorm",
+      format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make() };
+  texCache = { tempA: make(), tempB: make(), format };
   return texCache;
 }
 
@@ -67,27 +80,32 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
   encode({ engine, encoder, srcTex, dstTex }, entry) {
     const { runtime } = engine;
     const { device, pixelWidth: w, pixelHeight: h } = runtime;
-    const { tempA, tempB } = ensureTextures(device, w, h);
-
-    const erodeH = runtime.getComputePipeline(
+    // Scratch + every compute pipeline in this pass runs in the doc format.
+    const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+    const erodeH = runtime.getComputePipelineForStorageFormat(
       "outline-erode-h",
       "cs_outline_erode_h",
+      dstTex,
     );
-    const erodeV = runtime.getComputePipeline(
+    const erodeV = runtime.getComputePipelineForStorageFormat(
       "outline-erode-v",
       "cs_outline_erode_v",
+      dstTex,
     );
-    const blurH = runtime.getComputePipeline(
+    const blurH = runtime.getComputePipelineForStorageFormat(
       "drop-shadow-blur-h",
       "cs_shadow_blur_h",
+      dstTex,
     );
-    const blurV = runtime.getComputePipeline(
+    const blurV = runtime.getComputePipelineForStorageFormat(
       "drop-shadow-blur-v",
       "cs_shadow_blur_v",
+      dstTex,
     );
-    const composite = runtime.getComputePipeline(
+    const composite = runtime.getComputePipelineForStorageFormat(
       "bevel-composite",
       "cs_bevel_composite",
+      dstTex,
     );
 
     const dispatch = (

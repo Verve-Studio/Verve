@@ -48,6 +48,7 @@ import type { InnerGlowParams } from "./InnerGlow/InnerGlowEffect";
 import type { SeamlessTextureParams } from "./SeamlessTexture/SeamlessTextureEffect";
 import type { LensDistortionParams } from "./LensDistortion/LensDistortionEffect";
 import type { OffsetParams } from "./Offset/OffsetEffect";
+import type { RepeatParams } from "./Repeat/RepeatEffect";
 import type { PinchParams } from "./Pinch/PinchEffect";
 import type { PolarCoordinatesParams } from "./PolarCoordinates/PolarCoordinatesEffect";
 import type { RippleParams } from "./Ripple/RippleEffect";
@@ -108,6 +109,7 @@ export interface EffectParamsMap {
   "seamless-texture": SeamlessTextureParams;
   "lens-distortion": LensDistortionParams;
   "offset": OffsetParams;
+  "repeat": RepeatParams;
   "pinch": PinchParams;
   "polar-coordinates": PolarCoordinatesParams;
   "ripple": RippleParams;

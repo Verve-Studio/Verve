@@ -45,16 +45,27 @@ let texCache: {
   tempA: GPUTexture;
   tempB: GPUTexture;
   tempC: GPUTexture;
+  format: GPUTextureFormat;
 } | null = null;
 let usedThisFrame = false;
 
+/** Scratch textures (3-way ping-pong for center-position outlines).
+ *  Allocated in the doc format — the whole effect runs at full doc precision
+ *  on f32 documents. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
+  format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture; tempC: GPUTexture } {
   usedThisFrame = true;
-  if (texCache) return texCache;
+  if (texCache && texCache.format === format) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.tempA);
+    destroyTrackedTexture(texCache.tempB);
+    destroyTrackedTexture(texCache.tempC);
+    texCache = null;
+  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
@@ -63,10 +74,10 @@ function ensureTextures(
   const make = (): GPUTexture =>
     createTrackedTexture(device, {
       size: { width, height },
-      format: "rgba8unorm",
+      format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make(), tempC: make() };
+  texCache = { tempA: make(), tempB: make(), tempC: make(), format };
   return texCache;
 }
 
@@ -74,26 +85,51 @@ const MODE_MAP = { outside: 0, inside: 1, center: 2 } as const;
 
 /**
  * Get the outline pipelines (also used by Bevel / InnerShadow which reuse
- * the erode pipelines as channel-copy steps).
+ * the erode pipelines as channel-copy steps). Specialised for the target
+ * storage format so the shaders' `texture_storage_2d<rgba8unorm, …>`
+ * declarations get rewritten to match the doc format. The composite is
+ * fetched separately because the caller needs the same pipeline reference
+ * for its bind group.
  */
-export function getOutlinePipelines(runtime: EffectRuntime) {
+export function getOutlinePipelines(
+  runtime: EffectRuntime,
+  dstTex: GPUTexture,
+) {
   return {
-    dilateH: runtime.getComputePipeline(
+    dilateH: runtime.getComputePipelineForStorageFormat(
       "outline-dilate-h",
       "cs_outline_dilate_h",
+      dstTex,
     ),
-    dilateV: runtime.getComputePipeline(
+    dilateV: runtime.getComputePipelineForStorageFormat(
       "outline-dilate-v",
       "cs_outline_dilate_v",
+      dstTex,
     ),
-    erodeH: runtime.getComputePipeline("outline-erode-h", "cs_outline_erode_h"),
-    erodeV: runtime.getComputePipeline("outline-erode-v", "cs_outline_erode_v"),
-    mask: runtime.getComputePipeline("outline-mask", "cs_outline_mask"),
-    blurH: runtime.getComputePipeline("outline-blur-h", "cs_outline_blur_h"),
-    blurV: runtime.getComputePipeline("outline-blur-v", "cs_outline_blur_v"),
-    composite: runtime.getComputePipeline(
-      "outline-composite",
-      "cs_outline_composite",
+    erodeH: runtime.getComputePipelineForStorageFormat(
+      "outline-erode-h",
+      "cs_outline_erode_h",
+      dstTex,
+    ),
+    erodeV: runtime.getComputePipelineForStorageFormat(
+      "outline-erode-v",
+      "cs_outline_erode_v",
+      dstTex,
+    ),
+    mask: runtime.getComputePipelineForStorageFormat(
+      "outline-mask",
+      "cs_outline_mask",
+      dstTex,
+    ),
+    blurH: runtime.getComputePipelineForStorageFormat(
+      "outline-blur-h",
+      "cs_outline_blur_h",
+      dstTex,
+    ),
+    blurV: runtime.getComputePipelineForStorageFormat(
+      "outline-blur-v",
+      "cs_outline_blur_v",
+      dstTex,
     ),
   };
 }
@@ -126,8 +162,13 @@ export const OutlineEffect: IPipelineEffect<
   encode({ engine, encoder, srcTex, dstTex }, entry) {
     const { runtime } = engine;
     const { device, pixelWidth: w, pixelHeight: h } = runtime;
-    const { tempA, tempB, tempC } = ensureTextures(device, w, h);
-    const pipes = getOutlinePipelines(runtime);
+    const { tempA, tempB, tempC } = ensureTextures(device, w, h, dstTex.format);
+    const pipes = getOutlinePipelines(runtime, dstTex);
+    const compositePipeline = runtime.getComputePipelineForStorageFormat(
+      "outline-composite",
+      "cs_outline_composite",
+      dstTex,
+    );
 
     const { color, opacity, thickness, position, softness } = entry.params;
     const colorR = color.r / 255;
@@ -243,7 +284,7 @@ export const OutlineEffect: IPipelineEffect<
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
     const compBG = device.createBindGroup({
-      layout: pipes.composite.getBindGroupLayout(0),
+      layout: compositePipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: srcTex.createView() },
         { binding: 1, resource: strokeMaskTex.createView() },
@@ -254,7 +295,7 @@ export const OutlineEffect: IPipelineEffect<
       ],
     });
     const compPass = encoder.beginComputePass();
-    compPass.setPipeline(pipes.composite);
+    compPass.setPipeline(compositePipeline);
     compPass.setBindGroup(0, compBG);
     compPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
     compPass.end();

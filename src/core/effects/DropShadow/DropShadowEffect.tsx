@@ -56,16 +56,30 @@ export type DropShadowEffectLayer = EffectLayerOf<"drop-shadow", DropShadowParam
 
 type DropShadowOp = Extract<EffectRenderOp, { kind: "drop-shadow" }>;
 
-let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
+let texCache: {
+  tempA: GPUTexture;
+  tempB: GPUTexture;
+  format: GPUTextureFormat;
+} | null = null;
 let usedThisFrame = false;
 
+/** Scratch textures for the dilate+blur ping-pong. Allocated in the same
+ *  format as the doc-output texture so the entire pipeline runs at full
+ *  precision on f32 documents — no 8-bit precision loss in shadow falloff
+ *  on HDR content. Re-allocated when the doc switches color modes. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
+  format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
   usedThisFrame = true;
-  if (texCache) return texCache;
+  if (texCache && texCache.format === format) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.tempA);
+    destroyTrackedTexture(texCache.tempB);
+    texCache = null;
+  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
@@ -74,10 +88,10 @@ function ensureTextures(
   const make = (): GPUTexture =>
     createTrackedTexture(device, {
       size: { width, height },
-      format: "rgba8unorm",
+      format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make() };
+  texCache = { tempA: make(), tempB: make(), format };
   return texCache;
 }
 
@@ -114,27 +128,34 @@ export function encodeDropShadowPass(
   },
 ): void {
   const { device, pixelWidth: w, pixelHeight: h } = runtime;
-  const { tempA, tempB } = ensureTextures(device, w, h);
-
-  const dilateH = runtime.getComputePipeline(
+  // Scratch + every compute pipeline runs in the doc format. The shaders'
+  // `texture_storage_2d<rgba8unorm, …>` declarations get rewritten to the
+  // doc format on first compile (see `getComputePipelineForStorageFormat`).
+  const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+  const dilateH = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-dilate-h",
     "cs_shadow_dilate_h",
+    dstTex,
   );
-  const dilateV = runtime.getComputePipeline(
+  const dilateV = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-dilate-v",
     "cs_shadow_dilate_v",
+    dstTex,
   );
-  const blurH = runtime.getComputePipeline(
+  const blurH = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-blur-h",
     "cs_shadow_blur_h",
+    dstTex,
   );
-  const blurV = runtime.getComputePipeline(
+  const blurV = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-blur-v",
     "cs_shadow_blur_v",
+    dstTex,
   );
-  const composite = runtime.getComputePipeline(
+  const composite = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-composite",
     "cs_shadow_composite",
+    dstTex,
   );
 
   const spreadR = Math.round(args.spread);

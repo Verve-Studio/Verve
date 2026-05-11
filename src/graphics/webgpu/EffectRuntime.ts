@@ -128,6 +128,9 @@ export class EffectRuntime {
   >();
   private readonly singlesAuto = new Map<string, GPURenderPipeline>();
   private readonly computes = new Map<string, GPUComputePipeline>();
+  /** Format-specialised compute pipelines (keyed by shader|entry|format).
+   *  Used by composite passes whose destination is the doc-format texture. */
+  private readonly formatComputes = new Map<string, GPUComputePipeline>();
 
   constructor(
     device: GPUDevice,
@@ -308,6 +311,49 @@ export class EffectRuntime {
         compute: { module, entryPoint },
       });
       this.computes.set(key, pipeline);
+    }
+    return pipeline;
+  }
+
+  /**
+   * Compute pipeline that writes to a doc-format storage texture. WGSL
+   * storage textures bake the texel format into the shader, so an effect
+   * that wants to write to either rgba8unorm OR rgba32float has to compile
+   * two pipelines from the same source. Call sites pass the destination
+   * `GPUTexture` and get the right variant back. Cached per
+   * (shader, entry, format).
+   *
+   * The shader source is rewritten on first compile: every occurrence of
+   * `texture_storage_2d<rgba8unorm,` is swapped for the requested format.
+   * Composite shaders should only declare one such storage texture
+   * (the doc-format output) — intermediate scratch passes belong on
+   * `getComputePipeline`.
+   */
+  getComputePipelineForStorageFormat(
+    shaderName: string,
+    entryPoint: string,
+    dstTexOrFormat: GPUTexture | GPUTextureFormat,
+  ): GPUComputePipeline {
+    const format =
+      typeof dstTexOrFormat === "string"
+        ? dstTexOrFormat
+        : dstTexOrFormat.format;
+    if (format === "rgba8unorm") {
+      return this.getComputePipeline(shaderName, entryPoint);
+    }
+    const key = `${shaderName}|${entryPoint}|${format}`;
+    let pipeline = this.formatComputes.get(key);
+    if (!pipeline) {
+      const src = getShader(shaderName).replace(
+        /texture_storage_2d<rgba8unorm,/g,
+        `texture_storage_2d<${format},`,
+      );
+      const module = this.device.createShaderModule({ code: src });
+      pipeline = this.device.createComputePipeline({
+        layout: "auto",
+        compute: { module, entryPoint },
+      });
+      this.formatComputes.set(key, pipeline);
     }
     return pipeline;
   }

@@ -364,7 +364,8 @@ export type FilterKey =
   | "reduce-noise"
   | "pixelate"
   | "seamless-texture"
-  | "offset";
+  | "offset"
+  | "repeat";
 
 export type CurvesChannel = "rgb" | "red" | "green" | "blue";
 

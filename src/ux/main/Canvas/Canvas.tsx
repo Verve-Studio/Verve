@@ -1534,7 +1534,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     let activeLayer = activeId ? glLayersRef.current.get(activeId) : undefined;
 
     // Text/shape/frame tools create their own; pick/hand/zoom don't touch
-    // pixels so they're fine without an active pixel layer.
+    // pixels so they're fine without an active pixel layer. Selection tools
+    // (marquee/lasso/polygonal/object-selection) only manipulate the
+    // selection mask, and Crop only writes to the crop store — none of them
+    // dereference `ctx.layer`, so they should remain usable when the active
+    // layer is a non-pixel layer (adjustment / effect / filter / text /
+    // shape).
     if (
       !activeLayer &&
       state.activeTool !== "text" &&
@@ -1543,7 +1548,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       state.activeTool !== "pick" &&
       state.activeTool !== "hand" &&
       state.activeTool !== "zoom" &&
-      state.activeTool !== "measure"
+      state.activeTool !== "measure" &&
+      state.activeTool !== "select" &&
+      state.activeTool !== "lasso" &&
+      state.activeTool !== "polygonal-selection" &&
+      state.activeTool !== "object-selection" &&
+      state.activeTool !== "crop"
     )
       return null;
     // Block pixel-modifying tools on locked layers and on non-pixel layers (text, shape, group, adjustment).

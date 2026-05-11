@@ -49,16 +49,28 @@ export type HalationEffectLayer = EffectLayerOf<"halation", HalationParams>;
 
 type HalationOp = Extract<EffectRenderOp, { kind: "halation" }>;
 
-let texCache: { glowATex: GPUTexture; glowBTex: GPUTexture } | null = null;
+let texCache: {
+  glowATex: GPUTexture;
+  glowBTex: GPUTexture;
+  format: GPUTextureFormat;
+} | null = null;
 let usedThisFrame = false;
 
+/** Glow ping-pong scratch. Allocated in the doc format so the warm
+ *  halation glow keeps full HDR precision on f32 documents. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
+  format: GPUTextureFormat,
 ): { glowATex: GPUTexture; glowBTex: GPUTexture } {
   usedThisFrame = true;
-  if (texCache) return texCache;
+  if (texCache && texCache.format === format) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.glowATex);
+    destroyTrackedTexture(texCache.glowBTex);
+    texCache = null;
+  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.RENDER_ATTACHMENT |
@@ -66,10 +78,10 @@ function ensureTextures(
   const make = (): GPUTexture =>
     createTrackedTexture(device, {
       size: { width, height },
-      format: "rgba8unorm",
+      format,
       usage,
     });
-  texCache = { glowATex: make(), glowBTex: make() };
+  texCache = { glowATex: make(), glowBTex: make(), format };
   return texCache;
 }
 
@@ -96,16 +108,16 @@ export const HalationEffect: IPipelineEffect<
     const { runtime } = engine;
     const w = runtime.pixelWidth;
     const h = runtime.pixelHeight;
-    const { glowATex, glowBTex } = ensureTextures(runtime.device, w, h);
+    const { glowATex, glowBTex } = ensureTextures(runtime.device, w, h, format);
 
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
 
-    // Pass 1: Extract — needs explicit BGL
+    // Pass 1: Extract — target format matches the scratch (doc format).
     const extract = runtime.getRenderPipelineWithBGL(
       "halation-extract",
       "fs_halation_extract",
-      "rgba8unorm",
+      format,
       STD_BINDINGS,
     );
     const extractParamsBuf = runtime.makeParamsBuf(
@@ -131,12 +143,12 @@ export const HalationEffect: IPipelineEffect<
     const boxH = runtime.getRenderPipelineAuto(
       "bloom-blur-h",
       "fs_bloom_blur_h",
-      "rgba8unorm",
+      format,
     );
     const boxV = runtime.getRenderPipelineAuto(
       "bloom-blur-v",
       "fs_bloom_blur_v",
-      "rgba8unorm",
+      format,
     );
     const blurParamsBuf = runtime.makeParamsBuf(
       new Uint32Array([blurRadius, 0, 0, 0]),

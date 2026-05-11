@@ -84,7 +84,7 @@ export function useTabs(
     const tab = tabsRef.current.find((t) => t.id === activeTabId);
     if (!tab) return;
     displayStore.setEV(tab.exposureEV ?? 0);
-    displayStore.setOperator(tab.toneMappingOperator ?? "reinhard");
+    displayStore.setOperator(tab.toneMappingOperator ?? "clamp");
     displayStore.setViewTransformLut(tab.viewTransformLutId ?? null);
   }, [activeTabId]);
 
@@ -199,7 +199,7 @@ export function useTabs(
       setActiveScope(toTab.scope);
       setActiveTabId(toId);
       displayStore.setEV(toTab.exposureEV ?? 0);
-      displayStore.setOperator(toTab.toneMappingOperator ?? "reinhard");
+      displayStore.setOperator(toTab.toneMappingOperator ?? "clamp");
       displayStore.setViewTransformLut(toTab.viewTransformLutId ?? null);
       // Swap palette + groups in the same action that swaps layers/canvas
       // so state never has the outgoing tab's swatchGroups paired with the
