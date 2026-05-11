@@ -4,21 +4,22 @@ import type {
   GpuLayer,
   WebGPURenderer,
   RenderPlanEntry,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { LayerState, RGBAColor, PixelFormat } from "@/types";
 import { isGroupLayer } from "@/types";
 import {
   buildRenderPlan as buildCanvasRenderPlan,
   buildSubPlan,
 } from "./canvasPlan";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
+
 import { encodePng } from "./pngHelpers";
 import {
   rasterizeDocument,
   type RasterBackend,
   type RasterReason,
-} from "@/graphicspipeline/rasterization";
+} from "@/graphics/rasterization";
 import { matchPaletteIndices } from "@/wasm";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Public handle type (imported by App.tsx and other callers) ────────────
 
@@ -60,6 +61,19 @@ export interface CanvasHandle {
   }>;
   /** Return a copy of a layer's raw RGBA pixel data IN CANVAS-SIZE buffer (pixels outside layer bounds are transparent). */
   getLayerPixels: (layerId: string) => Uint8Array | null;
+  /** Return a layer's raw RGBA pixel data in **layer-local** size (always 8-bit
+   *  RGBA, even for rgba32f layers — converted on read), plus its offset on
+   *  the canvas. Used by exporters (e.g. PSD) that preserve per-layer geometry
+   *  rather than working off a flattened buffer. */
+  getLayerExportData: (
+    layerId: string,
+  ) => {
+    pixels: Uint8Array;
+    width: number;
+    height: number;
+    offsetX: number;
+    offsetY: number;
+  } | null;
   /**
    * Create a new GL layer, fill it with data, and render.
    * data is canvas-size RGBA. Call BEFORE dispatching ADD_LAYER so the sync effect is a no-op.
@@ -68,11 +82,16 @@ export interface CanvasHandle {
   prepareNewLayer: (
     layerId: string,
     name: string,
-    data: Uint8Array,
+    data: Uint8Array | Float32Array,
     lw?: number,
     lh?: number,
     ox?: number,
     oy?: number,
+    /** Layer pixel format. Default 'rgba8'. Pass 'rgba32f' when `data` is a
+     *  Float32Array (e.g. result of rasterising in an f32 document) — without
+     *  this the routine creates an rgba8 layer and `Uint8Array.set(Float32Array)`
+     *  clamps every float in [0,1] to 0, producing a transparent black layer. */
+    format?: import("@/types").PixelFormat,
   ) => void;
   /** Zero out every pixel in a layer that is covered by the selection mask (canvas-space), then flush+render. */
   clearLayerPixels: (layerId: string, mask: Uint8Array) => void;
@@ -147,9 +166,14 @@ export interface CanvasHandle {
    * the same format returned by `getLayerPixels`. Does NOT push to undo history.
    */
   writeLayerPixels: (layerId: string, pixels: Uint8Array) => void;
+  /** Re-flush every indexed8 layer with the supplied palette and re-render.
+   *  Used by the palette-animation playback loop to swap the displayed
+   *  colours without touching the underlying index buffer. No-op when there
+   *  are no indexed8 layers. */
+  repaintIndexedLayers: (palette: readonly RGBAColor[]) => void;
   /**
    * Register a baked selection mask for an adjustment layer.
-   * selPixels is a full-canvas Uint8Array (1 byte per pixel, 255 = selected) from selectionStore.mask.
+   * selPixels is a full-canvas Uint8Array (1 byte per pixel, 255 = selected) from activeScope().selection.mask.
    * The R channel of the resulting WebGL layer drives the shader blend weight.
    */
   registerAdjustmentSelectionMask: (
@@ -183,7 +207,7 @@ export interface CanvasHandle {
   getGpuLayer: (layerId: string) => GpuLayer | null;
   /**
    * Pre-populate a mask layer's GPU data from a selection mask before dispatching ADD_MASK_LAYER.
-   * selPixels is a canvas-sized Uint8Array (1 byte/pixel, 0–255) from selectionStore.mask.
+   * selPixels is a canvas-sized Uint8Array (1 byte/pixel, 0–255) from activeScope().selection.mask.
    * Canvas.tsx's layer-init effect skips layers already in glLayersRef, so the mask
    * will use this data instead of the default all-white fill.
    */
@@ -287,7 +311,7 @@ export function useCanvasHandle({
       glLayersRef.current,
       maskMap,
       adjustmentMaskMap.current,
-      adjustmentPreviewStore.snapshot(),
+      activeScope().adjustmentPreview.snapshot(),
       swatchesRef.current as RGBAColor[],
     );
   };
@@ -311,6 +335,26 @@ export function useCanvasHandle({
           png,
           layerWidth: layer.layerWidth,
           layerHeight: layer.layerHeight,
+          offsetX: layer.offsetX,
+          offsetY: layer.offsetY,
+        };
+      },
+
+      getLayerExportData: (layerId) => {
+        const renderer = rendererRef.current;
+        const layer = glLayersRef.current.get(layerId);
+        if (!renderer || !layer) return null;
+        const raw = renderer.readLayerPixels(layer);
+        const u8 =
+          raw instanceof Float32Array
+            ? new Uint8Array(raw.length).map((_, i) =>
+                Math.round(Math.min(raw[i], 1) * 255),
+              )
+            : (raw as Uint8Array);
+        return {
+          pixels: u8,
+          width: layer.layerWidth,
+          height: layer.layerHeight,
           offsetX: layer.offsetX,
           offsetY: layer.offsetY,
         };
@@ -464,7 +508,7 @@ export function useCanvasHandle({
         return result;
       },
 
-      prepareNewLayer: (layerId, name, data, lw?, lh?, ox?, oy?) => {
+      prepareNewLayer: (layerId, name, data, lw?, lh?, ox?, oy?, format?) => {
         const renderer = rendererRef.current;
         if (!renderer) return;
         const useW = lw ?? renderer.pixelWidth;
@@ -478,8 +522,12 @@ export function useCanvasHandle({
           useH,
           useOx,
           useOy,
+          format,
         );
-        layer.data.set(data);
+        // Both arrays are the same logical kind for set(): Uint8Array→Uint8Array
+        // and Float32Array→Float32Array copy element-wise. The format/data
+        // pairing is the caller's responsibility.
+        (layer.data as Uint8Array | Float32Array).set(data as never);
         renderer.flushLayer(layer);
         glLayersRef.current.set(layerId, layer);
         renderFromPlan();
@@ -490,6 +538,7 @@ export function useCanvasHandle({
         const layer = glLayersRef.current.get(layerId);
         if (!renderer || !layer) return;
         const w = renderer.pixelWidth;
+        const indexed = layer.format === "indexed8";
         for (let i = 0; i < mask.length; i++) {
           if (!mask[i]) continue;
           const cx = i % w;
@@ -503,6 +552,13 @@ export function useCanvasHandle({
             ly >= layer.layerHeight
           )
             continue;
+          if (indexed) {
+            // Indexed8 has 1 byte per pixel; 255 is the transparent sentinel.
+            // No partial alpha — any selected pixel is wiped to transparent.
+            const pi = ly * layer.layerWidth + lx;
+            (layer.data as Uint8Array)[pi] = 255;
+            continue;
+          }
           const pi = (ly * layer.layerWidth + lx) * 4;
           const f = 1 - mask[i] / 255;
           if (layer.format === "rgba32f") {
@@ -517,7 +573,14 @@ export function useCanvasHandle({
             layer.data[pi + 3] = Math.round(layer.data[pi + 3] * f);
           }
         }
-        renderer.flushLayer(layer);
+        if (indexed) {
+          renderer.flushLayer(
+            layer,
+            swatchesRef.current as import("@/types").RGBAColor[],
+          );
+        } else {
+          renderer.flushLayer(layer);
+        }
         renderFromPlan();
       },
 
@@ -791,6 +854,18 @@ export function useCanvasHandle({
         renderFromPlan();
       },
 
+      repaintIndexedLayers: (palette) => {
+        const renderer = rendererRef.current;
+        if (!renderer) return;
+        let any = false;
+        for (const layer of glLayersRef.current.values()) {
+          if (layer.format !== "indexed8") continue;
+          renderer.flushLayer(layer, palette as RGBAColor[]);
+          any = true;
+        }
+        if (any) renderFromPlan();
+      },
+
       registerAdjustmentSelectionMask: (layerId, selPixels) => {
         const renderer = rendererRef.current;
         if (!renderer) return;
@@ -1009,6 +1084,6 @@ export function useCanvasHandle({
         renderFromPlan();
       },
     }),
-    [width, height],
+    [width, height, tiledMode],
   ); // eslint-disable-line react-hooks/exhaustive-deps
 }

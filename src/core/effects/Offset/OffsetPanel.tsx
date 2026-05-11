@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { OffsetAdjustmentLayer } from "@/types";
+import type { OffsetEffectLayer } from "@/core/effects/Offset/OffsetEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: OffsetAdjustmentLayer;
+  layer: OffsetEffectLayer;
   parentLayerName: string;
 }
 
@@ -16,7 +16,7 @@ export function OffsetPanel({
   const { dispatch } = useAppContext();
   const { offsetX, offsetY } = layer.params;
 
-  const update = (patch: Partial<OffsetAdjustmentLayer["params"]>): void => {
+  const update = (patch: Partial<OffsetEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },

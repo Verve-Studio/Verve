@@ -2,7 +2,7 @@ import type { IPipelineEffect, MenuRoot } from "./IPipelineEffect";
 
 // Stored as `any` because the registry erases the specific layer/op generics
 // at the boundary — the runtime guarantee that `effect.id === entry.kind ===
-// layer.adjustmentType` is what makes the dispatch sound. Each effect's own
+// layer.effectType` is what makes the dispatch sound. Each effect's own
 // type signature is preserved at its definition site.
 type AnyEffect = IPipelineEffect<any, any>;
 

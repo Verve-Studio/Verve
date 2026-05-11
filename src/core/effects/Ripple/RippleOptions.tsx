@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { RippleAdjustmentLayer } from "@/types";
+import type { RippleEffectLayer } from "@/core/effects/Ripple/RippleEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
@@ -11,14 +11,14 @@ import {
 import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
-  layer: RippleAdjustmentLayer;
+  layer: RippleEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): RippleAdjustmentLayer["params"] =>
-  effectRegistry.get("ripple")!.defaultParams as RippleAdjustmentLayer["params"];
+const getDefaultParams = (): RippleEffectLayer["params"] =>
+  effectRegistry.get("ripple")!.defaultParams as RippleEffectLayer["params"];
 
-const DIRECTIONS: RippleAdjustmentLayer["params"]["direction"][] = [
+const DIRECTIONS: RippleEffectLayer["params"]["direction"][] = [
   "horizontal",
   "vertical",
   "both",
@@ -30,7 +30,7 @@ export function RippleOptions({
 }: Props): React.JSX.Element {
   const { dispatch } = useAppContext();
   const p = layer.params;
-  const update = (patch: Partial<RippleAdjustmentLayer["params"]>): void => {
+  const update = (patch: Partial<RippleEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },

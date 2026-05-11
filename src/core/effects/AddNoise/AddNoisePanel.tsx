@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { AddNoiseAdjustmentLayer } from "@/types";
+import type { AddNoiseEffectLayer } from "@/core/effects/AddNoise/AddNoiseEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: AddNoiseAdjustmentLayer;
+  layer: AddNoiseEffectLayer;
   parentLayerName: string;
 }
 

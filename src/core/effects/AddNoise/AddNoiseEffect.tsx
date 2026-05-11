@@ -1,12 +1,22 @@
-import type { AddNoiseAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AddNoisePanel } from "./AddNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type AddNoiseOp = Extract<AdjustmentRenderOp, { kind: "add-noise" }>;
+
+export interface AddNoiseParams {
+    amount: number;
+    distribution: "uniform" | "gaussian";
+    monochromatic: boolean;
+    seed: number;
+}
+
+export type AddNoiseEffectLayer = EffectLayerOf<"add-noise", AddNoiseParams>;
+
+type AddNoiseOp = Extract<EffectRenderOp, { kind: "add-noise" }>;
 
 export const AddNoiseEffect: IPipelineEffect<
-  AddNoiseAdjustmentLayer,
+  AddNoiseEffectLayer,
   AddNoiseOp
 > = {
   id: "add-noise",
@@ -20,28 +30,25 @@ export const AddNoiseEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { amount, distribution, monochromatic, seed } = layer.params;
     return {
       kind: "add-noise",
       layerId: layer.id,
-      amount,
-      distribution: distribution === "gaussian" ? 1 : 0,
-      monochromatic: monochromatic ? 1 : 0,
-      seed,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-add-noise", "fs_add_noise");
+    const { amount, distribution, monochromatic, seed } = entry.params;
     const paramsBuf = rt.makeParamsBuf(
       new Uint32Array([
-        entry.amount,
-        entry.distribution,
-        entry.monochromatic,
-        entry.seed,
+        amount,
+        distribution === "gaussian" ? 1 : 0,
+        monochromatic ? 1 : 0,
+        seed,
       ]),
     );
     rt.encodeRenderPass(

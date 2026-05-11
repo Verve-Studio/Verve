@@ -1,12 +1,12 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { InnerShadowAdjustmentLayer } from "@/types";
+import type { InnerShadowEffectLayer } from "@/core/effects/InnerShadow/InnerShadowEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./InnerShadowOptions.module.scss";
 
 interface InnerShadowOptionsProps {
-  layer: InnerShadowAdjustmentLayer;
+  layer: InnerShadowEffectLayer;
   parentLayerName: string;
 }
 

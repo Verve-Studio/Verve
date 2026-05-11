@@ -15,6 +15,7 @@ export const IMAGE_EXTENSIONS = new Set([
   ".jpg",
   ".jpeg",
   ".webp",
+  ".avif",
   ".gif",
   ".bmp",
   ".tga",
@@ -23,6 +24,7 @@ export const IMAGE_EXTENSIONS = new Set([
   ".exr",
   ".hdr",
   ".dds",
+  ".pcx",
 ]);
 
 export const EXT_TO_MIME: Record<string, string> = {
@@ -30,6 +32,7 @@ export const EXT_TO_MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
+  ".avif": "image/avif",
   ".gif": "image/gif",
   ".bmp": "image/bmp",
   ".tga": "image/tga",
@@ -38,6 +41,7 @@ export const EXT_TO_MIME: Record<string, string> = {
   ".exr": "image/x-exr",
   ".hdr": "image/vnd.radiance",
   ".dds": "image/vnd.ms-dds",
+  ".pcx": "image/x-pcx",
 };
 
 // ─── TGA decoder ─────────────────────────────────────────────────────────────
@@ -120,6 +124,129 @@ function decodeTgaPixels(raw: Uint8Array): {
   return { data: output, width, height };
 }
 
+// ─── PCX decoder ─────────────────────────────────────────────────────────────
+
+/** Decode a ZSoft Paintbrush (.pcx) file into RGBA pixels. Supports the
+ *  common variants: 1 plane × 1/2/4/8 bpp (palette-indexed) and 3-plane ×
+ *  8 bpp (24-bit RGB). RLE (encoding=1) and raw (encoding=0) are both
+ *  supported. */
+function decodePcxPixels(raw: Uint8Array): {
+  data: Uint8Array;
+  width: number;
+  height: number;
+} {
+  if (raw.length < 128 || raw[0] !== 0x0a) {
+    throw new Error("Not a PCX file");
+  }
+  const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const encoding = raw[2];
+  const bpp = raw[3];
+  const xmin = dv.getUint16(4, true);
+  const ymin = dv.getUint16(6, true);
+  const xmax = dv.getUint16(8, true);
+  const ymax = dv.getUint16(10, true);
+  const planes = raw[65];
+  const bytesPerLine = dv.getUint16(66, true);
+  const width = xmax - xmin + 1;
+  const height = ymax - ymin + 1;
+  if (width <= 0 || height <= 0) throw new Error("Invalid PCX dimensions");
+  if (encoding !== 0 && encoding !== 1) {
+    throw new Error(`Unsupported PCX encoding: ${encoding}`);
+  }
+
+  // 16-entry header palette (EGA / 4-bpp etc.).
+  const headerPalette: [number, number, number][] = [];
+  for (let i = 0; i < 16; i++) {
+    headerPalette.push([raw[16 + i * 3], raw[17 + i * 3], raw[18 + i * 3]]);
+  }
+
+  // 256-entry VGA palette is appended after the image data, prefixed by 0x0C.
+  // Only present for 8-bpp single-plane files.
+  let vgaPalette: [number, number, number][] | null = null;
+  let imageDataEnd = raw.length;
+  if (
+    bpp === 8 &&
+    planes === 1 &&
+    raw.length >= 769 &&
+    raw[raw.length - 769] === 0x0c
+  ) {
+    vgaPalette = [];
+    const off = raw.length - 768;
+    for (let i = 0; i < 256; i++) {
+      vgaPalette.push([raw[off + i * 3], raw[off + i * 3 + 1], raw[off + i * 3 + 2]]);
+    }
+    imageDataEnd = raw.length - 769;
+  }
+
+  // Decompress the scan-line buffer (bytesPerLine * planes * height bytes).
+  const totalBytes = bytesPerLine * planes * height;
+  const decompressed = new Uint8Array(totalBytes);
+  if (encoding === 0) {
+    decompressed.set(raw.subarray(128, 128 + totalBytes));
+  } else {
+    let src = 128;
+    let dst = 0;
+    while (dst < totalBytes && src < imageDataEnd) {
+      const byte = raw[src++];
+      if ((byte & 0xc0) === 0xc0) {
+        const count = byte & 0x3f;
+        const value = raw[src++];
+        const end = Math.min(dst + count, totalBytes);
+        while (dst < end) decompressed[dst++] = value;
+      } else {
+        decompressed[dst++] = byte;
+      }
+    }
+  }
+
+  const out = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const rowOff = y * bytesPerLine * planes;
+    for (let x = 0; x < width; x++) {
+      let r = 0,
+        g = 0,
+        b = 0;
+      const a = 255;
+      if (bpp === 8 && planes === 1) {
+        const idx = decompressed[rowOff + x];
+        const c = (vgaPalette ?? headerPalette)[idx] ?? [idx, idx, idx];
+        [r, g, b] = c;
+      } else if (bpp === 8 && planes >= 3) {
+        r = decompressed[rowOff + x];
+        g = decompressed[rowOff + bytesPerLine + x];
+        b = decompressed[rowOff + bytesPerLine * 2 + x];
+      } else if (bpp === 4 && planes === 1) {
+        const byte = decompressed[rowOff + (x >> 1)];
+        const idx = x & 1 ? byte & 0x0f : byte >> 4;
+        [r, g, b] = headerPalette[idx];
+      } else if (bpp === 1) {
+        // 1-bit per plane, N planes → palette index in [0, 2^N).
+        let idx = 0;
+        for (let p = 0; p < planes; p++) {
+          const byte = decompressed[rowOff + p * bytesPerLine + (x >> 3)];
+          const bit = (byte >> (7 - (x & 7))) & 1;
+          idx |= bit << p;
+        }
+        const c = headerPalette[idx];
+        if (c) {
+          [r, g, b] = c;
+        } else {
+          // Fallback for monochrome with no usable header palette.
+          r = g = b = idx ? 255 : 0;
+        }
+      } else {
+        throw new Error(`Unsupported PCX format: ${bpp}bpp × ${planes} planes`);
+      }
+      const o = (y * width + x) * 4;
+      out[o] = r;
+      out[o + 1] = g;
+      out[o + 2] = b;
+      out[o + 3] = a;
+    }
+  }
+  return { data: out, width, height };
+}
+
 // ─── Decode a data URL into raw RGBA pixels ───────────────────────────────────
 
 export async function loadImagePixels(
@@ -199,6 +326,21 @@ export async function loadImagePixels(
     } catch (err) {
       return Promise.reject(
         new Error(`Failed to decode HDR: ${(err as Error).message}`),
+      );
+    }
+  }
+
+  // PCX is not supported by the browser's <img> element — decode manually.
+  if (dataUrl.startsWith("data:image/x-pcx;base64,")) {
+    try {
+      const base64 = dataUrl.slice("data:image/x-pcx;base64,".length);
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return Promise.resolve(decodePcxPixels(bytes));
+    } catch (err) {
+      return Promise.reject(
+        new Error(`Failed to decode PCX: ${(err as Error).message}`),
       );
     }
   }

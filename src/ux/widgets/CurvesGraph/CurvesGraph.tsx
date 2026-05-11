@@ -13,7 +13,7 @@ import type {
 import {
   buildCurveLut,
   detectLutClipping,
-} from "@/core/operations/adjustments/curves";
+} from "@/core/effects/Curves/curves";
 import styles from "./CurvesGraph.module.scss";
 
 // ─── Constants ────────────────────────────────────────────────────────────────

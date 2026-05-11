@@ -1,34 +1,66 @@
 import React, { useEffect, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import { displayStore } from "@/core/store/displayStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
+import { lutStore, type LutTransform } from "@/core/lut";
+import { LutSelectOptions } from "@/core/lut/lutSelectOptions";
 import type { ToneMappingOperator } from "@/types";
 import styles from "./HDRPanel.module.scss";
+
+// ─── Display panel ───────────────────────────────────────────────────────────
+//
+// Canvas-only display controls — never touch pixel data.
+//
+//   - View Transform: choose a LUT (Filmic/AgX/HLG/Rec.2020/loaded LUTs/OCIO
+//     colour-spaces) or "None" to use the analytic tone-map operator.
+//   - Tone Map: only meaningful when View Transform is None and the doc is
+//     rgba32f — controls how out-of-range linear values are compressed
+//     before the sRGB encode.
+//   - Exposure: pre-tone-map gain in EV stops. Useful any time the doc is
+//     rgba32f, regardless of view transform.
+//
+// Renamed from "HDR" because LUT view transforms apply to SDR docs too
+// (creative-look soft-proofing), but we keep the same panel id so saved
+// dock layouts continue to resolve.
 
 const OPERATOR_OPTIONS: { value: ToneMappingOperator; label: string }[] = [
   { value: "clamp", label: "Linear (Clamp)" },
   { value: "reinhard", label: "Reinhard" },
 ];
 
+function useLutList(): LutTransform[] {
+  const [list, setList] = useState<LutTransform[]>(() => lutStore.all());
+  useEffect(() => lutStore.subscribe(() => setList(lutStore.all())), []);
+  return list;
+}
+
 export function HDRPanel(): React.JSX.Element {
   const { state } = useAppContext();
   const isHdr = state.pixelFormat === "rgba32f";
+  const luts = useLutList();
 
   const [ev, setEv] = useState(displayStore.exposureEV);
   const [operator, setOperator] = useState<ToneMappingOperator>(
     displayStore.toneMappingOperator,
+  );
+  const [viewLutId, setViewLutId] = useState<string | null>(
+    displayStore.viewTransformLutId,
   );
 
   useEffect(() => {
     const onUpdate = (): void => {
       setEv(displayStore.exposureEV);
       setOperator(displayStore.toneMappingOperator);
+      setViewLutId(displayStore.viewTransformLutId);
     };
     displayStore.subscribe(onUpdate);
     return () => displayStore.unsubscribe(onUpdate);
   }, []);
 
-  const handleEvChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    displayStore.setEV(parseFloat(e.target.value));
+  const handleViewLutChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ): void => {
+    const id = e.target.value;
+    displayStore.setViewTransformLut(id === "" ? null : id);
   };
 
   const handleOperatorChange = (
@@ -37,34 +69,47 @@ export function HDRPanel(): React.JSX.Element {
     displayStore.setOperator(e.target.value as ToneMappingOperator);
   };
 
-  const handleEvReset = (): void => {
-    displayStore.setEV(0);
+  const handleEvChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    displayStore.setEV(parseFloat(e.target.value));
   };
+  const handleEvReset = (): void => displayStore.setEV(0);
 
   const evPct = (ev + 5) / 10;
+  const showOperatorRow = viewLutId === null;
 
   return (
-    <div className={styles.panel} aria-disabled={!isHdr}>
-      {!isHdr && (
-        <p className={styles.hint}>Available in Float32 color mode only.</p>
-      )}
-
-      <div className={[styles.row, !isHdr ? styles.disabled : ""].join(" ")}>
+    <div className={styles.panel}>
+      <div className={styles.row}>
         <label className={styles.label}>View Transform</label>
         <select
           className={styles.select}
-          value={operator}
-          onChange={handleOperatorChange}
-          disabled={!isHdr}
-          title="Tone-mapping operator for viewport preview"
+          value={viewLutId ?? ""}
+          onChange={handleViewLutChange}
+          title="Display-only colour transform applied at the swap-chain blit. Never affects exports."
         >
-          {OPERATOR_OPTIONS.map(({ value, label }) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
+          <option value="">— None —</option>
+          <LutSelectOptions luts={luts} />
         </select>
       </div>
+
+      {showOperatorRow && (
+        <div className={[styles.row, !isHdr ? styles.disabled : ""].join(" ")}>
+          <label className={styles.label}>Tone Map</label>
+          <select
+            className={styles.select}
+            value={operator}
+            onChange={handleOperatorChange}
+            disabled={!isHdr}
+            title="HDR → SDR compression operator (used when no view-transform LUT is active)"
+          >
+            {OPERATOR_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className={[styles.row, !isHdr ? styles.disabled : ""].join(" ")}>
         <label className={styles.label}>Exposure</label>
@@ -91,6 +136,12 @@ export function HDRPanel(): React.JSX.Element {
           {ev.toFixed(1)}
         </span>
       </div>
+
+      {!isHdr && (
+        <p className={styles.hint}>
+          Tone Map and Exposure require Float32 colour mode.
+        </p>
+      )}
     </div>
   );
 }

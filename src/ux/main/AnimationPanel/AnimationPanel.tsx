@@ -60,8 +60,10 @@ export function AnimationPanel({
 }: AnimationPanelProps): React.JSX.Element {
   const { state, dispatch } = useAppContext();
   const ss = state.spritesheet;
+  const pa = state.paletteAnimation;
   const canvasW = state.canvas.width;
   const canvasH = state.canvas.height;
+  const isIndexed8 = state.pixelFormat === "indexed8";
 
   const selectedAnim =
     ss.animations.find((a) => a.id === ss.selectedAnimationId) ?? null;
@@ -182,44 +184,165 @@ export function AnimationPanel({
           </div>
 
           <div
-            className={`${styles.row} ${!ss.enabled ? styles.rowDisabled : ""}`}
+            className={styles.row}
+            title={
+              !isIndexed8
+                ? "Palette animation is only available in Indexed8 mode."
+                : undefined
+            }
           >
-            <span className={styles.label}>Cell W</span>
-            <SliderInput
-              value={ss.cellWidth}
-              min={1}
-              max={Math.max(1, canvasW)}
-              step={1}
-              inputWidth={42}
-              suffix="px"
-              disabled={!ss.enabled}
-              onChange={(v) =>
-                dispatch({ type: "SET_SPRITESHEET", payload: { cellWidth: v } })
-              }
-            />
-          </div>
-
-          <div
-            className={`${styles.row} ${!ss.enabled ? styles.rowDisabled : ""}`}
-          >
-            <span className={styles.label}>Cell H</span>
-            <SliderInput
-              value={ss.cellHeight}
-              min={1}
-              max={Math.max(1, canvasH)}
-              step={1}
-              inputWidth={42}
-              suffix="px"
-              disabled={!ss.enabled}
+            <span className={styles.label}>Palette Animation</span>
+            <Toggle
+              checked={pa.enabled}
+              disabled={!isIndexed8}
               onChange={(v) =>
                 dispatch({
-                  type: "SET_SPRITESHEET",
-                  payload: { cellHeight: v },
+                  type: "SET_PALETTE_ANIMATION",
+                  payload: { enabled: v },
                 })
               }
             />
           </div>
+
         </div>
+
+        {/* ── Sprite Sheet ──────────────────────────────────── */}
+        {ss.enabled && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Sprite Sheet</div>
+            <div className={styles.row}>
+              <span className={styles.label}>Cell W</span>
+              <SliderInput
+                value={ss.cellWidth}
+                min={1}
+                max={Math.max(1, canvasW)}
+                step={1}
+                inputWidth={42}
+                suffix="px"
+                onChange={(v) =>
+                  dispatch({
+                    type: "SET_SPRITESHEET",
+                    payload: { cellWidth: v },
+                  })
+                }
+              />
+            </div>
+            <div className={styles.row}>
+              <span className={styles.label}>Cell H</span>
+              <SliderInput
+                value={ss.cellHeight}
+                min={1}
+                max={Math.max(1, canvasH)}
+                step={1}
+                inputWidth={42}
+                suffix="px"
+                onChange={(v) =>
+                  dispatch({
+                    type: "SET_SPRITESHEET",
+                    payload: { cellHeight: v },
+                  })
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── Palette Animation ─────────────────────────────── */}
+        {pa.enabled && isIndexed8 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Palette Animation</div>
+            <div className={styles.row}>
+              <span className={styles.label}>FPS</span>
+              <SliderInput
+                value={pa.fps}
+                min={1}
+                max={60}
+                step={1}
+                inputWidth={42}
+                onChange={(v) =>
+                  dispatch({
+                    type: "SET_PALETTE_ANIMATION",
+                    payload: { fps: v },
+                  })
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── Palette cycle groups ──────────────────────────── */}
+        {pa.enabled && isIndexed8 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>
+              <span>Cycle Groups</span>
+            </div>
+            {state.swatchGroups.length === 0 && (
+              <div className={styles.empty}>
+                Create a swatch group in the Swatches panel first.
+              </div>
+            )}
+            {state.swatchGroups.map((g) => {
+              const cyc = g.cycle ?? {
+                enabled: false,
+                stepsPerStep: 1,
+                ticksPerStep: 1,
+              };
+              const setCycle = (
+                next: import("@/types").SwatchGroupCycle,
+              ): void => {
+                dispatch({
+                  type: "UPDATE_SWATCH_GROUP_CYCLE",
+                  payload: { groupId: g.id, cycle: next },
+                });
+              };
+              return (
+                <div key={g.id} className={styles.cycleGroup}>
+                  <div
+                    className={`${styles.cycleGroupHeader} ${cyc.enabled ? styles.cycleGroupHeaderActive : ""}`}
+                  >
+                    <span className={styles.cycleGroupName} title={g.name}>
+                      {g.name}
+                    </span>
+                    <Toggle
+                      checked={cyc.enabled}
+                      onChange={(v) => setCycle({ ...cyc, enabled: v })}
+                    />
+                  </div>
+                  {cyc.enabled && (
+                    <>
+                      <div className={styles.row}>
+                        <span className={styles.label}>Step</span>
+                        <SliderInput
+                          value={cyc.stepsPerStep}
+                          min={-8}
+                          max={8}
+                          step={1}
+                          inputWidth={42}
+                          onChange={(v) =>
+                            setCycle({ ...cyc, stepsPerStep: v })
+                          }
+                        />
+                      </div>
+                      <div className={styles.row}>
+                        <span className={styles.label}>Every N tick</span>
+                        <SliderInput
+                          value={cyc.ticksPerStep}
+                          min={1}
+                          max={60}
+                          step={1}
+                          inputWidth={42}
+                          onChange={(v) =>
+                            setCycle({ ...cyc, ticksPerStep: v })
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── Animations ────────────────────────────────────── */}
         {ss.enabled && (

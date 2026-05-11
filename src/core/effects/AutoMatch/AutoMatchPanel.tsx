@@ -1,11 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type {
-  AutoMatchAdjustmentLayer,
-  AutoMatchSourceStats,
-  AutoMatchStats,
-  LayerState,
-} from "@/types";
+import type { AutoMatchSourceStats, AutoMatchStats, LayerState } from "@/types";
+import type { AutoMatchEffectLayer } from "@/core/effects/AutoMatch/AutoMatchEffect";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -14,13 +10,13 @@ import styles from "./AutoMatchPanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface AutoMatchPanelProps {
-  layer: AutoMatchAdjustmentLayer;
+  layer: AutoMatchEffectLayer;
   parentLayerName: string;
   canvasHandleRef?: { readonly current: CanvasHandle | null };
 }
 
-const getDefaultParams = (): AutoMatchAdjustmentLayer["params"] =>
-  effectRegistry.get("auto-match")!.defaultParams as AutoMatchAdjustmentLayer["params"];
+const getDefaultParams = (): AutoMatchEffectLayer["params"] =>
+  effectRegistry.get("auto-match")!.defaultParams as AutoMatchEffectLayer["params"];
 
 // ─── Stats helpers ────────────────────────────────────────────────────────────
 
@@ -242,7 +238,7 @@ export function AutoMatchPanel({
   const genRef = useRef(0);
 
   const updateParams = (
-    next: Partial<AutoMatchAdjustmentLayer["params"]>,
+    next: Partial<AutoMatchEffectLayer["params"]>,
   ): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",

@@ -57,6 +57,27 @@ function clamp(v: number, lo: number, hi: number): number {
 
 // ─── Canvas draw helpers ──────────────────────────────────────────────────────
 
+/**
+ * Resize a canvas's backing buffer to match its laid-out CSS size × the
+ * device pixel ratio, so the gradient renders at the screen's actual
+ * resolution. Without this the canvas attribute width/height (166×120,
+ * 14×120) gets stretched by the browser to fill `flex: 1`, and on any
+ * HiDPI display the upscale produces visible pixel-doubling that reads
+ * as a "grid" pattern — especially obvious against the saturated red
+ * corner. Cheap to call before every redraw; the assignment is a no-op
+ * when the size hasn't changed.
+ */
+function fitCanvasToDisplay(canvas: HTMLCanvasElement): void {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
+
 function drawSvGradient(
   canvas: HTMLCanvasElement,
   hue: number,
@@ -65,7 +86,13 @@ function drawSvGradient(
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const { width: w, height: h } = canvas;
+  // Backing buffer is sized to DPR; transform the context so all draw
+  // code below stays in CSS-pixel units (radius, lineWidth, …) without
+  // shrinking on high-DPI screens.
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
   ctx.fillRect(0, 0, w, h);
   const wg = ctx.createLinearGradient(0, 0, w, 0);
@@ -93,7 +120,10 @@ function drawSvGradient(
 function drawHueStrip(canvas: HTMLCanvasElement, hue: number): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const { width: w, height: h } = canvas;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const g = ctx.createLinearGradient(0, 0, 0, h);
   for (let deg = 0; deg <= 360; deg += 30)
     g.addColorStop(deg / 360, `hsl(${deg},100%,50%)`);
@@ -195,18 +225,35 @@ export function EmbedColorPicker({
   }, [value.r, value.g, value.b, value.a]);
 
   // Draw gradient — re-runs whenever hue/sat/val change, or when the canvas
-  // is newly mounted after switching away from grayscaleOnly mode.
+  // is newly mounted after switching away from grayscaleOnly mode. Also
+  // re-runs when the canvas changes size (popup repositions, window
+  // resizes, etc.) — `fitCanvasToDisplay` snaps the backing buffer to
+  // CSS-pixels × DPR so the gradient renders crisply on high-DPI screens.
   useEffect(() => {
     const c = gradRef.current;
     if (!c) return;
-    drawSvGradient(c, hue, sat, val);
+    const redraw = (): void => {
+      fitCanvasToDisplay(c);
+      drawSvGradient(c, hue, sat, val);
+    };
+    redraw();
+    const ro = new ResizeObserver(redraw);
+    ro.observe(c);
+    return () => ro.disconnect();
   }, [hue, sat, val, grayscaleOnly]);
 
-  // Draw hue strip — same: re-runs when canvas is newly mounted.
+  // Draw hue strip — same DPR-aware sizing as the SV gradient.
   useEffect(() => {
     const c = hueRef.current;
     if (!c) return;
-    drawHueStrip(c, hue);
+    const redraw = (): void => {
+      fitCanvasToDisplay(c);
+      drawHueStrip(c, hue);
+    };
+    redraw();
+    const ro = new ResizeObserver(redraw);
+    ro.observe(c);
+    return () => ro.disconnect();
   }, [hue, grayscaleOnly]);
 
   const fire = useCallback(

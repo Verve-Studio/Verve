@@ -1,5 +1,5 @@
 import type { FrameLayerState } from "@/types";
-import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { rgbaToStr } from "./shapeRasterizer";
 
 // ─── Shared offscreen rasterization canvas ────────────────────────────────────

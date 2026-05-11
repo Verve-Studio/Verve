@@ -1,31 +1,48 @@
-import type { OffsetAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OffsetPanel } from "./OffsetPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type OffsetOp = Extract<AdjustmentRenderOp, { kind: "offset" }>;
 
-export const OffsetEffect: IPipelineEffect<OffsetAdjustmentLayer, OffsetOp> = {
+  /** Wrap-around pixel offset (Photoshop's Filter > Other > Offset). */
+export interface OffsetParams {
+    /** Horizontal shift in pixels. Positive = image moves right; pixels
+     *  pushed off the right edge reappear on the left. */
+    offsetX: number;
+    /** Vertical shift in pixels. Positive = image moves down; pixels pushed
+     *  off the bottom reappear on the top. */
+    offsetY: number;
+}
+
+export type OffsetEffectLayer = EffectLayerOf<"offset", OffsetParams>;
+
+type OffsetOp = Extract<EffectRenderOp, { kind: "offset" }>;
+
+export const OffsetEffect: IPipelineEffect<OffsetEffectLayer, OffsetOp> = {
   id: "offset",
   label: "Offset…",
-  menu: { root: "filters", submenu: "other" },
+  menu: { root: "filters", submenu: "texture" },
   defaultParams: { offsetX: 0, offsetY: 0 },
 
   buildPlanEntry(layer, { mask }) {
     return {
       kind: "offset",
       layerId: layer.id,
-      offsetX: Math.round(layer.params.offsetX),
-      offsetY: Math.round(layer.params.offsetY),
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-offset", "fs_offset");
-    const data = new Int32Array([entry.offsetX | 0, entry.offsetY | 0, 0, 0]);
+    const data = new Int32Array([
+      Math.round(entry.params.offsetX) | 0,
+      Math.round(entry.params.offsetY) | 0,
+      0,
+      0,
+    ]);
     const paramsBuf = rt.makeParamsBuf(
       new Uint32Array(data.buffer, data.byteOffset, data.length),
     );

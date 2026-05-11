@@ -1,17 +1,43 @@
-import type { BloomAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BloomOptions } from "./BloomOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   STD_BINDINGS,
   type AdjBinding,
-} from "@/graphicspipeline/webgpu/EffectRuntime";
+} from "@/graphics/webgpu/EffectRuntime";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 
-type BloomOp = Extract<AdjustmentRenderOp, { kind: "bloom" }>;
+const BloomIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="6" r="3" opacity="0.6" />
+    <circle cx="6" cy="6" r="4.5" opacity="0.3" />
+  </svg>
+);
+
+
+export interface BloomParams {
+    threshold: number;
+    strength: number;
+    spread: number;
+    quality: "full" | "half" | "quarter";
+}
+
+export type BloomEffectLayer = EffectLayerOf<"bloom", BloomParams>;
+
+type BloomOp = Extract<EffectRenderOp, { kind: "bloom" }>;
 
 // Composite binding pattern: srcTex, sampler, glowTex, params, selMask, maskFlags.
 const COMPOSITE_BINDINGS: AdjBinding[] = [
@@ -28,20 +54,28 @@ type BloomQuality = "full" | "half" | "quarter";
 // Module-level texture cache for the bloom intermediate buffers.
 let texCache: {
   quality: BloomQuality;
+  format: GPUTextureFormat;
   extractTex: GPUTexture;
   blurATex: GPUTexture;
   blurBTex: GPUTexture;
 } | null = null;
 let usedThisFrame = false;
 
+/** Scratch buffers for extract + downsampled blur ping-pong. Allocated in
+ *  the doc format because the whole point of Bloom on HDR is to bloom
+ *  pixels > 1.0 — clamping the extract output to rgba8 [0,1] would erase
+ *  the highlights the effect is supposed to catch. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
   quality: BloomQuality,
+  format: GPUTextureFormat,
 ): { extractTex: GPUTexture; blurATex: GPUTexture; blurBTex: GPUTexture } {
   usedThisFrame = true;
-  if (texCache && texCache.quality === quality) return texCache;
+  if (texCache && texCache.quality === quality && texCache.format === format) {
+    return texCache;
+  }
   if (texCache) {
     destroyTrackedTexture(texCache.extractTex);
     destroyTrackedTexture(texCache.blurATex);
@@ -58,11 +92,12 @@ function ensureTextures(
   const make = (tw: number, th: number): GPUTexture =>
     createTrackedTexture(device, {
       size: { width: tw, height: th },
-      format: "rgba8unorm",
+      format,
       usage,
     });
   texCache = {
     quality,
+    format,
     extractTex: make(width, height),
     blurATex: make(bw, bh),
     blurBTex: make(bw, bh),
@@ -70,10 +105,10 @@ function ensureTextures(
   return texCache;
 }
 
-export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
+export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
   id: "bloom",
   label: "Bloom…",
-  menu: { root: "effects", submenu: "fx-glow" },
+  menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: {
     threshold: 0.5,
     strength: 0.5,
@@ -85,12 +120,9 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     return {
       kind: "bloom",
       layerId: layer.id,
-      threshold: layer.params.threshold,
-      strength: layer.params.strength,
-      spread: layer.params.spread,
-      quality: layer.params.quality,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -98,29 +130,32 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     const { runtime } = engine;
     const w = runtime.pixelWidth;
     const h = runtime.pixelHeight;
+    // Scratch is allocated in the doc format so HDR highlights (>1.0)
+    // survive the extract+blur ping-pong without being clamped.
     const { extractTex, blurATex, blurBTex } = ensureTextures(
       runtime.device,
       w,
       h,
-      entry.quality,
+      entry.params.quality,
+      format,
     );
 
     const scaleFactor =
-      entry.quality === "full" ? 1 : entry.quality === "half" ? 2 : 4;
-    const blurRadius = Math.max(1, Math.round(entry.spread / scaleFactor));
+      entry.params.quality === "full" ? 1 : entry.params.quality === "half" ? 2 : 4;
+    const blurRadius = Math.max(1, Math.round(entry.params.spread / scaleFactor));
 
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
 
-    // Pass 1: Extract — needs explicit BGL because srcTex may be rgba32float.
+    // Pass 1: Extract — target format matches the scratch (doc format).
     const extract = runtime.getRenderPipelineWithBGL(
       "bloom-extract",
       "fs_bloom_extract",
-      "rgba8unorm",
+      format,
       STD_BINDINGS,
     );
     const extractParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.threshold, 0, 0, 0]),
+      new Float32Array([entry.params.threshold, 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,
@@ -140,11 +175,11 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     let workingSrc = blurATex;
     let workingDst = blurBTex;
 
-    if (entry.quality !== "full") {
+    if (entry.params.quality !== "full") {
       const downsamplePipeline = runtime.getRenderPipelineAuto(
         "bloom-downsample",
         "fs_bloom_downsample",
-        "rgba8unorm",
+        format,
       );
       const dsParamsBuf = runtime.makeParamsBuf(
         new Uint32Array([scaleFactor, 0, 0, 0]),
@@ -171,12 +206,12 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     const boxH = runtime.getRenderPipelineAuto(
       "bloom-blur-h",
       "fs_bloom_blur_h",
-      "rgba8unorm",
+      format,
     );
     const boxV = runtime.getRenderPipelineAuto(
       "bloom-blur-v",
       "fs_bloom_blur_v",
-      "rgba8unorm",
+      format,
     );
     const blurParamsBuf = runtime.makeParamsBuf(
       new Uint32Array([blurRadius, 0, 0, 0]),
@@ -205,7 +240,7 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
     );
     const compPipeline = runtime.selectPipeline(compPair, format);
     const compParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.strength, 0, 0, 0]),
+      new Float32Array([entry.params.strength, 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,
@@ -243,6 +278,7 @@ export const BloomEffect: IPipelineEffect<BloomAdjustmentLayer, BloomOp> = {
   },
 
   Panel: BloomOptions,
+  icon: BloomIcon,
 };
 
 /** Exported so HalationEffect (and friends) can reuse the composite pipeline. */

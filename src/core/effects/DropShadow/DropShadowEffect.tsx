@@ -1,25 +1,85 @@
-import type { DropShadowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf, RGBAColor } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DropShadowOptions } from "./DropShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
-type DropShadowOp = Extract<AdjustmentRenderOp, { kind: "drop-shadow" }>;
+const DropShadowIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="7" height="7" rx="0.5" />
+    <rect
+      x="3.5"
+      y="3.5"
+      width="7"
+      height="7"
+      rx="0.5"
+      fill="currentColor"
+      fillOpacity="0.25"
+      strokeOpacity="0.4"
+    />
+  </svg>
+);
 
-let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
+
+export interface DropShadowParams {
+    /** Shadow color including alpha channel. r/g/b/a are 0–255. Default: { r:0, g:0, b:0, a:255 } */
+    color: RGBAColor;
+    /** Overall shadow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
+    opacity: number;
+    /** Horizontal offset in canvas pixels, −200 to +200. Default: 5 */
+    offsetX: number;
+    /** Vertical offset in canvas pixels, −200 to +200. Default: 5 */
+    offsetY: number;
+    /** Morphological dilation radius in pixels, 0–100. Default: 0 */
+    spread: number;
+    /** Gaussian blur radius in pixels, 0–100. Default: 10 */
+    softness: number;
+    /** How the shadow composites with layers beneath it. Default: 'multiply' */
+    blendMode: "normal" | "multiply" | "screen";
+    /** When true, the shadow is masked by the inverse of the source alpha. Default: true */
+    knockout: boolean;
+}
+
+export type DropShadowEffectLayer = EffectLayerOf<"drop-shadow", DropShadowParams>;
+
+type DropShadowOp = Extract<EffectRenderOp, { kind: "drop-shadow" }>;
+
+let texCache: {
+  tempA: GPUTexture;
+  tempB: GPUTexture;
+  format: GPUTextureFormat;
+} | null = null;
 let usedThisFrame = false;
 
+/** Scratch textures for the dilate+blur ping-pong. Allocated in the same
+ *  format as the doc-output texture so the entire pipeline runs at full
+ *  precision on f32 documents — no 8-bit precision loss in shadow falloff
+ *  on HDR content. Re-allocated when the doc switches color modes. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
+  format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
   usedThisFrame = true;
-  if (texCache) return texCache;
+  if (texCache && texCache.format === format) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.tempA);
+    destroyTrackedTexture(texCache.tempB);
+    texCache = null;
+  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
@@ -28,10 +88,10 @@ function ensureTextures(
   const make = (): GPUTexture =>
     createTrackedTexture(device, {
       size: { width, height },
-      format: "rgba8unorm",
+      format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make() };
+  texCache = { tempA: make(), tempB: make(), format };
   return texCache;
 }
 
@@ -68,27 +128,34 @@ export function encodeDropShadowPass(
   },
 ): void {
   const { device, pixelWidth: w, pixelHeight: h } = runtime;
-  const { tempA, tempB } = ensureTextures(device, w, h);
-
-  const dilateH = runtime.getComputePipeline(
+  // Scratch + every compute pipeline runs in the doc format. The shaders'
+  // `texture_storage_2d<rgba8unorm, …>` declarations get rewritten to the
+  // doc format on first compile (see `getComputePipelineForStorageFormat`).
+  const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+  const dilateH = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-dilate-h",
     "cs_shadow_dilate_h",
+    dstTex,
   );
-  const dilateV = runtime.getComputePipeline(
+  const dilateV = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-dilate-v",
     "cs_shadow_dilate_v",
+    dstTex,
   );
-  const blurH = runtime.getComputePipeline(
+  const blurH = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-blur-h",
     "cs_shadow_blur_h",
+    dstTex,
   );
-  const blurV = runtime.getComputePipeline(
+  const blurV = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-blur-v",
     "cs_shadow_blur_v",
+    dstTex,
   );
-  const composite = runtime.getComputePipeline(
+  const composite = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-composite",
     "cs_shadow_composite",
+    dstTex,
   );
 
   const spreadR = Math.round(args.spread);
@@ -228,7 +295,7 @@ export const dropShadowCache = {
 };
 
 export const DropShadowEffect: IPipelineEffect<
-  DropShadowAdjustmentLayer,
+  DropShadowEffectLayer,
   DropShadowOp
 > = {
   id: "drop-shadow",
@@ -246,6 +313,16 @@ export const DropShadowEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
+    return {
+      kind: "drop-shadow",
+      layerId: layer.id,
+      visible: layer.visible,
+      selMaskLayer: mask,
+      params: layer.params,
+    };
+  },
+
+  encode({ engine, encoder, srcTex, dstTex }, entry) {
     const {
       color,
       opacity,
@@ -255,10 +332,8 @@ export const DropShadowEffect: IPipelineEffect<
       softness,
       blendMode,
       knockout,
-    } = layer.params;
-    return {
-      kind: "drop-shadow",
-      layerId: layer.id,
+    } = entry.params;
+    encodeDropShadowPass(engine.runtime, encoder, srcTex, dstTex, {
       colorR: color.r / 255,
       colorG: color.g / 255,
       colorB: color.b / 255,
@@ -270,24 +345,6 @@ export const DropShadowEffect: IPipelineEffect<
       softness,
       blendMode,
       knockout,
-      visible: layer.visible,
-      selMaskLayer: mask,
-    };
-  },
-
-  encode({ engine, encoder, srcTex, dstTex }, entry) {
-    encodeDropShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: entry.colorR,
-      colorG: entry.colorG,
-      colorB: entry.colorB,
-      colorA: entry.colorA,
-      opacity: entry.opacity,
-      offsetX: entry.offsetX,
-      offsetY: entry.offsetY,
-      spread: entry.spread,
-      softness: entry.softness,
-      blendMode: entry.blendMode,
-      knockout: entry.knockout,
       selMaskLayer: entry.selMaskLayer,
     });
   },
@@ -296,4 +353,5 @@ export const DropShadowEffect: IPipelineEffect<
   onDestroy: dropShadowCache.onDestroy,
 
   Panel: DropShadowOptions,
+  icon: DropShadowIcon,
 };

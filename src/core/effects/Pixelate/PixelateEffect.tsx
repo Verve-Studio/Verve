@@ -1,17 +1,24 @@
 import React from "react";
-import type { PixelateAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { useAppContext } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
-type PixelateOp = Extract<AdjustmentRenderOp, { kind: "pixelate" }>;
+
+export interface PixelateParams {
+ blockSize: number
+}
+
+export type PixelateEffectLayer = EffectLayerOf<"pixelate", PixelateParams>;
+
+type PixelateOp = Extract<EffectRenderOp, { kind: "pixelate" }>;
 
 function PixelatePanel({
   layer,
   parentLayerName,
-}: PanelProps<PixelateAdjustmentLayer>): React.JSX.Element {
+}: PanelProps<PixelateEffectLayer>): React.JSX.Element {
   const { dispatch } = useAppContext();
   const { blockSize } = layer.params;
   const up = (v: number): void =>
@@ -69,19 +76,19 @@ function PixelatePanel({
   );
 }
 
-export const PixelateEffect: IPipelineEffect<PixelateAdjustmentLayer, PixelateOp> = {
+export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> = {
   id: "pixelate",
   label: "Pixelate…",
-  menu: { root: "filters", submenu: "pixelate" },
+  menu: { root: "filters", submenu: "stylize" },
   defaultParams: { blockSize: 10 },
 
   buildPlanEntry(layer, { mask }) {
     return {
       kind: "pixelate",
       layerId: layer.id,
-      blockSize: layer.params.blockSize,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -89,7 +96,7 @@ export const PixelateEffect: IPipelineEffect<PixelateAdjustmentLayer, PixelateOp
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-pixelate", "fs_pixelate");
     const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.blockSize, 0, 0, 0]),
+      new Uint32Array([entry.params.blockSize, 0, 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

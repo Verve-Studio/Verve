@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
 import { registerSamHandlers } from './sam'
@@ -16,7 +16,7 @@ export function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'avif', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -33,13 +33,74 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return canceled ? null : filePaths[0]
+  })
+
+  // ── LUT pickers ────────────────────────────────────────────────────────
+  // Renderer-side `<input type=file>` pickers lose user-activation across
+  // menu animations (Chromium error: "File chooser dialog can only be
+  // shown with a user activation"). Drive these from the main process so
+  // the OS dialog opens reliably no matter how we got here.
+
+  ipcMain.handle('lut:pickCubeFiles', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Load LUT files',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Cube LUT', extensions: ['cube'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+    if (canceled || filePaths.length === 0) return null
+    const out: Array<{ name: string; text: string }> = []
+    for (const p of filePaths) {
+      try {
+        out.push({ name: basename(p), text: await readFile(p, 'utf-8') })
+      } catch (err) {
+        console.warn('[lut:pickCubeFiles] failed to read', p, err)
+      }
+    }
+    return out
+  })
+
+  ipcMain.handle('dialog:saveJson', async (_event, defaultName?: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return canceled ? null : filePath
+  })
+
+  ipcMain.handle('file:writeJson', async (_event, path: string, data: string) => {
+    await writeFile(path, data, 'utf-8')
+  })
+
+  ipcMain.handle('dialog:openImagesMulti', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return canceled ? null : filePaths
+  })
+
   ipcMain.handle('dialog:openverve', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'All Supported',       extensions: ['verve', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'All Supported',       extensions: ['verve', 'psd', 'png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'Verve Document',  extensions: ['verve'] },
-        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tga', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
+        { name: 'Photoshop Document',  extensions: ['psd'] },
+        { name: 'Images',              extensions: ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'tga', 'pcx', 'tif', 'tiff', 'exr', 'hdr', 'dds'] },
         { name: 'All Files',           extensions: ['*'] },
       ]
     })
@@ -72,6 +133,7 @@ export function registerIpcHandlers(): void {
       ext === 'exr'    ? [{ name: 'OpenEXR Image',     extensions: ['exr']         }] :
       ext === 'hdr'    ? [{ name: 'Radiance HDR',      extensions: ['hdr']         }] :
       ext === 'dds'    ? [{ name: 'DDS Texture',        extensions: ['dds']         }] :
+      ext === 'psd'    ? [{ name: 'Photoshop Document', extensions: ['psd']         }] :
                          [{ name: 'JPEG Image',        extensions: ['jpg', 'jpeg'] }]
     const { canceled, filePath } = await dialog.showSaveDialog({ filters })
     return canceled ? null : filePath

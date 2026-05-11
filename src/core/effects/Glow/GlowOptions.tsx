@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { GlowAdjustmentLayer } from "@/types";
+import type { GlowEffectLayer } from "@/core/effects/Glow/GlowEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./GlowOptions.module.scss";
@@ -8,7 +8,7 @@ import styles from "./GlowOptions.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface GlowOptionsProps {
-  layer: GlowAdjustmentLayer;
+  layer: GlowEffectLayer;
   parentLayerName: string;
 }
 

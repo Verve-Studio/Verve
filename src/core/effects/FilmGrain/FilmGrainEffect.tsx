@@ -1,12 +1,22 @@
-import type { FilmGrainAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { FilmGrainPanel } from "./FilmGrainPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type FilmGrainOp = Extract<AdjustmentRenderOp, { kind: "film-grain" }>;
+
+export interface FilmGrainParams {
+    grainSize: number;
+    intensity: number;
+    roughness: number;
+    seed: number;
+}
+
+export type FilmGrainEffectLayer = EffectLayerOf<"film-grain", FilmGrainParams>;
+
+type FilmGrainOp = Extract<EffectRenderOp, { kind: "film-grain" }>;
 
 export const FilmGrainEffect: IPipelineEffect<
-  FilmGrainAdjustmentLayer,
+  FilmGrainEffectLayer,
   FilmGrainOp
 > = {
   id: "film-grain",
@@ -15,16 +25,12 @@ export const FilmGrainEffect: IPipelineEffect<
   defaultParams: { grainSize: 1, intensity: 25, roughness: 50, seed: 0 },
 
   buildPlanEntry(layer, { mask }) {
-    const { grainSize, intensity, roughness, seed } = layer.params;
     return {
       kind: "film-grain",
       layerId: layer.id,
-      grainSize,
-      intensity,
-      roughness,
-      seed,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -32,7 +38,7 @@ export const FilmGrainEffect: IPipelineEffect<
     const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
-    const { grainSize, intensity, roughness, seed } = entry;
+    const { grainSize, intensity, roughness, seed } = entry.params;
     const blurRadius =
       grainSize > 1 ? Math.min(5, Math.floor(grainSize / 10)) : 0;
 

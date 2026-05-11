@@ -1,12 +1,14 @@
 import type { AppAction } from "@/core/store/AppContext";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import type { AppState } from "@/types";
 import { computeSourceMask } from "@/utils/computeSourceMask";
+import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
 import { extractErrorMessage } from "@/utils/userFeedback";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { getPixelOps, inpaintRegion } from "@/wasm";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useRef } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,8 +52,8 @@ export function useContentAwareFill({
       const handle = canvasHandleRef.current;
 
       // Guard: selection must exist
-      if (!selectionStore.hasSelection()) return;
-      const mask = selectionStore.mask!;
+      if (!activeScope().selection.hasSelection()) return;
+      const mask = activeScope().selection.mask!;
 
       // Guard: selection bounding box must be at least 4×4
       const { canvas, activeLayerId } = stateRef.current;
@@ -147,9 +149,27 @@ export function useContentAwareFill({
         // uses the correct label instead of 'New Layer'
         pendingLayerLabelRef.current = label;
 
-        // Prepare GPU layer (before dispatching so the sync effect is a no-op)
+        // Prepare GPU layer (before dispatching so the sync effect is a no-op).
+        // The inpainting algorithm always returns RGBA8 bytes; in an f32 doc
+        // we convert to Float32 (using the codebase's naive /255 convention,
+        // matching `convertRgba8ToF32`) and create the layer with the right
+        // format so the float buffer isn't value-clamped into a Uint8Array.
         const newLayerId = `layer-${Date.now()}`;
-        handle.prepareNewLayer(newLayerId, label, fillLayerData);
+        const docFormat = stateRef.current.pixelFormat;
+        const layerData =
+          docFormat === "rgba32f"
+            ? convertRgba8ToF32(fillLayerData)
+            : fillLayerData;
+        handle.prepareNewLayer(
+          newLayerId,
+          label,
+          layerData,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          docFormat,
+        );
 
         // Content-Aware Delete: erase BEFORE REORDER_LAYERS dispatch so that the
         // auto-history-capture triggered by layer count change records the fully

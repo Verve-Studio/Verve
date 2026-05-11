@@ -1,18 +1,44 @@
-import type { BlackAndWhiteAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type BlackAndWhiteOp = Extract<AdjustmentRenderOp, { kind: "black-and-white" }>;
+const BlackAndWhiteIcon = (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+    <path d="M6 1.5 A4.5 4.5 0 0 0 6 10.5 Z" fill="currentColor" />
+    <circle
+      cx="6"
+      cy="6"
+      r="4.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+  </svg>
+);
+
+
+export interface BlackAndWhiteParams {
+    reds: number;
+    yellows: number;
+    greens: number;
+    cyans: number;
+    blues: number;
+    magentas: number;
+}
+
+export type BlackAndWhiteEffectLayer = EffectLayerOf<"black-and-white", BlackAndWhiteParams>;
+
+type BlackAndWhiteOp = Extract<EffectRenderOp, { kind: "black-and-white" }>;
 
 export const BlackAndWhiteEffect: IPipelineEffect<
-  BlackAndWhiteAdjustmentLayer,
+  BlackAndWhiteEffectLayer,
   BlackAndWhiteOp
 > = {
   id: "black-and-white",
   label: "Black and White…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {
     reds: 40,
     yellows: 60,
@@ -56,4 +82,5 @@ export const BlackAndWhiteEffect: IPipelineEffect<
   },
 
   Panel: BlackAndWhitePanel,
+  icon: BlackAndWhiteIcon,
 };

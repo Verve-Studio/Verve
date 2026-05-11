@@ -1,20 +1,45 @@
-import type { ColorInvertAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InvertPanel } from "./InvertPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import type { AdjBinding } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
+
+const ColorInvertIcon = (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+    <path d="M6 1.5 A4.5 4.5 0 0 1 6 10.5 Z" fill="currentColor" />
+    <path
+      d="M6 1.5 A4.5 4.5 0 0 0 6 10.5 Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+    <circle
+      cx="6"
+      cy="6"
+      r="4.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+  </svg>
+);
+
+
+export type ColorInvertParams = Record<never, never>;
+
+export type ColorInvertEffectLayer = EffectLayerOf<"color-invert", ColorInvertParams>;
 
 const INVERT_BINDINGS: AdjBinding[] = ["tex", "sampler", "tex", "uniform"];
 
-type ColorInvertOp = Extract<AdjustmentRenderOp, { kind: "color-invert" }>;
+type ColorInvertOp = Extract<EffectRenderOp, { kind: "color-invert" }>;
 
 export const ColorInvertEffect: IPipelineEffect<
-  ColorInvertAdjustmentLayer,
+  ColorInvertEffectLayer,
   ColorInvertOp
 > = {
   id: "color-invert",
   label: "Invert",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {},
 
   buildPlanEntry(layer, { mask }) {
@@ -23,6 +48,7 @@ export const ColorInvertEffect: IPipelineEffect<
       layerId: layer.id,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -45,4 +71,5 @@ export const ColorInvertEffect: IPipelineEffect<
   },
 
   Panel: InvertPanel,
+  icon: ColorInvertIcon,
 };

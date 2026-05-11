@@ -110,6 +110,47 @@
   gap: 0;
 }
 
+// ─── Per-layer export list ───────────────────────────────────────────────────
+
+.perLayerCheckbox {
+  margin: 0;
+  // The fieldLabel column is right-aligned with vertical-centred text;
+  // the input ships with implicit margins on some platforms — strip
+  // them so the box sits exactly on the row's baseline like every
+  // other control in this dialog.
+  vertical-align: middle;
+}
+
+.perLayerList {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.perLayerItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text;
+  cursor: pointer;
+}
+
+.perLayerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // ─── Slider row ───────────────────────────────────────────────────────────────
 
 .sliderGroup {

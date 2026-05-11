@@ -2,11 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   LayerState,
   BlendMode,
+  LayerColorSpace,
   MaskLayerState,
-  AdjustmentLayerState,
   GroupLayerState,
   CompositeLayerState,
 } from "@/types";
+import {
+  ALL_LAYER_COLOR_SPACES,
+  LAYER_COLOR_SPACE_LABEL,
+} from "@/core/lut/layerColorSpace";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isCompositeLayer, isContainerLayer } from "@/types";
 import { useAppContext } from "@/core/store/AppContext";
 import {
@@ -342,6 +347,12 @@ export function Layers({
   const onLayerBlendChange = (id: string, blendMode: BlendMode): void => {
     dispatch({ type: "SET_LAYER_BLEND", payload: { id, blendMode } });
   };
+  const onLayerColorSpaceChange = (
+    id: string,
+    colorSpace: LayerColorSpace,
+  ): void => {
+    dispatch({ type: "SET_LAYER_COLOR_SPACE", payload: { id, colorSpace } });
+  };
   const onLayerRename = (id: string, name: string): void => {
     dispatch({ type: "RENAME_LAYER", payload: { id, name } });
   };
@@ -447,7 +458,7 @@ export function Layers({
           (layer.type === "mask" || layer.type === "adjustment")
         ) {
           const parent = layersById.get(
-            (layer as MaskLayerState | AdjustmentLayerState).parentId,
+            (layer as MaskLayerState | EffectLayerState).parentId,
           );
           if (parent && !isGroupLayer(parent)) continue;
         }
@@ -456,7 +467,7 @@ export function Layers({
             (l) =>
               "type" in l &&
               (l.type === "mask" || l.type === "adjustment") &&
-              (l as MaskLayerState | AdjustmentLayerState).parentId ===
+              (l as MaskLayerState | EffectLayerState).parentId ===
                 layer.id,
           );
           result.push({
@@ -488,7 +499,7 @@ export function Layers({
             (l) =>
               "type" in l &&
               (l.type === "mask" || l.type === "adjustment") &&
-              (l as MaskLayerState | AdjustmentLayerState).parentId ===
+              (l as MaskLayerState | EffectLayerState).parentId ===
                 layer.id,
           );
           const isCollapsed = collapsedPixelLayers.has(layer.id);
@@ -547,7 +558,7 @@ export function Layers({
           if (
             "type" in l &&
             (l.type === "mask" || l.type === "adjustment") &&
-            (l as MaskLayerState | AdjustmentLayerState).parentId === group.id
+            (l as MaskLayerState | EffectLayerState).parentId === group.id
           ) {
             visibleIds.add(l.id);
           }
@@ -569,7 +580,7 @@ export function Layers({
           if (
             "type" in l &&
             (l.type === "mask" || l.type === "adjustment") &&
-            (l as MaskLayerState | AdjustmentLayerState).parentId ===
+            (l as MaskLayerState | EffectLayerState).parentId ===
               group.id &&
             nameMatchIds.has(l.id)
           )
@@ -600,7 +611,7 @@ export function Layers({
         "type" in layer &&
         (layer.type === "mask" || layer.type === "adjustment")
       ) {
-        const parentId = (layer as MaskLayerState | AdjustmentLayerState)
+        const parentId = (layer as MaskLayerState | EffectLayerState)
           .parentId;
         if (visibleIds.has(parentId)) visibleIds.add(layer.id);
       }
@@ -622,7 +633,7 @@ export function Layers({
       "type" in activeLayer_ &&
       (activeLayer_.type === "mask" || activeLayer_.type === "adjustment")
     ) {
-      const parentId = (activeLayer_ as MaskLayerState | AdjustmentLayerState)
+      const parentId = (activeLayer_ as MaskLayerState | EffectLayerState)
         .parentId;
       if (collapsedPixelLayers.has(parentId)) return parentId;
     }
@@ -862,7 +873,7 @@ export function Layers({
         (r) =>
           "type" in r.layer &&
           (r.layer.type === "adjustment" || r.layer.type === "mask") &&
-          (r.layer as AdjustmentLayerState).parentId === parentId,
+          (r.layer as EffectLayerState).parentId === parentId,
       )
       .map((r) => r.layer.id);
     if (!siblings.includes(srcId)) return;
@@ -1066,6 +1077,35 @@ export function Layers({
       ].join(" ")}
     >
       {/* ── Blend mode + Opacity ──────────────────────────────────────── */}
+      {/* ── Color Space (rgba32f docs only, pixel layers only) ──────── */}
+      {state.pixelFormat === "rgba32f" &&
+        activeLayer &&
+        !("type" in activeLayer) && (
+          <div className={styles.blendRow}>
+            <label className={styles.numLabel} title="Input colour space — drives the IDT decode pre-pass">
+              Color Space:
+            </label>
+            <select
+              className={styles.blendSelect}
+              value={
+                (activeLayer as { colorSpace?: LayerColorSpace }).colorSpace ??
+                "auto"
+              }
+              onChange={(e) =>
+                onLayerColorSpaceChange(
+                  activeLayer.id,
+                  e.target.value as LayerColorSpace,
+                )
+              }
+            >
+              {ALL_LAYER_COLOR_SPACES.map((s) => (
+                <option key={s} value={s}>
+                  {LAYER_COLOR_SPACE_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       <div className={styles.blendRow}>
         <select
           className={styles.blendSelect}
@@ -1241,7 +1281,7 @@ export function Layers({
 
             // Parent id for adjustment reorder drops
             const adjParentId = isChild
-              ? (layer as AdjustmentLayerState).parentId
+              ? (layer as EffectLayerState).parentId
               : null;
 
             return (

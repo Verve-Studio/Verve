@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ReduceColorsAdjustmentLayer, RGBAColor } from "@/types";
+import type { RGBAColor } from "@/types";
+import type { ReduceColorsEffectLayer } from "@/core/effects/ReduceColors/ReduceColorsEffect";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { quantize } from "@/wasm";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -9,7 +10,7 @@ import styles from "./ReduceColorsPanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ReduceColorsPanelProps {
-  layer: ReduceColorsAdjustmentLayer;
+  layer: ReduceColorsEffectLayer;
   parentLayerName: string;
   canvasHandleRef?: { readonly current: CanvasHandle | null };
 }

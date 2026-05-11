@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BevelAdjustmentLayer } from "@/types";
+import type { BevelEffectLayer } from "@/core/effects/Bevel/BevelEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BevelOptions.module.scss";
 
 interface BevelOptionsProps {
-  layer: BevelAdjustmentLayer;
+  layer: BevelEffectLayer;
   parentLayerName: string;
 }
 

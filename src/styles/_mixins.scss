@@ -124,6 +124,17 @@
   }
 }
 
+@mixin ps-checkbox {
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-sm;
+  
+  &:focus {
+    outline: 1px solid vars.$color-focus;
+    outline-offset: -1px;
+  }
+}
+
 @mixin ps-dropdown {
   @include ps-input;
   appearance: none;

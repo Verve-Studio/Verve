@@ -1,3 +1,15 @@
+import type { CurvesEffectLayer } from "@/core/effects/Curves/CurvesEffect";
+import { useCurvesHistogram } from "@/core/services/useCurvesHistogram";
+import {
+  getAdjustmentClipboardData,
+  setAdjustmentClipboardData,
+} from "@/core/store/adjustmentClipboardStore";
+
+import { useAppContext } from "@/core/store/AppContext";
+import type { CurvesChannel, CurvesControlPoint } from "@/types";
+import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
+import { CurvesGraph } from "@/ux/widgets/CurvesGraph/CurvesGraph";
+import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import React, {
   useCallback,
   useEffect,
@@ -5,38 +17,23 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useAppContext } from "@/core/store/AppContext";
-import type {
-  CurvesAdjustmentLayer,
-  CurvesChannel,
-  CurvesControlPoint,
-} from "@/types";
-import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { useCurvesHistogram } from "@/core/services/useCurvesHistogram";
 import {
   cloneCurvesParams,
+  makeIdentityCurve,
   nextPointId,
   validateCurvesParams,
   withDirtyPresetRef,
-  makeIdentityCurve,
-} from "@/core/operations/adjustments/curves";
+} from "./curves";
+import styles from "./CurvesPanel.module.scss";
 import {
   BUILTIN_CURVES_PRESETS,
   clonePresetChannels,
-} from "@/core/operations/adjustments/curvesPresets";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
-import {
-  getAdjustmentClipboardData,
-  setAdjustmentClipboardData,
-} from "@/core/store/adjustmentClipboardStore";
-import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
-import { CurvesGraph } from "@/ux/widgets/CurvesGraph/CurvesGraph";
-import styles from "./CurvesPanel.module.scss";
-
+} from "./curvesPresets";
+import { activeScope } from "@/core/store/scope";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CurvesPanelProps {
-  layer: CurvesAdjustmentLayer;
+  layer: CurvesEffectLayer;
   parentLayerName: string;
   canvasHandleRef?: { readonly current: CanvasHandle | null };
 }
@@ -90,7 +87,7 @@ export function CurvesPanel({
           if (ls.id === layer.id) {
             return `${ls.id}:self:${ls.visible ? 1 : 0}:${ls.parentId}`;
           }
-          return `${ls.id}:${ls.adjustmentType}:${ls.visible ? 1 : 0}:${ls.parentId}:${JSON.stringify(ls.params)}`;
+          return `${ls.id}:${ls.effectType}:${ls.visible ? 1 : 0}:${ls.parentId}:${JSON.stringify(ls.params)}`;
         }
         if ("type" in ls && ls.type === "mask") {
           return `${ls.id}:mask:${ls.visible ? 1 : 0}:${ls.parentId}`;
@@ -125,7 +122,7 @@ export function CurvesPanel({
   // Preview store integration
   useEffect(() => {
     return () => {
-      adjustmentPreviewStore.clear(layer.id);
+      activeScope().adjustmentPreview.clear(layer.id);
     };
   }, [layer.id]);
 
@@ -387,7 +384,7 @@ export function CurvesPanel({
 
   const handlePreviewToggle = (enabled: boolean): void => {
     setPreviewEnabled(enabled);
-    adjustmentPreviewStore.setBypassed(layer.id, !enabled);
+    activeScope().adjustmentPreview.setBypassed(layer.id, !enabled);
   };
 
   // ─── Visual aids ────────────────────────────────────────────────────────────

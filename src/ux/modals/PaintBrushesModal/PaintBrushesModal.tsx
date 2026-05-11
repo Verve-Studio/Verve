@@ -7,7 +7,7 @@ import {
   serializeBrushFile,
   parseBrushFile,
 } from "@/core/store/brushStore";
-import { brushManagerStore } from "@/core/store/brushManagerStore";
+import { brushManagerStore } from "@/core/tools/Brush/brushManagerStore";
 import { DialogButton } from "@/ux/widgets/DialogButton/DialogButton";
 import styles from "./PaintBrushesModal.module.scss";
 

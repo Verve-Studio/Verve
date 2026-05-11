@@ -1,6 +1,6 @@
-import { cropStore } from "@/core/store/cropStore";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { useEffect } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,8 +81,8 @@ export function useKeyboardShortcuts({
       )
         return;
       if (e.key === "Escape") {
-        selectionStore.clear();
-        cropStore.clear();
+        activeScope().selection.clear();
+        activeScope().crop.clear();
         return;
       }
       if ((e.key === "Delete" || e.key === "Backspace") && e.shiftKey) {

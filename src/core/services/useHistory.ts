@@ -1,6 +1,6 @@
 import type { AppAction } from "@/core/store/AppContext";
 import type { ClearHistoryOptions } from "@/core/store/historyStore";
-import { historyStore } from "@/core/store/historyStore";
+
 import { f32TransferStore } from "@/core/store/layerDataTransfer";
 import { preferencesStore } from "@/core/store/preferencesStore";
 import type { TabRecord } from "@/core/store/tabTypes";
@@ -8,6 +8,7 @@ import type { AppState, RGBAColor } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export function useHistory({
       const adjustmentMasks = handle.captureAllAdjustmentMasks();
       const contentVersions = handle.captureAllLayerContentVersions();
 
-      const prev = historyStore.entries[historyStore.currentIndex];
+      const prev = activeScope().history.entries[activeScope().history.currentIndex];
       const layerPixels = new Map<string, Uint8Array | Float32Array>();
       for (const [id, liveBuf] of liveBufs) {
         const prevVer = prev?.layerContentVersions?.get(id);
@@ -101,7 +102,7 @@ export function useHistory({
       }
 
       const s = stateRef.current;
-      historyStore.push({
+      activeScope().history.push({
         id: `hist-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         label,
         timestamp: Date.now(),
@@ -125,8 +126,8 @@ export function useHistory({
   // and the preview only partially reflects the snapshot (visibility, blend
   // mode, layer add/delete, adjustment params all stay on current values).
   useEffect(() => {
-    historyStore.onPreview = (index: number): void => {
-      const entry = historyStore.entries[index];
+    activeScope().history.onPreview = (index: number): void => {
+      const entry = activeScope().history.entries[index];
       if (!entry) return;
       if (
         entry.canvasWidth !== stateRef.current.canvas.width ||
@@ -155,14 +156,14 @@ export function useHistory({
       }, 200);
     };
     return () => {
-      historyStore.onPreview = null;
+      activeScope().history.onPreview = null;
     };
   }, [canvasHandleRef, stateRef, dispatch]);
 
   // Jump-to: full restore — may trigger canvas remount for dimension changes
   useEffect(() => {
-    historyStore.onJumpTo = (index: number): void => {
-      const entry = historyStore.entries[index];
+    activeScope().history.onJumpTo = (index: number): void => {
+      const entry = activeScope().history.entries[index];
       if (!entry) return;
       isRestoringRef.current = true;
       const currentW = stateRef.current.canvas.width;
@@ -280,13 +281,13 @@ export function useHistory({
         }
       }
 
-      historyStore.setCurrent(index);
+      activeScope().history.setCurrent(index);
       setTimeout(() => {
         isRestoringRef.current = false;
       }, 200);
     };
     return () => {
-      historyStore.onJumpTo = null;
+      activeScope().history.onJumpTo = null;
     };
   }, [
     dispatch,
@@ -299,12 +300,12 @@ export function useHistory({
 
   // Register onClear: capture current state as 'History Cleared' entry
   useEffect(() => {
-    historyStore.onClear = (options?: ClearHistoryOptions): void => {
+    activeScope().history.onClear = (options?: ClearHistoryOptions): void => {
       if (options?.recaptureSnapshot === false) return;
       captureHistory("History Cleared");
     };
     return () => {
-      historyStore.onClear = null;
+      activeScope().history.onClear = null;
     };
   }, [captureHistory]);
 
@@ -312,9 +313,9 @@ export function useHistory({
   // mount and re-pushes whenever the user changes it in Preferences →
   // Memory; the store immediately evicts oldest entries to fit.
   useEffect(() => {
-    historyStore.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes);
+    activeScope().history.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes);
     return preferencesStore.subscribe(() => {
-      historyStore.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes);
+      activeScope().history.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes);
     });
   }, []);
 

@@ -1,12 +1,14 @@
 import type { AppAction } from "@/core/store/AppContext";
 import type { ClipboardData } from "@/core/store/clipboardStore";
 import { clipboardStore } from "@/core/store/clipboardStore";
-import { selectionStore } from "@/core/store/selectionStore";
+
 import { makeTabId } from "@/core/store/tabTypes";
+import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,11 +167,10 @@ export function useClipboard({
     const { width, height } = state.canvas;
 
     // Apply selection mask: scale alpha by selection strength (supports feathered edges)
-    if (selectionStore.mask) {
-      for (let i = 0; i < selectionStore.mask.length; i++) {
-        pixels[i * 4 + 3] = Math.round(
-          (pixels[i * 4 + 3] * selectionStore.mask[i]) / 255,
-        );
+    const mask = activeScope().selection.mask;
+    if (mask) {
+      for (let i = 0; i < mask.length; i++) {
+        pixels[i * 4 + 3] = Math.round((pixels[i * 4 + 3] * mask[i]) / 255);
       }
     }
 
@@ -184,7 +185,7 @@ export function useClipboard({
     if (layerMeta && "type" in layerMeta) return;
     handleCopy();
     const totalPixels = state.canvas.width * state.canvas.height;
-    const mask = selectionStore.mask ?? new Uint8Array(totalPixels).fill(255);
+    const mask = activeScope().selection.mask ?? new Uint8Array(totalPixels).fill(255);
     canvasHandleRef.current?.clearLayerPixels(activeId, mask);
     captureHistory("Cut");
   }, [
@@ -203,7 +204,7 @@ export function useClipboard({
     const layerMeta = state.layers.find((l) => l.id === activeId);
     if (layerMeta && "type" in layerMeta) return;
     const totalPixels = state.canvas.width * state.canvas.height;
-    const mask = selectionStore.mask ?? new Uint8Array(totalPixels).fill(255);
+    const mask = activeScope().selection.mask ?? new Uint8Array(totalPixels).fill(255);
     canvasHandleRef.current?.clearLayerPixels(activeId, mask);
     captureHistory("Delete");
   }, [
@@ -262,14 +263,21 @@ export function useClipboard({
         offsetY,
       } = clipData;
       const newId = makeTabId();
+      // Clipboard data is always RGBA8 bytes. In an f32 doc convert to
+      // Float32 (matching the codebase's `convertRgba8ToF32` convention)
+      // and pass the matching format so the layer is allocated as f32.
+      const docFormat = state.pixelFormat;
+      const pasteData =
+        docFormat === "rgba32f" ? convertRgba8ToF32(srcData) : srcData;
       canvasHandleRef.current?.prepareNewLayer(
         newId,
         "Paste",
-        srcData,
+        pasteData,
         srcW,
         srcH,
         offsetX,
         offsetY,
+        docFormat,
       );
       pendingLayerLabelRef.current = "Paste";
       dispatch({
@@ -306,8 +314,9 @@ export function useClipboard({
   }, [state.canvas, canvasHandleRef]);
 
   const handlePasteInto = useCallback((): void => {
-    if (!selectionStore.mask) return; // no-op without an active selection
-    const selMask = selectionStore.mask.slice(); // snapshot before async
+    const sourceMask = activeScope().selection.mask;
+    if (!sourceMask) return; // no-op without an active selection
+    const selMask = sourceMask.slice(); // snapshot before async
     void (async () => {
       const { width: dstW, height: dstH } = state.canvas;
 
@@ -358,14 +367,20 @@ export function useClipboard({
       const newId = makeTabId();
       const maskId = makeTabId();
 
+      // Same Uint8 → Float32 conversion as the regular Paste path so the
+      // pasted layer lands correctly in an f32 document.
+      const docFormat = state.pixelFormat;
+      const pasteData =
+        docFormat === "rgba32f" ? convertRgba8ToF32(srcData) : srcData;
       canvasHandleRef.current?.prepareNewLayer(
         newId,
         "Paste Into",
-        srcData,
+        pasteData,
         srcW,
         srcH,
         pasteX,
         pasteY,
+        docFormat,
       );
       canvasHandleRef.current?.prepareMaskLayer(maskId, "Layer Mask", selMask);
 

@@ -18,9 +18,19 @@
   align-items: stretch;
 }
 
+// CSS-pinned dimensions so the DPR-aware `fitCanvasToDisplay` can resize
+// the backing buffer (`canvas.width` / `canvas.height` attributes) without
+// also changing the canvas's *intrinsic* layout size. Without the explicit
+// `height: 120px`, the canvas's height attribute is the intrinsic size,
+// `fitCanvasToDisplay` multiplies it by DPR, layout reflows to the new
+// intrinsic, ResizeObserver fires, `fitCanvasToDisplay` multiplies again,
+// and the canvas grows by `DPR×` each frame until Chrome refuses the
+// allocation and renders a broken-image placeholder.
+
 .gradCanvas {
   flex: 1;
   display: block;
+  height: 120px;
   cursor: crosshair;
   border-radius: vars.$radius-sm;
   min-width: 0;
@@ -28,6 +38,8 @@
 
 .hueCanvas {
   display: block;
+  width: 14px;
+  height: 120px;
   cursor: ns-resize;
   border-radius: vars.$radius-sm;
   flex-shrink: 0;

@@ -17,11 +17,30 @@ import type {
   PixelOpsFactory,
   CurvesHistogramResult,
 } from "./types";
+import { syncIfGrew } from "./wasmHeapStorage";
 
 // ─── Module singleton ─────────────────────────────────────────────────────────
 
 let _module: PixelOpsModule | null = null;
 let _initPromise: Promise<PixelOpsModule> | null = null;
+
+/**
+ * Synchronous accessor — returns the cached module if it's already loaded,
+ * `null` otherwise. Lets sync hot paths (brush stamp engine) use WASM
+ * opportunistically and fall back to JS until the async load completes.
+ * Pair with `kickoffPixelOpsLoad()` at app startup so the cache is warm
+ * before the first paint.
+ */
+export function getPixelOpsSync(): PixelOpsModule | null {
+  return _module;
+}
+
+/** Fire-and-forget the WASM load so subsequent `getPixelOpsSync` calls
+ *  succeed. Safe to call multiple times — the underlying loader is
+ *  cached. Errors are swallowed (sync callers handle null gracefully). */
+export function kickoffPixelOpsLoad(): void {
+  void getPixelOps().catch(() => {});
+}
 
 /** Initialise and return the WASM module (idempotent, cached after first call). */
 export async function getPixelOps(): Promise<PixelOpsModule> {
@@ -41,10 +60,114 @@ export async function getPixelOps(): Promise<PixelOpsModule> {
       .default as string;
 
     _module = await factory({ locateFile: () => wasmUrl });
+    installWasm64Wrappers(_module);
     return _module;
   })();
 
   return _initPromise;
+}
+
+// ─── wasm64 boundary ──────────────────────────────────────────────────────────
+//
+// The WASM module is compiled with `-sMEMORY64=2` (wasm64) so the heap can
+// grow past the wasm32 4 GB cap (we target 16 GB max). Under wasm64, the
+// JS↔WASM boundary uses BigInt for every i64-typed value — that's every
+// pointer (`void*`, `uint8_t*`, …) plus `size_t` (so `_malloc(size)` takes
+// a BigInt and returns a BigInt).
+//
+// The rest of the TS code (brushStamp.ts, wasmHeapStorage.ts, all the
+// operations below, layer.wasmPtr on GpuLayer, …) treats pointers as plain
+// `number`. We keep that invariant by wrapping every export at module-init:
+// the wrapper converts Number→BigInt on the way in for pointer args, and
+// BigInt→Number on the way out for pointer returns. Number is safe because
+// 16 GB = 2^34 fits well inside Number.MAX_SAFE_INTEGER (2^53).
+//
+// Anything that needs the WASM heap byte-offset of a typed-array view stays
+// Number-side — typed-array constructors and HEAPU8/HEAPF32.set() accept
+// Number offsets up to the buffer length (16 GB is well below 2^53 too).
+
+/** Wrap an export so the indexes in `ptrArgs` are converted Number→BigInt
+ *  before the call, and the return value is converted BigInt→Number when
+ *  `ptrReturn` is true. `BigInt(undefined)` throws — coerce missing args to
+ *  0 defensively (matches the C++ side's null-ptr semantics). */
+function wrapPtrFn<F extends (...args: never[]) => unknown>(
+  fn: F,
+  ptrArgs: readonly number[],
+  ptrReturn: boolean,
+): F {
+  const raw = fn as unknown as (...a: unknown[]) => unknown;
+  return ((...args: unknown[]) => {
+    for (const i of ptrArgs) {
+      const v = args[i];
+      args[i] = typeof v === "bigint" ? v : BigInt((v as number | undefined) ?? 0);
+    }
+    const r = raw(...args);
+    return ptrReturn ? Number(r as bigint) : r;
+  }) as unknown as F;
+}
+
+/** Install Number↔BigInt-converting wrappers around every export that
+ *  takes or returns an i64 (pointer or size_t). Called once, right after
+ *  the Emscripten factory resolves. */
+function installWasm64Wrappers(m: PixelOpsModule): void {
+  // _malloc: size_t arg + ptr return are both i64. Also triggers
+  // `syncIfGrew` so any allocation that grew the heap rebinds the
+  // typed-array views tracked by `wasmHeapStorage`. Without this, views
+  // handed out by `allocWasmU8/F32` become detached and the next `.set()`
+  // throws "detached ArrayBuffer".
+  const origMalloc = m._malloc;
+  m._malloc = ((size: number): number => {
+    const ptr = Number((origMalloc as unknown as (s: bigint) => bigint).call(m, BigInt(size)));
+    syncIfGrew(m);
+    return ptr;
+  }) as typeof m._malloc;
+
+  m._free = wrapPtrFn(m._free, [0], false);
+
+  m._pixelops_flood_fill = wrapPtrFn(m._pixelops_flood_fill, [0], false);
+  m._pixelops_flood_fill_f32 = wrapPtrFn(m._pixelops_flood_fill_f32, [0], false);
+  m._pixelops_convolve = wrapPtrFn(m._pixelops_convolve, [0, 1, 4], false);
+  m._pixelops_resize_bilinear = wrapPtrFn(m._pixelops_resize_bilinear, [0, 3], false);
+  m._pixelops_resize_nearest = wrapPtrFn(m._pixelops_resize_nearest, [0, 3], false);
+  m._pixelops_dither_bayer = wrapPtrFn(m._pixelops_dither_bayer, [0], false);
+  m._pixelops_quantize = wrapPtrFn(m._pixelops_quantize, [0, 2], false);
+  m._pixelops_curves_histogram = wrapPtrFn(m._pixelops_curves_histogram, [0, 3], true);
+  m._pixelops_affine_transform = wrapPtrFn(m._pixelops_affine_transform, [0, 3, 6], false);
+  m._pixelops_perspective_transform = wrapPtrFn(m._pixelops_perspective_transform, [0, 3, 6], false);
+  m._pixelops_rotate_rgba = wrapPtrFn(m._pixelops_rotate_rgba, [0, 3], false);
+  m._pixelops_flip_rgba = wrapPtrFn(m._pixelops_flip_rgba, [0, 3], false);
+  m._pixelops_rotate_indexed = wrapPtrFn(m._pixelops_rotate_indexed, [0, 3], false);
+  m._pixelops_flip_indexed = wrapPtrFn(m._pixelops_flip_indexed, [0, 3], false);
+  m._pixelops_inpaint = wrapPtrFn(m._pixelops_inpaint, [0, 3, 5, 6], false);
+  m._pixelops_grabcut = wrapPtrFn(m._pixelops_grabcut, [0, 3, 4], false);
+  m._pixelops_grabcut_compute_beta = wrapPtrFn(m._pixelops_grabcut_compute_beta, [0], false);
+  m._pixelops_grabcut_kmeans_init = wrapPtrFn(m._pixelops_grabcut_kmeans_init, [0, 3, 5], false);
+  m._pixelops_grabcut_update_gmms = wrapPtrFn(m._pixelops_grabcut_update_gmms, [0, 3, 5], false);
+  m._pixelops_grabcut_mincut = wrapPtrFn(m._pixelops_grabcut_mincut, [0, 1, 2, 3, 4, 7], false);
+  m._matchPaletteIndices = wrapPtrFn(m._matchPaletteIndices, [0, 2, 4], false);
+  m._floodFillIndexed = wrapPtrFn(m._floodFillIndexed, [0], false);
+
+  m._loadExr = wrapPtrFn(m._loadExr, [0], true);
+  m._freeExrResult = wrapPtrFn(m._freeExrResult, [0], false);
+  m._saveExr = wrapPtrFn(m._saveExr, [0], true);
+  m._freeExrBytes = wrapPtrFn(m._freeExrBytes, [0], false);
+  m._loadExrLayers = wrapPtrFn(m._loadExrLayers, [0], true);
+  m._freeExrLayersResult = wrapPtrFn(m._freeExrLayersResult, [0], false);
+  m._saveExrLayers = wrapPtrFn(m._saveExrLayers, [3, 4], true);
+
+  m._pixelops_dds_get_info = wrapPtrFn(m._pixelops_dds_get_info, [0, 2], false);
+  m._pixelops_dds_decode = wrapPtrFn(m._pixelops_dds_decode, [0, 2], false);
+  m._pixelops_dds_decode_f32 = wrapPtrFn(m._pixelops_dds_decode_f32, [0, 2], false);
+  // _pixelops_dds_get_encoded_size + _pixelops_dds_max_mip_levels take only
+  // `int32_t`/`int` args and return `int32_t`/`int` — no i64 conversion.
+  m._pixelops_dds_encode = wrapPtrFn(m._pixelops_dds_encode, [0, 6], false);
+  m._pixelops_dds_encode_f32 = wrapPtrFn(m._pixelops_dds_encode_f32, [0, 6], false);
+
+  m._pixelops_brush_stamp = wrapPtrFn(m._pixelops_brush_stamp, [0, 1, 2, 3, 4, 7], false);
+  m._pixelops_brush_stamp_batch = wrapPtrFn(m._pixelops_brush_stamp_batch, [0, 2, 3, 4, 5, 8], false);
+  m._pixelops_brush_bake_coverage = wrapPtrFn(m._pixelops_brush_bake_coverage, [0, 1, 4, 7], false);
+  m._pixelops_brush_stamp_bitmap = wrapPtrFn(m._pixelops_brush_stamp_bitmap, [0, 1, 2, 3, 4], false);
+  m._pixelops_brush_stamp_bitmap_batch = wrapPtrFn(m._pixelops_brush_stamp_bitmap_batch, [0, 2, 3, 4, 5], false);
 }
 
 // ─── Memory helpers ───────────────────────────────────────────────────────────
@@ -132,7 +255,7 @@ export async function floodFillF32(
   const byteLen = pixels.byteLength;
   const ptr = m._malloc(byteLen);
   try {
-    m.HEAPF32.set(pixels, ptr >> 2);
+    m.HEAPF32.set(pixels, ptr / 4);
     m._pixelops_flood_fill_f32(ptr, width, height, x, y, r, g, b, a, tolerance);
     return new Float32Array(m.HEAPF32.buffer, ptr, pixels.length).slice();
   } finally {
@@ -150,7 +273,7 @@ export async function convolve(
   const m = await getPixelOps();
   const kPtr = m._malloc(kernel.byteLength);
   try {
-    m.HEAPF32.set(kernel, kPtr >> 2); // float32 view offset
+    m.HEAPF32.set(kernel, kPtr / 4); // float32 view offset
     const kernelSize = Math.round(Math.sqrt(kernel.length));
     return withSrcDstBuffers(m, pixels, pixels.byteLength, (src, dst) =>
       m._pixelops_convolve(src, dst, width, height, kPtr, kernelSize),
@@ -270,7 +393,7 @@ export async function computeHistogramRGBA(
 
     // Re-read HEAPF32 in case memory grew.
     const heapf32 = m.HEAPF32;
-    const histFloatOffset = histPtr >> 2; // Convert byte offset to float32 offset.
+    const histFloatOffset = histPtr / 4; // Convert byte offset to float32 offset.
     const histogramFloat32 = heapf32.slice(
       histFloatOffset,
       histFloatOffset + 4 * 256,
@@ -313,7 +436,7 @@ export async function applyAffineTransform(
   const m = await getPixelOps();
   const matPtr = m._malloc(invMatrix.byteLength);
   try {
-    m.HEAPF32.set(invMatrix, matPtr >> 2);
+    m.HEAPF32.set(invMatrix, matPtr / 4);
     return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
       m._pixelops_affine_transform(
         srcPtr,
@@ -349,7 +472,7 @@ export async function applyPerspectiveTransform(
   const m = await getPixelOps();
   const matPtr = m._malloc(invH.byteLength);
   try {
-    m.HEAPF32.set(invH, matPtr >> 2);
+    m.HEAPF32.set(invH, matPtr / 4);
     return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
       m._pixelops_perspective_transform(
         srcPtr,
@@ -441,7 +564,7 @@ export async function flipIndexed(
  * @param pixels   RGBA flat canvas composite, width × height × 4 bytes.
  * @param width    Canvas width in pixels.
  * @param height   Canvas height in pixels.
- * @param mask     Single-channel fill mask from selectionStore.mask,
+ * @param mask     Single-channel fill mask from activeScope().selection.mask,
  *                 width × height bytes (255 = fill region, 0 = source region).
  * @param sourceMask  Optional source-eligibility mask (1 = eligible, 0 = excluded).
  *                    Pass undefined for unconstrained (sample entire image).
@@ -579,7 +702,7 @@ export async function grabCutKmeansInit(
       k,
       paramsPtr,
     );
-    const off = paramsPtr >> 2;
+    const off = paramsPtr / 4;
     return m.HEAPF32.slice(off, off + paramsLen);
   } finally {
     m._free(rgbaPtr);
@@ -605,7 +728,7 @@ export async function grabCutUpdateGmms(
   try {
     m.HEAPU8.set(pixels, rgbaPtr);
     m.HEAPU8.set(label, labelPtr);
-    m.HEAPF32.set(params, paramsPtr >> 2);
+    m.HEAPF32.set(params, paramsPtr / 4);
     m._pixelops_grabcut_update_gmms(
       rgbaPtr,
       width,
@@ -614,7 +737,7 @@ export async function grabCutUpdateGmms(
       k,
       paramsPtr,
     );
-    const off = paramsPtr >> 2;
+    const off = paramsPtr / 4;
     return m.HEAPF32.slice(off, off + paramsLen);
   } finally {
     m._free(rgbaPtr);
@@ -643,10 +766,10 @@ export async function grabCutMincut(
   const trimapPtr = m._malloc(trimap.byteLength);
   const labelPtr = m._malloc(n);
   try {
-    m.HEAPF32.set(capS, capSPtr >> 2);
-    m.HEAPF32.set(capT, capTPtr >> 2);
-    m.HEAPF32.set(hW, hWPtr >> 2);
-    m.HEAPF32.set(vW, vWPtr >> 2);
+    m.HEAPF32.set(capS, capSPtr / 4);
+    m.HEAPF32.set(capT, capTPtr / 4);
+    m.HEAPF32.set(hW, hWPtr / 4);
+    m.HEAPF32.set(vW, vWPtr / 4);
     m.HEAPU8.set(trimap, trimapPtr);
     m._pixelops_grabcut_mincut(
       capSPtr,
@@ -756,7 +879,7 @@ export async function decodeExr(
     const count = width * height * 4;
     const pixels = new Float32Array(count);
     const heap = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
-    pixels.set(heap.subarray(pxPtr >> 2, (pxPtr >> 2) + count));
+    pixels.set(heap.subarray(pxPtr / 4, pxPtr / 4 + count));
     m._freeExrResult(resultPtr);
     return { pixels, width, height };
   } finally {
@@ -791,6 +914,150 @@ export async function encodeExr(
     return out;
   } finally {
     m._free(srcPtr);
+  }
+}
+
+export interface ExrDecodedLayer {
+  name: string;
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
+  pixels: Float32Array;
+}
+
+export interface ExrMultiDecodeResult {
+  canvasWidth: number;
+  canvasHeight: number;
+  layers: ExrDecodedLayer[];
+}
+
+/** Read a null-terminated UTF-8 string from the WASM heap. */
+function readCString(heap: Uint8Array, ptr: number): string {
+  let end = ptr;
+  while (end < heap.length && heap[end] !== 0) end++;
+  return new TextDecoder("utf-8").decode(heap.subarray(ptr, end));
+}
+
+/** Decode an EXR file into one or more named layers. */
+export async function decodeExrLayers(
+  bytes: Uint8Array,
+): Promise<ExrMultiDecodeResult> {
+  const m = await getPixelOps();
+  const srcPtr = m._malloc(bytes.byteLength);
+  let resultPtr = 0;
+  try {
+    m.HEAPU8.set(bytes, srcPtr);
+    resultPtr = m._loadExrLayers(srcPtr, bytes.byteLength);
+    if (resultPtr === 0) throw new Error("EXR multi-layer decode failed");
+
+    const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+    const canvasWidth = view.getInt32(resultPtr, true);
+    const canvasHeight = view.getInt32(resultPtr + 4, true);
+    const numLayers = view.getInt32(resultPtr + 8, true);
+    const layersPtr = view.getInt32(resultPtr + 12, true);
+
+    const layers: ExrDecodedLayer[] = [];
+    const STRIDE = 24; // ExrLayerOut size
+    for (let i = 0; i < numLayers; i++) {
+      const base = layersPtr + i * STRIDE;
+      const w = view.getInt32(base, true);
+      const h = view.getInt32(base + 4, true);
+      const offX = view.getInt32(base + 8, true);
+      const offY = view.getInt32(base + 12, true);
+      const namePtr = view.getInt32(base + 16, true);
+      const pxPtr = view.getInt32(base + 20, true);
+      const name = readCString(m.HEAPU8, namePtr);
+      const count = w * h * 4;
+      const pixels = new Float32Array(count);
+      const heapF32 = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+      pixels.set(heapF32.subarray(pxPtr / 4, pxPtr / 4 + count));
+      layers.push({
+        name,
+        width: w,
+        height: h,
+        offsetX: offX,
+        offsetY: offY,
+        pixels,
+      });
+    }
+    return { canvasWidth, canvasHeight, layers };
+  } finally {
+    if (resultPtr !== 0) m._freeExrLayersResult(resultPtr);
+    m._free(srcPtr);
+  }
+}
+
+/**
+ * Encode multiple full-canvas RGBA float32 layers into a single-part EXR with
+ * channel-named groups ("<LayerName>.R/G/B/A").  Each layer's `pixels` must be
+ * width*height*4 floats.
+ */
+export async function encodeExrLayers(
+  layers: ReadonlyArray<{ name: string; pixels: Float32Array }>,
+  width: number,
+  height: number,
+  compression = 0,
+  halfFloat = 0,
+): Promise<Uint8Array> {
+  if (layers.length === 0) throw new Error("encodeExrLayers: no layers given");
+  const m = await getPixelOps();
+
+  // Pack names: null-separated UTF-8.
+  const enc = new TextEncoder();
+  const nameBufs = layers.map((l) => enc.encode(l.name));
+  const nameBytes = nameBufs.reduce((s, b) => s + b.length + 1, 0);
+  const namesBuf = new Uint8Array(nameBytes);
+  {
+    let off = 0;
+    for (const nb of nameBufs) {
+      namesBuf.set(nb, off);
+      off += nb.length;
+      namesBuf[off++] = 0;
+    }
+  }
+
+  // Pack pixels: layer-major contiguous.
+  const pixelsPerLayer = width * height * 4;
+  const totalFloats = pixelsPerLayer * layers.length;
+  const namesPtr = m._malloc(namesBuf.byteLength);
+  const pixelsPtr = m._malloc(totalFloats * 4);
+  let resultPtr = 0;
+  try {
+    m.HEAPU8.set(namesBuf, namesPtr);
+    const heapF32 = new Float32Array(
+      m.HEAPU8.buffer,
+      m.HEAPU8.byteOffset + pixelsPtr,
+      totalFloats,
+    );
+    for (let i = 0; i < layers.length; i++) {
+      if (layers[i].pixels.length !== pixelsPerLayer) {
+        throw new Error(
+          `encodeExrLayers: layer ${i} (${layers[i].name}) has ${layers[i].pixels.length} floats, expected ${pixelsPerLayer}`,
+        );
+      }
+      heapF32.set(layers[i].pixels, i * pixelsPerLayer);
+    }
+    resultPtr = m._saveExrLayers(
+      width,
+      height,
+      layers.length,
+      namesPtr,
+      pixelsPtr,
+      compression,
+      halfFloat,
+    );
+    if (resultPtr === 0) throw new Error("EXR multi-layer encode failed");
+    const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+    const bytesPtr = view.getInt32(resultPtr, true);
+    const outLen = view.getInt32(resultPtr + 4, true);
+    const out = new Uint8Array(outLen);
+    out.set(m.HEAPU8.subarray(bytesPtr, bytesPtr + outLen));
+    return out;
+  } finally {
+    if (resultPtr !== 0) m._freeExrBytes(resultPtr);
+    m._free(namesPtr);
+    m._free(pixelsPtr);
   }
 }
 
@@ -906,7 +1173,7 @@ export async function decodeDdsF32(
     if (err !== 0) throw new Error(ddsErrorFromCode(err));
     const pixels = new Float32Array(width * height * 4);
     const heap = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
-    pixels.set(heap.subarray(outPtr >> 2, (outPtr >> 2) + pixels.length));
+    pixels.set(heap.subarray(outPtr / 4, outPtr / 4 + pixels.length));
     return { pixels, width, height };
   } finally {
     m._free(dataPtr);
@@ -1011,3 +1278,24 @@ export async function maxDdsMipLevels(
   const m = await getPixelOps();
   return m._pixelops_dds_max_mip_levels(width, height, minDim);
 }
+
+// ─── Brush stamp inner loop ──────────────────────────────────────────────────
+export {
+  runBrushStamp,
+  beginBrushBatch,
+  beginBrushBatchBitmap,
+  appendBrushStamp,
+  flushBrushBatch,
+  ensureBakedBitmap,
+  type BrushStampJob,
+  type BrushBakeShape,
+  type BakedBitmap,
+} from "./brushStamp";
+
+// ─── WASM-heap-resident typed-array storage ─────────────────────────────────
+export {
+  allocWasmU8,
+  allocWasmF32,
+  freeWasm,
+  syncIfGrew,
+} from "./wasmHeapStorage";

@@ -1,18 +1,56 @@
-import type { ColorGradingAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { ColorGradingWheelParams, EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorGradingPanel } from "./ColorGradingPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type ColorGradingOp = Extract<AdjustmentRenderOp, { kind: "color-grading" }>;
+const ColorGradingIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <circle cx="3" cy="6" r="1.8" />
+    <circle cx="9" cy="6" r="1.8" />
+    <circle cx="6" cy="3" r="1.8" />
+    <circle cx="6" cy="9" r="1.8" />
+  </svg>
+);
+
+
+export interface ColorGradingParams {
+    lift: ColorGradingWheelParams;
+    gamma: ColorGradingWheelParams;
+    gain: ColorGradingWheelParams;
+    offset: ColorGradingWheelParams;
+    temp: number;
+    tint: number;
+    contrast: number;
+    pivot: number;
+    midDetail: number;
+    colorBoost: number;
+    shadows: number;
+    highlights: number;
+    saturation: number;
+    hue: number;
+    lumMix: number;
+}
+
+export type ColorGradingEffectLayer = EffectLayerOf<"color-grading", ColorGradingParams>;
+
+type ColorGradingOp = Extract<EffectRenderOp, { kind: "color-grading" }>;
 
 export const ColorGradingEffect: IPipelineEffect<
-  ColorGradingAdjustmentLayer,
+  ColorGradingEffectLayer,
   ColorGradingOp
 > = {
   id: "color-grading",
   label: "Color Grading…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {
     lift: { r: 0, g: 0, b: 0, master: 0 },
     gamma: { r: 0, g: 0, b: 0, master: 0 },
@@ -90,4 +128,5 @@ export const ColorGradingEffect: IPipelineEffect<
   },
 
   Panel: ColorGradingPanel,
+  icon: ColorGradingIcon,
 };

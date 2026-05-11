@@ -21,10 +21,14 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
 }
 
 struct BorderParams {
-  imgWidth    : u32,
-  imgHeight   : u32,
-  borderRadius: u32,   // pixels
-  _pad        : u32,
+  imgWidth     : u32,
+  imgHeight    : u32,
+  borderRadiusX: u32,   // pixels — 0 disables X-axis blend
+  borderRadiusY: u32,   // pixels — 0 disables Y-axis blend
+  strength     : f32,   // 0..1 — peak mix amount at the edge
+  _pad0        : f32,
+  _pad1        : f32,
+  _pad2        : f32,
 }
 
 @group(0) @binding(0) var srcTex          : texture_2d<f32>;
@@ -34,37 +38,29 @@ struct BorderParams {
 fn fs_seamless_border(in: AdjVertOut) -> @location(0) vec4<f32> {
   let w   = f32(params.imgWidth);
   let h   = f32(params.imgHeight);
-  let br  = f32(params.borderRadius);
+  let brX = f32(params.borderRadiusX);
+  let brY = f32(params.borderRadiusY);
+  let str = clamp(params.strength, 0.0, 1.0);
   let px  = vec2f(in.pos.xy);
 
   let ipx  = vec2i(i32(px.x), i32(px.y));
   let orig = textureLoad(srcTex, ipx, 0);
 
   // ── X-axis blend ──────────────────────────────────────────────────────────
-  // Near left edge: blend with pixel from right side (mirrored from opposite)
-  // Near right edge: blend with pixel from left side
   let distL = px.x;
   let distR = w - 1.0 - px.x;
   let edgeX = min(distL, distR);
 
   var blendX = 0.0;
-  if (br > 0.0) {
-    blendX = clamp(1.0 - edgeX / br, 0.0, 1.0);
+  if (brX > 0.0) {
+    blendX = clamp(1.0 - edgeX / brX, 0.0, 1.0);
     blendX = blendX * blendX * (3.0 - 2.0 * blendX);  // smoothstep
   }
 
-  // Mirror x-coord from opposite edge
-  var mirrorX = px.x;
-  if (distL < distR) {
-    mirrorX = w - 1.0 - px.x;   // sample from right
-  } else {
-    mirrorX = w - 1.0 - px.x;   // sample from left (same formula, opposite direction)
-  }
-  // Actually: opposite x is always (w-1-x); just blend towards it
   let ixMirrorX    = i32(w - 1.0 - px.x);
   let colorMirrorX = textureLoad(srcTex, vec2i(ixMirrorX, ipx.y), 0);
 
-  let colorAfterX = mix(orig, colorMirrorX, blendX * 0.5);
+  let colorAfterX = mix(orig, colorMirrorX, blendX * str);
 
   // ── Y-axis blend ──────────────────────────────────────────────────────────
   let distT = px.y;
@@ -72,15 +68,15 @@ fn fs_seamless_border(in: AdjVertOut) -> @location(0) vec4<f32> {
   let edgeY = min(distT, distB);
 
   var blendY = 0.0;
-  if (br > 0.0) {
-    blendY = clamp(1.0 - edgeY / br, 0.0, 1.0);
+  if (brY > 0.0) {
+    blendY = clamp(1.0 - edgeY / brY, 0.0, 1.0);
     blendY = blendY * blendY * (3.0 - 2.0 * blendY);
   }
 
   let iyMirrorY    = i32(h - 1.0 - px.y);
   let colorMirrorY = textureLoad(srcTex, vec2i(ipx.x, iyMirrorY), 0);
 
-  let colorAfterY = mix(colorAfterX, colorMirrorY, blendY * 0.5);
+  let colorAfterY = mix(colorAfterX, colorMirrorY, blendY * str);
 
   return colorAfterY;
 }

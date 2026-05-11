@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ChannelMixerAdjustmentLayer } from "@/types";
+import type { ChannelMixerEffectLayer } from "@/core/effects/ChannelMixer/ChannelMixerEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ChannelMixerPanel.module.scss";
@@ -8,14 +8,14 @@ import styles from "./ChannelMixerPanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ChannelMixerPanelProps {
-  layer: ChannelMixerAdjustmentLayer;
+  layer: ChannelMixerEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): ChannelMixerAdjustmentLayer["params"] =>
-  effectRegistry.get("channel-mixer")!.defaultParams as ChannelMixerAdjustmentLayer["params"];
+const getDefaultParams = (): ChannelMixerEffectLayer["params"] =>
+  effectRegistry.get("channel-mixer")!.defaultParams as ChannelMixerEffectLayer["params"];
 
-type OutputChannel = ChannelMixerAdjustmentLayer["params"]["outputChannel"];
+type OutputChannel = ChannelMixerEffectLayer["params"]["outputChannel"];
 type SourceKey = "red" | "green" | "blue" | "constant";
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ export function ChannelMixerPanel({
   const row = layer.params[activeKey];
 
   const updateParams = (
-    next: Partial<ChannelMixerAdjustmentLayer["params"]>,
+    next: Partial<ChannelMixerEffectLayer["params"]>,
   ): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
@@ -43,7 +43,7 @@ export function ChannelMixerPanel({
 
   const updateRow = (key: SourceKey, value: number): void => {
     updateParams({ [activeKey]: { ...row, [key]: value } } as Partial<
-      ChannelMixerAdjustmentLayer["params"]
+      ChannelMixerEffectLayer["params"]
     >);
   };
 

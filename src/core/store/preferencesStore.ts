@@ -1,7 +1,7 @@
 /**
  * Module-level singleton for app-wide user preferences.
  *
- * Pattern mirrors `historyStore` / `selectionStore`: imperative `.set()`,
+ * Pattern mirrors `activeScope().history` / `activeScope().selection`: imperative `.set()`,
  * `.get()`, `.subscribe()` API. Components observe via `usePreferences()`.
  *
  * Persistence: backed by `userData/preferences.json` via the main process
@@ -10,7 +10,12 @@
  */
 import { useSyncExternalStore } from "react";
 
+/** Theme selection. "auto" follows the host OS via prefers-color-scheme. */
+export type ThemePreference = "light" | "dark" | "auto";
+
 export interface AppPreferences {
+  /** Visual theme. Applied via the `data-theme` attribute on <html>. */
+  theme: ThemePreference;
   /** Maximum total bytes the in-memory undo history is allowed to use. */
   historyMemoryBytes: number;
   /**
@@ -37,6 +42,7 @@ export interface AppPreferences {
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
+  theme: "dark",
   historyMemoryBytes: 4 * 1024 * 1024 * 1024, // 4 GB
   bufferMemoryBytes: 8 * 1024 * 1024 * 1024, // 8 GB
   bufferMemoryMaxOut: false,
@@ -107,6 +113,23 @@ class PreferencesStore {
 }
 
 export const preferencesStore = new PreferencesStore();
+
+/**
+ * Mirror the active theme preference onto `<html data-theme="…">`.  CSS in
+ * global.scss reads this attribute (plus prefers-color-scheme for "auto") to
+ * pick the light or dark palette.
+ *
+ * Call once at startup, after `preferencesStore.load()`, then forget — the
+ * subscription keeps the attribute in sync for the lifetime of the page.
+ */
+export function applyThemePreference(): () => void {
+  const root = document.documentElement;
+  const update = (): void => {
+    root.dataset.theme = preferencesStore.get().theme;
+  };
+  update();
+  return preferencesStore.subscribe(update);
+}
 
 /** React hook: subscribe to the preferences store and re-render on change. */
 export function usePreferences(): AppPreferences {

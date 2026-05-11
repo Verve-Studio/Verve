@@ -111,11 +111,25 @@ export function cloneHistoryEntries(entries: HistoryEntry[]): HistoryEntry[] {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-class HistoryStore {
+const listeners = new Set<() => void>();
+
+// App-level handlers registered once (by App.tsx / useHistory) and shared
+// across every per-tab HistoryStore instance — see comment on the getters
+// below for why these aren't per-instance fields.
+const appHandlers: {
+  onJumpTo: ((index: number) => void) | null;
+  onPreview: ((index: number) => void) | null;
+  onClear: ((options?: ClearHistoryOptions) => void) | null;
+} = {
+  onJumpTo: null,
+  onPreview: null,
+  onClear: null,
+};
+
+export class HistoryStore {
   entries: HistoryEntry[] = [];
   currentIndex = -1;
   selectedIndex = -1;
-  private listeners = new Set<() => void>();
 
   /**
    * Maximum total bytes allowed across all history entries (after dedup of
@@ -128,20 +142,32 @@ class HistoryStore {
   /**
    * Registered by App.tsx. Called when the user clicks Restore.
    * Must perform the actual canvas pixel + app state restoration.
+   *
+   * These app-level handlers are kept module-level (not on the instance)
+   * so that registering them once survives `setActiveScope()` swapping the
+   * active scope to a different tab's history instance — there is only ever
+   * one active history at a time.
    */
-  onJumpTo: ((index: number) => void) | null = null;
+  get onJumpTo(): ((index: number) => void) | null {
+    return appHandlers.onJumpTo;
+  }
+  set onJumpTo(fn: ((index: number) => void) | null) {
+    appHandlers.onJumpTo = fn;
+  }
 
-  /**
-   * Registered by App.tsx. Called on every click to preview a history entry
-   * on the canvas without committing state.
-   */
-  onPreview: ((index: number) => void) | null = null;
+  get onPreview(): ((index: number) => void) | null {
+    return appHandlers.onPreview;
+  }
+  set onPreview(fn: ((index: number) => void) | null) {
+    appHandlers.onPreview = fn;
+  }
 
-  /**
-   * Registered by useHistory. Called after clearing — allows a fresh snapshot
-   * to be pushed so the cleared state is still recoverable via undo.
-   */
-  onClear: ((options?: ClearHistoryOptions) => void) | null = null;
+  get onClear(): ((options?: ClearHistoryOptions) => void) | null {
+    return appHandlers.onClear;
+  }
+  set onClear(fn: ((options?: ClearHistoryOptions) => void) | null) {
+    appHandlers.onClear = fn;
+  }
 
   /**
    * Set the memory cap (in bytes) and immediately evict oldest entries until
@@ -301,13 +327,11 @@ class HistoryStore {
   }
 
   subscribe(cb: () => void): () => void {
-    this.listeners.add(cb);
-    return () => this.listeners.delete(cb);
+    listeners.add(cb);
+    return () => listeners.delete(cb);
   }
 
-  private notify(): void {
-    this.listeners.forEach((cb) => cb());
+  notify(): void {
+    listeners.forEach((cb) => cb());
   }
 }
-
-export const historyStore = new HistoryStore();

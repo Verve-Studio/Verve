@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BilateralFilterAdjustmentLayer } from "@/types";
+import type { BilateralFilterEffectLayer } from "@/core/effects/BilateralFilter/BilateralFilterEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: BilateralFilterAdjustmentLayer;
+  layer: BilateralFilterEffectLayer;
   parentLayerName: string;
 }
 

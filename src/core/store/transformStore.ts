@@ -25,7 +25,9 @@ export interface TransformEnterData {
 
 type Listener = () => void;
 
-class TransformStore {
+const listeners = new Set<Listener>();
+
+export class TransformStore {
   isActive: boolean = false;
   layerId: string = "";
   previousTool: Tool = "pencil";
@@ -66,16 +68,14 @@ class TransformStore {
   onApply: (() => void) | null = null;
   onCancel: (() => void) | null = null;
 
-  private listeners = new Set<Listener>();
-
   subscribe(fn: Listener): void {
-    this.listeners.add(fn);
+    listeners.add(fn);
   }
   unsubscribe(fn: Listener): void {
-    this.listeners.delete(fn);
+    listeners.delete(fn);
   }
   notify(): void {
-    for (const fn of this.listeners) fn();
+    for (const fn of listeners) fn();
   }
 
   enter(data: TransformEnterData): void {
@@ -121,5 +121,3 @@ class TransformStore {
     this.onCancel?.();
   }
 }
-
-export const transformStore = new TransformStore();

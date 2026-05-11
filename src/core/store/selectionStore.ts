@@ -14,6 +14,8 @@ export type PendingSelection =
 
 type Listener = () => void;
 
+const listeners = new Set<Listener>();
+
 export class SelectionStore {
   /** Committed mask: 1 = selected, 0 = not selected. null = nothing selected. */
   mask: Uint8Array | null = null;
@@ -28,8 +30,6 @@ export class SelectionStore {
   width = 0;
   height = 0;
 
-  private listeners = new Set<Listener>();
-
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   setDimensions(w: number, h: number): void {
@@ -41,13 +41,13 @@ export class SelectionStore {
   }
 
   subscribe(fn: Listener): void {
-    this.listeners.add(fn);
+    listeners.add(fn);
   }
   unsubscribe(fn: Listener): void {
-    this.listeners.delete(fn);
+    listeners.delete(fn);
   }
-  private notify(): void {
-    for (const fn of this.listeners) fn();
+  notify(): void {
+    for (const fn of listeners) fn();
   }
 
   /** Restore a previously saved mask buffer (used by transform cancel). */
@@ -389,6 +389,14 @@ export class SelectionStore {
     }
   }
 
+  /** Merge a caller-built canvas-sized mask into the live selection. Used by
+   *  brush-style selection tools (e.g. Quick Select) that compute their own
+   *  per-stamp mask and want to OR/subtract it into the running selection. */
+  mergeMask(newMask: Uint8Array, mode: SelectionMode): void {
+    this.applyMask(newMask, mode);
+    this.notify();
+  }
+
   private applyMask(newMask: Uint8Array, mode: SelectionMode): void {
     if (mode === "set" || !this.mask) {
       this.mask = newMask;
@@ -546,5 +554,3 @@ export class SelectionStore {
     return new Float32Array(segs);
   }
 }
-
-export const selectionStore = new SelectionStore();

@@ -1,10 +1,9 @@
 import type { AppAction } from "@/core/store/AppContext";
-import { selectionStore } from "@/core/store/selectionStore";
-import { transformStore } from "@/core/store/transformStore";
+
 import {
   computeInverseAffine,
   computeInverseHomography,
-} from "@/tools/transform";
+} from "@/core/tools/Transform/Transform";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import {
@@ -14,6 +13,7 @@ import {
 } from "@/wasm";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useEffect, useMemo } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,7 +121,7 @@ export function useTransform({
   captureHistory,
 }: UseTransformOptions): UseTransformReturn {
   const handleApply = useCallback(async (): Promise<void> => {
-    if (!transformStore.isActive) return;
+    if (!activeScope().transform.isActive) return;
     const handle = canvasHandleRef.current;
     if (!handle) return;
 
@@ -133,7 +133,7 @@ export function useTransform({
       originalW,
       originalH,
       layerId,
-    } = transformStore;
+    } = activeScope().transform;
     const { canvas } = stateRef.current;
     const { width: cw, height: ch } = canvas;
     if (!floatBuffer) return;
@@ -195,30 +195,101 @@ export function useTransform({
       handle.writeLayerPixels(layerId, result);
     }
     captureHistory("Free Transform");
-    dispatch({ type: "SET_TOOL", payload: transformStore.previousTool });
-    transformStore.clear();
+
+    // Stay on the transform tool with a fresh baseline so the user can chain
+    // transformations. Re-bootstrap the store from the just-committed pixels.
+    const committedPixels = handle.getLayerPixels(layerId);
+    const previousTool = activeScope().transform.previousTool;
+    const wasSelectionMode = activeScope().transform.isSelectionMode;
+    const savedSelectionMask = activeScope().transform.savedSelectionMask;
+
+    if (!committedPixels) {
+      dispatch({ type: "SET_TOOL", payload: previousTool });
+      activeScope().transform.clear();
+      return;
+    }
+
+    let nextRect: { x: number; y: number; w: number; h: number };
+    let nextFloatBuffer: Uint8Array;
+    if (wasSelectionMode && savedSelectionMask) {
+      // After applying a selection-mode transform, the selection itself moved
+      // to wherever the user dragged it. Re-fit on the committed pixels' bbox.
+      nextRect = findBoundingRect(committedPixels, cw, ch);
+      if (nextRect.w <= 0 || nextRect.h <= 0) {
+        dispatch({ type: "SET_TOOL", payload: previousTool });
+        activeScope().transform.clear();
+        return;
+      }
+      nextFloatBuffer = cropPixels(committedPixels, cw, nextRect, null);
+    } else {
+      nextRect = findBoundingRect(committedPixels, cw, ch);
+      if (nextRect.w <= 0 || nextRect.h <= 0) {
+        dispatch({ type: "SET_TOOL", payload: previousTool });
+        activeScope().transform.clear();
+        return;
+      }
+      nextFloatBuffer = cropPixels(committedPixels, cw, nextRect, null);
+    }
+
+    const { w: nW, h: nH } = nextRect;
+    const nextFloatCanvas = new OffscreenCanvas(nW, nH);
+    const nfc = nextFloatCanvas.getContext("2d")!;
+    nfc.putImageData(
+      new ImageData(new Uint8ClampedArray(nextFloatBuffer), nW, nH),
+      0,
+      0,
+    );
+
+    const nextSavedLayerPixels = committedPixels.slice();
+
+    // Clear the layer so the WebGL composite doesn't show the committed pixels
+    // underneath the next overlay preview (mirrors the initial-entry behavior).
+    handle.writeLayerPixels(layerId, new Uint8Array(cw * ch * 4));
+
+    activeScope().transform.enter({
+      layerId,
+      previousTool,
+      isSelectionMode: false,
+      originalW: nW,
+      originalH: nH,
+      originalRect: nextRect,
+      floatBuffer: nextFloatBuffer,
+      floatCanvas: nextFloatCanvas,
+      savedLayerPixels: nextSavedLayerPixels,
+      savedSelectionMask: null,
+      params: {
+        x: nextRect.x,
+        y: nextRect.y,
+        w: nW,
+        h: nH,
+        rotation: 0,
+        pivotX: nextRect.x + nW / 2,
+        pivotY: nextRect.y + nH / 2,
+        shearX: 0,
+        shearY: 0,
+        perspectiveCorners: null,
+      },
+    });
   }, [canvasHandleRef, stateRef, dispatch, captureHistory]);
 
   const handleCancel = useCallback((): void => {
-    if (!transformStore.isActive) return;
+    if (!activeScope().transform.isActive) return;
     const handle = canvasHandleRef.current;
 
-    if (handle && transformStore.savedLayerPixels) {
-      handle.writeLayerPixels(
-        transformStore.layerId,
-        transformStore.savedLayerPixels,
-      );
+    const tx = activeScope().transform;
+    if (handle && tx.savedLayerPixels) {
+      handle.writeLayerPixels(tx.layerId, tx.savedLayerPixels);
     }
-    if (transformStore.savedSelectionMask) {
-      selectionStore.restoreMask(transformStore.savedSelectionMask);
+    if (tx.savedSelectionMask) {
+      activeScope().selection.restoreMask(tx.savedSelectionMask);
     }
 
-    dispatch({ type: "SET_TOOL", payload: transformStore.previousTool });
-    transformStore.clear();
+    dispatch({ type: "SET_TOOL", payload: tx.previousTool });
+    tx.clear();
   }, [canvasHandleRef, dispatch]);
 
   const handleEnterTransform = useCallback((): void => {
-    if (transformStore.isActive) return;
+    if (activeScope().transform.isActive) return;
     const handle = canvasHandleRef.current;
     if (!handle) return;
 
@@ -236,11 +307,11 @@ export function useTransform({
     const cw = canvas.width,
       ch = canvas.height;
 
-    const hasMask = selectionStore.mask !== null;
+    const hasMask = activeScope().selection.mask !== null;
     const maskHasArea =
       hasMask &&
       (() => {
-        const m = selectionStore.mask!;
+        const m = activeScope().selection.mask!;
         for (let i = 0; i < m.length; i++) if (m[i] > 0) return true;
         return false;
       })();
@@ -253,7 +324,7 @@ export function useTransform({
     let savedSelectionMask: Uint8Array | null = null;
 
     if (isSelectionMode) {
-      const mask = selectionStore.mask!;
+      const mask = activeScope().selection.mask!;
       rect = findMaskBoundingRect(mask, cw, ch);
       if (rect.w <= 0 || rect.h <= 0) return;
       floatBuffer = cropPixels(pixels, cw, rect, mask);
@@ -288,10 +359,10 @@ export function useTransform({
       perspectiveCorners: null as null,
     };
 
-    transformStore.onApply = handleApply;
-    transformStore.onCancel = handleCancel;
+    activeScope().transform.onApply = handleApply;
+    activeScope().transform.onCancel = handleCancel;
 
-    transformStore.enter({
+    activeScope().transform.enter({
       layerId: activeId,
       previousTool: state.activeTool,
       isSelectionMode,
@@ -311,7 +382,7 @@ export function useTransform({
   // Keyboard Enter/Escape while transform is active
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!transformStore.isActive) return;
+      if (!activeScope().transform.isActive) return;
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement

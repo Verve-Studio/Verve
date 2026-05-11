@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { BlackAndWhiteAdjustmentLayer } from "@/types";
+import type { BlackAndWhiteEffectLayer } from "@/core/effects/BlackAndWhite/BlackAndWhiteEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BlackAndWhitePanel.module.scss";
@@ -8,14 +8,14 @@ import styles from "./BlackAndWhitePanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface BlackAndWhitePanelProps {
-  layer: BlackAndWhiteAdjustmentLayer;
+  layer: BlackAndWhiteEffectLayer;
   parentLayerName: string;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
-const getDefaultParams = (): BlackAndWhiteAdjustmentLayer["params"] =>
-  effectRegistry.get("black-and-white")!.defaultParams as BlackAndWhiteAdjustmentLayer["params"];
+const getDefaultParams = (): BlackAndWhiteEffectLayer["params"] =>
+  effectRegistry.get("black-and-white")!.defaultParams as BlackAndWhiteEffectLayer["params"];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ export function BlackAndWhitePanel({
   const pct = (v: number, min: number, max: number): string =>
     String((v - min) / (max - min));
 
-  const update = (key: keyof BlackAndWhiteAdjustmentLayer["params"], value: number): void => {
+  const update = (key: keyof BlackAndWhiteEffectLayer["params"], value: number): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, [key]: value } },
@@ -36,7 +36,7 @@ export function BlackAndWhitePanel({
   };
 
   const rows: Array<{
-    key: keyof BlackAndWhiteAdjustmentLayer["params"];
+    key: keyof BlackAndWhiteEffectLayer["params"];
     label: string;
     labelClass: string;
   }> = [

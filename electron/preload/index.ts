@@ -7,6 +7,16 @@ const api = {
   openFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
   saveFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:saveFile'),
   openverveDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openverve'),
+  openImagesMultiDialog: (): Promise<string[] | null> =>
+    ipcRenderer.invoke('dialog:openImagesMulti'),
+  saveJsonDialog: (defaultName?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:saveJson', defaultName),
+  openDirectoryDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:openDirectory'),
+  pickCubeLutFiles: (): Promise<Array<{ name: string; text: string }> | null> =>
+    ipcRenderer.invoke('lut:pickCubeFiles'),
+  writeJsonFile: (path: string, data: string): Promise<void> =>
+    ipcRenderer.invoke('file:writeJson', path, data),
   saveverveDialog: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveverve', defaultPath),
   openverveFile: (path: string): Promise<string> => ipcRenderer.invoke('file:openverve', path),
@@ -69,12 +79,14 @@ const api = {
 
   // ── Preferences (persisted to userData/preferences.json) ────────────────
   loadPreferences: (): Promise<{
+    theme?: 'light' | 'dark' | 'auto'
     historyMemoryBytes: number
     bufferMemoryBytes: number
     bufferMemoryMaxOut: boolean
     unifiedMemory?: boolean
   }> => ipcRenderer.invoke('prefs:load'),
   savePreferences: (prefs: {
+    theme?: 'light' | 'dark' | 'auto'
     historyMemoryBytes: number
     bufferMemoryBytes: number
     bufferMemoryMaxOut: boolean
@@ -125,24 +137,13 @@ const api = {
     return () => ipcRenderer.removeListener('menu:action', handler)
   },
 
-  /** Send the full menu structure to the main process to build the native macOS menu. */
-  buildNativeMenu: (payload: {
-    adjustments: Array<{ id: string; label: string; group?: string }>
-    effects:     Array<{ id: string; label: string; group?: string }>
-    filters:     Array<{ id: string; label: string; instant?: boolean; group?: string }>
-    recentFiles: string[]
-  }): void => {
-    ipcRenderer.send('menu:build', payload)
-  },
-
-  /** Update the enabled state of one or more native menu items by ID. */
-  setMenuItemEnabled: (updates: Record<string, boolean>): void => {
-    ipcRenderer.send('menu:set-enabled', updates)
-  },
-
-  /** Update the checked state of one or more native menu checkboxes by ID. */
-  setMenuItemChecked: (updates: Record<string, boolean>): void => {
-    ipcRenderer.send('menu:set-checked', updates)
+  /** Rebuild the macOS native application menu. The full serialized
+   *  tree is sent on every state change — see
+   *  `src/core/services/useMacNativeMenu.ts` and the comment block in
+   *  `electron/main/menu.ts` for why this is one IPC instead of the
+   *  previous build/set-enabled/set-checked/set-visible quartet. */
+  rebuildNativeMenu: (tree: unknown): void => {
+    ipcRenderer.send('menu:rebuild', tree)
   },
 
   // ── SAM / Object Selection ────────────────────────────────────────────────

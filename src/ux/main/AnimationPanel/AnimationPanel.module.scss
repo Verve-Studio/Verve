@@ -201,6 +201,39 @@
   font-style: italic;
 }
 
+// ─── Palette cycle groups ────────────────────────────────────────────────────
+
+.cycleGroup {
+  background: vars.$color-surface-2;
+  border-radius: vars.$radius-md;
+  padding: 10px 10px;
+  margin-bottom: 10px;
+}
+
+.cycleGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cycleGroupHeaderActive {
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid vars.$color-border-light;
+}
+
+.cycleGroupName {
+  flex: 1;
+  min-width: 0;
+  font-size: vars.$font-size-sm;
+  font-weight: 600;
+  color: vars.$color-text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // ─── Animation list ───────────────────────────────────────────────────────────
 
 .animItem {

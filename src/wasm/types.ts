@@ -279,6 +279,31 @@ export interface PixelOpsModule {
   ): number;
   _freeExrBytes(resultPtr: number): void;
 
+  /**
+   * Decode an EXR file into one-or-more named layers (multi-part files OR
+   * single-part files with channels named "<LayerName>.R/G/B/A").
+   * Returns pointer to ExrMultiResult { canvasW, canvasH, numLayers,
+   * layersPtr → ExrLayerOut[] }, or 0 on failure.
+   */
+  _loadExrLayers(srcPtr: number, srcLen: number): number;
+  _freeExrLayersResult(resultPtr: number): void;
+
+  /**
+   * Encode multiple full-canvas RGBA float32 layers into a single-part EXR
+   * with channel-named groups ("<LayerName>.R/G/B/A").
+   * concatNames: numLayers null-terminated UTF-8 strings, concatenated.
+   * concatPixels: numLayers × width*height*4 floats, layer-major.
+   */
+  _saveExrLayers(
+    width: number,
+    height: number,
+    numLayers: number,
+    concatNamesPtr: number,
+    concatPixelsPtr: number,
+    compression: number,
+    halfFloat: number,
+  ): number;
+
   // DDS I/O
   _pixelops_dds_get_info(dataPtr: number, size: number, outPtr: number): number;
   _pixelops_dds_decode(
@@ -325,6 +350,96 @@ export interface PixelOpsModule {
     outPtr: number,
     outSize: number,
   ): number;
+
+  /**
+   * Apply one brush stamp's inner pixel loop. All scalar parameters travel
+   * in `paramsPtr` — a 116-byte packed `BrushStampParams` struct laid out
+   * by the JS wrapper. Other pointers reference WASM-heap-resident slices
+   * the wrapper has copied in (layer + touched bbox slices, optional
+   * selection-mask, optional bitmap-tip SDF). Mutates layer + touched in
+   * place; the wrapper copies the results back to the JS-side buffers.
+   */
+  _pixelops_brush_stamp(
+    paramsPtr: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,        // 0 = no selection
+    sdfPtr: number,            // 0 if primary tip is procedural
+    sdfW: number,
+    sdfH: number,
+    dualSdfPtr: number,        // 0 if dual is off or procedural
+    dualSdfW: number,
+    dualSdfH: number,
+  ): void;
+
+  /**
+   * Batched form of `_pixelops_brush_stamp`. `paramsArrayPtr` points to a
+   * tightly packed array of `count` BrushStampParams structs (each
+   * PARAM_BYTES bytes). All stamps in the array share the layer / touched
+   * / selection / SDF context passed in the trailing args. Used by the
+   * brush engine to amortise JS↔WASM crossings + param packing across an
+   * entire segment of stamps, eliminating per-stamp BrushStampJob
+   * allocation and the GC pressure that came with it. */
+  _pixelops_brush_stamp_batch(
+    paramsArrayPtr: number,
+    count: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,
+    sdfPtr: number,
+    sdfW: number,
+    sdfH: number,
+    dualSdfPtr: number,
+    dualSdfW: number,
+    dualSdfH: number,
+  ): void;
+
+  /**
+   * Rasterize the brush coverage at the design shape into an 8-bit
+   * bitmap. `paramsPtr` is a BrushStampParams struct (only the shape
+   * fields — radius, angle, roundness, shear, flip, aaWidth, tipKind,
+   * dual params, grain params — are read). `outBitmapPtr` must point
+   * to a pre-allocated `bmW * bmH` byte buffer. Returns nothing.
+   */
+  _pixelops_brush_bake_coverage(
+    paramsPtr: number,
+    outBitmapPtr: number,
+    bmW: number,
+    bmH: number,
+    sdfPtr: number,
+    sdfW: number,
+    sdfH: number,
+    dualSdfPtr: number,
+    dualSdfW: number,
+    dualSdfH: number,
+  ): void;
+
+  /**
+   * Per-stamp dispatch using a pre-rasterized coverage bitmap. Reads
+   * per-stamp cx/cy (→ bmOffsetX/Y), color, opacity, cap, bbox, layer
+   * extents from the BrushStampParams struct; the bitmap shape itself
+   * is shared across all stamps in a stroke.
+   */
+  _pixelops_brush_stamp_bitmap(
+    paramsPtr: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,
+    bitmapPtr: number,
+    bmW: number,
+    bmH: number,
+  ): void;
+
+  _pixelops_brush_stamp_bitmap_batch(
+    paramsArrayPtr: number,
+    count: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,
+    bitmapPtr: number,
+    bmW: number,
+    bmH: number,
+  ): void;
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

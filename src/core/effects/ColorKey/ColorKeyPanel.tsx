@@ -1,12 +1,12 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorKeyAdjustmentLayer } from "@/types";
+import type { ColorKeyEffectLayer } from "@/core/effects/ColorKey/ColorKeyEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorKeyPanel.module.scss";
 
 interface ColorKeyPanelProps {
-  layer: ColorKeyAdjustmentLayer;
+  layer: ColorKeyEffectLayer;
   parentLayerName: string;
 }
 

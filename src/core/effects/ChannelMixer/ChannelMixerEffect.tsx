@@ -1,18 +1,52 @@
-import type { ChannelMixerAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ChannelMixerPanel } from "./ChannelMixerPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type ChannelMixerOp = Extract<AdjustmentRenderOp, { kind: "channel-mixer" }>;
+const ChannelMixerIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <line x1="3" y1="2" x2="3" y2="10" stroke="#ff6060" />
+    <line x1="6" y1="2" x2="6" y2="10" stroke="#60d060" />
+    <line x1="9" y1="2" x2="9" y2="10" stroke="#6060ff" />
+    <circle cx="3" cy="4" r="1" fill="#ff6060" stroke="none" />
+    <circle cx="6" cy="7" r="1" fill="#60d060" stroke="none" />
+    <circle cx="9" cy="5" r="1" fill="#6060ff" stroke="none" />
+  </svg>
+);
+
+
+export interface ChannelMixerParams {
+    monochrome: boolean;
+    /** Output channel currently shown in the panel UI. */
+    outputChannel: "red" | "green" | "blue" | "gray";
+    /** Source-channel multipliers (-200..+200, expressed as percent) and constant offset. */
+    red: { red: number; green: number; blue: number; constant: number };
+    green: { red: number; green: number; blue: number; constant: number };
+    blue: { red: number; green: number; blue: number; constant: number };
+    gray: { red: number; green: number; blue: number; constant: number };
+}
+
+export type ChannelMixerEffectLayer = EffectLayerOf<"channel-mixer", ChannelMixerParams>;
+
+type ChannelMixerOp = Extract<EffectRenderOp, { kind: "channel-mixer" }>;
 
 export const ChannelMixerEffect: IPipelineEffect<
-  ChannelMixerAdjustmentLayer,
+  ChannelMixerEffectLayer,
   ChannelMixerOp
 > = {
   id: "channel-mixer",
   label: "Channel Mixer…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {
     monochrome: false,
     outputChannel: "red",
@@ -69,4 +103,5 @@ export const ChannelMixerEffect: IPipelineEffect<
   },
 
   Panel: ChannelMixerPanel,
+  icon: ChannelMixerIcon,
 };

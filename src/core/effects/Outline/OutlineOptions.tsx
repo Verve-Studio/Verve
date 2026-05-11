@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { OutlineAdjustmentLayer } from "@/types";
+import type { OutlineEffectLayer } from "@/core/effects/Outline/OutlineEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./OutlineOptions.module.scss";
@@ -8,7 +8,7 @@ import styles from "./OutlineOptions.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface OutlineOptionsProps {
-  layer: OutlineAdjustmentLayer;
+  layer: OutlineEffectLayer;
   parentLayerName: string;
 }
 

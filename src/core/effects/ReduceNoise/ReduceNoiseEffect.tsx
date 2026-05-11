@@ -1,12 +1,22 @@
-import type { ReduceNoiseAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceNoisePanel } from "./ReduceNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type ReduceNoiseOp = Extract<AdjustmentRenderOp, { kind: "reduce-noise" }>;
+
+export interface ReduceNoiseParams {
+    strength: number;
+    preserveDetails: number;
+    reduceColorNoise: number;
+    sharpenDetails: number;
+}
+
+export type ReduceNoiseEffectLayer = EffectLayerOf<"reduce-noise", ReduceNoiseParams>;
+
+type ReduceNoiseOp = Extract<EffectRenderOp, { kind: "reduce-noise" }>;
 
 export const ReduceNoiseEffect: IPipelineEffect<
-  ReduceNoiseAdjustmentLayer,
+  ReduceNoiseEffectLayer,
   ReduceNoiseOp
 > = {
   id: "reduce-noise",
@@ -20,17 +30,12 @@ export const ReduceNoiseEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { strength, preserveDetails, reduceColorNoise, sharpenDetails } =
-      layer.params;
     return {
       kind: "reduce-noise",
       layerId: layer.id,
-      strength,
-      preserveDetails,
-      reduceColorNoise,
-      sharpenDetails,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -39,7 +44,7 @@ export const ReduceNoiseEffect: IPipelineEffect<
     const w = dstTex.width;
     const h = dstTex.height;
     const { strength, preserveDetails, reduceColorNoise, sharpenDetails } =
-      entry;
+      entry.params;
 
     const reducePair = rt.getRenderPipelinePair(
       "filter-reduce-noise",

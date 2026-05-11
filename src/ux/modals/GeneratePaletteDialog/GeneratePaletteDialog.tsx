@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ModalDialog } from "../ModalDialog/ModalDialog";
 import { DialogButton } from "../../widgets/DialogButton/DialogButton";
-import { sortSwatchesByHue } from "@/utils/swatchSort";
+import { normalizePaletteForDisplay } from "@/utils/swatchSort";
 import {
   generateColorWheel,
   generateNightColor,
@@ -148,20 +148,22 @@ export function GeneratePaletteDialog({
             result.data as Uint8Array,
             extractCount,
           );
-          const seen = new Set<number>();
-          const colors: RGBAColor[] = [];
+          // Pull the raw bucket averages out of the WASM result, then run
+          // the shared dedup → near-merge → hue-sort pipeline so the
+          // extracted preview is consistent with how palettes appear
+          // everywhere else in the app.  Threshold 20 collapses the few
+          // anti-aliased boundary pixels that a median-cut split would
+          // otherwise return as their own near-duplicate buckets.
+          const raw: RGBAColor[] = new Array(count);
           for (let i = 0; i < count; i++) {
-            const r = palette[i * 4],
-              g = palette[i * 4 + 1],
-              b = palette[i * 4 + 2],
-              a = palette[i * 4 + 3];
-            const key = (r << 24) | (g << 16) | (b << 8) | a;
-            if (!seen.has(key)) {
-              seen.add(key);
-              colors.push({ r, g, b, a });
-            }
+            raw[i] = {
+              r: palette[i * 4],
+              g: palette[i * 4 + 1],
+              b: palette[i * 4 + 2],
+              a: palette[i * 4 + 3],
+            };
           }
-          setExtractPalette(colors);
+          setExtractPalette(normalizePaletteForDisplay(raw, 20));
         } finally {
           setExtractPending(false);
         }
@@ -174,15 +176,20 @@ export function GeneratePaletteDialog({
   }, [mode, extractCount, hasActiveDocument, canvasHandleRef]);
 
   // ── Combined sorted preview ───────────────────────────────────────
+  // Both branches go through the same shared pipeline so the preview chips
+  // are guaranteed to be ordered identically to how the SwatchPanel will
+  // display them after Apply (and to how every other palette flow in the
+  // app sorts).  `extractPalette` is already normalised at write time, so
+  // running it through again is idempotent — keeping a single code path
+  // here is worth the trivial extra work.
   const preview = useMemo<RGBAColor[]>(() => {
     const raw = mode === "extract" ? extractPalette : syncPreview;
-    return sortSwatchesByHue(raw).map((e) => e.color);
+    return normalizePaletteForDisplay(raw);
   }, [mode, syncPreview, extractPalette]);
 
   // ── Apply ─────────────────────────────────────────────────────────
   function handleApply(): void {
-    const raw = mode === "extract" ? extractPalette : syncPreview;
-    onApply(sortSwatchesByHue(raw).map((e) => e.color));
+    onApply(preview.slice());
     onClose();
   }
 

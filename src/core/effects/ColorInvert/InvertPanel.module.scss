@@ -9,7 +9,7 @@
 .description {
   margin: 0;
   font-size: 11px;
-  color: #aaaaaa;
+  color: var(--color-text-dim);
   line-height: 1.5;
 }
 
@@ -17,14 +17,14 @@
   display: flex;
   align-items: center;
   padding-top: 6px;
-  border-top: 1px solid #191919;
+  border-top: 1px solid var(--color-border);
   font-size: 10px;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   margin-top: 4px;
 
   strong {
     font-weight: 500;
-    color: #d4d4d4;
+    color: var(--color-text);
   }
 }
 

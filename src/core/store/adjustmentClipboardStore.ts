@@ -1,9 +1,9 @@
-import type { AdjustmentParamsMap } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 
 export type AdjustmentClipboardData = {
   kind: "curves-settings";
   version: 1;
-  payload: AdjustmentParamsMap["curves"];
+  payload: EffectParamsMap["curves"];
 } | null;
 
 let clipboardData: AdjustmentClipboardData = null;

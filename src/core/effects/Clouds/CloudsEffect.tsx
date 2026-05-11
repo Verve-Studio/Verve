@@ -1,11 +1,27 @@
-import type { CloudsAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type CloudsOp = Extract<AdjustmentRenderOp, { kind: "clouds" }>;
 
-export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
+export interface CloudsParams {
+    scale: number;
+    opacity: number;
+    colorMode: "grayscale" | "color";
+    fgR: number;
+    fgG: number;
+    fgB: number;
+    bgR: number;
+    bgG: number;
+    bgB: number;
+    seed: number;
+}
+
+export type CloudsEffectLayer = EffectLayerOf<"clouds", CloudsParams>;
+
+type CloudsOp = Extract<EffectRenderOp, { kind: "clouds" }>;
+
+export const CloudsEffect: IPipelineEffect<CloudsEffectLayer, CloudsOp> = {
   id: "clouds",
   label: "Clouds…",
   menu: { root: "filters", submenu: "render" },
@@ -23,21 +39,12 @@ export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { scale, opacity, colorMode, fgR, fgG, fgB, bgR, bgG, bgB, seed } =
-      layer.params;
-    const fgColor = (fgR | (fgG << 8) | (fgB << 16)) >>> 0;
-    const bgColor = (bgR | (bgG << 8) | (bgB << 16)) >>> 0;
     return {
       kind: "clouds",
       layerId: layer.id,
-      scale,
-      opacity,
-      colorMode: colorMode === "color" ? 1 : 0,
-      fgColor,
-      bgColor,
-      seed,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -45,13 +52,17 @@ export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
     const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
+    const { scale, opacity, colorMode, fgR, fgG, fgB, bgR, bgG, bgB, seed } =
+      entry.params;
+    const fgColor = (fgR | (fgG << 8) | (fgB << 16)) >>> 0;
+    const bgColor = (bgR | (bgG << 8) | (bgB << 16)) >>> 0;
     const pair = rt.getRenderPipelinePair("filter-clouds", "fs_clouds");
     const paramsData = new Uint32Array([
-      entry.scale,
-      entry.opacity,
-      entry.colorMode,
-      entry.fgColor,
-      entry.bgColor,
+      scale,
+      opacity,
+      colorMode === "color" ? 1 : 0,
+      fgColor,
+      bgColor,
       w,
       h,
       0,
@@ -59,7 +70,7 @@ export const CloudsEffect: IPipelineEffect<CloudsAdjustmentLayer, CloudsOp> = {
     const paramsBuf = rt.makeParamsBuf(paramsData);
     const perm = new Uint32Array(256);
     for (let i = 0; i < 256; i++) perm[i] = i;
-    let s = (entry.seed ^ 0xdeadbeef) >>> 0;
+    let s = (seed ^ 0xdeadbeef) >>> 0;
     for (let i = 255; i > 0; i--) {
       s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
       const idx = s % (i + 1);

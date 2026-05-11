@@ -1,15 +1,49 @@
-import type { SeamlessTextureAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
+
+export interface SeamlessTextureParams {
+    /** Enable the Voronoi island break-repetition pass. Default: true */
+    breakRepetition: boolean;
+    /** Cell/island size in pixels (1–512). Default: 128 */
+    cellSize: number;
+    /** Blend/feather radius in pixels at island borders (0–128). Default: 16 */
+    blendRadius: number;
+    /** Enable the seamless border blending pass. Default: true */
+    seamlessBorders: boolean;
+    /** Horizontal border blend radius in pixels (0–256). Default: 32.
+     *  0 disables the X-axis blend (the texture won't tile horizontally). */
+    borderRadiusX: number;
+    /** Vertical border blend radius in pixels (0–256). Default: 32.
+     *  0 disables the Y-axis blend (the texture won't tile vertically). */
+    borderRadiusY: number;
+    /** When true, X and Y radii move together in the panel. Default: true. */
+    linkBorderRadius: boolean;
+    /** Maximum mix amount at the very edge, 0..1. The original shader hard-
+     *  coded this as 0.5 (half mirror, half original) which left visible
+     *  seams on contrasty textures. Crank it higher when the seam is still
+     *  noticeable; drop it lower for a subtler blend. Default: 0.5 to match
+     *  legacy behaviour for documents saved before this knob existed. */
+    borderStrength: number;
+    /** Random seed. */
+    seed: number;
+    /** @deprecated Pre-axis-split single-radius value. Documents saved before
+     *  the H/V split set only this; the panel and effect read it as the
+     *  fallback for `borderRadiusX`/`borderRadiusY` when those are absent. */
+    borderRadius?: number;
+}
+
+export type SeamlessTextureEffectLayer = EffectLayerOf<"seamless-texture", SeamlessTextureParams>;
+
 type SeamlessTextureOp = Extract<
-  AdjustmentRenderOp,
+  EffectRenderOp,
   { kind: "seamless-texture" }
 >;
 
 export const SeamlessTextureEffect: IPipelineEffect<
-  SeamlessTextureAdjustmentLayer,
+  SeamlessTextureEffectLayer,
   SeamlessTextureOp
 > = {
   id: "seamless-texture",
@@ -20,30 +54,20 @@ export const SeamlessTextureEffect: IPipelineEffect<
     cellSize: 128,
     blendRadius: 16,
     seamlessBorders: true,
-    borderRadius: 32,
+    borderRadiusX: 32,
+    borderRadiusY: 32,
+    linkBorderRadius: true,
+    borderStrength: 0.5,
     seed: 0,
   },
 
   buildPlanEntry(layer, { mask }) {
-    const {
-      breakRepetition,
-      cellSize,
-      blendRadius,
-      seamlessBorders,
-      borderRadius,
-      seed,
-    } = layer.params;
     return {
       kind: "seamless-texture",
       layerId: layer.id,
-      breakRepetition,
-      cellSize,
-      blendRadius,
-      seamlessBorders,
-      borderRadius,
-      seed,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -56,9 +80,40 @@ export const SeamlessTextureEffect: IPipelineEffect<
       cellSize,
       blendRadius,
       seamlessBorders,
-      borderRadius,
       seed,
-    } = entry;
+    } = entry.params;
+    // Resolve per-axis border radii with legacy fallback. Documents saved
+    // before the H/V split only have `borderRadius`; treat that as the
+    // value for both axes so old projects open identically.
+    const legacyR = entry.params.borderRadius ?? 32;
+    const borderRadiusX = entry.params.borderRadiusX ?? legacyR;
+    const borderRadiusY = entry.params.borderRadiusY ?? legacyR;
+    // Border-blend strength: documents pre-dating this param keep the
+    // legacy hardcoded 0.5 mix.
+    const borderStrength = Math.max(
+      0,
+      Math.min(1, entry.params.borderStrength ?? 0.5),
+    );
+
+    // Build the 32-byte border uniform: four u32 + one f32 + 12 bytes pad.
+    // Mixing types in the same buffer needs ArrayBuffer + DataView.
+    const makeBorderUniform = (
+      width: number,
+      height: number,
+      rx: number,
+      ry: number,
+      strength: number,
+    ): ArrayBuffer => {
+      const buf = new ArrayBuffer(32);
+      const u32 = new Uint32Array(buf);
+      const f32 = new Float32Array(buf);
+      u32[0] = width;
+      u32[1] = height;
+      u32[2] = rx;
+      u32[3] = ry;
+      f32[4] = strength;
+      return buf;
+    };
     const breakPair = rt.getRenderPipelinePair(
       "filter-seamless-break",
       "fs_seamless_break",
@@ -69,6 +124,9 @@ export const SeamlessTextureEffect: IPipelineEffect<
     );
 
     if (!breakRepetition && !seamlessBorders) {
+      // Both passes off → still emit the border pass as a pass-through (zero
+      // radii on both axes ⇒ no blending). Uniform must match the shader's
+      // 32-byte BorderParams layout, so use makeBorderUniform with zeros.
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(borderPair, dstTex),
@@ -78,7 +136,7 @@ export const SeamlessTextureEffect: IPipelineEffect<
           {
             binding: 2,
             resource: {
-              buffer: rt.makeParamsBuf(new Uint32Array([w, h, 0, 0])),
+              buffer: rt.makeParamsBuf(makeBorderUniform(w, h, 0, 0, 0)),
             },
           },
         ],
@@ -112,7 +170,13 @@ export const SeamlessTextureEffect: IPipelineEffect<
 
       if (seamlessBorders) {
         const p2 = rt.makeParamsBuf(
-          new Uint32Array([w, h, Math.max(1, borderRadius), 0]),
+          makeBorderUniform(
+            w,
+            h,
+            Math.max(0, borderRadiusX),
+            Math.max(0, borderRadiusY),
+            borderStrength,
+          ),
         );
         rt.encodeRenderPass(
           encoder,
@@ -126,7 +190,13 @@ export const SeamlessTextureEffect: IPipelineEffect<
       }
     } else {
       const p2 = rt.makeParamsBuf(
-        new Uint32Array([w, h, Math.max(1, borderRadius), 0]),
+        makeBorderUniform(
+          w,
+          h,
+          Math.max(0, borderRadiusX),
+          Math.max(0, borderRadiusY),
+          borderStrength,
+        ),
       );
       rt.encodeRenderPass(
         encoder,

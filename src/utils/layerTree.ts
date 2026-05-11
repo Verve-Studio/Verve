@@ -1,10 +1,5 @@
-import type {
-  LayerState,
-  GroupLayerState,
-  CompositeLayerState,
-  MaskLayerState,
-  AdjustmentLayerState,
-} from "@/types";
+import type { LayerState, GroupLayerState, CompositeLayerState, MaskLayerState } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isContainerLayer, isCompositeLayer } from "@/types";
 
 // ─── Root layer IDs ───────────────────────────────────────────────────────────
@@ -133,7 +128,7 @@ export function* walkLayerTree(
       (l) =>
         "type" in l &&
         (l.type === "mask" || l.type === "adjustment") &&
-        (l as MaskLayerState | AdjustmentLayerState).parentId === pixelId,
+        (l as MaskLayerState | EffectLayerState).parentId === pixelId,
     );
   }
 
@@ -155,7 +150,7 @@ export function* walkLayerTree(
       ) {
         // Only skip if parentId points to a non-container layer (per-layer attachment).
         const parent = layersById.get(
-          (layer as MaskLayerState | AdjustmentLayerState).parentId,
+          (layer as MaskLayerState | EffectLayerState).parentId,
         );
         if (parent && !isContainerLayer(parent)) continue;
         // Group/composite-scoped adjustment: fall through and yield.
@@ -244,7 +239,7 @@ export function buildClusters(layers: readonly LayerState[]): {
       }
       for (const l of layers) {
         if ("type" in l && (l.type === "mask" || l.type === "adjustment")) {
-          const parentId = (l as MaskLayerState | AdjustmentLayerState)
+          const parentId = (l as MaskLayerState | EffectLayerState)
             .parentId;
           if (usedIds.has(parentId) && !usedIds.has(l.id)) {
             cluster.push(l);
@@ -257,7 +252,7 @@ export function buildClusters(layers: readonly LayerState[]): {
         if (
           "type" in l &&
           (l.type === "mask" || l.type === "adjustment") &&
-          (l as MaskLayerState | AdjustmentLayerState).parentId === rootId
+          (l as MaskLayerState | EffectLayerState).parentId === rootId
         ) {
           cluster.push(l);
           usedIds.add(l.id);
@@ -313,7 +308,7 @@ export function deepDuplicateGroup(
         (l) =>
           "type" in l &&
           (l.type === "mask" || l.type === "adjustment") &&
-          (l as MaskLayerState | AdjustmentLayerState).parentId === layerId,
+          (l as MaskLayerState | EffectLayerState).parentId === layerId,
       );
       for (const child of attached) {
         const newChildId = ensureId(child.id);

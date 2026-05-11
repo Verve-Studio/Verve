@@ -14,12 +14,12 @@
   flex-direction: row;
   align-items: flex-start;
   padding: 6px 8px;
-  background: #282828;
-  border-bottom: 1px solid #191919;
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
 
   &:last-of-type {
     border-bottom: none;
-    border-top: 1px solid #191919;
+    border-top: 1px solid var(--color-border);
   }
 }
 
@@ -38,7 +38,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   white-space: nowrap;
   text-align: center;
 }
@@ -59,14 +59,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 5px 8px 6px;
-  border-top: 1px solid #191919;
+  border-top: 1px solid var(--color-border);
   font-size: 10px;
-  color: #7a7a7a;
+  color: var(--color-text-muted);
   gap: 6px;
 
   strong {
     font-weight: 500;
-    color: #d4d4d4;
+    color: var(--color-text);
   }
 }
 

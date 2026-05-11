@@ -1,10 +1,11 @@
-import type { ComponentType } from "react";
-import type { AdjustmentLayerState, RGBAColor } from "@/types";
+import type { ComponentType, ReactElement } from "react";
+import type { RGBAColor } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import type {
-  AdjustmentRenderOp,
+  EffectRenderOp,
   GpuLayer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
-import type { EffectEncoder } from "@/graphicspipeline/webgpu/EffectEncoder";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { EffectEncoder } from "@/graphics/webgpu/EffectEncoder";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 
 export type MenuRoot = "adjustments" | "effects" | "filters";
@@ -44,7 +45,7 @@ export interface EncodeContext {
   engine: EffectEncoder;
 }
 
-export interface PanelProps<L extends AdjustmentLayerState> {
+export interface PanelProps<L extends EffectLayerState> {
   layer: L;
   parentLayerName: string;
   /**
@@ -61,16 +62,16 @@ export interface PanelProps<L extends AdjustmentLayerState> {
  * single effect so adding a new one is one registration step instead of edits
  * across the codebase.
  *
- * The interface intentionally reuses the existing `AdjustmentLayerState` /
- * `AdjustmentRenderOp` unions rather than introducing new ones; the registry
+ * The interface intentionally reuses the existing `EffectLayerState` /
+ * `EffectRenderOp` unions rather than introducing new ones; the registry
  * routes specific union members to the right effect by id.
  */
 export interface IPipelineEffect<
-  L extends AdjustmentLayerState = AdjustmentLayerState,
-  Op extends AdjustmentRenderOp = AdjustmentRenderOp,
+  L extends EffectLayerState = EffectLayerState,
+  Op extends EffectRenderOp = EffectRenderOp,
 > {
-  /** Stable id; matches `adjustmentType` on the layer and `kind` on the render op. */
-  readonly id: L["adjustmentType"] & Op["kind"];
+  /** Stable id; matches `effectType` on the layer and `kind` on the render op. */
+  readonly id: L["effectType"] & Op["kind"];
 
   /** Display label, e.g. "Pixelate…". */
   readonly label: string;
@@ -90,16 +91,20 @@ export interface IPipelineEffect<
   /** Right-side panel component shown when this layer is active. */
   readonly Panel: ComponentType<PanelProps<L>>;
 
+  /** SVG icon shown in the panel header. Optional — falls back to a generic
+   *  effect icon if omitted. */
+  readonly icon?: ReactElement;
+
   /**
    * Optional. Called once per frame after encode + submit. Effects with
    * cross-frame texture caches use this to release entries that weren't
    * touched during the just-submitted frame (analogous to the previous
-   * `*UsedThisFrame` flags on AdjustmentEncoder).
+   * `*UsedThisFrame` flags on EffectEncoder).
    */
   onFrameEnd?(): void;
 
   /**
-   * Optional. Called when the owning AdjustmentEncoder is destroyed (canvas
+   * Optional. Called when the owning EffectEncoder is destroyed (canvas
    * tear-down). Effects with persistent GPU resources (texture caches, LUT
    * textures) release them here.
    */

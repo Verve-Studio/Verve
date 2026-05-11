@@ -1,7 +1,11 @@
 import { useCallback, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { historyStore } from "@/core/store/historyStore";
-import { u8TransferStore } from "@/core/store/layerDataTransfer";
+
+import {
+  u8TransferStore,
+  f32TransferStore,
+} from "@/core/store/layerDataTransfer";
+import { decodeExrLayers } from "@/wasm";
 import {
   IMAGE_EXTENSIONS,
   EXT_TO_MIME,
@@ -21,6 +25,8 @@ import type {
 import type { AppAction } from "@/core/store/AppContext";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
+import { activeScope, createDocumentScope, setActiveScope } from "@/core/store/scope";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,11 +160,11 @@ export function useFileOps({
       pixelFormat?: PixelFormat;
     }): void => {
       const snapshot = captureActiveSnapshot();
-      const savedHistory = historyStore.detach();
       const savedLayerData = serializeActiveTabPixels();
       const n = untitledCounter;
       setUntitledCounter(n + 1);
       const newId: string = makeTabId();
+      const newScope = createDocumentScope();
       const fmt: PixelFormat = pixelFormat ?? "rgba8";
       const newSnapshot: TabSnapshot = {
         canvasWidth: width,
@@ -184,7 +190,7 @@ export function useFileOps({
       const updated: TabRecord[] = [
         ...tabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, snapshot, savedHistory, savedLayerData }
+            ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
             : t,
         ),
         {
@@ -193,19 +199,21 @@ export function useFileOps({
           filePath: null,
           snapshot: newSnapshot,
           savedLayerData: null,
-          savedHistory: null,
+          scope: newScope,
           canvasKey: 1,
           tiledMode: false,
           showTileGrid: false,
           pixelFormat: fmt,
           exposureEV: 0,
-          toneMappingOperator: "reinhard",
+          toneMappingOperator: "clamp",
+            viewTransformLutId: null,
           animationMode: false,
         },
       ];
       setTabs(updated);
+      setActiveScope(newScope);
       setActiveTabId(newId);
-      historyStore.clear({ recaptureSnapshot: false });
+      activeScope().history.clear({ recaptureSnapshot: false });
       setPendingLayerData(null);
       dispatch({
         type: "NEW_CANVAS",
@@ -229,6 +237,297 @@ export function useFileOps({
     async (path: string): Promise<void> => {
       // ── Image file import ──────────────────────────────────────────────────
       const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+      if (ext === ".psd") {
+        const { loadPsdLayers } = await import("@/core/io/psdLoader");
+        const base64 = await window.api.readFileBase64(path);
+        const bin = atob(base64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        const psd = loadPsdLayers(buf.buffer);
+        const hasAnyLeaf = (
+          ns: import("@/core/io/psdLoader").PsdImportedNode[],
+        ): boolean =>
+          ns.some(
+            (n) =>
+              n.kind === "layer" ||
+              (n.kind === "group" && hasAnyLeaf(n.children)),
+          );
+        if (!hasAnyLeaf(psd.nodes)) {
+          showOperationError(
+            "Could not open file.",
+            "The PSD has no supported pixel layers.",
+          );
+          return;
+        }
+        const newId = makeTabId();
+      const newScope = createDocumentScope();
+        const layerData = new Map<string, string>();
+        const layers: LayerState[] = [];
+        // Recursively flatten the PSD tree into Verve's flat layer array.
+        // Groups become GroupLayerState entries with childIds that mirror
+        // PSD folder structure. Mask layers stay flat (parentId-linked) and
+        // are NOT added to any parent group's childIds — they're attached
+        // to a pixel layer regardless of where that layer is nested, which
+        // matches the rest of Verve's mask handling.
+        const flatten = (
+          nodes: import("@/core/io/psdLoader").PsdImportedNode[],
+          parentChildIds: string[] | null,
+        ): void => {
+          for (const node of nodes) {
+            if (node.kind === "group") {
+              const childIds: string[] = [];
+              flatten(node.children, childIds);
+              layers.push({
+                id: node.id,
+                name: node.name,
+                visible: node.visible,
+                opacity: 1,
+                locked: false,
+                blendMode: "normal",
+                type: "group",
+                collapsed: node.collapsed,
+                childIds,
+              });
+              if (parentChildIds) parentChildIds.push(node.id);
+              continue;
+            }
+            const psdLayer = node;
+            const storeKey = `${newId}:${psdLayer.id}`;
+            u8TransferStore.set(storeKey, psdLayer.pixels);
+            layerData.set(psdLayer.id, `data:raw/rgba8-ref;id=${storeKey}`);
+            layerData.set(
+              `${psdLayer.id}:geo`,
+              JSON.stringify({
+                layerWidth: psdLayer.layerWidth,
+                layerHeight: psdLayer.layerHeight,
+                offsetX: psdLayer.offsetX,
+                offsetY: psdLayer.offsetY,
+              }),
+            );
+            layers.push({
+              id: psdLayer.id,
+              name: psdLayer.name,
+              visible: psdLayer.visible,
+              opacity: psdLayer.opacity,
+              locked: false,
+              blendMode: psdLayer.blendMode,
+            });
+            if (parentChildIds) parentChildIds.push(psdLayer.id);
+            // Optional mask child. Mask pixel data is single-channel — encode
+            // it as 4-channel grey RGBA (tools downstream still expect RGBA).
+            if (psdLayer.mask) {
+              const maskId = `${psdLayer.id}-mask`;
+              const m = psdLayer.mask;
+              const rgba = new Uint8Array(m.width * m.height * 4);
+              for (let p = 0; p < m.width * m.height; p++) {
+                const v = m.pixels[p];
+                const j = p * 4;
+                rgba[j] = v;
+                rgba[j + 1] = v;
+                rgba[j + 2] = v;
+                rgba[j + 3] = 255;
+              }
+              const maskStoreKey = `${newId}:${maskId}`;
+              u8TransferStore.set(maskStoreKey, rgba);
+              layerData.set(
+                maskId,
+                `data:raw/rgba8-ref;id=${maskStoreKey}`,
+              );
+              layerData.set(
+                `${maskId}:geo`,
+                JSON.stringify({
+                  layerWidth: m.width,
+                  layerHeight: m.height,
+                  offsetX: m.offsetX,
+                  offsetY: m.offsetY,
+                }),
+              );
+              layers.push({
+                id: maskId,
+                name: "Mask",
+                visible: true,
+                type: "mask",
+                parentId: psdLayer.id,
+              });
+            }
+          }
+        };
+        flatten(psd.nodes, null);
+        const title = fileTitle(path);
+        const newSnapshot: TabSnapshot = {
+          canvasWidth: psd.width,
+          canvasHeight: psd.height,
+          backgroundFill: "transparent",
+          layers,
+          activeLayerId: layers[layers.length - 1]?.id ?? null,
+          zoom: 1,
+          swatches: DEFAULT_SWATCHES,
+          swatchGroups: [],
+          pixelBrushes: [],
+          pixelFormat: "rgba8",
+        };
+        const snapshot = captureActiveSnapshot();
+        const savedLayerData = serializeActiveTabPixels();
+        const updated: TabRecord[] = [
+          ...tabs.map((t) =>
+            t.id === activeTabId
+              ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
+              : t,
+          ),
+          {
+            id: newId,
+            title,
+            filePath: path,
+            snapshot: newSnapshot,
+            savedLayerData: layerData,
+            scope: newScope,
+            canvasKey: 1,
+            tiledMode: false,
+            showTileGrid: false,
+            pixelFormat: "rgba8" as PixelFormat,
+            exposureEV: 0,
+            toneMappingOperator: "clamp",
+            viewTransformLutId: null,
+            animationMode: false,
+          },
+        ];
+        setTabs(updated);
+        setActiveScope(newScope);
+        setActiveTabId(newId);
+        activeScope().history.clear({ recaptureSnapshot: false });
+        setPendingLayerData(null);
+        dispatch({
+          type: "SWITCH_TAB",
+          payload: {
+            width: psd.width,
+            height: psd.height,
+            backgroundFill: "transparent",
+            layers,
+            activeLayerId: newSnapshot.activeLayerId,
+            zoom: 1,
+            tiledMode: false,
+            showTileGrid: false,
+            swatches: newSnapshot.swatches,
+            swatchGroups: newSnapshot.swatchGroups,
+          },
+        });
+        const updatedRecent = await window.api.addRecentFile(path);
+        onRecentFilesUpdated?.(updatedRecent);
+        if (psd.hadUnsupportedLayers) {
+          showOperationError(
+            "Some PSD content was skipped.",
+            "Verve only imports rasterized pixel layers + masks. Text, shape, smart object, and adjustment layers in this PSD have been omitted.",
+          );
+        }
+        return;
+      }
+      // ── Multi-layer EXR ───────────────────────────────────────────────
+      if (ext === ".exr") {
+        const base64 = await window.api.readFileBase64(path);
+        const bin = atob(base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const exr = await decodeExrLayers(bytes);
+        if (exr.layers.length > 1) {
+          const newId = makeTabId();
+      const newScope = createDocumentScope();
+          const layerData = new Map<string, string>();
+          const layers: LayerState[] = [];
+          // Track names already used so we can disambiguate duplicates.
+          const seenNames = new Map<string, number>();
+          exr.layers.forEach((L, i) => {
+            const layerId = `layer-${i}`;
+            let name = L.name.trim() || `Layer ${i + 1}`;
+            const n = seenNames.get(name) ?? 0;
+            if (n > 0) name = `${name} (${n + 1})`;
+            seenNames.set(name, n + 1);
+            const storeKey = `${newId}:${layerId}`;
+            f32TransferStore.set(storeKey, L.pixels);
+            layerData.set(layerId, `data:raw/f32-ref;id=${storeKey}`);
+            layerData.set(
+              `${layerId}:geo`,
+              JSON.stringify({
+                layerWidth: L.width,
+                layerHeight: L.height,
+                offsetX: L.offsetX,
+                offsetY: L.offsetY,
+              }),
+            );
+            layers.push({
+              id: layerId,
+              name,
+              visible: true,
+              opacity: 1,
+              locked: false,
+              blendMode: "normal",
+            });
+          });
+          const title = fileTitle(path);
+          const newSnapshot: TabSnapshot = {
+            canvasWidth: exr.canvasWidth,
+            canvasHeight: exr.canvasHeight,
+            backgroundFill: "transparent",
+            layers,
+            activeLayerId: layers[layers.length - 1]?.id ?? null,
+            zoom: 1,
+            swatches: DEFAULT_SWATCHES,
+            swatchGroups: [],
+            pixelBrushes: [],
+            pixelFormat: "rgba32f",
+          };
+          const snapshot = captureActiveSnapshot();
+          const savedLayerData = serializeActiveTabPixels();
+          const updated: TabRecord[] = [
+            ...tabs.map((t) =>
+              t.id === activeTabId
+                ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
+                : t,
+            ),
+            {
+              id: newId,
+              title,
+              filePath: path,
+              snapshot: newSnapshot,
+              savedLayerData: layerData,
+            scope: newScope,
+              canvasKey: 1,
+              tiledMode: false,
+              showTileGrid: false,
+              pixelFormat: "rgba32f" as PixelFormat,
+              exposureEV: 0,
+              toneMappingOperator: "clamp",
+            viewTransformLutId: null,
+              animationMode: false,
+            },
+          ];
+          setTabs(updated);
+          setActiveScope(newScope);
+          setActiveTabId(newId);
+          activeScope().history.clear({ recaptureSnapshot: false });
+          setPendingLayerData(null);
+          dispatch({
+            type: "SWITCH_TAB",
+            payload: {
+              width: exr.canvasWidth,
+              height: exr.canvasHeight,
+              backgroundFill: "transparent",
+              layers,
+              activeLayerId: newSnapshot.activeLayerId,
+              zoom: 1,
+              tiledMode: false,
+              showTileGrid: false,
+              pixelFormat: "rgba32f",
+              swatches: newSnapshot.swatches,
+              swatchGroups: newSnapshot.swatchGroups,
+            },
+          });
+          const updatedRecent = await window.api.addRecentFile(path);
+          onRecentFilesUpdated?.(updatedRecent);
+          return;
+        }
+        // Single-layer EXR — fall through to the standard image-import path.
+      }
+
       if (IMAGE_EXTENSIONS.has(ext)) {
         const base64 = await window.api.readFileBase64(path);
         const mime = EXT_TO_MIME[ext] ?? "image/png";
@@ -275,13 +574,13 @@ export function useFileOps({
             pixelFormat: "rgba32f",
           };
           const snapshot = captureActiveSnapshot();
-          const savedHistory = historyStore.detach();
           const savedLayerData = serializeActiveTabPixels();
           const newId = makeTabId();
+      const newScope = createDocumentScope();
           const updated: TabRecord[] = [
             ...tabs.map((t) =>
               t.id === activeTabId
-                ? { ...t, snapshot, savedHistory, savedLayerData }
+                ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
                 : t,
             ),
             {
@@ -290,19 +589,21 @@ export function useFileOps({
               filePath: null,
               snapshot: newSnapshot,
               savedLayerData: layerData,
-              savedHistory: null,
+            scope: newScope,
               canvasKey: 1,
               tiledMode: false,
               showTileGrid: false,
               pixelFormat: "rgba32f" as PixelFormat,
               exposureEV: 0,
-              toneMappingOperator: "reinhard",
+              toneMappingOperator: "clamp",
+            viewTransformLutId: null,
               animationMode: false,
             },
           ];
           setTabs(updated);
+          setActiveScope(newScope);
           setActiveTabId(newId);
-          historyStore.clear({ recaptureSnapshot: false });
+          activeScope().history.clear({ recaptureSnapshot: false });
           setPendingLayerData(null);
           dispatch({
             type: "SWITCH_TAB",
@@ -316,6 +617,8 @@ export function useFileOps({
               tiledMode: false,
               showTileGrid: false,
               pixelFormat: "rgba32f",
+              swatches: newSnapshot.swatches,
+              swatchGroups: newSnapshot.swatchGroups,
             },
           });
           const updatedRecent = await window.api.addRecentFile(path);
@@ -327,6 +630,7 @@ export function useFileOps({
         const data = loaded.data as Uint8Array;
         const layerId = "layer-0";
         const newId = makeTabId();
+      const newScope = createDocumentScope();
         const storeKey = `${newId}:${layerId}`;
         u8TransferStore.set(storeKey, data);
         const layerData = new Map([
@@ -356,12 +660,11 @@ export function useFileOps({
           pixelFormat: "rgba8",
         };
         const snapshot = captureActiveSnapshot();
-        const savedHistory = historyStore.detach();
         const savedLayerData = serializeActiveTabPixels();
         const updated: TabRecord[] = [
           ...tabs.map((t) =>
             t.id === activeTabId
-              ? { ...t, snapshot, savedHistory, savedLayerData }
+              ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
               : t,
           ),
           {
@@ -370,19 +673,21 @@ export function useFileOps({
             filePath: null,
             snapshot: newSnapshot,
             savedLayerData: layerData,
-            savedHistory: null,
+            scope: newScope,
             canvasKey: 1,
             tiledMode: false,
             showTileGrid: false,
             pixelFormat: "rgba8" as PixelFormat,
             exposureEV: 0,
-            toneMappingOperator: "reinhard",
+            toneMappingOperator: "clamp",
+            viewTransformLutId: null,
             animationMode: false,
           },
         ];
         setTabs(updated);
+        setActiveScope(newScope);
         setActiveTabId(newId);
-        historyStore.clear({ recaptureSnapshot: false });
+        activeScope().history.clear({ recaptureSnapshot: false });
         setPendingLayerData(null);
         dispatch({
           type: "SWITCH_TAB",
@@ -395,6 +700,8 @@ export function useFileOps({
             zoom: 1,
             tiledMode: false,
             showTileGrid: false,
+            swatches: newSnapshot.swatches,
+            swatchGroups: newSnapshot.swatchGroups,
           },
         });
         const updatedRecent = await window.api.addRecentFile(path);
@@ -439,6 +746,28 @@ export function useFileOps({
         pixelBrushes?: unknown;
         spritesheet?: unknown;
       };
+
+      // ── Legacy field migration ────────────────────────────────────────────
+      // Older .verve files (pre-EffectType rename) tagged adjustment/effect/
+      // filter layers with `adjustmentType` instead of `effectType`. Copy the
+      // legacy field forward in-place so downstream code only ever sees the
+      // new name. Idempotent: if `effectType` is already present we leave it.
+      if (Array.isArray(doc.layers)) {
+        for (const rawLayer of doc.layers as unknown as Array<
+          Record<string, unknown>
+        >) {
+          if (
+            rawLayer &&
+            typeof rawLayer === "object" &&
+            "adjustmentType" in rawLayer
+          ) {
+            if (!("effectType" in rawLayer)) {
+              rawLayer.effectType = rawLayer.adjustmentType;
+            }
+            delete rawLayer.adjustmentType;
+          }
+        }
+      }
 
       const layerData = new Map<string, string>();
       const layers: LayerState[] = doc.layers.map(
@@ -529,13 +858,13 @@ export function useFileOps({
         spritesheet: docSpritesheet,
       };
       const snapshot = captureActiveSnapshot();
-      const savedHistory = historyStore.detach();
       const savedLayerData = serializeActiveTabPixels();
       const newId = makeTabId();
+      const newScope = createDocumentScope();
       const updated: TabRecord[] = [
         ...tabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, snapshot, savedHistory, savedLayerData }
+            ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
             : t,
         ),
         {
@@ -544,19 +873,21 @@ export function useFileOps({
           filePath: path,
           snapshot: newSnapshot,
           savedLayerData: layerData,
-          savedHistory: null,
+            scope: newScope,
           canvasKey: 1,
           tiledMode: false,
           showTileGrid: false,
           pixelFormat: docPixelFormat,
           exposureEV: 0,
-          toneMappingOperator: "reinhard" as ToneMappingOperator,
+          toneMappingOperator: "clamp" as ToneMappingOperator,
+          viewTransformLutId: null,
           animationMode: false,
         },
       ];
       setTabs(updated);
+      setActiveScope(newScope);
       setActiveTabId(newId);
-      historyStore.clear({ recaptureSnapshot: false });
+      activeScope().history.clear({ recaptureSnapshot: false });
       setPendingLayerData(null);
       dispatch({
         type: "SWITCH_TAB",
@@ -570,10 +901,10 @@ export function useFileOps({
           tiledMode: false,
           showTileGrid: false,
           pixelFormat: docPixelFormat,
+          swatches: docSwatches,
+          swatchGroups: docSwatchGroups,
         },
       });
-      dispatch({ type: "SET_SWATCHES", payload: docSwatches });
-      dispatch({ type: "SET_SWATCH_GROUPS", payload: docSwatchGroups });
       dispatch({ type: "SET_PIXEL_BRUSHES", payload: docPixelBrushes });
       if (docSpritesheet) {
         dispatch({ type: "SET_SPRITESHEET", payload: docSpritesheet });

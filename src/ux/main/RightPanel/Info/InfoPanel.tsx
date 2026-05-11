@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import { cursorStore } from "@/core/store/cursorStore";
-import type { IndexedPixelInfo } from "@/core/store/cursorStore";
-import { selectionStore } from "@/core/store/selectionStore";
+import { cursorStore } from "@/ux/main/Canvas/cursorStore";
+import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
+
 import styles from "./InfoPanel.module.scss";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -19,10 +20,10 @@ function getSelectionBounds(): {
   w: number;
   h: number;
 } | null {
-  if (!selectionStore.hasSelection()) return null;
-  const mask = selectionStore.mask!;
-  const sw = selectionStore.width;
-  const sh = selectionStore.height;
+  if (!activeScope().selection.hasSelection()) return null;
+  const mask = activeScope().selection.mask!;
+  const sw = activeScope().selection.width;
+  const sh = activeScope().selection.height;
   let minX = sw,
     minY = sh,
     maxX = -1,
@@ -88,7 +89,7 @@ export function InfoPanel(): React.JSX.Element {
   });
 
   const [sel, setSel] = useState<SelectionState>({
-    hasSel: selectionStore.hasSelection(),
+    hasSel: activeScope().selection.hasSelection(),
     bounds: getSelectionBounds(),
   });
 
@@ -109,11 +110,11 @@ export function InfoPanel(): React.JSX.Element {
   useEffect(() => {
     const onSel = (): void =>
       setSel({
-        hasSel: selectionStore.hasSelection(),
+        hasSel: activeScope().selection.hasSelection(),
         bounds: getSelectionBounds(),
       });
-    selectionStore.subscribe(onSel);
-    return () => selectionStore.unsubscribe(onSel);
+    activeScope().selection.subscribe(onSel);
+    return () => activeScope().selection.unsubscribe(onSel);
   }, []);
 
   // ── Color readout ────────────────────────────────────────────────────────────

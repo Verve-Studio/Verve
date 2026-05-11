@@ -28,7 +28,7 @@
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  background: rgba(vars.$color-text-muted, 0.12);
+  background: color-mix(in srgb, var(--color-text-muted) 12%, transparent);
   border-radius: 4px;
   font-size: vars.$font-size-xs;
   color: vars.$color-text-muted;

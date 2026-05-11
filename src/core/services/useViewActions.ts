@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { selectionStore } from "@/core/store/selectionStore";
+import { activeScope } from "@/core/store/scope";
 
 export type GuidePreset = "thirds" | "safe-zone" | "center-split" | "fourths";
 
@@ -102,15 +102,29 @@ export function useViewActions({
     [dispatch, stateRef],
   );
 
+  /**
+   * Fit-to-window after a mode change must wait for React to commit the new
+   * mode flags AND for the canvas's imperative handle to rebuild against the
+   * fresh `tiledMode` / `animationMode` (its dep array picks up `tiledMode`).
+   * rAF lands after both, so the fitToWindow call sees the new geometry.
+   */
+  const fitAfterCommit = useCallback(() => {
+    requestAnimationFrame(() => {
+      canvasHandleRef.current?.fitToWindow();
+    });
+  }, [canvasHandleRef]);
+
   const handleSetNormalMode = useCallback(() => {
     dispatch({ type: "SET_TILED_MODE", payload: false });
     dispatch({ type: "SET_ANIMATION_MODE", payload: false });
-  }, [dispatch]);
+    fitAfterCommit();
+  }, [dispatch, fitAfterCommit]);
 
   const handleSetTiledMode = useCallback(() => {
     dispatch({ type: "SET_TILED_MODE", payload: true });
     dispatch({ type: "SET_ANIMATION_MODE", payload: false });
-  }, [dispatch]);
+    fitAfterCommit();
+  }, [dispatch, fitAfterCommit]);
 
   const handleToggleTileGrid = useCallback(() => {
     dispatch({
@@ -122,11 +136,11 @@ export function useViewActions({
   const handleSelectAll = useCallback((): void => {
     const { width, height } = stateRef.current.canvas;
     if (width === 0 || height === 0) return;
-    selectionStore.setRect(0, 0, width - 1, height - 1, "set");
+    activeScope().selection.setRect(0, 0, width - 1, height - 1, "set");
   }, [stateRef]);
 
   const handleDeselect = useCallback((): void => {
-    selectionStore.clear();
+    activeScope().selection.clear();
   }, []);
 
   const handleSelectAllLayers = useCallback((): void => {
@@ -145,8 +159,9 @@ export function useViewActions({
   const handleSetAnimationMode = useCallback(
     (enabled: boolean): void => {
       dispatch({ type: "SET_ANIMATION_MODE", payload: enabled });
+      fitAfterCommit();
     },
-    [dispatch],
+    [dispatch, fitAfterCommit],
   );
 
   return {

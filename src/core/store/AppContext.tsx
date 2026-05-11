@@ -1,27 +1,6 @@
 import React, { createContext, useContext, useReducer } from "react";
-import type {
-  AppState,
-  Tool,
-  ShapeType,
-  RGBAColor,
-  LayerState,
-  TextLayerState,
-  ShapeLayerState,
-  FrameLayerState,
-  MaskLayerState,
-  AdjustmentLayerState,
-  GroupLayerState,
-  CompositeLayerState,
-  BlendMode,
-  BackgroundFill,
-  GridType,
-  SwatchGroup,
-  PixelBrush,
-  Brush,
-  PixelFormat,
-  AnimationDef,
-  AnimationFrame,
-} from "@/types";
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame } from "@/types";
+import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isContainerLayer, isCompositeLayer } from "@/types";
 import {
   getDescendantIds,
@@ -51,6 +30,10 @@ export type AppAction =
   | { type: "TOGGLE_LAYER_LOCK"; payload: string }
   | { type: "SET_LAYER_OPACITY"; payload: { id: string; opacity: number } }
   | { type: "SET_LAYER_BLEND"; payload: { id: string; blendMode: BlendMode } }
+  | {
+      type: "SET_LAYER_COLOR_SPACE";
+      payload: { id: string; colorSpace: import("@/types").LayerColorSpace };
+    }
   | { type: "RENAME_LAYER"; payload: { id: string; name: string } }
   | { type: "REORDER_LAYERS"; payload: LayerState[] }
   | { type: "ADD_TEXT_LAYER"; payload: TextLayerState }
@@ -60,8 +43,8 @@ export type AppAction =
   | { type: "ADD_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "UPDATE_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "ADD_MASK_LAYER"; payload: MaskLayerState }
-  | { type: "ADD_ADJUSTMENT_LAYER"; payload: AdjustmentLayerState }
-  | { type: "UPDATE_ADJUSTMENT_LAYER"; payload: AdjustmentLayerState }
+  | { type: "ADD_ADJUSTMENT_LAYER"; payload: EffectLayerState }
+  | { type: "UPDATE_ADJUSTMENT_LAYER"; payload: EffectLayerState }
   | { type: "SET_OPEN_ADJUSTMENT"; payload: string | null }
   | { type: "SET_ZOOM"; payload: number }
   | { type: "TOGGLE_GRID" }
@@ -85,6 +68,11 @@ export type AppAction =
         height: number;
         backgroundFill: BackgroundFill;
         pixelFormat?: PixelFormat;
+        // Document-owned palette + groups.  When omitted on `NEW_CANVAS`,
+        // both reset to defaults so a new untitled document never inherits
+        // swatches/groups from whatever document was previously active.
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -95,6 +83,8 @@ export type AppAction =
         layers: LayerState[];
         activeLayerId: string | null;
         pixelFormat?: PixelFormat;
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -109,6 +99,8 @@ export type AppAction =
         tiledMode: boolean;
         showTileGrid: boolean;
         pixelFormat?: PixelFormat;
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -123,6 +115,12 @@ export type AppAction =
         tiledMode: boolean;
         showTileGrid: boolean;
         pixelFormat?: PixelFormat;
+        // Per-document palette + groups.  Required by callers that have a
+        // tab snapshot to swap in; omitted in unit-test/code paths that just
+        // want layer-state replacement (in which case the existing palette
+        // carries over).
+        swatches?: RGBAColor[];
+        swatchGroups?: SwatchGroup[];
       };
     }
   | {
@@ -190,6 +188,17 @@ export type AppAction =
   | {
       type: "SET_SPRITESHEET";
       payload: Partial<import("@/types").SpritesheetState>;
+    }
+  | {
+      type: "SET_PALETTE_ANIMATION";
+      payload: Partial<import("@/types").PaletteAnimationState>;
+    }
+  | {
+      type: "UPDATE_SWATCH_GROUP_CYCLE";
+      payload: {
+        groupId: string;
+        cycle: import("@/types").SwatchGroupCycle | undefined;
+      };
     }
   | { type: "ADD_ANIMATION"; payload: AnimationDef }
   | { type: "UPDATE_ANIMATION"; payload: AnimationDef }
@@ -263,6 +272,10 @@ const initialState: AppState = {
     animations: [],
     selectedAnimationId: null,
     selectedFrameId: null,
+  },
+  paletteAnimation: {
+    enabled: false,
+    fps: 8,
   },
 };
 
@@ -446,7 +459,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         if (
           "type" in l &&
           (l.type === "mask" || l.type === "adjustment") &&
-          toRemove.has((l as MaskLayerState | AdjustmentLayerState).parentId)
+          toRemove.has((l as MaskLayerState | EffectLayerState).parentId)
         ) {
           toRemove.add(l.id);
         }
@@ -498,7 +511,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       while (
         insertAt < state.layers.length &&
         "type" in state.layers[insertAt] &&
-        (state.layers[insertAt] as MaskLayerState | AdjustmentLayerState)
+        (state.layers[insertAt] as MaskLayerState | EffectLayerState)
           .parentId === action.payload.parentId
       ) {
         insertAt++;
@@ -535,8 +548,23 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_OPEN_ADJUSTMENT":
       return { ...state, openAdjustmentLayerId: action.payload };
-    case "SET_ACTIVE_LAYER":
-      return { ...state, activeLayerId: action.payload, selectedLayerIds: [] };
+    case "SET_ACTIVE_LAYER": {
+      // If the open adjustment panel belongs to a layer that is no longer
+      // the active one (or to a layer at all), auto-close it. Keeps the panel
+      // tied to the active selection, matching the user's mental model of
+      // "select the adjustment layer to edit it".
+      const nextOpenAdj =
+        state.openAdjustmentLayerId !== null &&
+        state.openAdjustmentLayerId !== action.payload
+          ? null
+          : state.openAdjustmentLayerId;
+      return {
+        ...state,
+        activeLayerId: action.payload,
+        selectedLayerIds: [],
+        openAdjustmentLayerId: nextOpenAdj,
+      };
+    }
 
     case "SET_SELECTED_LAYERS":
       return { ...state, selectedLayerIds: action.payload };
@@ -602,6 +630,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
         layers: state.layers.map((l) =>
           l.id === action.payload.id
             ? { ...l, blendMode: action.payload.blendMode }
+            : l,
+        ),
+      };
+
+    case "SET_LAYER_COLOR_SPACE":
+      // Tag-only operation: pixel data is left untouched, the renderer
+      // re-decodes via the IDT pre-pass on the next frame. Only meaningful
+      // on pixel layers; the type guard via "in" keeps the reducer
+      // tolerant if a non-pixel layer somehow receives the action.
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.payload.id && !("type" in l)
+            ? { ...l, colorSpace: action.payload.colorSpace }
             : l,
         ),
       };
@@ -759,11 +801,36 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_ANIMATION_MODE":
       return { ...state, animationMode: action.payload };
 
-    case "SET_SPRITESHEET":
+    case "SET_SPRITESHEET": {
+      const next = { ...state.spritesheet, ...action.payload };
+      // Sprite-sheet and palette animation are mutually exclusive — turning
+      // sprite sheet on disables palette animation.
+      const paletteAnimation =
+        next.enabled && state.paletteAnimation.enabled
+          ? { ...state.paletteAnimation, enabled: false }
+          : state.paletteAnimation;
+      return { ...state, spritesheet: next, paletteAnimation };
+    }
+
+    case "SET_PALETTE_ANIMATION": {
+      const next = { ...state.paletteAnimation, ...action.payload };
+      // Mutual exclusion with sprite sheet (see SET_SPRITESHEET).
+      const spritesheet =
+        next.enabled && state.spritesheet.enabled
+          ? { ...state.spritesheet, enabled: false }
+          : state.spritesheet;
+      return { ...state, paletteAnimation: next, spritesheet };
+    }
+
+    case "UPDATE_SWATCH_GROUP_CYCLE": {
+      const { groupId, cycle } = action.payload;
       return {
         ...state,
-        spritesheet: { ...state.spritesheet, ...action.payload },
+        swatchGroups: state.swatchGroups.map((g) =>
+          g.id === groupId ? { ...g, cycle } : g,
+        ),
       };
+    }
 
     case "ADD_ANIMATION":
       return {
@@ -922,8 +989,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: "layer-0",
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
+        // A new untitled doc gets a fresh palette + empty groups so it
+        // never inherits whatever was active on the previous document.
+        swatches: action.payload.swatches ?? DEFAULT_SWATCHES,
+        swatchGroups: action.payload.swatchGroups ?? [],
         animationMode: false,
         spritesheet: initialState.spritesheet,
+        paletteAnimation: initialState.paletteAnimation,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -945,6 +1017,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
+        swatches: action.payload.swatches ?? DEFAULT_SWATCHES,
+        swatchGroups: action.payload.swatchGroups ?? [],
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -977,8 +1051,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         },
       };
 
-    case "RESTORE_TAB":
-      return {
+    case "RESTORE_TAB": {
+      const next = {
         ...state,
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
@@ -998,11 +1072,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
         },
         history: { canUndo: false, canRedo: false },
       };
+      // Swap palette + groups atomically when the caller knows them, so
+      // restoring a tab never leaves the previous document's palette in
+      // state for a render frame.
+      if (action.payload.swatches !== undefined)
+        next.swatches = action.payload.swatches;
+      if (action.payload.swatchGroups !== undefined)
+        next.swatchGroups = action.payload.swatchGroups;
+      return next;
+    }
 
-    case "SWITCH_TAB":
+    case "SWITCH_TAB": {
       // Same as RESTORE_TAB but does NOT increment canvas.key and does NOT reset history.
       // Used for fast tab switching where the Canvas stays mounted.
-      return {
+      const next = {
         ...state,
         layers: action.payload.layers,
         activeLayerId: action.payload.activeLayerId,
@@ -1010,6 +1093,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
         animationMode: false,
         spritesheet: initialState.spritesheet,
+        paletteAnimation: initialState.paletteAnimation,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -1020,6 +1104,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
           showTileGrid: action.payload.showTileGrid ?? false,
         },
       };
+      if (action.payload.swatches !== undefined)
+        next.swatches = action.payload.swatches;
+      if (action.payload.swatchGroups !== undefined)
+        next.swatchGroups = action.payload.swatchGroups;
+      return next;
+    }
 
     case "ADD_LAYER_GROUP": {
       const { id, name, aboveLayerId } = action.payload;

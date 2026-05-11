@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@/core/store/historyStore";
+import type { DocumentScope } from "@/core/store/scope";
 import type {
   LayerState,
   BackgroundFill,
@@ -9,6 +9,7 @@ import type {
   PixelFormat,
   ToneMappingOperator,
   SpritesheetState,
+  PaletteAnimationState,
 } from "@/types";
 
 // ─── Default swatch palette ───────────────────────────────────────────────────
@@ -53,6 +54,7 @@ export interface TabSnapshot {
   activeBrushId?: string | null;
   pixelFormat: PixelFormat;
   spritesheet?: SpritesheetState;
+  paletteAnimation?: PaletteAnimationState;
 }
 
 // ─── Tab record ───────────────────────────────────────────────────────────────
@@ -64,8 +66,12 @@ export interface TabRecord {
   snapshot: TabSnapshot;
   /** Pixel data for each layer — null while tab is active (data lives in WebGL) */
   savedLayerData: Map<string, string> | null;
-  /** History stack — null while tab is active (historyStore holds the live data) */
-  savedHistory: { entries: HistoryEntry[]; currentIndex: number } | null;
+  /**
+   * Per-document store bundle (selection, history, crop, transform, …).
+   * Each tab owns its own instance; switching tabs calls `setActiveScope`
+   * on this object — no copying or restore-from-snapshot dance.
+   */
+  scope: DocumentScope;
   /** Incremented to force this tab's Canvas to remount (resize / crop). */
   canvasKey: number;
   /** Session-only: tiled mode toggle for this tab. Not persisted to document. */
@@ -77,6 +83,12 @@ export interface TabRecord {
   exposureEV: number;
   /** Session-only: tone-mapping operator for this tab. Not persisted. */
   toneMappingOperator: ToneMappingOperator;
+  /** Session-only: id (in `lutStore`) of the active view-transform LUT for
+   *  this tab, or `null` for none. The view transform is canvas-only — it
+   *  affects on-screen display, never exports — so it lives on the tab
+   *  record alongside exposure / tone-map settings rather than in document
+   *  state. Not persisted to disk. */
+  viewTransformLutId: string | null;
   /** Session-only: whether this tab is in animation mode. Not persisted. */
   animationMode: boolean;
 }

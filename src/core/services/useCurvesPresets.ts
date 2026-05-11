@@ -1,4 +1,5 @@
-import type { AdjustmentParamsMap, CurvesPreset } from "@/types";
+import type { CurvesPreset } from "@/types";
+import type { EffectParamsMap } from "@/core/effects/effectTypes";
 import { useCallback, useEffect, useState } from "react";
 
 interface UseCurvesPresetsState {
@@ -10,7 +11,7 @@ interface UseCurvesPresetsState {
 interface UseCurvesPresetsReturn extends UseCurvesPresetsState {
   savePreset: (
     name: string,
-    curvesParams: AdjustmentParamsMap["curves"],
+    curvesParams: EffectParamsMap["curves"],
   ) => Promise<void>;
   deletePreset: (id: string) => Promise<void>;
   renamePreset: (id: string, newName: string) => Promise<void>;
@@ -71,7 +72,7 @@ export function useCurvesPresets(): UseCurvesPresetsReturn {
   const savePreset = useCallback(
     async (
       name: string,
-      curvesParams: AdjustmentParamsMap["curves"],
+      curvesParams: EffectParamsMap["curves"],
     ): Promise<void> => {
       // Generate unique ID using timestamp + random suffix
       const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;

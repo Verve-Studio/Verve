@@ -1,8 +1,15 @@
-import type { AdjustmentType, FilterKey } from "@/types";
+import type { FilterKey, RGBAColor } from "@/types";
+import type { EffectType } from "@/core/effects/effectTypes";
+import type { UseAdjustmentsReturn } from "@/core/services/useAdjustments";
 import { useCallback } from "react";
 
 interface UseFiltersOptions {
-  onCreateFilterAdjLayer: (type: AdjustmentType) => void;
+  adjustments: UseAdjustmentsReturn;
+  primaryColor: RGBAColor;
+  secondaryColor: RGBAColor;
+  /** Wraps every filter-creation action so that an in-flight free-transform
+   *  is committed/cancelled before mutating the layer stack. */
+  requireTransformDecision: (action: () => void) => void;
 }
 
 export interface UseFiltersReturn {
@@ -11,17 +18,66 @@ export interface UseFiltersReturn {
    *  the in-app TopBar; per-filter handlers are no longer needed because the
    *  filter menu is built from `effectRegistry`. */
   handleInstantFilter: (key: FilterKey) => void;
+  /** Create a filter / effect / adjustment layer of the given type. Seeds
+   *  randomness for noise-based effects and seeds the primary/secondary
+   *  colours for `clouds`. */
+  onCreateFilterAdjLayer: (type: EffectType) => void;
+  /** Open the panel for an effect by `FilterKey` — currently identical to
+   *  `onCreateFilterAdjLayer` but kept as a separate entry point so the
+   *  callsites keep their semantic distinction. */
+  handleOpenFilterDialog: (key: FilterKey) => void;
 }
 
 export function useFilters({
-  onCreateFilterAdjLayer,
+  adjustments,
+  primaryColor,
+  secondaryColor,
+  requireTransformDecision,
 }: UseFiltersOptions): UseFiltersReturn {
+  const onCreateFilterAdjLayer = useCallback(
+    (type: EffectType): void => {
+      requireTransformDecision(() => {
+        if (type === "clouds") {
+          const { r: fgR, g: fgG, b: fgB } = primaryColor;
+          const { r: bgR, g: bgG, b: bgB } = secondaryColor;
+          adjustments.handleCreateAdjustmentLayer("clouds", {
+            seed: (Math.random() * 0xffffffff) >>> 0,
+            fgR,
+            fgG,
+            fgB,
+            bgR,
+            bgG,
+            bgB,
+          });
+          return;
+        }
+        if (type === "add-noise" || type === "film-grain") {
+          adjustments.handleCreateAdjustmentLayer(type, {
+            seed: (Math.random() * 0xffffffff) >>> 0,
+          });
+          return;
+        }
+        adjustments.handleCreateAdjustmentLayer(type);
+      });
+    },
+    [adjustments, requireTransformDecision, primaryColor, secondaryColor],
+  );
+
   const handleInstantFilter = useCallback(
     (key: FilterKey): void => {
-      onCreateFilterAdjLayer(key as AdjustmentType);
+      onCreateFilterAdjLayer(key as EffectType);
     },
     [onCreateFilterAdjLayer],
   );
 
-  return { handleInstantFilter };
+  const handleOpenFilterDialog = useCallback(
+    (key: FilterKey): void => {
+      requireTransformDecision(() => {
+        onCreateFilterAdjLayer(key as EffectType);
+      });
+    },
+    [requireTransformDecision, onCreateFilterAdjLayer],
+  );
+
+  return { handleInstantFilter, onCreateFilterAdjLayer, handleOpenFilterDialog };
 }

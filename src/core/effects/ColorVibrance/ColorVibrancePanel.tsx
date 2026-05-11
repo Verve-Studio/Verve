@@ -1,13 +1,13 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColorVibranceAdjustmentLayer } from "@/types";
+import type { ColorVibranceEffectLayer } from "@/core/effects/ColorVibrance/ColorVibranceEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorVibrancePanel.module.scss";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ColorVibrancePanelProps {
-  layer: ColorVibranceAdjustmentLayer;
+  layer: ColorVibranceEffectLayer;
   parentLayerName: string;
 }
 

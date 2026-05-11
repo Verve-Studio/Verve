@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { ColorPicker } from "@/ux/main/RightPanel/ColorPicker/ColorPicker";
 import { Layers } from "@/ux/main/RightPanel/Layers/Layers";
 import { Navigator } from "@/ux/main/RightPanel/Navigator/Navigator";
@@ -7,7 +7,6 @@ import { HistoryPanel } from "@/ux/main/RightPanel/History/HistoryPanel";
 import { InfoPanel } from "@/ux/main/RightPanel/Info/InfoPanel";
 import { HDRPanel } from "@/ux/main/RightPanel/HDRPanel/HDRPanel";
 import { Dock } from "./Dock/Dock";
-import { dockStore } from "./Dock/dockStore";
 import { useDockLayoutLoader } from "./Dock/useDockLayout";
 import type { PanelId } from "./Dock/types";
 import styles from "./RightPanel.module.scss";
@@ -91,26 +90,11 @@ export function RightPanel({
     dragStartX.current = null;
   };
 
-  // Sync panel checked states to native menu whenever layout changes
-  useEffect(() => {
-    return dockStore.subscribe(() => {
-      const open = dockStore.openPanelIds;
-      const updates: Record<string, boolean> = {};
-      const all: PanelId[] = [
-        "Color",
-        "Swatches",
-        "Navigator",
-        "Layers",
-        "History",
-        "Info",
-        "HDR",
-      ];
-      for (const id of all) {
-        updates[`togglePanel:${id}`] = open.includes(id);
-      }
-      window.api.setMenuItemChecked(updates);
-    });
-  }, []);
+  // Panel-open checkbox states in the macOS native menu used to be
+  // synced here via a separate `setMenuItemChecked` IPC. That's now
+  // owned by `useMacNativeMenu`, which subscribes to `dockStore`
+  // directly and rebuilds the unified menu tree on every layout
+  // change. No separate plumbing needed.
 
   function renderPanel(panelId: PanelId): React.ReactNode {
     switch (panelId) {

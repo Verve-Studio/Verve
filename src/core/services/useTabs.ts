@@ -1,16 +1,17 @@
 import type { AppAction } from "@/core/store/AppContext";
-import { historyStore } from "@/core/store/historyStore";
+
 import type { TabRecord, TabSnapshot } from "@/core/store/tabTypes";
 import { DEFAULT_SWATCHES } from "@/core/store/tabTypes";
 import {
   f32TransferStore,
   u8TransferStore,
 } from "@/core/store/layerDataTransfer";
-import { displayStore } from "@/core/store/displayStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { setActiveScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,25 @@ export function useTabs(
   activeTabIdRef.current = activeTabId;
   setTabsRef.current = setTabs;
 
+  // Mirror the active tab's session-only display settings (exposure,
+  // tone-map, view-transform LUT) into the module-level displayStore
+  // whenever the active tab changes. Covers every entry point — explicit
+  // tab switches, file opens, file closes, paste-as-new — without each
+  // path needing to remember to reset displayStore manually. Stale state
+  // from the previously-active tab would otherwise leak into the next
+  // doc's display path (e.g. a Filmic view transform set on Doc A would
+  // still show on Doc B until the user touched the Display panel).
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  useEffect(() => {
+    if (!activeTabId) return;
+    const tab = tabsRef.current.find((t) => t.id === activeTabId);
+    if (!tab) return;
+    displayStore.setEV(tab.exposureEV ?? 0);
+    displayStore.setOperator(tab.toneMappingOperator ?? "clamp");
+    displayStore.setViewTransformLut(tab.viewTransformLutId ?? null);
+  }, [activeTabId]);
+
   /** Returns a stable callback ref for a given tab id. */
   const tabCanvasRef = useCallback(
     (tabId: string): ((h: CanvasHandle | null) => void) => {
@@ -97,6 +117,7 @@ export function useTabs(
       activeBrushId: state.activeBrushId,
       pixelFormat: state.pixelFormat,
       spritesheet: state.spritesheet,
+      paletteAnimation: state.paletteAnimation,
     }),
     [state],
   );
@@ -118,10 +139,19 @@ export function useTabs(
       const geo = layerGeo.get(id);
       const lw = geo?.layerWidth ?? snap.canvasWidth;
       const lh = geo?.layerHeight ?? snap.canvasHeight;
+      // IMPORTANT: `borrowAllLayerPixels` returns *live* `layer.data` views.
+      // For layers pinned to the WASM heap (the brush kernel's zero-copy
+      // path), those views become DETACHED if the heap grows later — and
+      // since this stash outlives the active tab, a different tab's
+      // allocations will detach our reference. `.slice()` returns a fresh
+      // JS-heap copy that's immune to growth.
       if ((pixels as unknown) instanceof Float32Array) {
         // rgba32f layer — use compound key to avoid cross-tab collisions
         const storeKey = `${tabId}:${id}`;
-        f32TransferStore.set(storeKey, pixels as unknown as Float32Array);
+        f32TransferStore.set(
+          storeKey,
+          (pixels as unknown as Float32Array).slice(),
+        );
         result.set(id, `data:raw/f32-ref;id=${storeKey}`);
       } else if (pixels.length === lw * lh) {
         // indexed8 layer — 1 byte/pixel palette indices, base64-encode
@@ -137,7 +167,7 @@ export function useTabs(
       } else {
         // rgba8 layer — use compound key to avoid cross-tab collisions
         const storeKey = `${tabId}:${id}`;
-        u8TransferStore.set(storeKey, pixels as Uint8Array);
+        u8TransferStore.set(storeKey, (pixels as Uint8Array).slice());
         result.set(id, `data:raw/rgba8-ref;id=${storeKey}`);
       }
       if (geo) result.set(`${id}:geo`, JSON.stringify(geo));
@@ -149,7 +179,8 @@ export function useTabs(
       );
       if (maskPixels) {
         const storeKey = `${tabId}:${layer.id}:mask`;
-        u8TransferStore.set(storeKey, maskPixels as Uint8Array);
+        // Same WASM-pinned-view detachment hazard as above — copy.
+        u8TransferStore.set(storeKey, (maskPixels as Uint8Array).slice());
         result.set(
           `${layer.id}:adjustment-mask`,
           `data:raw/rgba8-ref;id=${storeKey}`,
@@ -163,24 +194,17 @@ export function useTabs(
     (toId: string, tabs_: TabRecord[]): void => {
       const toTab = tabs_.find((t) => t.id === toId);
       if (!toTab) return;
-      if (toTab.savedHistory && toTab.savedHistory.entries.length > 0) {
-        historyStore.restore(
-          toTab.savedHistory.entries,
-          toTab.savedHistory.currentIndex,
-        );
-      } else {
-        historyStore.clear({ recaptureSnapshot: false });
-      }
-      // Null savedHistory after handing ownership to historyStore — prevents
-      // the Tab record from keeping dead Uint8Array refs after the first new push.
-      if (toTab.savedHistory) {
-        setTabsRef.current((prev) =>
-          prev.map((t) => (t.id === toId ? { ...t, savedHistory: null } : t)),
-        );
-      }
+      // Each tab owns its own DocumentScope (selection, history, crop, …).
+      // Activating it is enough — no snapshot/restore dance.
+      setActiveScope(toTab.scope);
       setActiveTabId(toId);
       displayStore.setEV(toTab.exposureEV ?? 0);
-      displayStore.setOperator(toTab.toneMappingOperator ?? "reinhard");
+      displayStore.setOperator(toTab.toneMappingOperator ?? "clamp");
+      displayStore.setViewTransformLut(toTab.viewTransformLutId ?? null);
+      // Swap palette + groups in the same action that swaps layers/canvas
+      // so state never has the outgoing tab's swatchGroups paired with the
+      // incoming tab's layers (which would invalidate any group-id-keyed
+      // tool state, e.g. the gradient tool's selected swatch group).
       dispatch({
         type: "SWITCH_TAB",
         payload: {
@@ -193,19 +217,13 @@ export function useTabs(
           tiledMode: toTab.tiledMode ?? false,
           showTileGrid: toTab.showTileGrid ?? false,
           pixelFormat: toTab.snapshot.pixelFormat ?? "rgba8",
+          swatches: toTab.snapshot.swatches ?? DEFAULT_SWATCHES,
+          swatchGroups: toTab.snapshot.swatchGroups ?? [],
         },
       });
       dispatch({
         type: "SET_ANIMATION_MODE",
         payload: toTab.animationMode ?? false,
-      });
-      dispatch({
-        type: "SET_SWATCHES",
-        payload: toTab.snapshot.swatches ?? DEFAULT_SWATCHES,
-      });
-      dispatch({
-        type: "SET_SWATCH_GROUPS",
-        payload: toTab.snapshot.swatchGroups ?? [],
       });
       dispatch({
         type: "SET_PIXEL_BRUSHES",
@@ -235,6 +253,13 @@ export function useTabs(
           },
         });
       }
+      dispatch({
+        type: "SET_PALETTE_ANIMATION",
+        payload: toTab.snapshot.paletteAnimation ?? {
+          enabled: false,
+          fps: 8,
+        },
+      });
     },
     [dispatch],
   );
@@ -243,19 +268,18 @@ export function useTabs(
     (toId: string): void => {
       if (toId === activeTabId) return;
       const snapshot = captureActiveSnapshot();
-      const savedHistory = historyStore.detach();
       const savedLayerData = serializeActiveTabPixels();
       const updated = tabs.map((t) =>
         t.id === activeTabId
           ? {
               ...t,
               snapshot,
-              savedHistory,
               savedLayerData,
               tiledMode: state.canvas.tiledMode,
               showTileGrid: state.canvas.showTileGrid,
               exposureEV: displayStore.exposureEV,
               toneMappingOperator: displayStore.toneMappingOperator,
+              viewTransformLutId: displayStore.viewTransformLutId,
               animationMode: state.animationMode,
             }
           : t,

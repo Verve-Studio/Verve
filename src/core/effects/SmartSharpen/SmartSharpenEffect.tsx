@@ -1,12 +1,22 @@
-import type { SmartSharpenAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SmartSharpenPanel } from "./SmartSharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type SmartSharpenOp = Extract<AdjustmentRenderOp, { kind: "smart-sharpen" }>;
+
+export interface SmartSharpenParams {
+    amount: number;
+    radius: number;
+    reduceNoise: number;
+    remove: "gaussian" | "lens-blur";
+}
+
+export type SmartSharpenEffectLayer = EffectLayerOf<"smart-sharpen", SmartSharpenParams>;
+
+type SmartSharpenOp = Extract<EffectRenderOp, { kind: "smart-sharpen" }>;
 
 export const SmartSharpenEffect: IPipelineEffect<
-  SmartSharpenAdjustmentLayer,
+  SmartSharpenEffectLayer,
   SmartSharpenOp
 > = {
   id: "smart-sharpen",
@@ -20,16 +30,12 @@ export const SmartSharpenEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { amount, radius, reduceNoise, remove } = layer.params;
     return {
       kind: "smart-sharpen",
       layerId: layer.id,
-      amount,
-      radius,
-      reduceNoise,
-      remove: remove === "gaussian" ? 0 : 1,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
@@ -37,7 +43,8 @@ export const SmartSharpenEffect: IPipelineEffect<
     const rt = engine.runtime;
     const w = dstTex.width;
     const h = dstTex.height;
-    const { amount, radius, reduceNoise, remove } = entry;
+    const { amount, radius, reduceNoise } = entry.params;
+    const remove = entry.params.remove === "gaussian" ? 0 : 1;
 
     const gaussH = rt.getRenderPipelinePair("filter-gaussian-h", "fs_gaussian_h");
     const gaussV = rt.getRenderPipelinePair("filter-gaussian-v", "fs_gaussian_v");

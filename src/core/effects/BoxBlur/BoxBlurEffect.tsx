@@ -1,11 +1,18 @@
-import type { BoxBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BoxBlurPanel } from "./BoxBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type BoxBlurOp = Extract<AdjustmentRenderOp, { kind: "box-blur" }>;
 
-export const BoxBlurEffect: IPipelineEffect<BoxBlurAdjustmentLayer, BoxBlurOp> =
+export interface BoxBlurParams {
+ radius: number
+}
+
+export type BoxBlurEffectLayer = EffectLayerOf<"box-blur", BoxBlurParams>;
+
+type BoxBlurOp = Extract<EffectRenderOp, { kind: "box-blur" }>;
+
+export const BoxBlurEffect: IPipelineEffect<BoxBlurEffectLayer, BoxBlurOp> =
   {
     id: "box-blur",
     label: "Box Blur…",
@@ -16,9 +23,9 @@ export const BoxBlurEffect: IPipelineEffect<BoxBlurAdjustmentLayer, BoxBlurOp> =
       return {
         kind: "box-blur",
         layerId: layer.id,
-        radius: layer.params.radius,
         visible: layer.visible,
         selMaskLayer: mask,
+        params: layer.params,
       };
     },
 
@@ -27,7 +34,7 @@ export const BoxBlurEffect: IPipelineEffect<BoxBlurAdjustmentLayer, BoxBlurOp> =
       const hPair = rt.getRenderPipelinePair("filter-box-h", "fs_box_h");
       const vPair = rt.getRenderPipelinePair("filter-box-v", "fs_box_v");
       const paramsBuf = rt.makeParamsBuf(
-        new Uint32Array([entry.radius, 0, 0, 0]),
+        new Uint32Array([entry.params.radius, 0, 0, 0]),
       );
       rt.encodeRenderPass(
         encoder,

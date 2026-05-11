@@ -38,28 +38,36 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  background: #1f1f1f;
-  border: 1px solid #3a3a3a;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
   cursor: crosshair;
   overflow: hidden;
   touch-action: none;
 
-  --curve-color: #d4d4d4;
-  --hist-fill: rgba(255, 255, 255, 0.12);
+  // Default RGB curve uses the foreground colour so it stays legible on
+  // either background.  Grid and histogram inks are derived from the
+  // foreground via color-mix so they fade in light mode and dark mode alike.
+  --curve-color:    var(--color-text);
+  --hist-fill:      color-mix(in srgb, var(--color-text) 14%, transparent);
+  --grid-major-ink: color-mix(in srgb, var(--color-text) 18%, transparent);
+  --grid-minor-ink: color-mix(in srgb, var(--color-text) 10%, transparent);
+  --baseline-ink:   color-mix(in srgb, var(--color-text) 30%, transparent);
+  --crosshair-ink:  color-mix(in srgb, var(--color-text) 28%, transparent);
+  --point-stroke:   var(--color-bg);
 
   &[data-channel='red'] {
     --curve-color: #ff6b6b;
-    --hist-fill: rgba(255, 107, 107, 0.18);
+    --hist-fill: rgba(255, 107, 107, 0.22);
   }
 
   &[data-channel='green'] {
-    --curve-color: #67cf77;
-    --hist-fill: rgba(103, 207, 119, 0.16);
+    --curve-color: #3aa84a;
+    --hist-fill: rgba(58, 168, 74, 0.22);
   }
 
   &[data-channel='blue'] {
-    --curve-color: #5ca7ff;
-    --hist-fill: rgba(92, 167, 255, 0.18);
+    --curve-color: #3a82d4;
+    --hist-fill: rgba(58, 130, 212, 0.22);
   }
 
   svg {
@@ -72,17 +80,17 @@
 }
 
 .gridMajor {
-  stroke: rgba(255, 255, 255, 0.12);
+  stroke: var(--grid-major-ink);
   stroke-width: 1;
 }
 
 .gridMinor {
-  stroke: rgba(255, 255, 255, 0.06);
+  stroke: var(--grid-minor-ink);
   stroke-width: 1;
 }
 
 .baseline {
-  stroke: rgba(255, 255, 255, 0.25);
+  stroke: var(--baseline-ink);
   stroke-dasharray: 4 3;
   stroke-width: 1;
 }
@@ -100,37 +108,37 @@
 }
 
 .pointNormal {
-  fill: #d4d4d4;
-  stroke: #111;
+  fill: var(--color-text);
+  stroke: var(--point-stroke);
   stroke-width: 1.2;
   cursor: pointer;
 }
 
 .pointNormalSelected {
   fill: var(--curve-color);
-  stroke: #111;
+  stroke: var(--point-stroke);
   stroke-width: 1.2;
   cursor: pointer;
   filter: drop-shadow(0 0 3px rgba(6, 153, 251, 0.45));
 }
 
 .pointEndpoint {
-  fill: #d4d4d4;
-  stroke: #111;
+  fill: var(--color-text);
+  stroke: var(--point-stroke);
   stroke-width: 1.2;
   cursor: pointer;
 }
 
 .pointEndpointSelected {
   fill: var(--curve-color);
-  stroke: #111;
+  stroke: var(--point-stroke);
   stroke-width: 1.2;
   cursor: pointer;
   filter: drop-shadow(0 0 3px rgba(6, 153, 251, 0.45));
 }
 
 .crosshair {
-  stroke: rgba(255, 255, 255, 0.2);
+  stroke: var(--crosshair-ink);
   stroke-width: 1;
   shape-rendering: crispEdges;
   pointer-events: none;
@@ -165,9 +173,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border);
   border-radius: 2px;
-  background: rgba(25, 25, 25, 0.88);
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
   font-size: 9px;
   color: vars.$color-text-muted;
   pointer-events: none;

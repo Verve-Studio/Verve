@@ -1,9 +1,19 @@
-import type { LensBlurAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensBlurPanel } from "./LensBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
 
-type LensBlurOp = Extract<AdjustmentRenderOp, { kind: "lens-blur" }>;
+
+export interface LensBlurParams {
+    radius: number;
+    bladeCount: number;
+    bladeCurvature: number;
+    rotation: number;
+}
+
+export type LensBlurEffectLayer = EffectLayerOf<"lens-blur", LensBlurParams>;
+
+type LensBlurOp = Extract<EffectRenderOp, { kind: "lens-blur" }>;
 
 function buildKernelEntries(
   radius: number,
@@ -60,7 +70,7 @@ let cachedKernelBuf: GPUBuffer | null = null;
 let cachedKernelCount = 0;
 
 export const LensBlurEffect: IPipelineEffect<
-  LensBlurAdjustmentLayer,
+  LensBlurEffectLayer,
   LensBlurOp
 > = {
   id: "lens-blur",
@@ -74,32 +84,29 @@ export const LensBlurEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { radius, bladeCount, bladeCurvature, rotation } = layer.params;
     return {
       kind: "lens-blur",
       layerId: layer.id,
-      radius,
-      bladeCount,
-      bladeCurvature,
-      rotation,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
+    const { radius, bladeCount, bladeCurvature, rotation } = entry.params;
     const pair = rt.getRenderPipelinePair("filter-lens-blur", "fs_lens_blur");
-    const key = `${entry.radius}|${entry.bladeCount}|${entry.bladeCurvature}|${entry.rotation}`;
+    const key = `${radius}|${bladeCount}|${bladeCurvature}|${rotation}`;
     if (cachedKernelKey !== key) {
       if (cachedKernelBuf) {
         rt.pendingDestroyBuffers.push(cachedKernelBuf);
       }
       const entries = buildKernelEntries(
-        entry.radius,
-        entry.bladeCount,
-        entry.bladeCurvature,
-        entry.rotation,
+        radius,
+        bladeCount,
+        bladeCurvature,
+        rotation,
       );
       const buf = rt.device.createBuffer({
         size: Math.max(entries.byteLength, 16),

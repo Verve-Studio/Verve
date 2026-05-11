@@ -1,0 +1,207 @@
+@use '@/styles/variables' as vars;
+
+.content {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+}
+
+.label {
+  width: 82px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+}
+
+.colorRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eyedropperBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--color-border-light);
+  border-radius: 3px;
+  background: var(--color-surface-2);
+  color: var(--color-text-dim);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+}
+
+.trackWrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.track {
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(to right, #0699fb calc(var(--pct) * 100%), var(--color-surface-hover) calc(var(--pct) * 100%));
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-text);
+    border: 1px solid var(--color-border-light);
+    cursor: pointer;
+    transition: background 80ms;
+  }
+
+  &:hover::-webkit-slider-thumb {
+    background: var(--color-text-dim);
+  }
+
+  &:focus::-webkit-slider-thumb {
+    background: #0699fb;
+    border-color: #0699fb;
+    box-shadow: 0 0 0 2px rgba(6, 153, 251, 0.18);
+  }
+
+  &::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-text);
+    border: 1px solid var(--color-border-light);
+    cursor: pointer;
+  }
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+
+  input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+}
+
+.select {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-surface-hover);
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  color: var(--color-text);
+  outline: none;
+  cursor: pointer;
+
+  &:focus {
+    border-color: #0699fb;
+    box-shadow: 0 0 0 1px rgba(6, 153, 251, 0.45);
+  }
+}
+
+.numInput {
+  width: 40px;
+  height: 18px;
+  padding: 0 4px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-surface-hover);
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  color: var(--color-text);
+  text-align: right;
+  outline: none;
+  flex-shrink: 0;
+  appearance: textfield;
+  -moz-appearance: textfield;
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  &:focus {
+    border-color: #0699fb;
+    box-shadow: 0 0 0 1px rgba(6, 153, 251, 0.45);
+  }
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  gap: 6px;
+  margin-top: 4px;
+
+  strong {
+    font-weight: 500;
+    color: var(--color-text);
+  }
+}
+
+.footerInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resetBtn {
+  background: transparent;
+  border: 1px solid var(--color-border-light);
+  border-radius: vars.$radius-sm;
+  color: var(--color-text-muted);
+  padding: 0 8px;
+  height: 20px;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  cursor: default;
+  flex-shrink: 0;
+  transition: background vars.$transition-fast, border-color vars.$transition-fast, color vars.$transition-fast;
+
+  &:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-text-muted);
+    color: var(--color-text);
+  }
+
+  &:active {
+    background: var(--color-surface-selected);
+  }
+}

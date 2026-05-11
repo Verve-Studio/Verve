@@ -3,8 +3,8 @@ import { ToolWindow } from "@/ux/widgets/ToolWindow/ToolWindow";
 import { CurveEditor } from "@/ux/widgets/CurveEditor/CurveEditor";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useBrushes } from "@/core/services/useBrushes";
-import { brushPanelStore } from "@/core/store/brushPanelStore";
-import { brushManagerStore } from "@/core/store/brushManagerStore";
+import { brushPanelStore } from "@/core/tools/Brush/brushPanelStore";
+import { brushManagerStore } from "@/core/tools/Brush/brushManagerStore";
 import type { Brush, DynamicCurve, DynamicSource } from "@/types";
 import { identityCurve } from "@/types";
 import styles from "./BrushSettingsPanel.module.scss";
@@ -149,6 +149,7 @@ function Section({
 function BrushPicker({
   brushes,
   activeId,
+  modifiedIds,
   onSelect,
   onCreate,
   onDelete,
@@ -156,6 +157,10 @@ function BrushPicker({
 }: {
   brushes: Brush[];
   activeId: string;
+  /** Ids of brushes with unsaved overrides in the current document. Rendered
+   *  with a trailing `*` so the artist can see at a glance which brushes
+   *  carry session tweaks. */
+  modifiedIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDelete: (id: string) => void;
@@ -164,20 +169,26 @@ function BrushPicker({
   return (
     <div className={styles.gallery}>
       <div className={styles.galleryItems}>
-        {brushes.map((b) => (
-          <button
-            key={b.id}
-            className={
-              b.id === activeId ? styles.galleryItemActive : styles.galleryItem
-            }
-            onClick={() => onSelect(b.id)}
-            title={`${b.name} (${b.scope})`}
-          >
-            <span className={styles.galleryDot}>●</span>
-            <span className={styles.galleryName}>{b.name}</span>
-            <span className={styles.galleryScope}>{b.scope[0].toUpperCase()}</span>
-          </button>
-        ))}
+        {brushes.map((b) => {
+          const modified = modifiedIds.has(b.id);
+          return (
+            <button
+              key={b.id}
+              className={
+                b.id === activeId ? styles.galleryItemActive : styles.galleryItem
+              }
+              onClick={() => onSelect(b.id)}
+              title={`${b.name}${modified ? " (modified)" : ""} (${b.scope})`}
+            >
+              <span className={styles.galleryDot}>●</span>
+              <span className={styles.galleryName}>
+                {b.name}
+                {modified ? " *" : ""}
+              </span>
+              <span className={styles.galleryScope}>{b.scope[0].toUpperCase()}</span>
+            </button>
+          );
+        })}
       </div>
       <div className={styles.galleryActions}>
         <button onClick={onCreate} title="New brush">+</button>
@@ -208,6 +219,11 @@ export function BrushSettingsPanel({
     updateBrush,
     deleteBrush,
     duplicateBrush,
+    isActiveBrushModified,
+    modifiedBrushIds,
+    saveActiveBrushOverrides,
+    saveActiveBrushAsNew,
+    revertActiveBrushOverrides,
   } = useBrushes();
 
   const update = useCallback(
@@ -231,6 +247,16 @@ export function BrushSettingsPanel({
     update({ noise: { ...activeBrush.noise, ...patch } });
   const setTexture = (patch: Partial<Brush["texture"]>): void =>
     update({ texture: { ...activeBrush.texture, ...patch } });
+  const dualTip = activeBrush.dualTip ?? {
+    enabled: false,
+    shape: { kind: "round" as const },
+    sizeRatio: 1,
+    angle: 0,
+    mix: 1,
+    directionFollow: false,
+  };
+  const setDual = (patch: Partial<NonNullable<Brush["dualTip"]>>): void =>
+    update({ dualTip: { ...dualTip, ...patch } });
   const setWet = (patch: Partial<Brush["wetEdges"]>): void =>
     update({ wetEdges: { ...activeBrush.wetEdges, ...patch } });
   const setBuildUp = (patch: Partial<Brush["buildUp"]>): void =>
@@ -255,11 +281,47 @@ export function BrushSettingsPanel({
         <BrushPicker
           brushes={allBrushes}
           activeId={activeBrush.id}
+          modifiedIds={modifiedBrushIds}
           onSelect={selectBrush}
           onCreate={() => void createBrush({}, "user")}
           onDelete={(id) => void deleteBrush(id)}
           onDuplicate={(id) => void duplicateBrush(id, "user")}
         />
+
+        {/* ── Override commit / revert toolbar ────────────────────────────
+            Edits in this panel only mutate a per-document override layer
+            (see `useBrushes` / `BrushOverridesStore`). The canonical brush
+            on disk / in the document is left untouched until the artist
+            explicitly commits. Toolbar only appears when there's something
+            to commit; out of sight when the active brush is pristine. */}
+        {isActiveBrushModified && (
+          <div className={styles.headerRow}>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Write the current tweaks back to the saved brush definition."
+              onClick={() => void saveActiveBrushOverrides()}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Save the current tweaks as a new user brush, leaving the original alone."
+              onClick={() => void saveActiveBrushAsNew()}
+            >
+              Save as new
+            </button>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              title="Discard the current tweaks and restore the saved brush definition."
+              onClick={revertActiveBrushOverrides}
+            >
+              Revert
+            </button>
+          </div>
+        )}
 
         <div className={styles.headerRow}>
           {onCaptureFromSelection && (
@@ -349,6 +411,17 @@ export function BrushSettingsPanel({
               onChange={(v) => update({ opacity: v })}
             />
           </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Flow</label>
+            <SliderInput
+              value={activeBrush.tip.flow ?? 100}
+              min={1}
+              max={100}
+              suffix="%"
+              inputWidth={42}
+              onChange={(v) => setTip({ flow: v })}
+            />
+          </div>
           <label className={styles.checkRow}>
             <input
               type="checkbox"
@@ -356,16 +429,6 @@ export function BrushSettingsPanel({
               onChange={(e) => update({ antiAlias: e.target.checked })}
             />
             Anti-alias edge
-          </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
-              checked={activeBrush.velocityTracking}
-              onChange={(e) =>
-                update({ velocityTracking: e.target.checked })
-              }
-            />
-            Velocity affects size & opacity
           </label>
           <label className={styles.checkRow}>
             <input
@@ -605,6 +668,76 @@ export function BrushSettingsPanel({
               }
             />
             Follow brush
+          </label>
+        </Section>
+
+        {/* ── Dual Brush ──────────────────────────────────────── */}
+        <Section title="Dual Brush">
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={dualTip.enabled}
+              onChange={(e) => setDual({ enabled: e.target.checked })}
+            />
+            Enable
+          </label>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Shape</label>
+            <select
+              value={dualTip.shape.kind}
+              onChange={(e) =>
+                setDual({
+                  shape: { kind: e.target.value as "round" | "square" | "diamond" },
+                })
+              }
+            >
+              <option value="round">Round</option>
+              <option value="square">Square</option>
+              <option value="diamond">Diamond</option>
+            </select>
+          </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Size</label>
+            <SliderInput
+              value={Math.round(dualTip.sizeRatio * 100)}
+              min={5}
+              max={200}
+              suffix="%"
+              inputWidth={42}
+              onChange={(v) => setDual({ sizeRatio: v / 100 })}
+            />
+          </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Mix</label>
+            <SliderInput
+              value={Math.round(dualTip.mix * 100)}
+              min={0}
+              max={100}
+              suffix="%"
+              inputWidth={42}
+              onChange={(v) => setDual({ mix: v / 100 })}
+            />
+          </div>
+          <div className={styles.row}>
+            <label className={styles.smallLabel}>Angle</label>
+            <SliderInput
+              value={Math.round((dualTip.angle * 180) / Math.PI)}
+              min={-180}
+              max={180}
+              suffix="°"
+              inputWidth={42}
+              onChange={(v) => setDual({ angle: (v * Math.PI) / 180 })}
+            />
+          </div>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={dualTip.directionFollow}
+              onChange={(e) =>
+                setDual({ directionFollow: e.target.checked })
+              }
+            />
+            Follow stroke direction
           </label>
         </Section>
 

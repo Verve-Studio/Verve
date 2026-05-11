@@ -1,15 +1,11 @@
 import { effectRegistry } from "@/core/effects";
-import { adjustmentPreviewStore } from "@/core/store/adjustmentPreviewStore";
+
 import type { AppAction } from "@/core/store/AppContext";
-import type {
-  AdjustmentLayerState,
-  AdjustmentParamsMap,
-  AdjustmentType,
-  AppState,
-  LayerState,
-} from "@/types";
+import type { AppState, LayerState } from "@/types";
+import type { EffectLayerState, EffectParamsMap, EffectType } from "@/core/effects/effectTypes";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useMemo } from "react";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,9 +20,9 @@ interface UseAdjustmentsOptions {
 }
 
 export interface UseAdjustmentsReturn {
-  handleCreateAdjustmentLayer: <T extends AdjustmentType>(
-    adjustmentType: T,
-    paramOverrides?: Partial<AdjustmentParamsMap[T]>,
+  handleCreateAdjustmentLayer: <T extends EffectType>(
+    effectType: T,
+    paramOverrides?: Partial<EffectParamsMap[T]>,
   ) => void;
   handleCreateColorDitheringWithSetup: (addReduceColors: boolean) => void;
   handleOpenAdjustmentPanel: (layerId: string) => void;
@@ -73,20 +69,20 @@ export function useAdjustments({
 
   const handleCloseAdjustmentPanel = useCallback((): void => {
     const openLayerId = stateRef.current.openAdjustmentLayerId;
-    if (openLayerId) adjustmentPreviewStore.clear(openLayerId);
+    if (openLayerId) activeScope().adjustmentPreview.clear(openLayerId);
     captureHistory("Adjustment");
     dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
   }, [stateRef, captureHistory, dispatch]);
 
   const handleCreateAdjustmentLayer = useCallback(
-    <T extends AdjustmentType>(
-      adjustmentType: T,
-      paramOverrides?: Partial<AdjustmentParamsMap[T]>,
+    <T extends EffectType>(
+      effectType: T,
+      paramOverrides?: Partial<EffectParamsMap[T]>,
     ): void => {
       const { activeLayerId, layers, openAdjustmentLayerId } = stateRef.current;
 
       if (openAdjustmentLayerId !== null) {
-        adjustmentPreviewStore.clear(openAdjustmentLayerId);
+        activeScope().adjustmentPreview.clear(openAdjustmentLayerId);
         captureHistory("Adjustment");
         dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
       }
@@ -116,7 +112,7 @@ export function useAdjustments({
       )
         return;
 
-      const effect = effectRegistry.get(adjustmentType);
+      const effect = effectRegistry.get(effectType);
       if (!effect) return;
 
       const newId = `adj-${Date.now()}`;
@@ -129,13 +125,13 @@ export function useAdjustments({
         visible: true,
         type: "adjustment" as const,
         parentId: effectiveParentId,
-        adjustmentType,
+        effectType,
         params: {
           ...(effect.defaultParams as Record<string, unknown>),
           ...(paramOverrides ?? {}),
         },
         hasMask,
-      } as AdjustmentLayerState;
+      } as EffectLayerState;
 
       dispatch({ type: "ADD_ADJUSTMENT_LAYER", payload: newLayer });
       dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });

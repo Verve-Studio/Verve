@@ -1,0 +1,99 @@
+@use '@/styles/variables' as vars;
+
+.body {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px 14px;
+  gap: 12px;
+}
+
+.intro {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.list {
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-sm;
+  background: vars.$color-surface-2;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text;
+  border-bottom: 1px solid vars.$color-border;
+
+  &:last-child { border-bottom: none; }
+}
+
+.idx {
+  width: 26px;
+  text-align: right;
+  color: vars.$color-text-muted;
+  font-variant-numeric: tabular-nums;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.removeBtn {
+  background: transparent;
+  border: none;
+  color: vars.$color-text-muted;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: vars.$radius-sm;
+
+  &:hover { background: vars.$color-surface-hover; color: vars.$color-text; }
+}
+
+.summary {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  margin: 0;
+  min-height: 14px;
+}
+
+.error {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-danger;
+  margin: 0;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid vars.$color-border;
+  flex-shrink: 0;
+}

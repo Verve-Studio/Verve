@@ -1,20 +1,61 @@
-// Design tokens — Photoshop-inspired dark theme
+// Design tokens — Photoshop-inspired palette.
+//
+// Theming model:
+//   - The static $dark-* / $light-* maps below are the source of truth for
+//     each theme's colour values.  global.scss reads them to populate the
+//     CSS custom properties on :root and [data-theme="light"].
+//   - Every $color-* token is exported as a `var(--color-*)` reference so
+//     consuming SCSS modules automatically respond to the active theme at
+//     runtime — switching the data-theme attribute reskins the whole app.
+//   - The static $dark-color-* tokens remain available for the few rare
+//     places that need a literal colour (e.g. `rgba(<colour>, 0.12)` in
+//     SCSS, which only accepts a static colour, not a CSS var).  Prefer
+//     `rgb(from var(--color-…) r g b / 0.12)` in new code.
 
-// ── Core surfaces ─────────────────────────────────────────────────────────────
-$color-bg:               #3c3c3c;   // workspace background
-$color-surface:          #2d2d2d;   // panels, toolbars, menus
-$color-surface-2:        #323232;   // slightly elevated surface
-$color-surface-selected: #404040;
-$color-surface-hover:    #4a4a4a;
-$color-border:           #191919;
-$color-border-light:     #555555;
+// ── Static dark palette (used to populate :root in global.scss) ──────────────
+$dark-color-bg:               #3c3c3c;
+$dark-color-surface:          #2d2d2d;
+$dark-color-surface-2:        #323232;
+$dark-color-surface-selected: #404040;
+$dark-color-surface-hover:    #4a4a4a;
+$dark-color-border:           #191919;
+$dark-color-border-light:     #555555;
+$dark-color-text:             #d4d4d4;
+$dark-color-text-dim:         #aaaaaa;
+$dark-color-text-muted:       #7a7a7a;
+$dark-color-canvas-bg:        #3a3a3a;
+$dark-color-checker-light:    #4d4d4d;
+$dark-color-checker-dark:     #3d3d3d;
 
-// ── Text ──────────────────────────────────────────────────────────────────────
-$color-text:       #d4d4d4;
-$color-text-dim:   #aaaaaa;
-$color-text-muted: #7a7a7a;
+// ── Static light palette (used by [data-theme="light"]) ─────────────────────
+$light-color-bg:               #f0f0f0;
+$light-color-surface:          #e7e7e7;
+$light-color-surface-2:        #ededed;
+$light-color-surface-selected: #d6d6d6;
+$light-color-surface-hover:    #dcdcdc;
+$light-color-border:           #b8b8b8;
+$light-color-border-light:     #cfcfcf;
+$light-color-text:             #1f1f1f;
+$light-color-text-dim:         #555555;
+$light-color-text-muted:       #888888;
+$light-color-canvas-bg:        #c8c8c8;
+$light-color-checker-light:    #e0e0e0;
+$light-color-checker-dark:     #cfcfcf;
 
-// ── Accent / focus ────────────────────────────────────────────────────────────
+// ── Theme-aware references (resolve at runtime via CSS variables) ───────────
+$color-bg:               var(--color-bg);
+$color-surface:          var(--color-surface);
+$color-surface-2:        var(--color-surface-2);
+$color-surface-selected: var(--color-surface-selected);
+$color-surface-hover:    var(--color-surface-hover);
+$color-border:           var(--color-border);
+$color-border-light:     var(--color-border-light);
+
+$color-text:       var(--color-text);
+$color-text-dim:   var(--color-text-dim);
+$color-text-muted: var(--color-text-muted);
+
+// ── Accent / focus (theme-invariant) ────────────────────────────────────────
 $color-accent-blue:       #0699fb;
 $color-accent-blue-hover: #1aa3ff;
 $color-accent:            rgba(6, 153, 251, 0.18);
@@ -22,13 +63,13 @@ $color-accent-border:     rgba(6, 153, 251, 0.45);
 $color-accent-solid:      #0699fb;
 $color-focus:             #0699fb;
 
-// ── Canvas / misc ─────────────────────────────────────────────────────────────
-$color-canvas-bg:     #3a3a3a;
-$color-checker-light: #4d4d4d;
-$color-checker-dark:  #3d3d3d;
+// ── Canvas / misc (theme-aware where it matters) ────────────────────────────
+$color-canvas-bg:     var(--color-canvas-bg);
+$color-checker-light: var(--color-checker-light);
+$color-checker-dark:  var(--color-checker-dark);
 $color-danger:        #c04040;
 
-// ── Typography ────────────────────────────────────────────────────────────────
+// ── Typography ──────────────────────────────────────────────────────────────
 $font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 $font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
 $font-size-xs:   10px;
@@ -36,7 +77,7 @@ $font-size-sm:   11px;
 $font-size-base: 12px;
 $font-size-md:   12.5px;
 
-// ── Spacing ───────────────────────────────────────────────────────────────────
+// ── Spacing ─────────────────────────────────────────────────────────────────
 $spacing-1: 4px;
 $spacing-2: 8px;
 $spacing-3: 12px;
@@ -44,7 +85,7 @@ $spacing-4: 16px;
 $spacing-5: 20px;
 $spacing-6: 24px;
 
-// ── Borders ───────────────────────────────────────────────────────────────────
+// ── Borders ─────────────────────────────────────────────────────────────────
 $radius-sm: 2px;
 $radius-md: 3px;
 $radius-lg: 4px;
@@ -52,11 +93,11 @@ $radius-xl: 8px;
 
 $radius-button: 16px;
 
-// ── Transitions ───────────────────────────────────────────────────────────────
+// ── Transitions ─────────────────────────────────────────────────────────────
 $transition-fast: 80ms ease;
 $transition-base: 120ms ease;
 
-// ── Layout constants ──────────────────────────────────────────────────────────
+// ── Layout constants ────────────────────────────────────────────────────────
 $toolbar-width:      52px;
 $toolbar-btn-size:   24px;
 $topbar-height:      36px;

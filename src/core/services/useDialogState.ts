@@ -20,8 +20,23 @@ export function useDialogState() {
     useState<"fill" | "delete">("fill");
   const [pendingConversion, setPendingConversion] =
     useState<PixelFormat | null>(null);
+  const [
+    showImportSpritesheetFramesDialog,
+    setShowImportSpritesheetFramesDialog,
+  ] = useState(false);
+  const [
+    showExportAnimationFramesDialog,
+    setShowExportAnimationFramesDialog,
+  ] = useState(false);
+  const [showLutManager, setShowLutManager] = useState(false);
 
   return {
+    showLutManager,
+    setShowLutManager,
+    showImportSpritesheetFramesDialog,
+    setShowImportSpritesheetFramesDialog,
+    showExportAnimationFramesDialog,
+    setShowExportAnimationFramesDialog,
     showNewImageDialog,
     setShowNewImageDialog,
     showExportDialog,

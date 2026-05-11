@@ -1,6 +1,6 @@
 import { useAppContext } from "@/core/store/AppContext";
-import type { ToolOptionsStyles } from "@/tools";
-import { TOOL_REGISTRY } from "@/tools";
+import type { ToolOptionsStyles } from "@/core/tools";
+import { TOOL_REGISTRY } from "@/core/tools";
 import React from "react";
 import styles from "./ToolOptionsBar.module.scss";
 

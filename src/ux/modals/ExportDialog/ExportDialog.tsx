@@ -14,8 +14,17 @@ export type ExportFormat =
   | "exr"
   | "hdr"
   | "tiff32"
-  | "dds";
+  | "dds"
+  | "psd";
 export type DdsCompression = "bc1" | "bc3" | "bc7" | "bc6h" | "rgba32f";
+
+/** How layers are encoded into the exported file(s).
+ *  - "single"     : flatten everything into one image (single-layer file).
+ *  - "multilayer" : write one file that preserves the layer structure.
+ *                   Only meaningful for layer-capable formats (PSD, EXR).
+ *  - "separate"   : write one file per selected layer, named
+ *                   `<filePath-stem>_<sanitised-layer-name>.<ext>`. */
+export type LayerExportMode = "single" | "multilayer" | "separate";
 
 export interface ExportSettings {
   filePath: string;
@@ -27,6 +36,14 @@ export interface ExportSettings {
   exrHalfFloat: boolean;
   ddsCompression: DdsCompression;
   ddsMipLevels: number; // >= 1
+  layerMode: LayerExportMode;
+  /** IDs of the layers to export when `layerMode === "separate"`. */
+  perLayerIds?: string[];
+}
+
+export interface ExportableLayerOption {
+  id: string;
+  name: string;
 }
 
 export interface ExportDialogProps {
@@ -34,6 +51,10 @@ export interface ExportDialogProps {
   isHdrDocument?: boolean;
   documentWidth?: number;
   documentHeight?: number;
+  /** Layers that the user can pick from when "Export each layer as a
+   *  separate file" is enabled. Filtered to pixel-bearing layers (no
+   *  groups / masks / adjustments). */
+  exportableLayers?: ExportableLayerOption[];
   onConfirm: (settings: ExportSettings) => void;
   onCancel: () => void;
 }
@@ -60,9 +81,11 @@ function applyExtension(filePath: string, format: ExportFormat): string {
                   ? ".tiff"
                   : format === "dds"
                     ? ".dds"
-                    : ".jpg";
+                    : format === "psd"
+                      ? ".psd"
+                      : ".jpg";
   return (
-    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds)$/i, "") + ext
+    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds|psd)$/i, "") + ext
   );
 }
 
@@ -78,6 +101,7 @@ export function ExportDialog({
   isHdrDocument,
   documentWidth,
   documentHeight,
+  exportableLayers,
   onConfirm,
   onCancel,
 }: ExportDialogProps): React.JSX.Element | null {
@@ -90,6 +114,22 @@ export function ExportDialog({
   const [exrHalfFloat, setExrHalfFloat] = useState(false);
   const [ddsCompression, setDdsCompression] = useState<DdsCompression>("bc7");
   const [ddsMipLevels, setDdsMipLevels] = useState(1);
+  const [perLayerIds, setPerLayerIds] = useState<string[]>([]);
+
+  // Format families ─────────────────────────────────────────────────────────
+  // - Flat LDR formats: support "single" (default) and "separate" output.
+  // - Layer-capable formats (PSD, EXR): support all three modes; default
+  //   "multilayer" so a layered Verve doc round-trips.
+  // - HDR / TIFF32 / DDS: no layer model — always "single".
+  const isFlatLdr =
+    format === "png" ||
+    format === "jpeg" ||
+    format === "webp" ||
+    format === "tga" ||
+    format === "tiff";
+  const isLayerCapable = format === "psd" || format === "exr";
+  const layerSelectorSupported = isFlatLdr || isLayerCapable;
+  const [layerMode, setLayerMode] = useState<LayerExportMode>("single");
 
   // Maximum mip levels such that the smallest dimension is >= 128 (each level halves both dims).
   const maxDdsMipLevels = (() => {
@@ -119,8 +159,20 @@ export function ExportDialog({
       setExrHalfFloat(false);
       setDdsCompression("bc7");
       setDdsMipLevels(1);
+      setLayerMode("single");
+      // Default to "all layers selected" so switching to "separate"
+      // exports everything; the user can trim down from there.
+      setPerLayerIds((exportableLayers ?? []).map((l) => l.id));
     }
-  }, [open]);
+  }, [open, exportableLayers]);
+
+  // When the format changes the available layer modes change too.  Reset to
+  // each format's natural default so the user never lands on an invalid
+  // combination (e.g. "multilayer" while exporting PNG).
+  useEffect(() => {
+    if (isLayerCapable) setLayerMode("multilayer");
+    else setLayerMode("single");
+  }, [format, isLayerCapable]);
 
   // When format changes, update the extension on the stored path.
   const handleFormatChange = useCallback((fmt: ExportFormat): void => {
@@ -133,6 +185,11 @@ export function ExportDialog({
     const chosen = await window.api.exportBrowse(format);
     if (chosen) setFilePath(chosen);
   }, [format]);
+
+  // The active mode after clamping to what the current format supports.
+  const effectiveLayerMode: LayerExportMode = layerSelectorSupported
+    ? layerMode
+    : "single";
 
   const handleConfirm = useCallback((): void => {
     if (!filePath.trim()) return;
@@ -149,8 +206,25 @@ export function ExportDialog({
         1,
         Math.min(maxDdsMipLevels, Math.floor(ddsMipLevels)),
       ),
+      layerMode: effectiveLayerMode,
+      perLayerIds:
+        effectiveLayerMode === "separate" ? perLayerIds.slice() : undefined,
     });
-  }, [filePath, format, jpegQuality, jpegBg, onConfirm]);
+  }, [
+    filePath,
+    format,
+    jpegQuality,
+    jpegBg,
+    webpQuality,
+    exrCompression,
+    exrHalfFloat,
+    ddsCompression,
+    ddsMipLevels,
+    maxDdsMipLevels,
+    effectiveLayerMode,
+    perLayerIds,
+    onConfirm,
+  ]);
 
   // Keyboard: Enter = confirm (Escape handled by ModalDialog)
   useEffect(() => {
@@ -208,6 +282,7 @@ export function ExportDialog({
             <option value="tga">TGA</option>
             <option value="tiff">TIFF</option>
             <option value="dds">DDS</option>
+            <option value="psd">PSD (Photoshop)</option>
             {isHdrDocument && (
               <>
                 <option disabled>──────────</option>
@@ -488,6 +563,82 @@ export function ExportDialog({
               </div>
             </>
           )}
+
+          {format === "psd" && (
+            <>
+              <p className={styles.sectionTitle}>PSD OPTIONS</p>
+              <div className={styles.fieldRow}>
+                <label className={styles.fieldLabel}>Rasterization</label>
+                <span className={styles.staticNote}>
+                  Text, shape, frame, and composite layers — along with all
+                  attached adjustments, effects, and filters — are rasterized
+                  to plain pixel data on export. Group folders, layer masks,
+                  opacity, blend modes, and visibility are preserved.
+                </span>
+              </div>
+            </>
+          )}
+
+          {layerSelectorSupported &&
+            exportableLayers &&
+            exportableLayers.length > 0 && (
+              <>
+                <div className={styles.optionsDivider} />
+                <p className={styles.sectionTitle}>LAYER OUTPUT</p>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel} htmlFor="ex-layer-mode">
+                    Mode
+                  </label>
+                  <select
+                    id="ex-layer-mode"
+                    className={styles.select}
+                    value={effectiveLayerMode}
+                    onChange={(e) =>
+                      setLayerMode(e.target.value as LayerExportMode)
+                    }
+                  >
+                    {isLayerCapable && (
+                      <option value="multilayer">
+                        Preserve layers (one {format === "psd" ? "PSD" : "EXR"} file)
+                      </option>
+                    )}
+                    <option value="single">Flatten to single image</option>
+                    <option value="separate">Separate file per layer</option>
+                  </select>
+                </div>
+
+                {effectiveLayerMode === "separate" && (
+                  <div className={styles.fieldRow}>
+                    <span className={styles.fieldLabel}>Layers</span>
+                    <div className={styles.perLayerList}>
+                      {exportableLayers.map((l) => {
+                        const checked = perLayerIds.includes(l.id);
+                        return (
+                          <label
+                            key={l.id}
+                            className={styles.perLayerItem}
+                            title={l.name}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setPerLayerIds((prev) =>
+                                  prev.includes(l.id)
+                                    ? prev.filter((x) => x !== l.id)
+                                    : [...prev, l.id],
+                                )
+                              }
+                            />
+                            <span className={styles.perLayerName}>{l.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
         </div>
       </div>
 

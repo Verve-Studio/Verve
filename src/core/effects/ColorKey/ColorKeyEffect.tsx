@@ -1,13 +1,44 @@
-import type { ColorKeyAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorKeyPanel } from "./ColorKeyPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type ColorKeyOp = Extract<AdjustmentRenderOp, { kind: "color-key" }>;
+const ColorKeyIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="2.5" width="9" height="7" rx="0.5" />
+    <circle cx="6" cy="6" r="2" />
+    <line x1="1.5" y1="6" x2="4" y2="6" strokeOpacity="0.5" />
+    <line x1="8" y1="6" x2="10.5" y2="6" strokeOpacity="0.5" />
+  </svg>
+);
+
+
+export interface ColorKeyParams {
+    /** Key color as sRGB bytes (0–255). */
+    keyColor: { r: number; g: number; b: number };
+    /** Pixels with HSV distance ≤ tolerance are fully transparent. Range 0–100. */
+    tolerance: number;
+    /** Width of the soft-edge transition zone beyond the tolerance boundary. Range 0–100. */
+    softness: number;
+    /** Expand the keyed-out region by this many pixels. Range 0–20. */
+    dilation: number;
+}
+
+export type ColorKeyEffectLayer = EffectLayerOf<"color-key", ColorKeyParams>;
+
+type ColorKeyOp = Extract<EffectRenderOp, { kind: "color-key" }>;
 
 export const ColorKeyEffect: IPipelineEffect<
-  ColorKeyAdjustmentLayer,
+  ColorKeyEffectLayer,
   ColorKeyOp
 > = {
   id: "color-key",
@@ -21,29 +52,24 @@ export const ColorKeyEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { r, g, b } = layer.params.keyColor;
     return {
       kind: "color-key",
       layerId: layer.id,
-      keyR: r / 255,
-      keyG: g / 255,
-      keyB: b / 255,
-      tolerance: layer.params.tolerance,
-      softness: layer.params.softness,
-      dilation: layer.params.dilation,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const { r, g, b } = entry.params.keyColor;
     const params = new Float32Array([
-      entry.keyR,
-      entry.keyG,
-      entry.keyB,
-      entry.tolerance,
-      entry.softness,
-      entry.dilation,
+      r / 255,
+      g / 255,
+      b / 255,
+      entry.params.tolerance,
+      entry.params.softness,
+      entry.params.dilation,
       0,
       0,
     ]);
@@ -59,4 +85,5 @@ export const ColorKeyEffect: IPipelineEffect<
   },
 
   Panel: ColorKeyPanel,
+  icon: ColorKeyIcon,
 };

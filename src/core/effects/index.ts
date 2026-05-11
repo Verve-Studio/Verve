@@ -19,6 +19,7 @@ import { BilateralFilterEffect } from "./BilateralFilter/BilateralFilterEffect";
 import { ReduceNoiseEffect } from "./ReduceNoise/ReduceNoiseEffect";
 import { CloudsEffect } from "./Clouds/CloudsEffect";
 import { OffsetEffect } from "./Offset/OffsetEffect";
+import { RepeatEffect } from "./Repeat/RepeatEffect";
 import { SeamlessTextureEffect } from "./SeamlessTexture/SeamlessTextureEffect";
 import { HueSaturationEffect } from "./HueSaturation/HueSaturationEffect";
 import { ColorVibranceEffect } from "./ColorVibrance/ColorVibranceEffect";
@@ -27,6 +28,8 @@ import { BlackAndWhiteEffect } from "./BlackAndWhite/BlackAndWhiteEffect";
 import { ColorTemperatureEffect } from "./ColorTemperature/ColorTemperatureEffect";
 import { HalftoneEffect } from "./Halftone/HalftoneEffect";
 import { ColorKeyEffect } from "./ColorKey/ColorKeyEffect";
+import { ColorBiasEffect } from "./ColorBias/ColorBiasEffect";
+import { LutAdjustmentEffect } from "./LutAdjustment/LutAdjustmentEffect";
 import { ChromaticAberrationEffect } from "./ChromaticAberration/ChromaticAberrationEffect";
 import { VignetteEffect } from "./Vignette/VignetteEffect";
 import { LensDistortionEffect } from "./LensDistortion/LensDistortionEffect";
@@ -52,6 +55,7 @@ import { BevelEffect } from "./Bevel/BevelEffect";
 import { InnerShadowEffect } from "./InnerShadow/InnerShadowEffect";
 import { InnerGlowEffect } from "./InnerGlow/InnerGlowEffect";
 import { LensFlareEffect } from "./LensFlare/LensFlareEffect";
+import { ReplaceColorEffect } from "./ReplaceColor/ReplaceColorEffect";
 
 // Eager registration — importing this module is the single side-effecting step
 // that makes registered effects reachable through the plan builder, encoder,
@@ -76,6 +80,7 @@ effectRegistry.register(BilateralFilterEffect);
 effectRegistry.register(ReduceNoiseEffect);
 effectRegistry.register(CloudsEffect);
 effectRegistry.register(OffsetEffect);
+effectRegistry.register(RepeatEffect);
 effectRegistry.register(SeamlessTextureEffect);
 effectRegistry.register(HueSaturationEffect);
 effectRegistry.register(ColorVibranceEffect);
@@ -84,6 +89,8 @@ effectRegistry.register(BlackAndWhiteEffect);
 effectRegistry.register(ColorTemperatureEffect);
 effectRegistry.register(HalftoneEffect);
 effectRegistry.register(ColorKeyEffect);
+effectRegistry.register(ColorBiasEffect);
+effectRegistry.register(LutAdjustmentEffect);
 effectRegistry.register(ChromaticAberrationEffect);
 effectRegistry.register(VignetteEffect);
 effectRegistry.register(LensDistortionEffect);
@@ -109,6 +116,7 @@ effectRegistry.register(BevelEffect);
 effectRegistry.register(InnerShadowEffect);
 effectRegistry.register(InnerGlowEffect);
 effectRegistry.register(LensFlareEffect);
+effectRegistry.register(ReplaceColorEffect);
 
 export { effectRegistry } from "./effectRegistry";
 export type {

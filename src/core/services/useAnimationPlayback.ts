@@ -1,7 +1,16 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState, AnimationDef } from "@/types";
+import { computeEffectivePalette, paletteCyclePeriod } from "@/core/store/paletteCycleStore";
+import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
+import { activeScope } from "@/core/store/scope";
 
 // ─── Public interface ──────────────────────────────────────────────────────────
 
@@ -11,6 +20,10 @@ export interface AnimationPlayback {
   /** 0-based index of the displayed frame within the selected animation. */
   currentFrameIdx: number;
   selectedAnim: AnimationDef | null;
+  /** 0-based tick within the palette-cycle period (palette mode only). */
+  paletteFrameIdx: number;
+  /** Total number of ticks before every cycling group returns to start. */
+  paletteTotalFrames: number;
   onPlayPause: () => void;
   onLoopToggle: () => void;
   onPrevFrame: () => void;
@@ -24,6 +37,7 @@ export interface AnimationPlayback {
 export function useAnimationPlayback(
   state: AppState,
   dispatch: Dispatch<AppAction>,
+  canvasHandleRef: { readonly current: CanvasHandle | null },
 ): AnimationPlayback {
   const ss = state.spritesheet;
 
@@ -183,9 +197,110 @@ export function useAnimationPlayback(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, selectedAnim?.fps, selectedAnim?.id, advanceTick]);
 
+  // ── Palette animation: virtual cycle of indexed8 palette ────────────────
+  // When palette animation is enabled and play is active, tick a counter at
+  // the configured fps and re-flush every indexed8 layer with the cycled
+  // palette. The underlying state.swatches is never mutated.
+  const paletteEnabled = state.paletteAnimation.enabled;
+  const paletteFps = Math.max(1, state.paletteAnimation.fps);
+  const swatches = state.swatches;
+  const swatchGroups = state.swatchGroups;
+  const swatchesRef = useRef(swatches);
+  const swatchGroupsRef = useRef(swatchGroups);
+  swatchesRef.current = swatches;
+  swatchGroupsRef.current = swatchGroups;
+  const repaint = useCallback(
+    (tick: number): void => {
+      const handle = canvasHandleRef.current;
+      if (!handle) return;
+      const eff = computeEffectivePalette(
+        swatchesRef.current,
+        swatchGroupsRef.current,
+        tick,
+      );
+      handle.repaintIndexedLayers(eff);
+    },
+    [canvasHandleRef],
+  );
+  // Total period of the active palette cycle (LCM across cycling groups).
+  // 0 when nothing is cycling (or palette mode is off).
+  const palettePeriod = paletteEnabled
+    ? paletteCyclePeriod(swatchGroups)
+    : 0;
+  const palettePeriodRef = useRef(palettePeriod);
+  palettePeriodRef.current = palettePeriod;
+
+  useEffect(() => {
+    if (!paletteEnabled || !isPlaying) return;
+    const interval = Math.round(1000 / paletteFps);
+    const id = setInterval(() => {
+      const nextTick = activeScope().paletteCycle.tick + 1;
+      const period = palettePeriodRef.current;
+      // Honour the loop toggle in palette mode: when looping is off, stop
+      // playback at the end of one full cycle and snap back to tick 0.
+      if (!isLoopingRef.current && period > 0 && nextTick >= period) {
+        activeScope().paletteCycle.set(0);
+        repaint(0);
+        setIsPlaying(false);
+        return;
+      }
+      activeScope().paletteCycle.set(nextTick);
+      repaint(nextTick);
+    }, interval);
+    return () => clearInterval(id);
+  }, [paletteEnabled, isPlaying, paletteFps, repaint]);
+
+  // Subscribe to palette-cycle ticks so the playback bar's frame readout
+  // updates live during playback. (The repaint above already keeps pixels in
+  // sync; this is just to drive React re-renders.)
+  const paletteTick = useSyncExternalStore(
+    (cb) => activeScope().paletteCycle.subscribe(cb),
+    () => activeScope().paletteCycle.tick,
+  );
+
+  // Default the loop toggle to ON the moment palette mode becomes active so
+  // the bar reflects palette animation's natural cyclic behaviour.  Switching
+  // back out of palette mode resets to OFF so spritesheet playback uses its
+  // normal default.
+  const wasPaletteEnabledRef = useRef(paletteEnabled);
+  useEffect(() => {
+    if (paletteEnabled && !wasPaletteEnabledRef.current) {
+      setIsLooping(true);
+    } else if (!paletteEnabled && wasPaletteEnabledRef.current) {
+      setIsLooping(false);
+    }
+    wasPaletteEnabledRef.current = paletteEnabled;
+  }, [paletteEnabled]);
+
+  // Re-flush whenever palette-anim toggles, the cycle config changes, or
+  // the swatch list changes — keeps the displayed colours in sync without
+  // waiting for the next tick.
+  useEffect(() => {
+    if (paletteEnabled) {
+      repaint(activeScope().paletteCycle.tick);
+    } else {
+      // Restore original palette when the feature is turned off.
+      activeScope().paletteCycle.reset();
+      repaint(0);
+    }
+  }, [paletteEnabled, swatches, swatchGroups, repaint]);
+
   // ── Manual navigation ──────────────────────────────────────────────────────
 
+  const paletteEnabledRef = useRef(paletteEnabled);
+  paletteEnabledRef.current = paletteEnabled;
+
   const handlePrevFrame = useCallback((): void => {
+    if (paletteEnabledRef.current) {
+      // In palette-animation mode "Previous Frame" steps the palette
+      // cycle one tick backward and repaints with the cycled palette.
+      // Pause the cycle so the manual step is preserved.
+      setIsPlaying(false);
+      const next = activeScope().paletteCycle.tick - 1;
+      activeScope().paletteCycle.set(next);
+      repaint(activeScope().paletteCycle.tick);
+      return;
+    }
     const anim = selectedAnimRef.current;
     if (!anim || anim.frames.length === 0) return;
     const len = anim.frames.length;
@@ -207,9 +322,15 @@ export function useAnimationPlayback(
 
     goToFrame(anim, next);
     setIsPlaying(false);
-  }, [goToFrame]);
+  }, [goToFrame, repaint]);
 
   const handleNextFrame = useCallback((): void => {
+    if (paletteEnabledRef.current) {
+      setIsPlaying(false);
+      activeScope().paletteCycle.set(activeScope().paletteCycle.tick + 1);
+      repaint(activeScope().paletteCycle.tick);
+      return;
+    }
     const anim = selectedAnimRef.current;
     if (!anim || anim.frames.length === 0) return;
     const len = anim.frames.length;
@@ -231,9 +352,11 @@ export function useAnimationPlayback(
 
     goToFrame(anim, next);
     setIsPlaying(false);
-  }, [goToFrame]);
+  }, [goToFrame, repaint]);
 
   const handlePrevAnimation = useCallback((): void => {
+    // No-op in palette mode (UI gates the button as well).
+    if (paletteEnabledRef.current) return;
     const anims = ss.animations;
     if (anims.length === 0) return;
     const currentIdx = anims.findIndex((a) => a.id === ss.selectedAnimationId);
@@ -261,6 +384,7 @@ export function useAnimationPlayback(
   }, [ss.animations, ss.selectedAnimationId, goToFrame, dispatch]);
 
   const handleNextAnimation = useCallback((): void => {
+    if (paletteEnabledRef.current) return;
     const anims = ss.animations;
     if (anims.length === 0) return;
     const currentIdx = anims.findIndex((a) => a.id === ss.selectedAnimationId);
@@ -301,11 +425,18 @@ export function useAnimationPlayback(
     setIsLooping((prev) => !prev);
   }, []);
 
+  // 0-based position within the current cycle period (clamps at 0 when
+  // nothing is cycling so the bar still reads "0 of 0").
+  const paletteFrameIdx =
+    palettePeriod > 0 ? paletteTick % palettePeriod : 0;
+
   return {
     isPlaying,
     isLooping,
     currentFrameIdx,
     selectedAnim,
+    paletteFrameIdx,
+    paletteTotalFrames: palettePeriod,
     onPlayPause: handlePlayPause,
     onLoopToggle: handleLoopToggle,
     onPrevFrame: handlePrevFrame,

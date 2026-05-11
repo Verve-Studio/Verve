@@ -1,11 +1,11 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { SmartSharpenAdjustmentLayer } from "@/types";
+import type { SmartSharpenEffectLayer } from "@/core/effects/SmartSharpen/SmartSharpenEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: SmartSharpenAdjustmentLayer;
+  layer: SmartSharpenEffectLayer;
   parentLayerName: string;
 }
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { DisplaceAdjustmentLayer } from "@/types";
+import type { DisplaceEffectLayer } from "@/core/effects/Displace/DisplaceEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
@@ -11,12 +11,12 @@ import {
 import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
-  layer: DisplaceAdjustmentLayer;
+  layer: DisplaceEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): DisplaceAdjustmentLayer["params"] =>
-  effectRegistry.get("displace")!.defaultParams as DisplaceAdjustmentLayer["params"];
+const getDefaultParams = (): DisplaceEffectLayer["params"] =>
+  effectRegistry.get("displace")!.defaultParams as DisplaceEffectLayer["params"];
 
 export function DisplaceOptions({
   layer,
@@ -24,7 +24,7 @@ export function DisplaceOptions({
 }: Props): React.JSX.Element {
   const { dispatch } = useAppContext();
   const p = layer.params;
-  const update = (patch: Partial<DisplaceAdjustmentLayer["params"]>): void => {
+  const update = (patch: Partial<DisplaceEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },

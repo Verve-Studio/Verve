@@ -1,17 +1,18 @@
-import { polygonalSelectionStore } from "@/core/store/polygonalSelectionStore";
+
 import { useEffect } from "react";
+import { activeScope } from "@/core/store/scope";
 
 export function usePolygonalSelection(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!polygonalSelectionStore.isActive) return;
+      if (!activeScope().polygonalSelection.isActive) return;
       if (e.key === "Escape") {
         e.stopPropagation();
-        polygonalSelectionStore.cancel();
+        activeScope().polygonalSelection.cancel();
       } else if (e.key === "Backspace" || e.key === "Delete") {
         e.stopPropagation();
         e.preventDefault();
-        polygonalSelectionStore.removeLastVertex();
+        activeScope().polygonalSelection.removeLastVertex();
       }
     };
     document.addEventListener("keydown", onKey, true);

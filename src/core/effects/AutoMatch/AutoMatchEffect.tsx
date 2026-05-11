@@ -1,18 +1,70 @@
-import type { AutoMatchAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { AutoMatchStats, EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AutoMatchPanel } from "./AutoMatchPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
-type AutoMatchOp = Extract<AdjustmentRenderOp, { kind: "auto-match" }>;
+const AutoMatchIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+    <path d="M3 8 L5 5 L7 7 L9 3" />
+    <circle cx="5" cy="5" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+
+  /**
+   * Per-source statistics captured by the Auto Match analysis pass. Each
+   * value is in linear-display units of 0..1 (luma channels) or raw 0..1
+   * sRGB byte/255 (mean R/G/B). `count` is the number of opaque pixels that
+   * contributed; when 0 the stats are invalid and the apply pass becomes a
+   * pass-through.
+   */
+export interface AutoMatchParams {
+    /** Pixel radius around the parent layer's bounding box used to gather
+     *  context (rest-of-image) statistics. */
+    samplingDistance: number;
+    /** Overall match strength (0..100). 0 = pass-through, 100 = full match. */
+    strength: number;
+    /** Per-component micro-adjustments (0..200, default 100 = match exactly). */
+    brightness: number;
+    contrast: number;
+    gamma: number;
+    color: number;
+    /** Saturation match (0..200). Scales the layer's chroma magnitude toward
+     *  the surroundings'. 100 = match exactly, 0 = leave saturation alone,
+     *  200 = double the match strength (clamped at the per-axis caps). */
+    saturation: number;
+    /** When true, clamps output luma to the surroundings' max luma. */
+    clampHighlights: boolean;
+    /** When true, clamps output luma below the surroundings' min luma. */
+    clampShadows: boolean;
+    /** Cached statistics produced by the analysis pass. Null until first analyze. */
+    cachedStats: AutoMatchStats | null;
+    /** Bumped every time analysis finishes; forces render-plan recomputation. */
+    statsVersion: number;
+}
+
+export type AutoMatchEffectLayer = EffectLayerOf<"auto-match", AutoMatchParams>;
+
+type AutoMatchOp = Extract<EffectRenderOp, { kind: "auto-match" }>;
 
 export const AutoMatchEffect: IPipelineEffect<
-  AutoMatchAdjustmentLayer,
+  AutoMatchEffectLayer,
   AutoMatchOp
 > = {
   id: "auto-match",
   label: "Auto Match…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: {
     samplingDistance: 100,
     strength: 100,
@@ -35,14 +87,9 @@ export const AutoMatchEffect: IPipelineEffect<
     return {
       kind: "auto-match",
       layerId: layer.id,
-      strength: p.strength / 100,
-      brightness: p.brightness / 100,
-      contrast: p.contrast / 100,
-      gamma: p.gamma / 100,
-      color: p.color / 100,
-      saturation: p.saturation / 100,
-      clampHighlights: p.clampHighlights,
-      clampShadows: p.clampShadows,
+      visible: layer.visible,
+      selMaskLayer: mask,
+      params: layer.params,
       layerMeanL: lz?.meanL ?? 0,
       layerStdL: lz?.stdL ?? 0,
       layerMinL: lz?.minL ?? 0,
@@ -62,12 +109,11 @@ export const AutoMatchEffect: IPipelineEffect<
       contextChromaMag: cz?.chromaMag ?? 0,
       contextCount: cz?.count ?? 0,
       statsVersion: p.statsVersion,
-      visible: layer.visible,
-      selMaskLayer: mask,
     };
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
+    const p = entry.params;
     // AutoMatchParams: 8 × vec4 = 128 bytes
     const buf = new ArrayBuffer(128);
     const f = new Float32Array(buf);
@@ -88,14 +134,14 @@ export const AutoMatchEffect: IPipelineEffect<
     f[13] = entry.contextMeanG;
     f[14] = entry.contextMeanB;
     f[15] = entry.contextCount > 0 ? 1 : 0;
-    f[16] = entry.strength;
-    f[17] = entry.brightness;
-    f[18] = entry.contrast;
-    f[19] = entry.gamma;
-    f[20] = entry.color;
-    f[21] = entry.saturation;
-    u[24] = entry.clampHighlights ? 1 : 0;
-    u[25] = entry.clampShadows ? 1 : 0;
+    f[16] = p.strength / 100;
+    f[17] = p.brightness / 100;
+    f[18] = p.contrast / 100;
+    f[19] = p.gamma / 100;
+    f[20] = p.color / 100;
+    f[21] = p.saturation / 100;
+    u[24] = p.clampHighlights ? 1 : 0;
+    u[25] = p.clampShadows ? 1 : 0;
     f[28] = entry.layerChromaMag;
     f[29] = entry.contextChromaMag;
     engine.runtime.encodeStdAdjRenderPass(
@@ -110,4 +156,5 @@ export const AutoMatchEffect: IPipelineEffect<
   },
 
   Panel: AutoMatchPanel,
+  icon: AutoMatchIcon,
 };

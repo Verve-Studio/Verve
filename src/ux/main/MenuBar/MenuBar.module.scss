@@ -30,14 +30,20 @@
   letter-spacing: 0.01em;
   transition: background-color vars.$transition-fast, color vars.$transition-fast;
 
-  &:hover,
-  &.open {
+  &:hover:not(:disabled),
+  &.open:not(:disabled) {
     background-color: vars.$color-surface-hover;
     color: vars.$color-text;
   }
 
   &:focus-visible {
     @include m.focus-ring;
+  }
+
+  &:disabled {
+    color: vars.$color-text-muted;
+    opacity: 0.5;
+    cursor: default;
   }
 }
 
@@ -46,12 +52,12 @@
   top: calc(100% + 2px);
   left: 0;
   min-width: 200px;
-  background-color: #282828;
-  border: 1px solid #1a1a1a;
+  background-color: vars.$color-surface;
+  border: 1px solid vars.$color-border;
   border-radius: vars.$radius-xl;
   box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.5),
-    0 8px 24px rgba(0, 0, 0, 0.55);
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    0 8px 24px rgba(0, 0, 0, 0.35);
   padding: 3px;
   list-style: none;
   z-index: 200;
@@ -59,7 +65,7 @@
 
 .separator {
   height: 1px;
-  background-color: rgba(255, 255, 255, 0.07);
+  background-color: rgb(from var(--color-text) r g b / 0.12);
   margin: 3px 6px;
 }
 

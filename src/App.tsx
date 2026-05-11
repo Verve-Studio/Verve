@@ -1,48 +1,55 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useAdjustments } from "@/core/services/useAdjustments";
+import { useAnimationPlayback } from "@/core/services/useAnimationPlayback";
+import {
+  useBrushBootstrap,
+  useCloneStampNotification,
+  useMemoryErrorHandler,
+  useRecentFiles,
+  useStartupFile,
+} from "@/core/services/useAppLifecycle";
+import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
+import { useClipboard } from "@/core/services/useClipboard";
+import { useColorMode } from "@/core/services/useColorMode";
+import { useContentAwareFill } from "@/core/services/useContentAwareFill";
+import { useDialogState } from "@/core/services/useDialogState";
+import { useExportOps } from "@/core/services/useExportOps";
+import { useFileOps } from "@/core/services/useFileOps";
+import { useFilters } from "@/core/services/useFilters";
+import { useFormatRemount } from "@/core/services/useFormatRemount";
+import { useHistory } from "@/core/services/useHistory";
+import { useKeyboardShortcuts } from "@/core/services/useKeyboardShortcuts";
+import { useLayerArrange } from "@/core/services/useLayerArrange";
+import { useLayerGroups } from "@/core/services/useLayerGroups";
+import { useLayers } from "@/core/services/useLayers";
+import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
+import { useLutOps } from "@/core/services/useLutOps";
+import { useObjectSelection } from "@/core/services/useObjectSelection";
+import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
+import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
+import { useTabs } from "@/core/services/useTabs";
+import { useTransform } from "@/core/services/useTransform";
+import { useTransformGuard } from "@/core/services/useTransformGuard";
+import { useViewActions } from "@/core/services/useViewActions";
 import { AppProvider, useAppContext } from "@/core/store/AppContext";
 import { CanvasProvider } from "@/core/store/CanvasContext";
-import { historyStore } from "@/core/store/historyStore";
-import { MemoryLimitError } from "@/core/store/memoryStore";
-import {
-  notificationStore,
-  useNotification,
-} from "@/core/store/notificationStore";
-import { useTabs } from "@/core/services/useTabs";
-import { useHistory } from "@/core/services/useHistory";
-import { useFileOps } from "@/core/services/useFileOps";
-import { useExportOps } from "@/core/services/useExportOps";
-import { useClipboard } from "@/core/services/useClipboard";
-import { useLayers } from "@/core/services/useLayers";
-import { useLayerGroups } from "@/core/services/useLayerGroups";
-import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
-import { useLayerArrange } from "@/core/services/useLayerArrange";
-import { useKeyboardShortcuts } from "@/core/services/useKeyboardShortcuts";
-import { useAdjustments } from "@/core/services/useAdjustments";
-import { useFilters } from "@/core/services/useFilters";
-import { useTransform } from "@/core/services/useTransform";
-import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
-import { useObjectSelection } from "@/core/services/useObjectSelection";
-import { useContentAwareFill } from "@/core/services/useContentAwareFill";
-import { useColorMode } from "@/core/services/useColorMode";
-import { useDialogState } from "@/core/services/useDialogState";
-import { useViewActions } from "@/core/services/useViewActions";
-import { useTransformGuard } from "@/core/services/useTransformGuard";
-import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
-import { useAnimationPlayback } from "@/core/services/useAnimationPlayback";
-import { cloneStampStore } from "@/core/store/cloneStampStore";
-import { pixelBrushStore } from "@/core/store/pixelBrushStore";
-import { brushStore } from "@/core/store/brushStore";
-import { makeDefaultBrush } from "@/types";
+
+import { useNotification } from "@/core/store/notificationStore";
+import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
+
+import { viewportCommands } from "@/core/store/viewportCommands";
+import { toolRegistry } from "@/core/tools/toolRegistry";
+import type { LayerState, Tool } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
-import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
-import type { Tool, LayerState, AdjustmentType, PixelFormat } from "@/types";
-import type { FilterKey } from "@/types";
-import { selectionStore } from "@/core/store/selectionStore";
+import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MenuDeps } from "@/ux/main/menu/menuTree";
 import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+  ADJUSTMENT_MENU_ITEMS,
+  EFFECTS_MENU_ITEMS,
+  FILTER_MENU_ITEMS,
+} from "@/core/menuConstants";
+import { activeScope } from "@/core/store/scope";
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
@@ -61,6 +68,8 @@ function AppContent(): React.JSX.Element {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showLutManager,
+    setShowLutManager,
     showAboutDialog,
     setShowAboutDialog,
     showShortcutsDialog,
@@ -77,120 +86,38 @@ function AppContent(): React.JSX.Element {
     setContentAwareFillOptionsMode,
     pendingConversion,
     setPendingConversion,
+    showImportSpritesheetFramesDialog,
+    setShowImportSpritesheetFramesDialog,
+    showExportAnimationFramesDialog,
+    setShowExportAnimationFramesDialog,
   } = useDialogState();
 
   const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
 
   // ── Notification / progress state ────────────────────────────────
-  const [cloneStampNotification, setCloneStampNotification] = useState<
-    string | null
-  >(null);
   const [isContentAwareFilling, setIsContentAwareFilling] = useState(false);
   const [contentAwareFillError, setContentAwareFillError] = useState<
     string | null
   >(null);
   const [contentAwareFillLabel, setContentAwareFillLabel] =
     useState("Filling…");
-  const [hasSelection, setHasSelection] = useState(false);
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
 
-  // ── Pixel brush store init ────────────────────────────────────────
-  useEffect(() => {
-    void pixelBrushStore.init();
-  }, []);
+  // ── Mount-only lifecycle effects ──────────────────────────────────
+  useBrushBootstrap(state.activeBrushId, dispatch);
+  const cloneStampNotification = useCloneStampNotification();
+  useMemoryErrorHandler();
+  const memoryNotification = useNotification();
+  const { recentFiles, setRecentFiles, clearRecentFiles } = useRecentFiles();
 
-  // ── Paint brush store init + bootstrap default brush ─────────────
-  useEffect(() => {
-    void (async () => {
-      await brushStore.init();
-      if (brushStore.getUserBrushes().length === 0) {
-        await brushStore.addUserBrush(
-          makeDefaultBrush(crypto.randomUUID(), "Default Round"),
-        );
-      }
-      // If no active brush is set yet, pick the first available user brush.
-      if (state.activeBrushId === null) {
-        const first = brushStore.getUserBrushes()[0];
-        if (first) {
-          dispatch({ type: "SET_ACTIVE_BRUSH", payload: first.id });
-        }
-      }
-    })();
-    // Intentionally run once on mount; no dependency array changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Clone stamp source deletion notification ─────────────────────
-  const cloneStampNotifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  // Cleanup timer for content-aware fill error toasts.
   const contentAwareFillErrorTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
-  useEffect(() => {
-    cloneStampStore.onSourceDeleted = () => {
-      setCloneStampNotification(
-        "⚠ Source layer was deleted — Alt+click to set a new source",
-      );
-      if (cloneStampNotifTimerRef.current !== null)
-        clearTimeout(cloneStampNotifTimerRef.current);
-      cloneStampNotifTimerRef.current = setTimeout(
-        () => setCloneStampNotification(null),
-        4000,
-      );
-    };
-    return () => {
-      cloneStampStore.onSourceDeleted = null;
-      if (cloneStampNotifTimerRef.current !== null)
-        clearTimeout(cloneStampNotifTimerRef.current);
-    };
-  }, []);
-
   useEffect(() => {
     return () => {
       if (contentAwareFillErrorTimerRef.current !== null)
         clearTimeout(contentAwareFillErrorTimerRef.current);
     };
-  }, []);
-
-  // ── Global memory-limit error capture ────────────────────────────
-  // Memory-cap violations can bubble up from anywhere (layer creation,
-  // brush growLayerToFit, history restore, GPU texture allocation, etc).
-  // Listen at the window level so we never miss one, regardless of which
-  // call site threw it.
-  useEffect(() => {
-    const onError = (e: ErrorEvent): void => {
-      if (e.error instanceof MemoryLimitError) {
-        notificationStore.error(e.error.message);
-        e.preventDefault();
-      }
-    };
-    const onRejection = (e: PromiseRejectionEvent): void => {
-      if (e.reason instanceof MemoryLimitError) {
-        notificationStore.error(e.reason.message);
-        e.preventDefault();
-      }
-    };
-    window.addEventListener("error", onError);
-    window.addEventListener("unhandledrejection", onRejection);
-    return () => {
-      window.removeEventListener("error", onError);
-      window.removeEventListener("unhandledrejection", onRejection);
-    };
-  }, []);
-
-  const memoryNotification = useNotification();
-
-  // ── Selection state for menu enabled sync ────────────────────────
-  useEffect(() => {
-    const update = (): void => setHasSelection(selectionStore.hasSelection());
-    selectionStore.subscribe(update);
-    return () => selectionStore.unsubscribe(update);
-  }, []);
-
-  // ── Recent files ──────────────────────────────────────────────────
-  useEffect(() => {
-    window.api.getRecentFiles().then(setRecentFiles);
   }, []);
 
   // ── Tab management ────────────────────────────────────────────────
@@ -252,16 +179,7 @@ function AppContent(): React.JSX.Element {
   });
 
   // ── Startup file (CLI arg or macOS open-with) ─────────────────────
-  const handleOpenPathRef = useRef(handleOpenPath);
-  handleOpenPathRef.current = handleOpenPath;
-  useEffect(() => {
-    void window.api.getStartupFile().then((path) => {
-      if (path) void handleOpenPathRef.current(path);
-    });
-    return window.api.onOpenFile((path) => {
-      void handleOpenPathRef.current(path);
-    });
-  }, []); // mount-only
+  useStartupFile(handleOpenPath);
 
   // ── Export operations ────────────────────────────────────────────
   const {
@@ -345,7 +263,8 @@ function AppContent(): React.JSX.Element {
 
   // ── Adjustments ───────────────────────────────────────────────────
   const getSelectionPixels = useCallback((): Uint8Array | null => {
-    return selectionStore.mask ? selectionStore.mask.slice() : null;
+    const mask = activeScope().selection.mask;
+    return mask ? mask.slice() : null;
   }, []);
 
   const registerAdjMask = useCallback(
@@ -387,50 +306,13 @@ function AppContent(): React.JSX.Element {
   } = useTransformGuard({ handleTransformApply, handleTransformCancel });
 
   // ── Filters ───────────────────────────────────────────────────────
-  const onCreateFilterAdjLayer = useCallback(
-    (type: AdjustmentType): void => {
-      requireTransformDecision(() => {
-        if (type === "clouds") {
-          const { r: fgR, g: fgG, b: fgB } = state.primaryColor;
-          const { r: bgR, g: bgG, b: bgB } = state.secondaryColor;
-          adjustments.handleCreateAdjustmentLayer("clouds", {
-            seed: (Math.random() * 0xffffffff) >>> 0,
-            fgR,
-            fgG,
-            fgB,
-            bgR,
-            bgG,
-            bgB,
-          });
-          return;
-        }
-        if (type === "add-noise" || type === "film-grain") {
-          adjustments.handleCreateAdjustmentLayer(type, {
-            seed: (Math.random() * 0xffffffff) >>> 0,
-          });
-          return;
-        }
-        adjustments.handleCreateAdjustmentLayer(type);
-      });
-    },
-    [
-      adjustments,
-      requireTransformDecision,
-      state.primaryColor,
-      state.secondaryColor,
-    ],
-  );
-
-  const handleOpenFilterDialog = useCallback(
-    (key: FilterKey): void => {
-      requireTransformDecision(() => {
-        onCreateFilterAdjLayer(key as AdjustmentType);
-      });
-    },
-    [requireTransformDecision, onCreateFilterAdjLayer],
-  );
-
-  const filters = useFilters({ onCreateFilterAdjLayer });
+  const filters = useFilters({
+    adjustments,
+    primaryColor: state.primaryColor,
+    secondaryColor: state.secondaryColor,
+    requireTransformDecision,
+  });
+  const { handleOpenFilterDialog } = filters;
 
   // ── Content-Aware Fill / Delete ────────────────────────────────────
   const { runContentAwareFill, runContentAwareDelete } = useContentAwareFill({
@@ -471,10 +353,10 @@ function AppContent(): React.JSX.Element {
 
   // ── View actions ──────────────────────────────────────────────────
   const handleUndo = useCallback(() => {
-    historyStore.undo();
+    activeScope().history.undo();
   }, []);
   const handleRedo = useCallback(() => {
-    historyStore.redo();
+    activeScope().history.redo();
   }, []);
 
   const {
@@ -498,8 +380,32 @@ function AppContent(): React.JSX.Element {
     handleFindLayers,
   } = useViewActions({ dispatch, stateRef, canvasHandleRef });
 
+  // Expose Fit-to-Window to the global viewport command bus so non-prop-drilled
+  // surfaces (e.g. the zoom tool's options bar) can trigger it.
+  useEffect(() => {
+    viewportCommands.fitToWindow = handleFitToWindow;
+    return () => {
+      viewportCommands.fitToWindow = null;
+    };
+  }, [handleFitToWindow]);
+
   // ── Playback state ────────────────────────────────────────────────
-  const playback = useAnimationPlayback(state, dispatch);
+  const playback = useAnimationPlayback(state, dispatch, canvasHandleRef);
+
+  // ── Spritesheet / animation import & export ──────────────────────
+  const {
+    handleImportSpritesheetFrames,
+    handleExportSpritesheetJson,
+    handleExportPaletteAnimationJson,
+    handleExportAnimationFrames,
+    handleCopyPrevFrame,
+    handleCopyNextFrame,
+  } = useSpritesheetAnimationOps({
+    canvasHandleRef,
+    stateRef,
+    captureHistory,
+    dispatch,
+  });
 
   // ── Sync state.pixelFormat → active TabRecord.pixelFormat ────────
   // SET_PIXEL_FORMAT updates state but not the tabs array; keep them in sync.
@@ -514,54 +420,14 @@ function AppContent(): React.JSX.Element {
   }, [state.pixelFormat, activeTabId, setTabs]);
 
   // ── Color mode ────────────────────────────────────────────────────
-  const handleFormatRemount = useCallback(
-    (toFormat: PixelFormat): void => {
-      const handle = canvasHandleRef.current;
-      if (!handle) return;
-      const layerGeo = handle.captureAllLayerGeometry();
-      const encoded = new Map<string, string>();
-      for (const ls of stateRef.current.layers) {
-        if ("type" in ls) continue;
-        const raw = handle.getLayerRawData(ls.id);
-        if (!raw) continue;
-        const geo = layerGeo.get(ls.id);
-        if (geo) encoded.set(`${ls.id}:geo`, JSON.stringify(geo));
-        const CHUNK = 65535;
-        if (toFormat === "rgba32f") {
-          // Store the typed array directly — avoids ~576 MB of base64/atob intermediaries for large images.
-          f32TransferStore.set(ls.id, raw as Float32Array);
-          encoded.set(ls.id, `data:raw/f32-ref;id=${ls.id}`);
-        } else if (toFormat === "indexed8") {
-          const u8 = raw as Uint8Array;
-          let b64 = "";
-          for (let i = 0; i < u8.length; i += CHUNK) {
-            b64 += btoa(
-              String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))),
-            );
-          }
-          encoded.set(ls.id, `data:raw/indexed8;base64,${b64}`);
-        } else {
-          u8TransferStore.set(ls.id, raw as Uint8Array);
-          encoded.set(ls.id, `data:raw/rgba8-ref;id=${ls.id}`);
-        }
-      }
-      setPendingLayerData(encoded);
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === activeTabId ? { ...t, canvasKey: t.canvasKey + 1 } : t,
-        ),
-      );
-      captureHistory("Convert Color Mode");
-    },
-    [
-      canvasHandleRef,
-      stateRef,
-      activeTabId,
-      setTabs,
-      setPendingLayerData,
-      captureHistory,
-    ],
-  );
+  const handleFormatRemount = useFormatRemount({
+    canvasHandleRef,
+    stateRef,
+    activeTabId,
+    setTabs,
+    setPendingLayerData,
+    captureHistory,
+  });
 
   const colorMode = useColorMode({
     canvasHandleRef,
@@ -620,10 +486,7 @@ function AppContent(): React.JSX.Element {
     for (const id of ids) handleCloseTab(id);
   }, [tabs, activeTabId, handleCloseTab]);
 
-  const handleClearRecentFiles = useCallback(async (): Promise<void> => {
-    await window.api.clearRecentFiles();
-    setRecentFiles([]);
-  }, []);
+  const handleClearRecentFiles = clearRecentFiles;
 
   // ── Keyboard shortcuts ────────────────────────────────────────────
   useKeyboardShortcuts({
@@ -644,7 +507,7 @@ function AppContent(): React.JSX.Element {
       [],
     ),
     handleFreeTransform: handleEnterTransform,
-    handleInvertSelection: useCallback(() => selectionStore.invert(), []),
+    handleInvertSelection: useCallback(() => activeScope().selection.invert(), []),
     handleSelectAll,
     handleDeselect,
     handleSelectAllLayers,
@@ -658,15 +521,18 @@ function AppContent(): React.JSX.Element {
     ),
     handleFindLayers,
     handleCycleLasso: useCallback(() => {
-      const current = stateRef.current.activeTool;
-      const next =
-        current === "polygonal-selection" ? "lasso" : "polygonal-selection";
-      handleToolChange(next);
+      const next = toolRegistry.resolveShortcutCycle(
+        "L",
+        stateRef.current.activeTool,
+      );
+      if (next) handleToolChange(next);
     }, [handleToolChange]),
     handleCycleWand: useCallback(() => {
-      const current = stateRef.current.activeTool;
-      const next = current === "magic-wand" ? "object-selection" : "magic-wand";
-      handleToolChange(next);
+      const next = toolRegistry.resolveShortcutCycle(
+        "W",
+        stateRef.current.activeTool,
+      );
+      if (next) handleToolChange(next);
     }, [handleToolChange]),
     handleNew: useCallback(() => setShowNewImageDialog(true), []),
     handleOpen: useCallback(() => {
@@ -721,92 +587,244 @@ function AppContent(): React.JSX.Element {
       return l !== undefined && isPixelRootLayer(l);
     }).length >= 2;
 
-  // ── macOS native menu ─────────────────────────────────────────────
+  // ── Unified menu deps ─────────────────────────────────────────────
+  //
+  // ONE `MenuDeps` object feeds BOTH the in-app menu (`<TopBar deps={…}/>`
+  // in MainWindow) AND the macOS native menu (`useMacNativeMenu({ deps })`
+  // below). All handler wrapping happens here, so the two consumers
+  // can't drift — adding `requireTransformDecision` to one but not the
+  // other (the kind of bug we hit with `colorMode:indexed8`) is now
+  // structurally impossible.
   const isMac = window.api.platform === "darwin";
+  const lutOps = useLutOps();
 
-  useMacNativeMenu({
-    isMac,
-    recentFiles,
-    requireTransformDecision,
-    adjustments,
-    filters,
-    handleOpenFilterDialog,
-    handleOpen,
-    handleOpenPath,
-    handleClose,
-    handleCloseAll,
-    handleSave,
-    handleSaveACopy,
-    handleClearRecentFiles,
-    handleUndo,
-    handleRedo,
-    handleCut,
-    handleCopy,
-    handleCopyMerged,
-    handlePaste,
-    handlePasteInto,
-    handleDelete,
-    handleOpenCafDialog,
-    handleNewLayer,
-    handleDuplicateLayer,
-    handleDeleteActiveLayer,
-    handleRasterizeLayer,
-    handleGroupLayers,
-    handleUngroupLayers,
-    handleCreateCompositeLayer,
-    handleAddMaskLayer,
-    handleMergeSelected,
-    handleMergeDown,
-    handleMergeVisible,
-    handleFlattenImage,
-    handleEnterTransform,
-    handleZoomIn,
-    handleZoomOut,
-    handleZoom100,
-    handleFitToWindow,
-    handleToggleGrid,
-    handleSetNormalMode,
-    handleSetTiledMode,
-    handleToggleTileGrid,
-    handleSetAnimationMode,
-    handleToggleRulers,
-    handleToggleGuides,
-    handleApplyGuidePreset,
-    handleSelectAll,
-    handleDeselect,
-    handleSelectAllLayers,
-    handleDeselectLayers,
-    handleFindLayers,
-    colorMode,
-    openNewImageDialog: () => setShowNewImageDialog(true),
-    openExportDialog: () => setShowExportDialog(true),
-    openResizeImageDialog: () => setShowResizeDialog(true),
-    openResizeCanvasDialog: () => setShowResizeCanvasDialog(true),
-    handleRotate,
-    handleFlip,
-    handleRotateSelectedLayers,
-    handleFlipSelectedLayers,
-    layerArrange,
-    openAboutDialog: () => setShowAboutDialog(true),
-    openShortcutsDialog: () => setShowShortcutsDialog(true),
-    openSystemInfoDialog: () => setShowSystemInfoDialog(true),
-    openColorDitheringSetup: () => setShowColorDitheringSetup(true),
-    openPreferencesDialog: () => setShowPreferencesDialog(true),
-    activeLayerId: state.activeLayerId,
-    effectiveSelectedIds,
-    isFreeTransformEnabled,
-    isRasterizeLayerEnabled,
-    isMergeSelectedEnabled,
-    hasSelection,
-    isContentAwareFilling,
-    pixelFormat: state.pixelFormat,
-    showGrid: state.canvas.showGrid,
-    tiledMode: state.canvas.tiledMode,
-    showTileGrid: state.canvas.showTileGrid,
-    showRulers: state.canvas.showRulers,
-    showGuides: state.canvas.showGuides,
-    animationMode: state.animationMode,
-  });
+  const menuDeps: MenuDeps = useMemo(
+    () => ({
+      // ── File ────────────────────────────────────────────────────
+      onNew: () => setShowNewImageDialog(true),
+      onOpen: () => void handleOpen(),
+      onSave: () => void handleSave(false),
+      onSaveAs: () => void handleSave(true),
+      onSaveACopy: () => void handleSaveACopy(),
+      onExport: () => setShowExportDialog(true),
+      onClose: handleClose,
+      onCloseAll: handleCloseAll,
+      recentFiles,
+      onOpenRecent: (path) => void handleOpenPath(path),
+      onClearRecentFiles: () => void handleClearRecentFiles(),
+      onPreferences: () => setShowPreferencesDialog(true),
+      onExit: () => void window.api.exitApp(),
+
+      // ── Edit ────────────────────────────────────────────────────
+      onUndo: handleUndo,
+      onRedo: handleRedo,
+      onCut: handleCut,
+      onCopy: handleCopy,
+      onCopyMerged: handleCopyMerged,
+      onPaste: handlePaste,
+      onPasteInto: handlePasteInto,
+      onDelete: handleDelete,
+      onContentAwareFill: () => handleOpenCafDialog("fill"),
+      onContentAwareDelete: () => handleOpenCafDialog("delete"),
+      // Free Transform passes through the transform-decision guard so
+      // we don't blindly stack a new transform on top of an unfinished
+      // one. Both menus go through this same wrapper now.
+      onFreeTransform: () => requireTransformDecision(handleEnterTransform),
+      isFreeTransformEnabled,
+
+      // ── Select ──────────────────────────────────────────────────
+      onSelectAll: handleSelectAll,
+      onDeselect: handleDeselect,
+      onSelectAllLayers: handleSelectAllLayers,
+      onDeselectLayers: handleDeselectLayers,
+      onFindLayers: handleFindLayers,
+      onInvertSelection: () => activeScope().selection.invert(),
+
+      // ── Layer ───────────────────────────────────────────────────
+      onNewLayer: handleNewLayer,
+      onNewLayerGroup: () => handleGroupLayers([]),
+      onNewCompositeLayer: handleCreateCompositeLayer,
+      onAddLayerMask: handleAddMaskLayer,
+      onDuplicateLayer: handleDuplicateLayer,
+      onDeleteLayer: handleDeleteActiveLayer,
+      onRasterizeLayer: state.activeLayerId
+        ? () => handleRasterizeLayer(state.activeLayerId!)
+        : undefined,
+      isRasterizeEnabled: isRasterizeLayerEnabled,
+      onGroupLayers: () => handleGroupLayers([...effectiveSelectedIds]),
+      onUngroupLayers: state.activeLayerId
+        ? () => handleUngroupLayers(state.activeLayerId!)
+        : undefined,
+      onMergeSelected: () =>
+        handleMergeSelected([...effectiveSelectedIds]),
+      isMergeSelectedEnabled,
+      onMergeDown: handleMergeDown,
+      onMergeVisible: handleMergeVisible,
+      onFlattenImage: handleFlattenImage,
+      onLayerRotate: (amount) => void handleRotateSelectedLayers(amount),
+      onLayerFlip: (axis) => void handleFlipSelectedLayers(axis),
+      onLayerAlign: (edge) => layerArrange.handleAlign(edge),
+      onLayerDistribute: (axis) => layerArrange.handleDistribute(axis),
+      onLayerOrder: (op) => layerArrange.handleOrder(op),
+
+      // ── Image ───────────────────────────────────────────────────
+      pixelFormat: state.pixelFormat,
+      onSetColorMode: (fmt) => colorMode.handleConvertColorMode(fmt),
+      onResizeImage: () => setShowResizeDialog(true),
+      onResizeCanvas: () => setShowResizeCanvasDialog(true),
+      onRotate90CW: () => void handleRotate("90cw"),
+      onRotate180: () => void handleRotate("180"),
+      onRotate270CW: () => void handleRotate("270cw"),
+      onFlipHorizontal: () => void handleFlip("horizontal"),
+      onFlipVertical: () => void handleFlip("vertical"),
+      onLoadLut: () => void lutOps.loadCubeLut(),
+      onManageLuts: () => setShowLutManager(true),
+      onSetViewTransform: lutOps.setViewTransform,
+
+      // ── Adjustments / Effects / Filters ─────────────────────────
+      onCreateAdjustmentLayer: (type) =>
+        requireTransformDecision(() => {
+          if (type === "color-dithering") {
+            setShowColorDitheringSetup(true);
+          } else {
+            adjustments.handleCreateAdjustmentLayer(type);
+          }
+        }),
+      isAdjustmentMenuEnabled: adjustments.isAdjustmentMenuEnabled,
+      adjustmentMenuItems: ADJUSTMENT_MENU_ITEMS,
+      effectsMenuItems: EFFECTS_MENU_ITEMS,
+      onOpenFilterDialog: handleOpenFilterDialog,
+      onInstantFilter: (key) =>
+        requireTransformDecision(() => filters.handleInstantFilter(key)),
+      isFiltersMenuEnabled: adjustments.isAdjustmentMenuEnabled,
+      filterMenuItems: FILTER_MENU_ITEMS,
+
+      // ── Animation ───────────────────────────────────────────────
+      animationMode: state.animationMode,
+      isPlaying: playback.isPlaying,
+      paletteAnimationActive: state.paletteAnimation.enabled,
+      onPlayPause: playback.onPlayPause,
+      onPrevFrame: playback.onPrevFrame,
+      onNextFrame: playback.onNextFrame,
+      onPrevAnimation: playback.onPrevAnimation,
+      onNextAnimation: playback.onNextAnimation,
+      onImportSpritesheetFrames: () =>
+        setShowImportSpritesheetFramesDialog(true),
+      onExportSpritesheetJson: () => void handleExportSpritesheetJson(),
+      onExportPaletteAnimationJson: () =>
+        void handleExportPaletteAnimationJson(),
+      onExportAnimationFrames: () =>
+        setShowExportAnimationFramesDialog(true),
+
+      // ── View ────────────────────────────────────────────────────
+      onZoomIn: handleZoomIn,
+      onZoomOut: handleZoomOut,
+      onZoom100: handleZoom100,
+      onFitToWindow: handleFitToWindow,
+      onToggleGrid: handleToggleGrid,
+      showGrid: state.canvas.showGrid,
+      onToggleRulers: handleToggleRulers,
+      showRulers: state.canvas.showRulers,
+      onToggleGuides: handleToggleGuides,
+      showGuides: state.canvas.showGuides,
+      onApplyGuidePreset: handleApplyGuidePreset,
+      onSetNormalMode: handleSetNormalMode,
+      onSetTiledMode: handleSetTiledMode,
+      tiledMode: state.canvas.tiledMode,
+      onToggleTileGrid: handleToggleTileGrid,
+      showTileGrid: state.canvas.showTileGrid,
+      onSetAnimationMode: handleSetAnimationMode,
+
+      // ── Help ────────────────────────────────────────────────────
+      onAbout: () => setShowAboutDialog(true),
+      onKeyboardShortcuts: () => setShowShortcutsDialog(true),
+      onSystemInfo: () => setShowSystemInfoDialog(true),
+      onDebug: () => void window.api.openDevTools(),
+    }),
+    // Every input that any handler closes over. The list is long but
+    // necessary — drop one and a menu action gets stuck on a stale
+    // closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      recentFiles,
+      handleOpen,
+      handleSave,
+      handleSaveACopy,
+      handleClose,
+      handleCloseAll,
+      handleOpenPath,
+      handleClearRecentFiles,
+      handleUndo,
+      handleRedo,
+      handleCut,
+      handleCopy,
+      handleCopyMerged,
+      handlePaste,
+      handlePasteInto,
+      handleDelete,
+      handleOpenCafDialog,
+      handleEnterTransform,
+      requireTransformDecision,
+      isFreeTransformEnabled,
+      handleSelectAll,
+      handleDeselect,
+      handleSelectAllLayers,
+      handleDeselectLayers,
+      handleFindLayers,
+      handleNewLayer,
+      handleGroupLayers,
+      handleCreateCompositeLayer,
+      handleAddMaskLayer,
+      handleDuplicateLayer,
+      handleDeleteActiveLayer,
+      handleRasterizeLayer,
+      state.activeLayerId,
+      isRasterizeLayerEnabled,
+      effectiveSelectedIds,
+      handleUngroupLayers,
+      handleMergeSelected,
+      isMergeSelectedEnabled,
+      handleMergeDown,
+      handleMergeVisible,
+      handleFlattenImage,
+      handleRotateSelectedLayers,
+      handleFlipSelectedLayers,
+      layerArrange,
+      state.pixelFormat,
+      colorMode,
+      handleRotate,
+      handleFlip,
+      lutOps,
+      adjustments,
+      handleOpenFilterDialog,
+      filters,
+      state.animationMode,
+      playback.isPlaying,
+      state.paletteAnimation.enabled,
+      playback,
+      handleExportSpritesheetJson,
+      handleExportPaletteAnimationJson,
+      handleZoomIn,
+      handleZoomOut,
+      handleZoom100,
+      handleFitToWindow,
+      handleToggleGrid,
+      state.canvas.showGrid,
+      handleToggleRulers,
+      state.canvas.showRulers,
+      handleToggleGuides,
+      state.canvas.showGuides,
+      handleApplyGuidePreset,
+      handleSetNormalMode,
+      handleSetTiledMode,
+      state.canvas.tiledMode,
+      handleToggleTileGrid,
+      state.canvas.showTileGrid,
+      handleSetAnimationMode,
+    ],
+  );
+
+  useMacNativeMenu({ isMac, deps: menuDeps });
 
   return (
     <>
@@ -819,6 +837,7 @@ function AppContent(): React.JSX.Element {
       />
       <MainWindow
         isMac={isMac}
+        menuDeps={menuDeps}
         activeTool={state.activeTool}
         pixelFormat={state.pixelFormat}
         activeLayerId={state.activeLayerId}
@@ -827,11 +846,7 @@ function AppContent(): React.JSX.Element {
         canvasWidth={state.canvas.width}
         canvasHeight={state.canvas.height}
         zoom={state.canvas.zoom}
-        showGrid={state.canvas.showGrid}
-        showRulers={state.canvas.showRulers}
-        showGuides={state.canvas.showGuides}
         tiledMode={state.canvas.tiledMode}
-        showTileGrid={state.canvas.showTileGrid}
         animationMode={state.animationMode}
         tabs={tabs}
         tabInfos={tabInfos}
@@ -844,12 +859,7 @@ function AppContent(): React.JSX.Element {
         pendingLayerLabelRef={pendingLayerLabelRef}
         dispatch={dispatch}
         hasActiveDocument={hasActiveDocument}
-        effectiveSelectedIds={effectiveSelectedIds}
-        isRasterizeLayerEnabled={isRasterizeLayerEnabled}
-        isMergeSelectedEnabled={isMergeSelectedEnabled}
-        isFreeTransformEnabled={isFreeTransformEnabled}
         adjustments={adjustments}
-        filters={filters}
         colorMode={colorMode}
         isContentAwareFilling={isContentAwareFilling}
         contentAwareFillLabel={contentAwareFillLabel}
@@ -864,10 +874,78 @@ function AppContent(): React.JSX.Element {
         setShowNewImageDialog={setShowNewImageDialog}
         showExportDialog={showExportDialog}
         setShowExportDialog={setShowExportDialog}
+        exportableLayers={state.layers
+          .filter((l) => {
+            if (!("type" in l)) return true; // pixel
+            const t = (l as { type: string }).type;
+            // Only pixel-bearing leaves; group containers and parametric
+            // helpers (mask, adjustment) aren't directly exportable.
+            return (
+              t === "text" ||
+              t === "shape" ||
+              t === "frame" ||
+              t === "composite"
+            );
+          })
+          .map((l) => ({ id: l.id, name: l.name }))}
         showResizeDialog={showResizeDialog}
         setShowResizeDialog={setShowResizeDialog}
         showResizeCanvasDialog={showResizeCanvasDialog}
         setShowResizeCanvasDialog={setShowResizeCanvasDialog}
+        showLutManager={showLutManager}
+        setShowLutManager={setShowLutManager}
+        showImportSpritesheetFramesDialog={showImportSpritesheetFramesDialog}
+        setShowImportSpritesheetFramesDialog={
+          setShowImportSpritesheetFramesDialog
+        }
+        handleImportSpritesheetFrames={handleImportSpritesheetFrames}
+        showExportAnimationFramesDialog={showExportAnimationFramesDialog}
+        setShowExportAnimationFramesDialog={
+          setShowExportAnimationFramesDialog
+        }
+        handleExportAnimationFrames={(s, onProgress) =>
+          handleExportAnimationFrames(s, onProgress)
+        }
+        exportAnimationName={
+          state.paletteAnimation.enabled
+            ? "palette cycle"
+            : playback.selectedAnim?.name
+        }
+        exportPaletteGroups={
+          state.paletteAnimation.enabled
+            ? state.swatchGroups
+                .filter((g) => g.cycle?.enabled)
+                .map((g) => ({ id: g.id, name: g.name }))
+            : undefined
+        }
+        exportComputeFrameCount={(selectedIds, evaluation) => {
+          if (state.paletteAnimation.enabled) {
+            const set = new Set(selectedIds);
+            if (evaluation === "sequential") {
+              // Sum of per-group periods (each group plays its own range,
+              // others stay static).
+              let total = 0;
+              for (const g of state.swatchGroups) {
+                if (!g.cycle?.enabled || !set.has(g.id)) continue;
+                total += paletteCyclePeriod([g]);
+              }
+              return total;
+            }
+            // Parallel: LCM of selected periods.
+            const groups = state.swatchGroups.map((g) =>
+              !g.cycle?.enabled || set.has(g.id)
+                ? g
+                : { ...g, cycle: { ...g.cycle, enabled: false } },
+            );
+            return paletteCyclePeriod(groups);
+          }
+          return playback.selectedAnim?.frames.length ?? 0;
+        }}
+        exportDefaultGifFps={
+          state.paletteAnimation.enabled
+            ? state.paletteAnimation.fps
+            : (playback.selectedAnim?.fps ?? 12)
+        }
         showAboutDialog={showAboutDialog}
         setShowAboutDialog={setShowAboutDialog}
         showPreferencesDialog={showPreferencesDialog}
@@ -892,23 +970,7 @@ function AppContent(): React.JSX.Element {
         handleTransformGuardApply={handleTransformGuardApply}
         handleTransformGuardDiscard={handleTransformGuardDiscard}
         handleNewConfirm={handleNewConfirm}
-        handleOpen={handleOpen}
-        handleOpenPath={handleOpenPath}
-        handleSave={handleSave}
-        handleSaveACopy={handleSaveACopy}
-        handleClearRecentFiles={handleClearRecentFiles}
-        recentFiles={recentFiles}
-        handleUndo={handleUndo}
-        handleRedo={handleRedo}
-        handleCopy={handleCopy}
-        handleCopyMerged={handleCopyMerged}
-        handleCut={handleCut}
-        handlePaste={handlePaste}
-        handlePasteInto={handlePasteInto}
-        handleDelete={handleDelete}
-        handleNewLayer={handleNewLayer}
         handleDuplicateLayer={handleDuplicateLayer}
-        handleDeleteActiveLayer={handleDeleteActiveLayer}
         handleRasterizeLayer={handleRasterizeLayer}
         handleMergeSelected={handleMergeSelected}
         handleMergeDown={handleMergeDown}
@@ -918,118 +980,34 @@ function AppContent(): React.JSX.Element {
         handleGroupLayers={handleGroupLayers}
         handleUngroupLayers={handleUngroupLayers}
         handleCreateCompositeLayer={handleCreateCompositeLayer}
-        handleAddMaskLayer={handleAddMaskLayer}
         handleResizeImage={handleResizeImage}
         handleResizeCanvas={handleResizeCanvas}
-        handleRotate={handleRotate}
-        handleFlip={handleFlip}
-        handleRotateSelectedLayers={handleRotateSelectedLayers}
-        handleFlipSelectedLayers={handleFlipSelectedLayers}
-        layerArrange={layerArrange}
-        handleZoomIn={handleZoomIn}
-        handleZoomOut={handleZoomOut}
-        handleZoom100={handleZoom100}
-        handleFitToWindow={handleFitToWindow}
-        handleToggleGrid={handleToggleGrid}
-        handleToggleRulers={handleToggleRulers}
-        handleToggleGuides={handleToggleGuides}
-        handleApplyGuidePreset={handleApplyGuidePreset}
-        handleSetNormalMode={handleSetNormalMode}
-        handleSetTiledMode={handleSetTiledMode}
-        handleToggleTileGrid={handleToggleTileGrid}
-        handleSetAnimationMode={handleSetAnimationMode}
         isPlaying={playback.isPlaying}
         isLooping={playback.isLooping}
-        currentFrame={playback.currentFrameIdx + 1}
-        totalFrames={playback.selectedAnim?.frames.length ?? 0}
+        currentFrame={
+          state.paletteAnimation.enabled
+            ? playback.paletteFrameIdx + 1
+            : playback.currentFrameIdx + 1
+        }
+        totalFrames={
+          state.paletteAnimation.enabled
+            ? playback.paletteTotalFrames
+            : (playback.selectedAnim?.frames.length ?? 0)
+        }
         onPlayPause={playback.onPlayPause}
         onLoopToggle={playback.onLoopToggle}
         onPrevFrame={playback.onPrevFrame}
         onNextFrame={playback.onNextFrame}
         onPrevAnimation={playback.onPrevAnimation}
         onNextAnimation={playback.onNextAnimation}
-        onCopyPrevFrame={useCallback(
-          (animationId: string, frameId: string) => {
-            const ss = stateRef.current.spritesheet;
-            const anim = ss.animations.find((a) => a.id === animationId);
-            if (!anim) return;
-            const fi = anim.frames.findIndex((f) => f.id === frameId);
-            if (fi <= 0) return; // no previous frame
-            const cellW = Math.max(1, ss.cellWidth);
-            const cellH = Math.max(1, ss.cellHeight);
-            const cols = Math.max(1, Math.floor(state.canvas.width / cellW));
-            // compute global indices for prev and current frames
-            let animStart = 0;
-            for (const a of ss.animations) {
-              if (a.id === animationId) break;
-              animStart += a.frames.length;
-            }
-            const srcIdx = animStart + fi - 1;
-            const dstIdx = animStart + fi;
-            const srcX = (srcIdx % cols) * cellW,
-              srcY = Math.floor(srcIdx / cols) * cellH;
-            const dstX = (dstIdx % cols) * cellW,
-              dstY = Math.floor(dstIdx / cols) * cellH;
-            captureHistory("Copy From Previous Frame");
-            canvasHandleRef.current?.copyCellRect(
-              srcX,
-              srcY,
-              dstX,
-              dstY,
-              cellW,
-              cellH,
-            );
-          },
-          [stateRef, state.canvas.width, captureHistory, canvasHandleRef],
-        )}
-        onCopyNextFrame={useCallback(
-          (animationId: string, frameId: string) => {
-            const ss = stateRef.current.spritesheet;
-            const anim = ss.animations.find((a) => a.id === animationId);
-            if (!anim) return;
-            const fi = anim.frames.findIndex((f) => f.id === frameId);
-            if (fi < 0 || fi >= anim.frames.length - 1) return; // no next frame
-            const cellW = Math.max(1, ss.cellWidth);
-            const cellH = Math.max(1, ss.cellHeight);
-            const cols = Math.max(1, Math.floor(state.canvas.width / cellW));
-            let animStart = 0;
-            for (const a of ss.animations) {
-              if (a.id === animationId) break;
-              animStart += a.frames.length;
-            }
-            const srcIdx = animStart + fi + 1;
-            const dstIdx = animStart + fi;
-            const srcX = (srcIdx % cols) * cellW,
-              srcY = Math.floor(srcIdx / cols) * cellH;
-            const dstX = (dstIdx % cols) * cellW,
-              dstY = Math.floor(dstIdx / cols) * cellH;
-            captureHistory("Copy From Next Frame");
-            canvasHandleRef.current?.copyCellRect(
-              srcX,
-              srcY,
-              dstX,
-              dstY,
-              cellW,
-              cellH,
-            );
-          },
-          [stateRef, state.canvas.width, captureHistory, canvasHandleRef],
-        )}
-        handleSelectAll={handleSelectAll}
-        handleDeselect={handleDeselect}
-        handleSelectAllLayers={handleSelectAllLayers}
-        handleDeselectLayers={handleDeselectLayers}
-        handleFindLayers={handleFindLayers}
+        paletteAnimationActive={state.paletteAnimation.enabled}
+        onCopyPrevFrame={handleCopyPrevFrame}
+        onCopyNextFrame={handleCopyNextFrame}
         findLayersCounter={findLayersCounter}
         handleToolChange={handleToolChange}
-        handleEnterTransform={handleEnterTransform}
         guardedSwitchTab={guardedSwitchTab}
         guardedCloseTab={guardedCloseTab}
-        handleClose={handleClose}
-        handleCloseAll={handleCloseAll}
-        handleOpenCafDialog={handleOpenCafDialog}
         handleCafConfirm={handleCafConfirm}
-        handleOpenFilterDialog={handleOpenFilterDialog}
         requireTransformDecision={requireTransformDecision}
       />
     </>

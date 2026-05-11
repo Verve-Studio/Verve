@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { cursorStore } from "@/core/store/cursorStore";
+import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 
 export const RULER_SIZE = 20; // CSS pixels
 
@@ -15,6 +15,40 @@ function pickInterval(zoom: number, dpr: number): number {
   );
 }
 
+interface RulerPalette {
+  bg: string;
+  edge: string;
+  tickMajor: string;
+  tickMinor: string;
+  label: string;
+  cursor: string;
+}
+
+/** Read the active theme tokens from <html>'s computed style. */
+function readPalette(): RulerPalette {
+  const cs = getComputedStyle(document.documentElement);
+  const get = (name: string, fallback: string): string => {
+    const v = cs.getPropertyValue(name).trim();
+    return v.length > 0 ? v : fallback;
+  };
+  return {
+    bg: get("--color-surface-2", "#252525"),
+    edge: get("--color-border", "#444"),
+    tickMajor: get("--color-text-muted", "#777"),
+    // Sub-ticks: a low-contrast version of the major tick colour, derived in
+    // CSS at use-time via color-mix so it adapts to either theme.
+    tickMinor:
+      "color-mix(in srgb, " +
+      get("--color-text-muted", "#777") +
+      " 45%, transparent)",
+    label: get("--color-text-dim", "#909090"),
+    cursor:
+      "color-mix(in srgb, " +
+      get("--color-text", "#ffffff") +
+      " 85%, transparent)",
+  };
+}
+
 function drawRuler(
   canvas: HTMLCanvasElement,
   isHorizontal: boolean,
@@ -24,6 +58,7 @@ function drawRuler(
   dpr: number,
   /** Cursor position in document pixels, or null if outside */
   cursorDoc: number | null,
+  palette: RulerPalette,
 ): void {
   const cssW = canvas.offsetWidth;
   const cssH = canvas.offsetHeight;
@@ -42,11 +77,11 @@ function drawRuler(
   ctx.clearRect(0, 0, cssW, cssH);
 
   // Background
-  ctx.fillStyle = "#252525";
+  ctx.fillStyle = palette.bg;
   ctx.fillRect(0, 0, cssW, cssH);
 
   // Edge border (facing the canvas)
-  ctx.strokeStyle = "#444";
+  ctx.strokeStyle = palette.edge;
   ctx.lineWidth = 1;
   ctx.beginPath();
   if (isHorizontal) {
@@ -78,7 +113,7 @@ function drawRuler(
     const isMajor = Math.round(doc) % interval === 0;
     const tickLen = isMajor ? 9 : 4;
 
-    ctx.strokeStyle = isMajor ? "#777" : "#484848";
+    ctx.strokeStyle = isMajor ? palette.tickMajor : palette.tickMinor;
     ctx.lineWidth = 1;
     ctx.beginPath();
     if (isHorizontal) {
@@ -92,7 +127,7 @@ function drawRuler(
 
     if (isMajor) {
       const label = `${Math.round(doc)}`;
-      ctx.fillStyle = "#909090";
+      ctx.fillStyle = palette.label;
       if (isHorizontal) {
         ctx.fillText(label, screenPx + 2, 2);
       } else {
@@ -110,7 +145,7 @@ function drawRuler(
   if (cursorDoc !== null) {
     const cursorPx = canvasOrigin + cursorDoc * cssPxPerDocPx;
     if (cursorPx >= 0 && cursorPx <= viewSize) {
-      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.strokeStyle = palette.cursor;
       ctx.lineWidth = 1;
       ctx.beginPath();
       if (isHorizontal) {
@@ -165,7 +200,7 @@ export function useRulers({
       };
     };
 
-    const paint = () => {
+    const paint = (): void => {
       const h = hRulerRef.current;
       const v = vRulerRef.current;
       if (!h || !v) return;
@@ -173,8 +208,9 @@ export function useRulers({
       const { hOrigin, vOrigin } = getOrigins();
       const cx = cursorStore.visible ? cursorStore.x : null;
       const cy = cursorStore.visible ? cursorStore.y : null;
-      drawRuler(h, true, hOrigin, z, dpr, cx);
-      drawRuler(v, false, vOrigin, z, dpr, cy);
+      const palette = readPalette();
+      drawRuler(h, true, hOrigin, z, dpr, cx, palette);
+      drawRuler(v, false, vOrigin, z, dpr, cy, palette);
     };
 
     const ro = new ResizeObserver(paint);
@@ -184,12 +220,22 @@ export function useRulers({
 
     viewport.addEventListener("scroll", paint, { passive: true });
     cursorStore.subscribe(paint);
+
+    // Repaint when the theme attribute on <html> changes so rulers swap to
+    // the active palette without waiting for a scroll/resize/cursor event.
+    const themeObserver = new MutationObserver(paint);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
     paint();
 
     return () => {
       viewport.removeEventListener("scroll", paint);
       cursorStore.unsubscribe(paint);
       ro.disconnect();
+      themeObserver.disconnect();
     };
   }, [showRulers, hRulerRef, vRulerRef, viewportRef, canvasWrapperRef]);
 
@@ -208,7 +254,8 @@ export function useRulers({
     const vOrigin = wRect.top - vpRect.top;
     const cx = cursorStore.visible ? cursorStore.x : null;
     const cy = cursorStore.visible ? cursorStore.y : null;
-    drawRuler(h, true, hOrigin, zoom, dpr, cx);
-    drawRuler(v, false, vOrigin, zoom, dpr, cy);
+    const palette = readPalette();
+    drawRuler(h, true, hOrigin, zoom, dpr, cx, palette);
+    drawRuler(v, false, vOrigin, zoom, dpr, cy, palette);
   }, [zoom, showRulers, hRulerRef, vRulerRef, viewportRef, canvasWrapperRef]);
 }

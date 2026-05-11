@@ -1,25 +1,55 @@
-import type { InnerShadowAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf, RGBAColor } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerShadowOptions } from "./InnerShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import type { EffectRuntime } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
-type InnerShadowOp = Extract<AdjustmentRenderOp, { kind: "inner-shadow" }>;
 
-let texCache: { tempA: GPUTexture; tempB: GPUTexture } | null = null;
+export interface InnerShadowParams {
+    /** Shadow color including alpha. r/g/b/a are 0–255. */
+    color: RGBAColor;
+    /** Overall shadow opacity, 0–100 (%). */
+    opacity: number;
+    /** Horizontal offset in pixels, −200 to +200. */
+    offsetX: number;
+    /** Vertical offset in pixels, −200 to +200. */
+    offsetY: number;
+    /** Erosion radius in pixels, 0–100. Controls spread of shadow inside shape. */
+    spread: number;
+    /** Blur radius in pixels, 0–100. Controls softness of shadow edges. */
+    softness: number;
+}
+
+export type InnerShadowEffectLayer = EffectLayerOf<"inner-shadow", InnerShadowParams>;
+
+type InnerShadowOp = Extract<EffectRenderOp, { kind: "inner-shadow" }>;
+
+let texCache: {
+  tempA: GPUTexture;
+  tempB: GPUTexture;
+  format: GPUTextureFormat;
+} | null = null;
 let usedThisFrame = false;
 
+/** Scratch textures for the erode+blur ping-pong. Allocated in the doc
+ *  format so the entire pipeline stays in f32 on HDR documents. */
 function ensureTextures(
   device: GPUDevice,
   width: number,
   height: number,
+  format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
   usedThisFrame = true;
-  if (texCache) return texCache;
+  if (texCache && texCache.format === format) return texCache;
+  if (texCache) {
+    destroyTrackedTexture(texCache.tempA);
+    destroyTrackedTexture(texCache.tempB);
+    texCache = null;
+  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
@@ -28,10 +58,10 @@ function ensureTextures(
   const make = (): GPUTexture =>
     createTrackedTexture(device, {
       size: { width, height },
-      format: "rgba8unorm",
+      format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make() };
+  texCache = { tempA: make(), tempB: make(), format };
   return texCache;
 }
 
@@ -55,27 +85,32 @@ export function encodeInnerShadowPass(
   },
 ): void {
   const { device, pixelWidth: w, pixelHeight: h } = runtime;
-  const { tempA, tempB } = ensureTextures(device, w, h);
-
-  const erodeH = runtime.getComputePipeline(
+  // Scratch + every compute pipeline in this pass runs in the doc format.
+  const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+  const erodeH = runtime.getComputePipelineForStorageFormat(
     "outline-erode-h",
     "cs_outline_erode_h",
+    dstTex,
   );
-  const erodeV = runtime.getComputePipeline(
+  const erodeV = runtime.getComputePipelineForStorageFormat(
     "outline-erode-v",
     "cs_outline_erode_v",
+    dstTex,
   );
-  const blurH = runtime.getComputePipeline(
+  const blurH = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-blur-h",
     "cs_shadow_blur_h",
+    dstTex,
   );
-  const blurV = runtime.getComputePipeline(
+  const blurV = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-blur-v",
     "cs_shadow_blur_v",
+    dstTex,
   );
-  const composite = runtime.getComputePipeline(
+  const composite = runtime.getComputePipelineForStorageFormat(
     "inner-shadow-composite",
     "cs_inner_shadow_composite",
+    dstTex,
   );
 
   const erodeR = Math.round(args.spread);
@@ -178,7 +213,7 @@ export const innerShadowCache = {
 };
 
 export const InnerShadowEffect: IPipelineEffect<
-  InnerShadowAdjustmentLayer,
+  InnerShadowEffectLayer,
   InnerShadowOp
 > = {
   id: "inner-shadow",
@@ -194,10 +229,18 @@ export const InnerShadowEffect: IPipelineEffect<
   },
 
   buildPlanEntry(layer, { mask }) {
-    const { color, opacity, offsetX, offsetY, spread, softness } = layer.params;
     return {
       kind: "inner-shadow",
       layerId: layer.id,
+      visible: layer.visible,
+      selMaskLayer: mask,
+      params: layer.params,
+    };
+  },
+
+  encode({ engine, encoder, srcTex, dstTex }, entry) {
+    const { color, opacity, offsetX, offsetY, spread, softness } = entry.params;
+    encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
       colorR: color.r / 255,
       colorG: color.g / 255,
       colorB: color.b / 255,
@@ -207,22 +250,6 @@ export const InnerShadowEffect: IPipelineEffect<
       offsetY,
       spread,
       softness,
-      visible: layer.visible,
-      selMaskLayer: mask,
-    };
-  },
-
-  encode({ engine, encoder, srcTex, dstTex }, entry) {
-    encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: entry.colorR,
-      colorG: entry.colorG,
-      colorB: entry.colorB,
-      colorA: entry.colorA,
-      opacity: entry.opacity,
-      offsetX: entry.offsetX,
-      offsetY: entry.offsetY,
-      spread: entry.spread,
-      softness: entry.softness,
       selMaskLayer: entry.selMaskLayer,
     });
   },

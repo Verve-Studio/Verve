@@ -8,17 +8,29 @@
   padding: 0;
 }
 
+// Default theme = dark.  The light overrides below kick in when the user
+// picks Light explicitly via [data-theme="light"], or when [data-theme="auto"]
+// is active and the host OS reports a light colour scheme.
+//
+// Layout tokens, fonts, and accent / danger hues live on :root only — they
+// are theme-invariant, so a single declaration works for both palettes.
 :root {
-  --color-bg:               #{vars.$color-bg};
-  --color-surface:          #{vars.$color-surface};
-  --color-surface-2:        #{vars.$color-surface-2};
-  --color-surface-selected: #{vars.$color-surface-selected};
-  --color-surface-hover:    #{vars.$color-surface-hover};
-  --color-border:           #{vars.$color-border};
-  --color-border-light:     #{vars.$color-border-light};
-  --color-text:             #{vars.$color-text};
-  --color-text-dim:         #{vars.$color-text-dim};
-  --color-text-muted:       #{vars.$color-text-muted};
+  // ── Theme-aware colour tokens (dark defaults) ───────────────────────────
+  --color-bg:               #{vars.$dark-color-bg};
+  --color-surface:          #{vars.$dark-color-surface};
+  --color-surface-2:        #{vars.$dark-color-surface-2};
+  --color-surface-selected: #{vars.$dark-color-surface-selected};
+  --color-surface-hover:    #{vars.$dark-color-surface-hover};
+  --color-border:           #{vars.$dark-color-border};
+  --color-border-light:     #{vars.$dark-color-border-light};
+  --color-text:             #{vars.$dark-color-text};
+  --color-text-dim:         #{vars.$dark-color-text-dim};
+  --color-text-muted:       #{vars.$dark-color-text-muted};
+  --color-canvas-bg:        #{vars.$dark-color-canvas-bg};
+  --color-checker-light:    #{vars.$dark-color-checker-light};
+  --color-checker-dark:     #{vars.$dark-color-checker-dark};
+
+  // ── Theme-invariant tokens ──────────────────────────────────────────────
   --color-accent:           #{vars.$color-accent};
   --color-accent-border:    #{vars.$color-accent-border};
   --color-accent-solid:     #{vars.$color-accent-solid};
@@ -26,9 +38,7 @@
   --color-accent-blue-hover:#{vars.$color-accent-blue-hover};
   --color-focus:            #{vars.$color-focus};
   --color-danger:           #{vars.$color-danger};
-  --color-canvas-bg:        #{vars.$color-canvas-bg};
-  --color-checker-light:    #{vars.$color-checker-light};
-  --color-checker-dark:     #{vars.$color-checker-dark};
+
   --font-sans:              #{vars.$font-sans};
   --font-mono:              #{vars.$font-mono};
   --toolbar-width:          #{vars.$toolbar-width};
@@ -37,6 +47,28 @@
   --menubar-height:         #{vars.$menubar-height};
   --tabbar-height:          #{vars.$tabbar-height};
   --statusbar-height:       #{vars.$statusbar-height};
+}
+
+// Light theme — only colour tokens differ.
+@mixin light-theme {
+  --color-bg:               #{vars.$light-color-bg};
+  --color-surface:          #{vars.$light-color-surface};
+  --color-surface-2:        #{vars.$light-color-surface-2};
+  --color-surface-selected: #{vars.$light-color-surface-selected};
+  --color-surface-hover:    #{vars.$light-color-surface-hover};
+  --color-border:           #{vars.$light-color-border};
+  --color-border-light:     #{vars.$light-color-border-light};
+  --color-text:             #{vars.$light-color-text};
+  --color-text-dim:         #{vars.$light-color-text-dim};
+  --color-text-muted:       #{vars.$light-color-text-muted};
+  --color-canvas-bg:        #{vars.$light-color-canvas-bg};
+  --color-checker-light:    #{vars.$light-color-checker-light};
+  --color-checker-dark:     #{vars.$light-color-checker-dark};
+}
+
+[data-theme="light"] { @include light-theme; }
+@media (prefers-color-scheme: light) {
+  [data-theme="auto"] { @include light-theme; }
 }
 
 html,
@@ -88,10 +120,10 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #555;
+  background-color: var(--color-border-light);
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #777;
+  background-color: var(--color-text-muted);
 }

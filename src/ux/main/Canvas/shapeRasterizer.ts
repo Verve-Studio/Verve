@@ -1,5 +1,5 @@
-import type { ShapeLayerState } from "@/types";
-import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { ShapeLayerState, PixelFormat, RGBAColor } from "@/types";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 
 // ─── Shared offscreen canvas ──────────────────────────────────────────────────
 
@@ -112,18 +112,40 @@ export function rasterizeShapeToLayer(
   glLayer: GpuLayer,
   canvasWidth: number,
   canvasHeight: number,
+  pixelFormat: PixelFormat = "rgba8",
+  swatches: readonly RGBAColor[] = [],
 ): void {
   const ctx2d = getRasterCtx(canvasWidth, canvasHeight);
   ctx2d.clearRect(0, 0, canvasWidth, canvasHeight);
 
+  // Indexed8 documents have no per-pixel alpha — every pixel must map
+  // to a single palette entry. Force AA off and binarise the alpha
+  // channel after Canvas2D rasterises (Canvas2D itself can't draw with
+  // hard edges, the threshold gives crisp 1-bit silhouettes).
+  const indexed = pixelFormat === "indexed8";
+  const aa = indexed ? false : ls.antiAlias;
+
+  // Resolve palette-index references against the *current* swatches so
+  // the shape live-updates when the user edits a palette entry or swaps
+  // colours. Falls back to the cached strokeColor/fillColor when no
+  // index is present (e.g. shapes drawn in rgba8 mode).
+  const resolvedStroke =
+    ls.strokeIndex !== undefined && swatches[ls.strokeIndex]
+      ? swatches[ls.strokeIndex]
+      : ls.strokeColor;
+  const resolvedFill =
+    ls.fillIndex !== undefined && swatches[ls.fillIndex]
+      ? swatches[ls.fillIndex]
+      : ls.fillColor;
+
   if (ls.shapeType === "line") {
     ctx2d.save();
     ctx2d.beginPath();
-    const snap = ls.antiAlias ? 0 : 0.5;
+    const snap = aa ? 0 : 0.5;
     ctx2d.moveTo(Math.round(ls.x1) + snap, Math.round(ls.y1) + snap);
     ctx2d.lineTo(Math.round(ls.x2) + snap, Math.round(ls.y2) + snap);
-    if (ls.strokeColor) {
-      ctx2d.strokeStyle = rgbaToStr(ls.strokeColor);
+    if (resolvedStroke) {
+      ctx2d.strokeStyle = rgbaToStr(resolvedStroke);
       ctx2d.lineWidth = Math.max(1, ls.strokeWidth);
       ctx2d.lineCap = "round";
       ctx2d.stroke();
@@ -131,18 +153,18 @@ export function rasterizeShapeToLayer(
     ctx2d.restore();
   } else {
     ctx2d.save();
-    const cx = ls.antiAlias ? ls.cx : Math.round(ls.cx);
-    const cy = ls.antiAlias ? ls.cy : Math.round(ls.cy);
+    const cx = aa ? ls.cx : Math.round(ls.cx);
+    const cy = aa ? ls.cy : Math.round(ls.cy);
     ctx2d.translate(cx, cy);
     ctx2d.rotate((ls.rotation * Math.PI) / 180);
     buildShapePath(ctx2d, ls);
 
-    if (ls.fillColor) {
-      ctx2d.fillStyle = rgbaToStr(ls.fillColor);
+    if (resolvedFill) {
+      ctx2d.fillStyle = rgbaToStr(resolvedFill);
       ctx2d.fill();
     }
-    if (ls.strokeColor && ls.strokeWidth > 0) {
-      ctx2d.strokeStyle = rgbaToStr(ls.strokeColor);
+    if (resolvedStroke && ls.strokeWidth > 0) {
+      ctx2d.strokeStyle = rgbaToStr(resolvedStroke);
       ctx2d.lineWidth = ls.strokeWidth;
       ctx2d.lineJoin = "round";
       ctx2d.stroke();
@@ -152,5 +174,13 @@ export function rasterizeShapeToLayer(
 
   // Copy rasterized pixels into the GL layer buffer
   const imageData = ctx2d.getImageData(0, 0, canvasWidth, canvasHeight);
+  if (indexed) {
+    // 1-bit alpha threshold: any partially-covered edge pixel becomes
+    // either fully opaque with the source colour or fully transparent.
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i + 3] = data[i + 3] >= 128 ? 255 : 0;
+    }
+  }
   glLayer.data.set(imageData.data);
 }

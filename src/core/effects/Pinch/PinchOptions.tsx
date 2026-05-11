@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { PinchAdjustmentLayer } from "@/types";
+import type { PinchEffectLayer } from "@/core/effects/Pinch/PinchEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import {
@@ -11,12 +11,12 @@ import {
 import styles from "@/core/effects/_shared/distortionPanel.module.scss";
 
 interface Props {
-  layer: PinchAdjustmentLayer;
+  layer: PinchEffectLayer;
   parentLayerName: string;
 }
 
-const getDefaultParams = (): PinchAdjustmentLayer["params"] =>
-  effectRegistry.get("pinch")!.defaultParams as PinchAdjustmentLayer["params"];
+const getDefaultParams = (): PinchEffectLayer["params"] =>
+  effectRegistry.get("pinch")!.defaultParams as PinchEffectLayer["params"];
 
 export function PinchOptions({
   layer,
@@ -24,7 +24,7 @@ export function PinchOptions({
 }: Props): React.JSX.Element {
   const { dispatch } = useAppContext();
   const p = layer.params;
-  const update = (patch: Partial<PinchAdjustmentLayer["params"]>): void => {
+  const update = (patch: Partial<PinchEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },

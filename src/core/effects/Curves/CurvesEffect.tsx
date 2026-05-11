@@ -1,20 +1,51 @@
-import type { CurvesAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { CurvesChannel, CurvesChannelCurve, CurvesPresetRef, CurvesVisualAids, EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import {
   buildCurvesLuts,
   createDefaultCurvesParams,
   type CurvesLuts,
-} from "@/core/operations/adjustments/curves";
+} from "./curves";
 import { CurvesPanel } from "./CurvesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import type { AdjBinding } from "@/graphicspipeline/webgpu/EffectRuntime";
+import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
+
+const CurvesIcon = (
+  <svg
+    viewBox="0 0 12 12"
+    fill="none"
+    width="12"
+    height="12"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M1.5 9.5 C3.2 9.5 3.9 5.8 5.7 5.8 C7 5.8 7.2 7.4 8.7 7.4 C10 7.4 10.5 3.2 10.5 2.2" />
+    <circle cx="1.5" cy="9.5" r="0.8" fill="currentColor" stroke="none" />
+    <circle cx="10.5" cy="2.2" r="0.8" fill="currentColor" stroke="none" />
+  </svg>
+);
 import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import { uploadR8TextureData } from "@/graphicspipeline/webgpu/utils";
+import { uploadR8TextureData } from "@/graphics/webgpu/utils";
 
-type CurvesOp = Extract<AdjustmentRenderOp, { kind: "curves" }>;
+
+export interface CurvesParams {
+    version: 1;
+    channels: Record<CurvesChannel, CurvesChannelCurve>;
+    ui: {
+      selectedChannel: CurvesChannel;
+      visualAids: CurvesVisualAids;
+      presetRef: CurvesPresetRef | null;
+    };
+}
+
+export type CurvesEffectLayer = EffectLayerOf<"curves", CurvesParams>;
+
+type CurvesOp = Extract<EffectRenderOp, { kind: "curves" }>;
 
 const CURVES_BINDINGS: AdjBinding[] = [
   "tex",
@@ -35,9 +66,8 @@ type CurvesLutTextures = {
   blue: GPUTexture;
 };
 
-// Module-level state — per-layer-id LUT cache. Mirrors the previous
-// AdjustmentEncoder fields. Keyed by layerId so multiple curves layers
-// coexist without trampling each other.
+// Module-level state — per-layer-id LUT cache. Keyed by layerId so multiple
+// curves layers coexist without trampling each other.
 const lutTextures = new Map<string, CurvesLutTextures>();
 const lutSignatures = new Map<string, string>();
 const usedThisFrame = new Set<string>();
@@ -81,10 +111,10 @@ function ensureLutTextures(
   return next;
 }
 
-export const CurvesEffect: IPipelineEffect<CurvesAdjustmentLayer, CurvesOp> = {
+export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
   id: "curves",
   label: "Curves…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: createDefaultCurvesParams(),
 
   buildPlanEntry(layer, { mask }) {
@@ -150,4 +180,5 @@ export const CurvesEffect: IPipelineEffect<CurvesAdjustmentLayer, CurvesOp> = {
   },
 
   Panel: CurvesPanel,
+  icon: CurvesIcon,
 };

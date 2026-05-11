@@ -8,6 +8,11 @@ declare global {
       openFile: () => Promise<string | null>
       saveFile: () => Promise<string | null>
       openverveDialog: () => Promise<string | null>
+      openImagesMultiDialog: () => Promise<string[] | null>
+      saveJsonDialog: (defaultName?: string) => Promise<string | null>
+      openDirectoryDialog: () => Promise<string | null>
+      pickCubeLutFiles: () => Promise<Array<{ name: string; text: string }> | null>
+      writeJsonFile: (path: string, data: string) => Promise<void>
       saveverveDialog: (defaultPath?: string) => Promise<string | null>
       openverveFile: (path: string) => Promise<string>
       saveverveFile: (path: string, data: string) => Promise<void>
@@ -82,14 +87,7 @@ declare global {
       // Platform & native menu (macOS)
       platform: string
       onMenuAction: (callback: (actionId: string) => void) => (() => void)
-      buildNativeMenu: (payload: {
-        adjustments:  Array<{ id: string; label: string; group?: string }>
-        effects:      Array<{ id: string; label: string; group?: string }>
-        filters:      Array<{ id: string; label: string; instant?: boolean; group?: string }>
-        recentFiles:  string[]
-      }) => void
-      setMenuItemEnabled: (updates: Record<string, boolean>) => void
-      setMenuItemChecked: (updates: Record<string, boolean>) => void
+      rebuildNativeMenu: (tree: unknown) => void
       // SAM / Object Selection
       sam: {
         checkModel: () => Promise<{ encoderReady: boolean; decoderReady: boolean }>

@@ -1,11 +1,38 @@
-import type { ColorDitheringAdjustmentLayer } from "@/types";
-import type { AdjustmentRenderOp } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { EffectLayerOf } from "@/types";
+import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorDitheringPanel } from "./ColorDitheringPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import { STD_BINDINGS } from "@/graphicspipeline/webgpu/EffectRuntime";
-import { createStorageBuffer } from "@/graphicspipeline/webgpu/utils";
+import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
+import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
-type ColorDitheringOp = Extract<AdjustmentRenderOp, { kind: "color-dithering" }>;
+const ColorDitheringIcon = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <rect x="0" y="0" width="3" height="3" />
+    <rect x="6" y="0" width="3" height="3" />
+    <rect x="3" y="3" width="3" height="3" />
+    <rect x="9" y="3" width="3" height="3" />
+    <rect x="0" y="6" width="3" height="3" />
+    <rect x="6" y="6" width="3" height="3" />
+    <rect x="3" y="9" width="3" height="3" />
+    <rect x="9" y="9" width="3" height="3" />
+  </svg>
+);
+
+
+export interface ColorDitheringParams {
+    style: "bayer4" | "bayer8";
+    opacity: number;
+}
+
+export type ColorDitheringEffectLayer = EffectLayerOf<"color-dithering", ColorDitheringParams>;
+
+type ColorDitheringOp = Extract<EffectRenderOp, { kind: "color-dithering" }>;
 
 const STYLE_MAP: Record<string, number> = {
   bayer4: 0,
@@ -25,16 +52,15 @@ function srgbByteToLinear(
 }
 
 export const ColorDitheringEffect: IPipelineEffect<
-  ColorDitheringAdjustmentLayer,
+  ColorDitheringEffectLayer,
   ColorDitheringOp
 > = {
   id: "color-dithering",
   label: "Color Dithering…",
-  menu: { root: "adjustments", submenu: "color-adjustments" },
+  menu: { root: "adjustments", submenu: "adj-indexed" },
   defaultParams: { style: "bayer4", opacity: 100 },
 
   buildPlanEntry(layer, { mask, swatches }) {
-    const style = STYLE_MAP[layer.params.style] ?? 0;
     const paletteCount = Math.min(swatches.length, 256);
     const palette = new Float32Array(256 * 4);
     for (let i = 0; i < paletteCount; i++) {
@@ -50,10 +76,9 @@ export const ColorDitheringEffect: IPipelineEffect<
       layerId: layer.id,
       visible: layer.visible,
       selMaskLayer: mask,
+      params: layer.params,
       palette,
       paletteCount,
-      style,
-      opacity: layer.params.opacity ?? 100,
     };
   },
 
@@ -66,10 +91,11 @@ export const ColorDitheringEffect: IPipelineEffect<
     );
     const pipeline = runtime.selectPipeline(pair, format);
 
+    const style = STYLE_MAP[entry.params.style] ?? 0;
     const paramsData = new Uint32Array(8);
     paramsData[0] = entry.paletteCount;
-    paramsData[1] = entry.style;
-    paramsData[2] = Math.round(entry.opacity);
+    paramsData[1] = style;
+    paramsData[2] = Math.round(entry.params.opacity ?? 100);
     const paramsBuf = runtime.makeParamsBuf(paramsData);
 
     const palBuf = createStorageBuffer(runtime.device, 256 * 16);
@@ -94,4 +120,5 @@ export const ColorDitheringEffect: IPipelineEffect<
   },
 
   Panel: ColorDitheringPanel,
+  icon: ColorDitheringIcon,
 };

@@ -94,7 +94,7 @@ export function useLayers({
           );
           handle.prepareNewLayerIndexed(newId, mergedName, indexData);
         } else {
-          handle.prepareNewLayer(newId, mergedName, merged as Uint8Array);
+          handle.prepareNewLayer(newId, mergedName, merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
         }
 
         const newLayers: LayerState[] = [];
@@ -153,7 +153,7 @@ export function useLayers({
         );
         handle.prepareNewLayerIndexed(newId, mergedName, indexData);
       } else {
-        handle.prepareNewLayer(newId, mergedName, merged as Uint8Array);
+        handle.prepareNewLayer(newId, mergedName, merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
       }
 
       const newLayers: LayerState[] = [];
@@ -211,7 +211,7 @@ export function useLayers({
         );
         handle.prepareNewLayerIndexed(newId, "Merged", indexData);
       } else {
-        handle.prepareNewLayer(newId, "Merged", merged as Uint8Array);
+        handle.prepareNewLayer(newId, "Merged", merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
       }
 
       const newLayers: LayerState[] = [];
@@ -294,7 +294,7 @@ export function useLayers({
         );
         handle.prepareNewLayerIndexed(newId, "Background", indexData);
       } else {
-        handle.prepareNewLayer(newId, "Background", merged as Uint8Array);
+        handle.prepareNewLayer(newId, "Background", merged, undefined, undefined, undefined, undefined, stateRef.current.pixelFormat);
       }
       dispatch({
         type: "REORDER_LAYERS",
@@ -357,7 +357,33 @@ export function useLayers({
           blendMode: src.blendMode,
         };
 
-        handle.prepareNewLayer(newId, src.name, result.data as Uint8Array);
+        // Indexed8 docs: convert the rasterised RGBA back to palette
+        // indices so the new pixel layer plays nicely with palette
+        // cycling, palette swaps, and indexed8-only tools.
+        const { pixelFormat, swatches } = stateRef.current;
+        if (pixelFormat === "indexed8") {
+          const indexData = await matchPaletteIndices(
+            result.data as Uint8Array,
+            swatches,
+            255,
+          );
+          handle.prepareNewLayerIndexed(newId, src.name, indexData);
+        } else {
+          // Pass `pixelFormat` so f32 documents allocate a Float32-backed
+          // GpuLayer for the rasterised result; otherwise the float pixel
+          // data would be value-clamped into a Uint8Array (everything →
+          // 0 → fully transparent).
+          handle.prepareNewLayer(
+            newId,
+            src.name,
+            result.data,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            pixelFormat,
+          );
+        }
 
         const newLayers = layers
           .map((l) => (l.id === layerId ? newPixelLayer : l))

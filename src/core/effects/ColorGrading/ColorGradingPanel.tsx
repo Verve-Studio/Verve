@@ -1,9 +1,7 @@
 import React, { useCallback } from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type {
-  ColorGradingAdjustmentLayer,
-  ColorGradingWheelParams,
-} from "@/types";
+import type { ColorGradingWheelParams } from "@/types";
+import type { ColorGradingEffectLayer } from "@/core/effects/ColorGrading/ColorGradingEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import { ColorWheelWidget } from "@/ux/widgets/ColorWheelWidget/ColorWheelWidget";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
@@ -12,7 +10,7 @@ import styles from "./ColorGradingPanel.module.scss";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ColorGradingPanelProps {
-  layer: ColorGradingAdjustmentLayer;
+  layer: ColorGradingEffectLayer;
   parentLayerName: string;
 }
 

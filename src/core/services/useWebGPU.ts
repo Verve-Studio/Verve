@@ -2,7 +2,7 @@ import {
   WebGPURenderer,
   WebGPUUnavailableError,
   type GpuLayer,
-} from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+} from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseWebGPUOptions {

@@ -1,29 +1,23 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import type { MenuNode } from "../menu/menuTree";
 import styles from "./MenuBar.module.scss";
 
-export interface MenuItemDef {
-  label: string;
-  shortcut?: string;
-  action?: () => void;
-  separator?: boolean;
-  disabled?: boolean;
-  checked?: boolean;
-  submenu?: MenuItemDef[];
-}
-
-export interface MenuDef {
-  label: string;
-  items: MenuItemDef[];
-}
-
 interface MenuBarProps {
-  menus?: MenuDef[];
+  menus?: MenuNode[];
+}
+
+/** Translate Electron-style accelerator (`"CmdOrCtrl+T"`) to the
+ *  Windows/Linux idiomatic form (`"Ctrl+T"`). Identity on the macOS
+ *  side; the in-app menu only renders on Windows/Linux, but accept
+ *  legacy `Cmd` literals for safety. */
+function formatShortcut(shortcut: string): string {
+  return shortcut.replace(/CmdOrCtrl/g, "Ctrl").replace(/\bCmd\b/g, "Ctrl");
 }
 
 // ─── SubmenuItem ──────────────────────────────────────────────────────────────
 
 interface SubmenuItemProps {
-  item: MenuItemDef;
+  item: MenuNode;
   onClose: () => void;
 }
 
@@ -83,7 +77,7 @@ function SubmenuItem({ item, onClose }: SubmenuItemProps): React.JSX.Element {
         <span className={styles.checkMark}>{item.checked ? "✓" : ""}</span>
         <span className={styles.itemLabel}>{item.label}</span>
         {item.shortcut && (
-          <span className={styles.shortcut}>{item.shortcut}</span>
+          <span className={styles.shortcut}>{formatShortcut(item.shortcut)}</span>
         )}
       </button>
     </li>
@@ -140,17 +134,24 @@ export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
         <div key={menu.label} className={styles.entry}>
           <button
             className={`${styles.trigger} ${openMenu === menu.label ? styles.open : ""}`}
-            onClick={() => handleTrigger(menu.label)}
-            onMouseEnter={() => handleMouseEnter(menu.label)}
+            onClick={() => {
+              if (menu.disabled) return;
+              handleTrigger(menu.label);
+            }}
+            onMouseEnter={() => {
+              if (menu.disabled) return;
+              handleMouseEnter(menu.label);
+            }}
+            disabled={menu.disabled}
             aria-haspopup="menu"
             aria-expanded={openMenu === menu.label}
           >
             {menu.label}
           </button>
 
-          {openMenu === menu.label && (
+          {openMenu === menu.label && !menu.disabled && menu.submenu && (
             <ul className={styles.dropdown} role="menu">
-              {menu.items.map((item, i) =>
+              {menu.submenu.map((item, i) =>
                 item.separator ? (
                   <li key={i} role="separator" className={styles.separator} />
                 ) : (

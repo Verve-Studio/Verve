@@ -32,9 +32,9 @@
   align-items: center;
   gap: 4px;
   padding: 0 6px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--color-surface-hover);
   border-radius: 2px;
-  background: #262626;
+  background: var(--color-surface-2);
   font-size: 10px;
   color: vars.$color-text-muted;
   white-space: nowrap;
@@ -69,8 +69,8 @@
   gap: 2px;
   flex: 1;
   min-width: 0;
-  background: #262626;
-  border: 1px solid #3a3a3a;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-surface-hover);
   border-radius: 2px;
   padding: 2px;
 }
@@ -108,7 +108,7 @@
   flex: 1;
   min-width: 0;
   height: 22px;
-  background: #3c3c3c;
+  background: var(--color-surface-2);
   border: 1px solid vars.$color-border-light;
   border-radius: 2px;
   color: vars.$color-text;
@@ -143,7 +143,7 @@
 
   &:hover:not(:disabled) {
     background: vars.$color-surface-hover;
-    border-color: #777;
+    border-color: var(--color-text-muted);
     color: vars.$color-text;
   }
 
@@ -159,7 +159,7 @@
   padding: 6px;
   border: 1px solid vars.$color-border;
   border-radius: 2px;
-  background: #252525;
+  background: var(--color-surface-2);
 }
 
 .curveHeader {
@@ -225,7 +225,7 @@
   width: 38px;
   height: 18px;
   padding: 0 4px;
-  background: #3c3c3c;
+  background: var(--color-surface-2);
   border: 1px solid vars.$color-border-light;
   border-radius: 2px;
   color: vars.$color-text;
@@ -263,9 +263,9 @@
   align-items: center;
   height: 18px;
   padding: 0 6px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--color-surface-hover);
   border-radius: 2px;
-  background: #262626;
+  background: var(--color-surface-2);
   font-size: 10px;
   color: vars.$color-text-muted;
   white-space: nowrap;
@@ -288,7 +288,7 @@
 
   &:hover:not(:disabled) {
     background: vars.$color-surface-hover;
-    border-color: #777;
+    border-color: var(--color-text-muted);
     color: vars.$color-text;
   }
 
@@ -306,8 +306,8 @@
   gap: 6px;
   padding-top: 2px;
   padding-bottom: 1px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .aidGroup {
@@ -339,7 +339,7 @@
 .gridSelect {
   width: 58px;
   height: 18px;
-  background: #3c3c3c;
+  background: var(--color-surface-2);
   border: 1px solid vars.$color-border-light;
   border-radius: 2px;
   color: vars.$color-text;
@@ -385,7 +385,7 @@
 
   &:hover:not(:disabled) {
     background: vars.$color-surface-hover;
-    border-color: #777;
+    border-color: var(--color-text-muted);
     color: vars.$color-text;
   }
 
@@ -436,7 +436,7 @@
 
 .errorBanner {
   padding: 6px 8px;
-  background: #262626;
+  background: var(--color-surface-2);
   border: 1px solid rgba(192, 64, 64, 0.35);
   border-radius: 2px;
   font-size: 11px;

@@ -1,4 +1,4 @@
-import type { GpuLayer } from "@/graphicspipeline/webgpu/rendering/WebGPURenderer";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { RGBAColor } from "@/types";
 
 // ─── Palette resolution ───────────────────────────────────────────────────────
