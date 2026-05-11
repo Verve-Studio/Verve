@@ -14,9 +14,11 @@
 import type { PixelOpsModule } from "./types";
 
 /** Field offsets in the packed `BrushStampParams` struct. MUST match the
- *  natural-alignment C++ layout in `wasm/src/brush_stamp.h` byte-for-byte
- *  — float and int are both 4 bytes, no padding. Total 172 bytes;
- *  allocation rounded to 192 for safety. */
+ *  C++ layout in `wasm/src/brush_stamp.h` byte-for-byte — float and int
+ *  are both 4 bytes, no internal padding. 180 bytes of fields; the C++
+ *  struct is `alignas(16)` so its `sizeof` is 192 — `PARAM_BYTES` below
+ *  must match that stride exactly or batched dispatch reads from the
+ *  wrong offset past the first entry. */
 const PARAM_F = {
   cx: 0,
   cy: 4,

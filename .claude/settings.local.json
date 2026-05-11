@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(ls /d/emsdk/upstream/emscripten/emcmake* /d/emsdk/upstream/emscripten/emcc* 2>&1)",
-      "Read(//d/emsdk/upstream/emscripten/**)"
+      "Read(//d/emsdk/upstream/emscripten/**)",
+      "Bash(ls -la \"C:/Users/laure/.claude/projects/d--VerveStudio-Verve/memory/\")",
+      "Read(//c/Users/laure/.claude/projects/d--VerveStudio-Verve/memory/**)"
     ]
   }
 }

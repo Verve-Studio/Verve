@@ -13,12 +13,17 @@
 //   * Cap-vs-flow blending (Photoshop Opacity / Flow), bypass-cap mode
 //     (smudge / build-up tick), and the legacy "stamp == cap" path.
 //   * Selection mask + tiled-mode wrap.
+//   * Dual brush (per-pixel second tip multiplied into coverage).
+//   * Paper grain (value-noise modulation of coverage, tip-local or
+//     canvas-locked).
+//   * Pre-rasterized bitmap fast path for static-shape strokes
+//     (`brush_bake_coverage` + `brush_stamp_bitmap`, see below).
 //
 // Out of scope (caller falls back to JS):
 //   * Smudge per-stamp pickup (stateful, tiny per-stamp benefit).
-//   * Dual brush (per-pixel second tip — a future commit can add).
-//   * Paper grain (smooth value noise — straightforward to port later).
-//   * Motion-blur elongation (rare, complex inverse transform).
+//   * Motion-blur elongation (the SDF kernel doesn't apply the inverse
+//     elongation per pixel; the JS path or the bitmap path — which
+//     intentionally ignores motion blur — handles those cases).
 
 #pragma once
 
