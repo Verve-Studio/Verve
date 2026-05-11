@@ -5,7 +5,6 @@ import {
   useCloneStampNotification,
   useMemoryErrorHandler,
   useRecentFiles,
-  useSelectionFlag,
   useStartupFile,
 } from "@/core/services/useAppLifecycle";
 import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
@@ -43,7 +42,13 @@ import type { LayerState, Tool } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MenuDeps } from "@/ux/main/menu/menuTree";
+import {
+  ADJUSTMENT_MENU_ITEMS,
+  EFFECTS_MENU_ITEMS,
+  FILTER_MENU_ITEMS,
+} from "@/core/menuConstants";
 import { activeScope } from "@/core/store/scope";
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
@@ -102,7 +107,6 @@ function AppContent(): React.JSX.Element {
   const cloneStampNotification = useCloneStampNotification();
   useMemoryErrorHandler();
   const memoryNotification = useNotification();
-  const hasSelection = useSelectionFlag();
   const { recentFiles, setRecentFiles, clearRecentFiles } = useRecentFiles();
 
   // Cleanup timer for content-aware fill error toasts.
@@ -583,109 +587,244 @@ function AppContent(): React.JSX.Element {
       return l !== undefined && isPixelRootLayer(l);
     }).length >= 2;
 
-  // ── macOS native menu ─────────────────────────────────────────────
+  // ── Unified menu deps ─────────────────────────────────────────────
+  //
+  // ONE `MenuDeps` object feeds BOTH the in-app menu (`<TopBar deps={…}/>`
+  // in MainWindow) AND the macOS native menu (`useMacNativeMenu({ deps })`
+  // below). All handler wrapping happens here, so the two consumers
+  // can't drift — adding `requireTransformDecision` to one but not the
+  // other (the kind of bug we hit with `colorMode:indexed8`) is now
+  // structurally impossible.
   const isMac = window.api.platform === "darwin";
   const lutOps = useLutOps();
 
-  useMacNativeMenu({
-    isMac,
-    recentFiles,
-    requireTransformDecision,
-    adjustments,
-    filters,
-    handleOpenFilterDialog,
-    handleOpen,
-    handleOpenPath,
-    handleClose,
-    handleCloseAll,
-    handleSave,
-    handleSaveACopy,
-    handleClearRecentFiles,
-    handleUndo,
-    handleRedo,
-    handleCut,
-    handleCopy,
-    handleCopyMerged,
-    handlePaste,
-    handlePasteInto,
-    handleDelete,
-    handleOpenCafDialog,
-    handleNewLayer,
-    handleDuplicateLayer,
-    handleDeleteActiveLayer,
-    handleRasterizeLayer,
-    handleGroupLayers,
-    handleUngroupLayers,
-    handleCreateCompositeLayer,
-    handleAddMaskLayer,
-    handleMergeSelected,
-    handleMergeDown,
-    handleMergeVisible,
-    handleFlattenImage,
-    handleEnterTransform,
-    handleZoomIn,
-    handleZoomOut,
-    handleZoom100,
-    handleFitToWindow,
-    handleToggleGrid,
-    handleSetNormalMode,
-    handleSetTiledMode,
-    handleToggleTileGrid,
-    handleSetAnimationMode,
-    handleToggleRulers,
-    handleToggleGuides,
-    handleApplyGuidePreset,
-    handleSelectAll,
-    handleDeselect,
-    handleSelectAllLayers,
-    handleDeselectLayers,
-    handleFindLayers,
-    colorMode,
-    openNewImageDialog: () => setShowNewImageDialog(true),
-    openExportDialog: () => setShowExportDialog(true),
-    openResizeImageDialog: () => setShowResizeDialog(true),
-    openResizeCanvasDialog: () => setShowResizeCanvasDialog(true),
-    handleRotate,
-    handleFlip,
-    handleRotateSelectedLayers,
-    handleFlipSelectedLayers,
-    layerArrange,
-    openAboutDialog: () => setShowAboutDialog(true),
-    openShortcutsDialog: () => setShowShortcutsDialog(true),
-    openSystemInfoDialog: () => setShowSystemInfoDialog(true),
-    openColorDitheringSetup: () => setShowColorDitheringSetup(true),
-    openPreferencesDialog: () => setShowPreferencesDialog(true),
-    openLutManagerDialog: () => setShowLutManager(true),
-    loadCubeLut: lutOps.loadCubeLut,
-    setViewTransform: lutOps.setViewTransform,
-    activeLayerId: state.activeLayerId,
-    effectiveSelectedIds,
-    isFreeTransformEnabled,
-    isRasterizeLayerEnabled,
-    isMergeSelectedEnabled,
-    hasSelection,
-    isContentAwareFilling,
-    pixelFormat: state.pixelFormat,
-    showGrid: state.canvas.showGrid,
-    tiledMode: state.canvas.tiledMode,
-    showTileGrid: state.canvas.showTileGrid,
-    showRulers: state.canvas.showRulers,
-    showGuides: state.canvas.showGuides,
-    animationMode: state.animationMode,
-    paletteAnimationActive: state.paletteAnimation.enabled,
-    onPlayPause: playback.onPlayPause,
-    onPrevFrame: playback.onPrevFrame,
-    onNextFrame: playback.onNextFrame,
-    onPrevAnimation: playback.onPrevAnimation,
-    onNextAnimation: playback.onNextAnimation,
-    openImportSpritesheetFramesDialog: () =>
-      setShowImportSpritesheetFramesDialog(true),
-    handleExportSpritesheetJson: () => void handleExportSpritesheetJson(),
-    handleExportPaletteAnimationJson: () =>
-      void handleExportPaletteAnimationJson(),
-    openExportAnimationFramesDialog: () =>
-      setShowExportAnimationFramesDialog(true),
-  });
+  const menuDeps: MenuDeps = useMemo(
+    () => ({
+      // ── File ────────────────────────────────────────────────────
+      onNew: () => setShowNewImageDialog(true),
+      onOpen: () => void handleOpen(),
+      onSave: () => void handleSave(false),
+      onSaveAs: () => void handleSave(true),
+      onSaveACopy: () => void handleSaveACopy(),
+      onExport: () => setShowExportDialog(true),
+      onClose: handleClose,
+      onCloseAll: handleCloseAll,
+      recentFiles,
+      onOpenRecent: (path) => void handleOpenPath(path),
+      onClearRecentFiles: () => void handleClearRecentFiles(),
+      onPreferences: () => setShowPreferencesDialog(true),
+      onExit: () => void window.api.exitApp(),
+
+      // ── Edit ────────────────────────────────────────────────────
+      onUndo: handleUndo,
+      onRedo: handleRedo,
+      onCut: handleCut,
+      onCopy: handleCopy,
+      onCopyMerged: handleCopyMerged,
+      onPaste: handlePaste,
+      onPasteInto: handlePasteInto,
+      onDelete: handleDelete,
+      onContentAwareFill: () => handleOpenCafDialog("fill"),
+      onContentAwareDelete: () => handleOpenCafDialog("delete"),
+      // Free Transform passes through the transform-decision guard so
+      // we don't blindly stack a new transform on top of an unfinished
+      // one. Both menus go through this same wrapper now.
+      onFreeTransform: () => requireTransformDecision(handleEnterTransform),
+      isFreeTransformEnabled,
+
+      // ── Select ──────────────────────────────────────────────────
+      onSelectAll: handleSelectAll,
+      onDeselect: handleDeselect,
+      onSelectAllLayers: handleSelectAllLayers,
+      onDeselectLayers: handleDeselectLayers,
+      onFindLayers: handleFindLayers,
+      onInvertSelection: () => activeScope().selection.invert(),
+
+      // ── Layer ───────────────────────────────────────────────────
+      onNewLayer: handleNewLayer,
+      onNewLayerGroup: () => handleGroupLayers([]),
+      onNewCompositeLayer: handleCreateCompositeLayer,
+      onAddLayerMask: handleAddMaskLayer,
+      onDuplicateLayer: handleDuplicateLayer,
+      onDeleteLayer: handleDeleteActiveLayer,
+      onRasterizeLayer: state.activeLayerId
+        ? () => handleRasterizeLayer(state.activeLayerId!)
+        : undefined,
+      isRasterizeEnabled: isRasterizeLayerEnabled,
+      onGroupLayers: () => handleGroupLayers([...effectiveSelectedIds]),
+      onUngroupLayers: state.activeLayerId
+        ? () => handleUngroupLayers(state.activeLayerId!)
+        : undefined,
+      onMergeSelected: () =>
+        handleMergeSelected([...effectiveSelectedIds]),
+      isMergeSelectedEnabled,
+      onMergeDown: handleMergeDown,
+      onMergeVisible: handleMergeVisible,
+      onFlattenImage: handleFlattenImage,
+      onLayerRotate: (amount) => void handleRotateSelectedLayers(amount),
+      onLayerFlip: (axis) => void handleFlipSelectedLayers(axis),
+      onLayerAlign: (edge) => layerArrange.handleAlign(edge),
+      onLayerDistribute: (axis) => layerArrange.handleDistribute(axis),
+      onLayerOrder: (op) => layerArrange.handleOrder(op),
+
+      // ── Image ───────────────────────────────────────────────────
+      pixelFormat: state.pixelFormat,
+      onSetColorMode: (fmt) => colorMode.handleConvertColorMode(fmt),
+      onResizeImage: () => setShowResizeDialog(true),
+      onResizeCanvas: () => setShowResizeCanvasDialog(true),
+      onRotate90CW: () => void handleRotate("90cw"),
+      onRotate180: () => void handleRotate("180"),
+      onRotate270CW: () => void handleRotate("270cw"),
+      onFlipHorizontal: () => void handleFlip("horizontal"),
+      onFlipVertical: () => void handleFlip("vertical"),
+      onLoadLut: () => void lutOps.loadCubeLut(),
+      onManageLuts: () => setShowLutManager(true),
+      onSetViewTransform: lutOps.setViewTransform,
+
+      // ── Adjustments / Effects / Filters ─────────────────────────
+      onCreateAdjustmentLayer: (type) =>
+        requireTransformDecision(() => {
+          if (type === "color-dithering") {
+            setShowColorDitheringSetup(true);
+          } else {
+            adjustments.handleCreateAdjustmentLayer(type);
+          }
+        }),
+      isAdjustmentMenuEnabled: adjustments.isAdjustmentMenuEnabled,
+      adjustmentMenuItems: ADJUSTMENT_MENU_ITEMS,
+      effectsMenuItems: EFFECTS_MENU_ITEMS,
+      onOpenFilterDialog: handleOpenFilterDialog,
+      onInstantFilter: (key) =>
+        requireTransformDecision(() => filters.handleInstantFilter(key)),
+      isFiltersMenuEnabled: adjustments.isAdjustmentMenuEnabled,
+      filterMenuItems: FILTER_MENU_ITEMS,
+
+      // ── Animation ───────────────────────────────────────────────
+      animationMode: state.animationMode,
+      isPlaying: playback.isPlaying,
+      paletteAnimationActive: state.paletteAnimation.enabled,
+      onPlayPause: playback.onPlayPause,
+      onPrevFrame: playback.onPrevFrame,
+      onNextFrame: playback.onNextFrame,
+      onPrevAnimation: playback.onPrevAnimation,
+      onNextAnimation: playback.onNextAnimation,
+      onImportSpritesheetFrames: () =>
+        setShowImportSpritesheetFramesDialog(true),
+      onExportSpritesheetJson: () => void handleExportSpritesheetJson(),
+      onExportPaletteAnimationJson: () =>
+        void handleExportPaletteAnimationJson(),
+      onExportAnimationFrames: () =>
+        setShowExportAnimationFramesDialog(true),
+
+      // ── View ────────────────────────────────────────────────────
+      onZoomIn: handleZoomIn,
+      onZoomOut: handleZoomOut,
+      onZoom100: handleZoom100,
+      onFitToWindow: handleFitToWindow,
+      onToggleGrid: handleToggleGrid,
+      showGrid: state.canvas.showGrid,
+      onToggleRulers: handleToggleRulers,
+      showRulers: state.canvas.showRulers,
+      onToggleGuides: handleToggleGuides,
+      showGuides: state.canvas.showGuides,
+      onApplyGuidePreset: handleApplyGuidePreset,
+      onSetNormalMode: handleSetNormalMode,
+      onSetTiledMode: handleSetTiledMode,
+      tiledMode: state.canvas.tiledMode,
+      onToggleTileGrid: handleToggleTileGrid,
+      showTileGrid: state.canvas.showTileGrid,
+      onSetAnimationMode: handleSetAnimationMode,
+
+      // ── Help ────────────────────────────────────────────────────
+      onAbout: () => setShowAboutDialog(true),
+      onKeyboardShortcuts: () => setShowShortcutsDialog(true),
+      onSystemInfo: () => setShowSystemInfoDialog(true),
+      onDebug: () => void window.api.openDevTools(),
+    }),
+    // Every input that any handler closes over. The list is long but
+    // necessary — drop one and a menu action gets stuck on a stale
+    // closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      recentFiles,
+      handleOpen,
+      handleSave,
+      handleSaveACopy,
+      handleClose,
+      handleCloseAll,
+      handleOpenPath,
+      handleClearRecentFiles,
+      handleUndo,
+      handleRedo,
+      handleCut,
+      handleCopy,
+      handleCopyMerged,
+      handlePaste,
+      handlePasteInto,
+      handleDelete,
+      handleOpenCafDialog,
+      handleEnterTransform,
+      requireTransformDecision,
+      isFreeTransformEnabled,
+      handleSelectAll,
+      handleDeselect,
+      handleSelectAllLayers,
+      handleDeselectLayers,
+      handleFindLayers,
+      handleNewLayer,
+      handleGroupLayers,
+      handleCreateCompositeLayer,
+      handleAddMaskLayer,
+      handleDuplicateLayer,
+      handleDeleteActiveLayer,
+      handleRasterizeLayer,
+      state.activeLayerId,
+      isRasterizeLayerEnabled,
+      effectiveSelectedIds,
+      handleUngroupLayers,
+      handleMergeSelected,
+      isMergeSelectedEnabled,
+      handleMergeDown,
+      handleMergeVisible,
+      handleFlattenImage,
+      handleRotateSelectedLayers,
+      handleFlipSelectedLayers,
+      layerArrange,
+      state.pixelFormat,
+      colorMode,
+      handleRotate,
+      handleFlip,
+      lutOps,
+      adjustments,
+      handleOpenFilterDialog,
+      filters,
+      state.animationMode,
+      playback.isPlaying,
+      state.paletteAnimation.enabled,
+      playback,
+      handleExportSpritesheetJson,
+      handleExportPaletteAnimationJson,
+      handleZoomIn,
+      handleZoomOut,
+      handleZoom100,
+      handleFitToWindow,
+      handleToggleGrid,
+      state.canvas.showGrid,
+      handleToggleRulers,
+      state.canvas.showRulers,
+      handleToggleGuides,
+      state.canvas.showGuides,
+      handleApplyGuidePreset,
+      handleSetNormalMode,
+      handleSetTiledMode,
+      state.canvas.tiledMode,
+      handleToggleTileGrid,
+      state.canvas.showTileGrid,
+      handleSetAnimationMode,
+    ],
+  );
+
+  useMacNativeMenu({ isMac, deps: menuDeps });
 
   return (
     <>
@@ -698,6 +837,7 @@ function AppContent(): React.JSX.Element {
       />
       <MainWindow
         isMac={isMac}
+        menuDeps={menuDeps}
         activeTool={state.activeTool}
         pixelFormat={state.pixelFormat}
         activeLayerId={state.activeLayerId}
@@ -706,11 +846,7 @@ function AppContent(): React.JSX.Element {
         canvasWidth={state.canvas.width}
         canvasHeight={state.canvas.height}
         zoom={state.canvas.zoom}
-        showGrid={state.canvas.showGrid}
-        showRulers={state.canvas.showRulers}
-        showGuides={state.canvas.showGuides}
         tiledMode={state.canvas.tiledMode}
-        showTileGrid={state.canvas.showTileGrid}
         animationMode={state.animationMode}
         tabs={tabs}
         tabInfos={tabInfos}
@@ -723,12 +859,7 @@ function AppContent(): React.JSX.Element {
         pendingLayerLabelRef={pendingLayerLabelRef}
         dispatch={dispatch}
         hasActiveDocument={hasActiveDocument}
-        effectiveSelectedIds={effectiveSelectedIds}
-        isRasterizeLayerEnabled={isRasterizeLayerEnabled}
-        isMergeSelectedEnabled={isMergeSelectedEnabled}
-        isFreeTransformEnabled={isFreeTransformEnabled}
         adjustments={adjustments}
-        filters={filters}
         colorMode={colorMode}
         isContentAwareFilling={isContentAwareFilling}
         contentAwareFillLabel={contentAwareFillLabel}
@@ -815,10 +946,6 @@ function AppContent(): React.JSX.Element {
             ? state.paletteAnimation.fps
             : (playback.selectedAnim?.fps ?? 12)
         }
-        handleExportSpritesheetJson={() => void handleExportSpritesheetJson()}
-        handleExportPaletteAnimationJson={() =>
-          void handleExportPaletteAnimationJson()
-        }
         showAboutDialog={showAboutDialog}
         setShowAboutDialog={setShowAboutDialog}
         showPreferencesDialog={showPreferencesDialog}
@@ -843,23 +970,7 @@ function AppContent(): React.JSX.Element {
         handleTransformGuardApply={handleTransformGuardApply}
         handleTransformGuardDiscard={handleTransformGuardDiscard}
         handleNewConfirm={handleNewConfirm}
-        handleOpen={handleOpen}
-        handleOpenPath={handleOpenPath}
-        handleSave={handleSave}
-        handleSaveACopy={handleSaveACopy}
-        handleClearRecentFiles={handleClearRecentFiles}
-        recentFiles={recentFiles}
-        handleUndo={handleUndo}
-        handleRedo={handleRedo}
-        handleCopy={handleCopy}
-        handleCopyMerged={handleCopyMerged}
-        handleCut={handleCut}
-        handlePaste={handlePaste}
-        handlePasteInto={handlePasteInto}
-        handleDelete={handleDelete}
-        handleNewLayer={handleNewLayer}
         handleDuplicateLayer={handleDuplicateLayer}
-        handleDeleteActiveLayer={handleDeleteActiveLayer}
         handleRasterizeLayer={handleRasterizeLayer}
         handleMergeSelected={handleMergeSelected}
         handleMergeDown={handleMergeDown}
@@ -869,26 +980,8 @@ function AppContent(): React.JSX.Element {
         handleGroupLayers={handleGroupLayers}
         handleUngroupLayers={handleUngroupLayers}
         handleCreateCompositeLayer={handleCreateCompositeLayer}
-        handleAddMaskLayer={handleAddMaskLayer}
         handleResizeImage={handleResizeImage}
         handleResizeCanvas={handleResizeCanvas}
-        handleRotate={handleRotate}
-        handleFlip={handleFlip}
-        handleRotateSelectedLayers={handleRotateSelectedLayers}
-        handleFlipSelectedLayers={handleFlipSelectedLayers}
-        layerArrange={layerArrange}
-        handleZoomIn={handleZoomIn}
-        handleZoomOut={handleZoomOut}
-        handleZoom100={handleZoom100}
-        handleFitToWindow={handleFitToWindow}
-        handleToggleGrid={handleToggleGrid}
-        handleToggleRulers={handleToggleRulers}
-        handleToggleGuides={handleToggleGuides}
-        handleApplyGuidePreset={handleApplyGuidePreset}
-        handleSetNormalMode={handleSetNormalMode}
-        handleSetTiledMode={handleSetTiledMode}
-        handleToggleTileGrid={handleToggleTileGrid}
-        handleSetAnimationMode={handleSetAnimationMode}
         isPlaying={playback.isPlaying}
         isLooping={playback.isLooping}
         currentFrame={
@@ -910,21 +1003,11 @@ function AppContent(): React.JSX.Element {
         paletteAnimationActive={state.paletteAnimation.enabled}
         onCopyPrevFrame={handleCopyPrevFrame}
         onCopyNextFrame={handleCopyNextFrame}
-        handleSelectAll={handleSelectAll}
-        handleDeselect={handleDeselect}
-        handleSelectAllLayers={handleSelectAllLayers}
-        handleDeselectLayers={handleDeselectLayers}
-        handleFindLayers={handleFindLayers}
         findLayersCounter={findLayersCounter}
         handleToolChange={handleToolChange}
-        handleEnterTransform={handleEnterTransform}
         guardedSwitchTab={guardedSwitchTab}
         guardedCloseTab={guardedCloseTab}
-        handleClose={handleClose}
-        handleCloseAll={handleCloseAll}
-        handleOpenCafDialog={handleOpenCafDialog}
         handleCafConfirm={handleCafConfirm}
-        handleOpenFilterDialog={handleOpenFilterDialog}
         requireTransformDecision={requireTransformDecision}
       />
     </>
