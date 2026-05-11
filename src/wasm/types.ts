@@ -371,6 +371,75 @@ export interface PixelOpsModule {
     dualSdfW: number,
     dualSdfH: number,
   ): void;
+
+  /**
+   * Batched form of `_pixelops_brush_stamp`. `paramsArrayPtr` points to a
+   * tightly packed array of `count` BrushStampParams structs (each
+   * PARAM_BYTES bytes). All stamps in the array share the layer / touched
+   * / selection / SDF context passed in the trailing args. Used by the
+   * brush engine to amortise JS↔WASM crossings + param packing across an
+   * entire segment of stamps, eliminating per-stamp BrushStampJob
+   * allocation and the GC pressure that came with it. */
+  _pixelops_brush_stamp_batch(
+    paramsArrayPtr: number,
+    count: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,
+    sdfPtr: number,
+    sdfW: number,
+    sdfH: number,
+    dualSdfPtr: number,
+    dualSdfW: number,
+    dualSdfH: number,
+  ): void;
+
+  /**
+   * Rasterize the brush coverage at the design shape into an 8-bit
+   * bitmap. `paramsPtr` is a BrushStampParams struct (only the shape
+   * fields — radius, angle, roundness, shear, flip, aaWidth, tipKind,
+   * dual params, grain params — are read). `outBitmapPtr` must point
+   * to a pre-allocated `bmW * bmH` byte buffer. Returns nothing.
+   */
+  _pixelops_brush_bake_coverage(
+    paramsPtr: number,
+    outBitmapPtr: number,
+    bmW: number,
+    bmH: number,
+    sdfPtr: number,
+    sdfW: number,
+    sdfH: number,
+    dualSdfPtr: number,
+    dualSdfW: number,
+    dualSdfH: number,
+  ): void;
+
+  /**
+   * Per-stamp dispatch using a pre-rasterized coverage bitmap. Reads
+   * per-stamp cx/cy (→ bmOffsetX/Y), color, opacity, cap, bbox, layer
+   * extents from the BrushStampParams struct; the bitmap shape itself
+   * is shared across all stamps in a stroke.
+   */
+  _pixelops_brush_stamp_bitmap(
+    paramsPtr: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,
+    bitmapPtr: number,
+    bmW: number,
+    bmH: number,
+  ): void;
+
+  _pixelops_brush_stamp_bitmap_batch(
+    paramsArrayPtr: number,
+    count: number,
+    layerDataPtr: number,
+    touchedDataPtr: number,
+    selMaskPtr: number,
+    bitmapPtr: number,
+    bmW: number,
+    bmH: number,
+  ): void;
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

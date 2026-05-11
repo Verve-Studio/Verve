@@ -195,8 +195,31 @@ export class WebGPURenderer {
           buf.wasmPtr = got.ptr;
         }
       }
+      // Fresh buffer is already zeroed by `new Uint8Array`; nothing to clear.
     } else {
-      clearTouchedBuffer(this.touchedBuffer);
+      // Reuse the existing buffer. If the previous tool recorded the bbox
+      // it painted into, clear ONLY that region — for a 500-px brush on
+      // A1 that's 250 KB instead of 70 MB. Tools that don't record (e.g.
+      // pencil, eraser) leave `lastDirtyRect` undefined and we fall back
+      // to the canvas-sized fill.
+      const buf = this.touchedBuffer;
+      const rect = buf.lastDirtyRect;
+      if (rect) {
+        const lx = Math.max(0, Math.floor(rect.lx));
+        const ly = Math.max(0, Math.floor(rect.ly));
+        const rx = Math.min(buf.width, Math.ceil(rect.rx));
+        const ry = Math.min(buf.height, Math.ceil(rect.ry));
+        if (rx > lx && ry > ly) {
+          const w = rx - lx;
+          const data = buf.data;
+          for (let y = ly; y < ry; y++) {
+            data.fill(0, y * buf.width + lx, y * buf.width + lx + w);
+          }
+        }
+        buf.lastDirtyRect = undefined;
+      } else {
+        clearTouchedBuffer(buf);
+      }
     }
     return this.touchedBuffer;
   }
@@ -501,6 +524,23 @@ export class WebGPURenderer {
     }
     if (newX + newW > this.pixelWidth) newW = this.pixelWidth - newX;
     if (newY + newH > this.pixelHeight) newH = this.pixelHeight - newY;
+
+    // If the doubling-then-clamping landed us back on the same geometry
+    // (which is what happens for any canvas-sized layer once a stamp gets
+    // near the edge — `fitsX` failed only because the *padded* stamp
+    // bbox poked past the layer, not because the layer needs to grow),
+    // skip the entire realloc + reblit + GPU upload. Without this guard
+    // every edge-adjacent stamp on a 4K layer pays a 64 MB CPU copy +
+    // GPU upload for no functional change — the slowdown you feel at
+    // the edges.
+    if (
+      newX === layer.offsetX &&
+      newY === layer.offsetY &&
+      newW === layer.layerWidth &&
+      newH === layer.layerHeight
+    ) {
+      return false;
+    }
 
     const copyX = layer.offsetX - newX;
     const copyY = layer.offsetY - newY;

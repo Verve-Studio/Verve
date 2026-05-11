@@ -28,8 +28,12 @@ extern "C" {
 
 // Packed parameter struct mirrored exactly on the TS side. Keep field
 // order stable — the JS wrapper writes a Float32Array / Int32Array view
-// of the same offsets. 17 floats + 12 ints = 116 bytes.
-struct BrushStampParams {
+// of the same offsets. Field bytes used: 180; struct padded to 192 via
+// `alignas(16)` so the C++ stride `sizeof(BrushStampParams)` matches the
+// JS-side `PARAM_BYTES = 192` exactly. Without this, batched dispatch
+// reads from a different offset than JS wrote to past the first entry
+// (silent corruption for `_pixelops_brush_stamp_batch`).
+struct alignas(16) BrushStampParams {
     // Geometry
     float cx, cy;          // stamp centre, canvas-pixel space (float)
     float radius;          // stamp radius (px)
@@ -74,6 +78,13 @@ struct BrushStampParams {
     float grain_amount;      // 0..1
     float grain_scale;       // pixels per noise period (≥ 2)
     int   grain_follow_brush; // 1 = sample in tip-local; 0 = canvas-locked
+    // ── Pre-rasterized bitmap path (when bitmap != null in the kernel
+    //     call). Per-stamp offsets that locate the bitmap in canvas
+    //     coords: bitmap pixel (0,0) corresponds to canvas pixel
+    //     (bm_offset_x, bm_offset_y). Computed JS-side as
+    //     `round(cx - bmHalfX)`.
+    int   bm_offset_x;
+    int   bm_offset_y;
 };
 
 // Kernel: apply one stamp into the supplied buffers.
@@ -104,6 +115,57 @@ void brush_stamp(
     const float*            dual_sdf_data,
     int                     dual_sdf_w,
     int                     dual_sdf_h
+);
+
+// ── Pre-rasterized bitmap path ─────────────────────────────────────────
+//
+// For brushes whose *shape* is stable across a stroke (no per-stamp size
+// /angle/roundness/flip jitter, no pose-driven shape changes, no motion
+// blur), we can pre-rasterize the full coverage map into an 8-bit
+// bitmap once and then per-stamp just blit it into the layer with a
+// per-pixel cap check. Eliminates the per-pixel SDF compute + smoothstep
+// + dual + (followBrush) grain — the dominant cost for soft brushes,
+// where the AA falloff band is enormous and never saturates the touched
+// buffer (so the existing saturation prechecks don't help).
+//
+// Strategy:
+//   * `brush_bake_coverage` walks a `(bm_w × bm_h)` bitmap and writes the
+//     coverage byte (0..255) at each cell, applying the same SDF + AA +
+//     optional dual + optional followBrush-grain math the SDF kernel
+//     uses per-pixel per-stamp. Called once per stroke at the design
+//     shape — JS sizes the bitmap to fit the stamp bbox at that shape.
+//   * `brush_stamp_bitmap` per-stamp: clip the bitmap rect to canvas +
+//     layer, walk the intersection, read each byte from the bitmap (no
+//     SDF compute), apply per-pixel cap check + canvas-locked grain (if
+//     applicable) + Porter-Duff blend. SIMD-vectorised across 4 lanes
+//     just like the SDF path.
+//
+// `params` reuses BrushStampParams; only the *per-stamp* fields are
+// consulted (cx/cy → bm_offset_*, color, opacity, cap, bbox, layer
+// extents, grain canvas-locked params). Shape fields (radius, angle,
+// roundness, …) are ignored on this path because their effect is
+// already baked into the bitmap.
+void brush_bake_coverage(
+    const BrushStampParams* params,
+    uint8_t*                out_bitmap,
+    int                     bm_w,
+    int                     bm_h,
+    const float*            sdf_data,
+    int                     sdf_w,
+    int                     sdf_h,
+    const float*            dual_sdf_data,
+    int                     dual_sdf_w,
+    int                     dual_sdf_h
+);
+
+void brush_stamp_bitmap(
+    const BrushStampParams* params,
+    void*                   layer_data,
+    uint8_t*                touched_data,
+    const uint8_t*          sel_mask,
+    const uint8_t*          bitmap,
+    int                     bm_w,
+    int                     bm_h
 );
 
 } // extern "C"

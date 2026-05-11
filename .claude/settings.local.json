@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(ls /d/emsdk/upstream/emscripten/emcmake* /d/emsdk/upstream/emscripten/emcc* 2>&1)",
+      "Read(//d/emsdk/upstream/emscripten/**)"
     ]
   }
 }

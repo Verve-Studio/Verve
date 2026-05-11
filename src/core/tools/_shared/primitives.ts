@@ -34,6 +34,15 @@ export interface TouchedBuffer {
    *  alloc fell back). The brush kernel checks this to decide between
    *  the zero-copy fast path and the slice-marshalling fallback. */
   wasmPtr?: number;
+  /**
+   * Canvas-space bbox of pixels that the LAST stroke actually wrote to.
+   * `acquireTouchedBuffer` uses this to scope the per-stroke reset —
+   * clearing just the previous stroke's footprint instead of the entire
+   * canvas-sized buffer (70 MB at A1, ~2 ms per stroke start). Tools
+   * that paint into touched (currently only Brush) update it on stroke
+   * end. Tools that don't update it cause a full fill — same as before.
+   */
+  lastDirtyRect?: { lx: number; ly: number; rx: number; ry: number };
 }
 
 export function makeTouchedBuffer(

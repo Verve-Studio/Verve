@@ -590,6 +590,18 @@ function createBrushHandler(): ToolHandler {
       // pending rAF is unioned into the same flushLayer call (the dirty
       // rect on the layer accumulates across markDirtyRect calls).
       drainPendingFlush();
+      // Tell the touched buffer which region we wrote to, so the next
+      // `acquireTouchedBuffer` can clear *just* that region instead of
+      // memset-ing the whole canvas-sized buffer (saves ~2 ms per stroke
+      // start on A1, way more on bigger docs).
+      if (strokeState && strokeState.strokeBboxValid) {
+        strokeState.touched.lastDirtyRect = {
+          lx: strokeState.strokeBboxLx,
+          ly: strokeState.strokeBboxLy,
+          rx: strokeState.strokeBboxRx + 1,
+          ry: strokeState.strokeBboxRy + 1,
+        };
+      }
       lastRendered = null;
       lastCtrl = null;
       renderedCursor = null;

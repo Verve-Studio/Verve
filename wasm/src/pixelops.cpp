@@ -370,3 +370,86 @@ void pixelops_brush_stamp(
                 sdf_data, sdf_w, sdf_h,
                 dual_sdf_data, dual_sdf_w, dual_sdf_h);
 }
+
+// Batched form — process N stamps that share the same layer, touched,
+// selection, and SDF context. The invariant ptrs are passed once and the
+// per-stamp variations live in a tightly packed BrushStampParams array.
+// Cuts ~13 µs of JS dispatch overhead per stamp (object alloc + DataView
+// setters + WASM call boundary) and — more importantly — eliminates the
+// per-stamp allocation that triggered young-gen GC mid-stroke.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void pixelops_brush_stamp_batch(
+    const BrushStampParams* params_array,
+    int                     count,
+    void*                   layer_data,
+    uint8_t*                touched_data,
+    const uint8_t*          sel_mask,
+    const float*            sdf_data,
+    int                     sdf_w,
+    int                     sdf_h,
+    const float*            dual_sdf_data,
+    int                     dual_sdf_w,
+    int                     dual_sdf_h
+) {
+    for (int i = 0; i < count; i++) {
+        brush_stamp(&params_array[i], layer_data, touched_data, sel_mask,
+                    sdf_data, sdf_w, sdf_h,
+                    dual_sdf_data, dual_sdf_w, dual_sdf_h);
+    }
+}
+
+// ── Pre-rasterized bitmap brush path ────────────────────────────────────
+// See brush_stamp.h for the architecture. Rasterizing the brush shape into
+// an 8-bit coverage bitmap once per stroke, then per-stamp blitting the
+// bitmap, eliminates the per-pixel SDF + AA + dual + grain compute that
+// dominates soft-brush cost (where the AA falloff band is huge and the
+// touched saturation prechecks never fire).
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void pixelops_brush_bake_coverage(
+    const BrushStampParams* params,
+    uint8_t*                out_bitmap,
+    int                     bm_w,
+    int                     bm_h,
+    const float*            sdf_data,
+    int                     sdf_w,
+    int                     sdf_h,
+    const float*            dual_sdf_data,
+    int                     dual_sdf_w,
+    int                     dual_sdf_h
+) {
+    brush_bake_coverage(params, out_bitmap, bm_w, bm_h,
+                        sdf_data, sdf_w, sdf_h,
+                        dual_sdf_data, dual_sdf_w, dual_sdf_h);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void pixelops_brush_stamp_bitmap(
+    const BrushStampParams* params,
+    void*                   layer_data,
+    uint8_t*                touched_data,
+    const uint8_t*          sel_mask,
+    const uint8_t*          bitmap,
+    int                     bm_w,
+    int                     bm_h
+) {
+    brush_stamp_bitmap(params, layer_data, touched_data, sel_mask,
+                       bitmap, bm_w, bm_h);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void pixelops_brush_stamp_bitmap_batch(
+    const BrushStampParams* params_array,
+    int                     count,
+    void*                   layer_data,
+    uint8_t*                touched_data,
+    const uint8_t*          sel_mask,
+    const uint8_t*          bitmap,
+    int                     bm_w,
+    int                     bm_h
+) {
+    for (int i = 0; i < count; i++) {
+        brush_stamp_bitmap(&params_array[i], layer_data, touched_data, sel_mask,
+                           bitmap, bm_w, bm_h);
+    }
+}

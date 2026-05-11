@@ -44,7 +44,30 @@ import {
   blendPixelOver,
   type TouchedBuffer,
 } from "../_shared/primitives";
-import { getPixelOpsSync, runBrushStamp } from "@/wasm";
+import {
+  getPixelOpsSync,
+  runBrushStamp,
+  beginBrushBatch,
+  beginBrushBatchBitmap,
+  appendBrushStamp,
+  flushBrushBatch,
+  ensureBakedBitmap,
+} from "@/wasm";
+import type { DynamicCurve } from "@/types";
+
+// True while `stampSegment` has an open WASM batch — read inside
+// `applyStamp` to decide between `appendBrushStamp` (queue into the
+// segment batch) and `runBrushStamp` (immediate single-stamp call,
+// used for stampDot / build-up ticks that run outside a segment).
+let brushStampBatchOpen = false;
+// True when the open batch is the pre-rasterized *bitmap* path (the
+// shape was static, so we baked it once and per-stamp blits the
+// coverage). The bitmap kernel ignores motion-blur elongation by
+// design; if this flag is set, `applyStamp` skips its motion gate so
+// high-velocity stamps still flow through the bitmap dispatch instead
+// of falling back to the JS path (which would silently bypass the open
+// batch and tank perf).
+let brushStampBatchIsBitmap = false;
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 import { getCachedTipSampler, type TipSampler } from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
@@ -576,6 +599,47 @@ function motionActiveCheck(motionElongation: number): boolean {
   return motionElongation > 1.0001;
 }
 
+/** A `DynamicCurve` whose output is constant 1 for every stamp (so it
+ *  doesn't vary the underlying value). */
+function curveIsInert(c: DynamicCurve): boolean {
+  return c.jitter <= 0 || c.source === "off";
+}
+
+/**
+ * True when every per-stamp shape parameter (size, angle, roundness,
+ * flip, shear) is identical across a segment. When this holds we can
+ * pre-rasterize the brush coverage into a bitmap ONCE and per-stamp
+ * just blit it — eliminates the per-pixel SDF + AA + dual + grain
+ * compute that dominates soft-brush cost. See
+ * `src/wasm/brushStamp.ts#ensureBakedBitmap` for the bake path.
+ *
+ * Conservative on purpose: when in doubt we fall back to the SDF
+ * batch, which is still fast and correct for every brush configuration.
+ */
+function isShapeStaticSegment(
+  brush: Brush,
+  size0: number,
+  size1: number,
+): boolean {
+  if (Math.abs(size0 - size1) > 0.001) return false; // intra-segment taper
+  if (brush.pressureSize) return false;              // pressure varies → size varies
+  if (!curveIsInert(brush.shapeDyn.sizeJitter)) return false;
+  if (!curveIsInert(brush.shapeDyn.angleJitter)) return false;
+  if (!curveIsInert(brush.shapeDyn.roundnessJitter)) return false;
+  if (brush.tip.flipXJitter > 0) return false;
+  if (brush.tip.flipYJitter > 0) return false;
+  if (brush.pose.directionFollow) return false;
+  if (brush.pose.rotationFollow) return false;
+  if (brush.pose.pressureSquash !== 0) return false;
+  if (brush.pose.tiltScale !== 0) return false;
+  // Dual brush following the stroke direction would vary its angle.
+  const dt = brush.dualTip;
+  if (dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0 && dt.directionFollow) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Apply one fully-resolved stamp at (cx, cy). Iterates the stamp's
  * canvas-space bounding box, samples the tip SDF, applies wet-edge
@@ -699,9 +763,18 @@ function applyStamp(
   // exposed on the TipSampler interface.
   // The WASM module is loaded async at app startup; until it's ready we
   // fall back to JS.
+  // The motion-elongation gate (WASM SDF kernel can't elongate per-stamp)
+  // is bypassed when a bitmap batch is open — the bitmap path is happy to
+  // dispatch any stamp, ignoring motion blur. Without this exemption,
+  // default-brush strokes (motionBlur=5 → motionElongation>1 at normal
+  // velocity) would skip the open bitmap batch and fall through to the
+  // slow JS path, defeating the entire bake.
+  const motionBlocksWasm =
+    motionActiveCheck(motionElongation) &&
+    !(brushStampBatchOpen && brushStampBatchIsBitmap);
   const wasmEligible =
     !bypassCap &&
-    !motionActiveCheck(motionElongation) &&
+    !motionBlocksWasm &&
     !tiledMode &&
     layer.format !== "indexed8";
   const wasmModule = wasmEligible ? getPixelOpsSync() : null;
@@ -712,7 +785,15 @@ function applyStamp(
     // pass the cap explicitly.
     const stampOpacity = flow >= 100 ? s.opacity : s.opacity * flowFraction;
     const capOpacity = flow >= 100 ? -1 : s.opacity;
-    runBrushStamp(wasmModule, {
+    // When a segment batch is open (the common case during stampSegment),
+    // the stamp is appended to the WASM-heap batch buffer and applied
+    // when the segment flushes. Outside a batch (e.g. stampDot, build-up
+    // tick) we fall back to the single-stamp call. The batch path
+    // eliminates per-stamp BrushStampJob allocation + DataView pack +
+    // WASM call boundary — the things that pile up at high stamp rates.
+    const dispatch =
+      brushStampBatchOpen ? appendBrushStamp : runBrushStamp;
+    dispatch(wasmModule, {
       cx,
       cy,
       radius,
@@ -1137,12 +1218,134 @@ export function stampSegment(p: StampSegmentParams): void {
     pose0,
     pose1,
     brush,
+    layer,
+    sampler,
+    selectionMask,
+    tiledMode,
   } = p;
 
   const spacingPct =
     spacingOverride !== undefined ? spacingOverride : brush.tip.spacing;
   const minSize = Math.min(size0, size1);
   const stamp_dx_pixels = Math.max(0.5, (spacingPct / 100) * minSize);
+
+  // ── Segment-level WASM batch ───────────────────────────────────────
+  // When every stamp in this segment will hit the zero-copy WASM kernel
+  // path, open a per-segment batch: each stamp packs its params into a
+  // pre-allocated WASM-heap array and the whole segment fires as a
+  // single WASM call at flush time. Eliminates the per-stamp
+  // BrushStampJob allocation (and the GC pressure that came with it),
+  // plus reduces JS↔WASM crossings from N to 1 per segment. Falls back
+  // to per-stamp dispatch when smudge / motion-blur / tiled / indexed8 /
+  // unpinned-layer are in play (any of which the kernel path skips).
+  const wasmModule = getPixelOpsSync();
+  // Common WASM-batch prerequisites — both the SDF and the bitmap batch
+  // need these. The SDF batch additionally requires `motionBlur === 0`
+  // (existing fidelity guarantee). The bitmap batch tolerates motion
+  // blur by ignoring it: a static-shape brush at moderate motionBlur
+  // loses the per-stamp velocity-driven elongation in exchange for a
+  // huge speedup. Default brush has motionBlur=5, so without this
+  // exemption every default-brush stroke would skip both batch paths.
+  const wasmBatchReady =
+    wasmModule !== null &&
+    !brush.smudge.enabled &&
+    !tiledMode &&
+    layer.format !== "indexed8" &&
+    layer.wasmPtr !== undefined &&
+    state.touched.wasmPtr !== undefined;
+  const sdfBatchable = wasmBatchReady && brush.motionBlur === 0;
+  const bitmapBatchable =
+    wasmBatchReady && isShapeStaticSegment(brush, size0, size1);
+  const segmentBatchable = sdfBatchable || bitmapBatchable;
+  if (segmentBatchable) {
+    // Resolve invariant SDF context once per segment. Per-stamp dual
+    // *transform* (size, angle, mix) still varies and goes into each
+    // packed entry; only the bitmap SDF *data* is invariant.
+    const dt = brush.dualTip;
+    let dualSdfData: Float32Array | undefined;
+    let dualSdfW = 0;
+    let dualSdfH = 0;
+    if (dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0) {
+      const dualSampler = getCachedTipSampler(dt.shape);
+      dualSdfData = dualSampler.bitmapSdf;
+      dualSdfW = dualSampler.bitmapSdfW ?? 0;
+      dualSdfH = dualSampler.bitmapSdfH ?? 0;
+    }
+
+    // ── Pre-rasterized bitmap fast path ──────────────────────────────
+    // When the brush shape is identical for every stamp in the segment,
+    // bake the full coverage map once and per-stamp blit it. Eliminates
+    // the per-pixel SDF + AA + dual + grain compute — the bulk of the
+    // cost for soft brushes (where the AA falloff band is huge and the
+    // touched-saturation prechecks in the SDF kernel never fire).
+    let usedBitmapBatch = false;
+    if (bitmapBatchable) {
+      // Resolve the shape params once (same for every stamp in the segment).
+      const radius = size0 * 0.5;
+      const hardness = Math.max(0, Math.min(100, brush.tip.hardness));
+      const aaWidth = brush.antiAlias
+        ? Math.max(0.5, (1 - hardness / 100) * radius * 0.5 + 0.5)
+        : 0;
+      const dualOn = !!(dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0);
+      const baked = ensureBakedBitmap(wasmModule!, {
+        radius,
+        roundness: Math.max(0.05, Math.min(1, brush.tip.roundness)),
+        angle: brush.tip.angle,
+        shear: 0,
+        aaWidth,
+        flipX: 1,
+        flipY: 1,
+        tipKind: sampler.tipKind,
+        sdfData: sampler.bitmapSdf,
+        sdfW: sampler.bitmapSdfW,
+        sdfH: sampler.bitmapSdfH,
+        dualActive: dualOn,
+        dualTipKind: dualOn ? getCachedTipSampler(dt!.shape).tipKind : undefined,
+        dualSizeRatio: dualOn ? dt!.sizeRatio : undefined,
+        // directionFollow is required to be false for static; dual base
+        // angle = primary angle + dt.angle, no per-stamp variation.
+        dualBaseAngle: dualOn ? brush.tip.angle + dt!.angle : undefined,
+        dualMix: dualOn ? Math.max(0, Math.min(1, dt!.mix)) : undefined,
+        dualSdfData,
+        dualSdfW,
+        dualSdfH,
+        grainAmount: brush.texture.amount,
+        grainScale: Math.max(2, brush.texture.scale),
+        grainFollowBrush: brush.texture.followBrush,
+      });
+      if (baked !== null) {
+        beginBrushBatchBitmap(
+          wasmModule!,
+          baked.ptr,
+          baked.bmW,
+          baked.bmH,
+          baked.halfX,
+          baked.halfY,
+          layer.wasmPtr!,
+          state.touched.wasmPtr!,
+          selectionMask ?? undefined,
+        );
+        brushStampBatchOpen = true;
+        brushStampBatchIsBitmap = true;
+        usedBitmapBatch = true;
+      }
+    }
+    if (!usedBitmapBatch && sdfBatchable) {
+      beginBrushBatch(
+        wasmModule!,
+        layer.wasmPtr!,
+        state.touched.wasmPtr!,
+        selectionMask ?? undefined,
+        sampler.bitmapSdf,
+        sampler.bitmapSdfW ?? 0,
+        sampler.bitmapSdfH ?? 0,
+        dualSdfData,
+        dualSdfW,
+        dualSdfH,
+      );
+      brushStampBatchOpen = true;
+    }
+  }
 
   if (forceFirst && state.isFirstStamp) {
     // Segment-start stamp uses pose0 with the Bézier-tangent direction at t=0.
@@ -1192,6 +1395,13 @@ export function stampSegment(p: StampSegmentParams): void {
     state.arcAccum += stepLen;
     prevX = x;
     prevY = y;
+  }
+
+  // Fire all queued stamps for the segment in one WASM call.
+  if (segmentBatchable) {
+    flushBrushBatch(wasmModule!);
+    brushStampBatchOpen = false;
+    brushStampBatchIsBitmap = false;
   }
 }
 
