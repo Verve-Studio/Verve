@@ -864,15 +864,33 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
     {
       label: "Filters",
       hidden: indexedBlocked,
-      submenu: groupedItems(deps.filterMenuItems ?? [], (item) => ({
-        label: item.label,
-        actionId: `filter:${item.key}`,
-        action: () =>
-          item.instant
-            ? deps.onInstantFilter?.(item.key)
-            : deps.onOpenFilterDialog?.(item.key),
-        disabled: filterDisable,
-      })),
+      submenu: (() => {
+        const all = deps.filterMenuItems ?? [];
+        const buildItem = (item: (typeof all)[number]): MenuNode => ({
+          label: item.label,
+          actionId: `filter:${item.key}`,
+          action: () =>
+            item.instant
+              ? deps.onInstantFilter?.(item.key)
+              : deps.onOpenFilterDialog?.(item.key),
+          disabled: filterDisable,
+        });
+        // Split the "artistic" group out as a real nested submenu;
+        // everything else stays in the flat top-level list (grouped by
+        // separators between sections).
+        const artistic = all.filter((i) => i.group === "artistic");
+        const rest = all.filter((i) => i.group !== "artistic");
+        const out: MenuNode[] = groupedItems(rest, buildItem);
+        if (artistic.length > 0) {
+          if (out.length > 0) out.push(SEP);
+          out.push({
+            label: "Artistic",
+            disabled: filterDisable,
+            submenu: artistic.map(buildItem),
+          });
+        }
+        return out;
+      })(),
     },
     // Animation: hidden entirely outside animation mode.
     {

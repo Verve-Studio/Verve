@@ -366,15 +366,13 @@ export type FilterKey =
   | "seamless-texture"
   | "offset"
   | "repeat"
-  | "colored-pencil"
   | "cutout"
-  | "dry-brush"
   | "fresco"
   | "neon-glow"
   | "paint-daubs"
-  | "palette-knife"
   | "plastic-wrap"
-  | "poster-edges";
+  | "poster-edges"
+  | "watercolor";
 
 export type CurvesChannel = "rgb" | "red" | "green" | "blue";
 

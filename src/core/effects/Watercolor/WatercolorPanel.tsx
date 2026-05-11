@@ -1,22 +1,22 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
-import type { ColoredPencilEffectLayer } from "./ColoredPencilEffect";
+import type { WatercolorEffectLayer } from "./WatercolorEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
 interface Props {
-  layer: ColoredPencilEffectLayer;
+  layer: WatercolorEffectLayer;
   parentLayerName: string;
 }
 
-export function ColoredPencilPanel({
+export function WatercolorPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
   const { dispatch } = useAppContext();
   const p = layer.params;
 
-  const update = (patch: Partial<ColoredPencilEffectLayer["params"]>): void => {
+  const update = (patch: Partial<WatercolorEffectLayer["params"]>): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, ...patch } },
@@ -64,31 +64,23 @@ export function ColoredPencilPanel({
 
   return (
     <div className={styles.content}>
-      {slider("Pencil Width", p.pencilWidth, 1, 24, (v) =>
-        update({ pencilWidth: v }),
+      {slider("Brush Detail", p.brushDetail, 1, 14, (v) =>
+        update({ brushDetail: v }),
       )}
-      {slider("Stroke Pressure", p.strokePressure, 0, 15, (v) =>
-        update({ strokePressure: v }),
+      {slider("Shadow Intensity", p.shadowIntensity, 0, 10, (v) =>
+        update({ shadowIntensity: v }),
       )}
-      {slider("Paper Brightness", p.paperBrightness, 0, 50, (v) =>
-        update({ paperBrightness: v }),
-      )}
-      {slider("Opacity", p.opacity, 0, 100, (v) => update({ opacity: v }))}
+      {slider("Texture", p.texture, 1, 3, (v) => update({ texture: v }))}
 
       <div className={styles.footer}>
         <span className={styles.footerInfo}>
           <ParentConnectorIcon />
-          Sketching <strong>{parentLayerName}</strong>
+          Painting <strong>{parentLayerName}</strong>
         </span>
         <button
           className={styles.resetBtn}
           onClick={() =>
-            update({
-              pencilWidth: 4,
-              strokePressure: 8,
-              paperBrightness: 25,
-              opacity: 100,
-            })
+            update({ brushDetail: 9, shadowIntensity: 1, texture: 1 })
           }
         >
           Reset

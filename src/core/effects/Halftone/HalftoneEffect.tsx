@@ -44,7 +44,7 @@ export const HalftoneEffect: IPipelineEffect<
 > = {
   id: "halftone",
   label: "Halftone…",
-  menu: { root: "filters", submenu: "stylize" },
+  menu: { root: "filters", submenu: "artistic" },
   defaultParams: {
     mode: "color",
     frequency: 10,
