@@ -3,6 +3,7 @@ import type {
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
+import { allocUint8 } from "@/core/store/memoryStore";
 
 // Selection mask shorthand used by draw/erase helpers.
 export type SelMask = { mask: Uint8Array; width: number };
@@ -49,7 +50,13 @@ export function makeTouchedBuffer(
   width: number,
   height: number,
 ): TouchedBuffer {
-  return { data: new Uint8Array(width * height), width, height };
+  // `allocUint8` (not `new Uint8Array`) so the per-renderer touched buffer
+  // counts against the CPU bucket like every other typed-array allocation
+  // we own. At canvas resolution this is a meaningful chunk (70 MB on A1)
+  // — leaving it untracked under-reports total RAM use whether or not the
+  // buffer subsequently gets pinned to the WASM heap (the WASM pin
+  // tracks separately and balances out when the JS array is GC'd).
+  return { data: allocUint8(width * height), width, height };
 }
 
 export function clearTouchedBuffer(buf: TouchedBuffer): void {

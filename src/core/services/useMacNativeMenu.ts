@@ -1,24 +1,52 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+/**
+ * macOS native menu bridge.
+ *
+ * Builds the unified menu tree from `src/ux/main/menu/menuTree.ts`,
+ * filters out in-app-only nodes, serializes a function-free copy to
+ * the main process (which installs it via Electron's
+ * `Menu.setApplicationMenu`), and dispatches IPC menu-action events
+ * back to renderer-side handlers via an `actionId → action` map
+ * extracted from the same tree.
+ *
+ * One tree → two consumers. No more giant action-id switch and no
+ * more separate enable/check/visible IPC channels — every state
+ * change just rebuilds and re-sends the tree (~1 ms round-trip).
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FilterKey, PixelFormat } from "@/types";
 import type { EffectType } from "@/core/effects/effectTypes";
 import type { GuidePreset } from "./useViewActions";
-
+import type {
+  AlignEdge,
+  DistributeAxis,
+  OrderOp,
+} from "./useLayerArrange";
+import type { RotateAmount, FlipAxis } from "./useCanvasTransforms";
+import type { UseLayerArrangeReturn } from "./useLayerArrange";
+import {
+  buildMenuTree,
+  collectActions,
+  filterForTarget,
+  serializeTree,
+} from "@/ux/main/menu/menuTree";
 import {
   ADJUSTMENT_MENU_ITEMS,
   EFFECTS_MENU_ITEMS,
   FILTER_MENU_ITEMS,
 } from "@/core/menuConstants";
-import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
-import type { PanelId } from "@/ux/main/RightPanel/Dock/types";
-import { activeScope } from "@/core/store/scope";
-import { lutCategory, lutStore, type LutTransform } from "@/core/lut";
+import { lutStore, type LutTransform } from "@/core/lut";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
+import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
+import { ALL_PANEL_IDS, type PanelId } from "@/ux/main/RightPanel/Dock/types";
+import { activeScope } from "@/core/store/scope";
 
-interface MacNativeMenuParams {
+// ─── Params ───────────────────────────────────────────────────────────────────
+
+export interface MacNativeMenuParams {
   isMac: boolean;
   recentFiles: string[];
 
-  // Transform guard
+  // Transform guard — wraps actions that need a transform-decision before firing.
   requireTransformDecision: (action: () => void) => void;
 
   // Adjustment / effect / filter actions
@@ -34,7 +62,7 @@ interface MacNativeMenuParams {
   };
   handleOpenFilterDialog: (key: FilterKey) => void;
 
-  // File operations
+  // File
   handleOpen: () => Promise<void>;
   handleOpenPath: (path: string) => Promise<void>;
   handleClose: () => void;
@@ -43,7 +71,7 @@ interface MacNativeMenuParams {
   handleSaveACopy: () => Promise<void>;
   handleClearRecentFiles: () => Promise<void>;
 
-  // Edit operations
+  // Edit
   handleUndo: () => void;
   handleRedo: () => void;
   handleCut: () => void;
@@ -53,10 +81,10 @@ interface MacNativeMenuParams {
   handlePasteInto: () => void;
   handleDelete: () => void;
 
-  // Content-aware fill
+  // Content-aware
   handleOpenCafDialog: (mode: "fill" | "delete") => void;
 
-  // Layer operations
+  // Layer
   handleNewLayer: () => void;
   handleDuplicateLayer: () => void;
   handleDeleteActiveLayer: () => void;
@@ -73,7 +101,7 @@ interface MacNativeMenuParams {
   // Canvas transforms
   handleEnterTransform: () => void;
 
-  // View actions
+  // View
   handleZoomIn: () => void;
   handleZoomOut: () => void;
   handleZoom100: () => void;
@@ -95,22 +123,16 @@ interface MacNativeMenuParams {
   // Color mode
   colorMode: { handleConvertColorMode: (fmt: PixelFormat) => void };
 
-  // Dialog openers
+  // Dialogs
   openNewImageDialog: () => void;
   openExportDialog: () => void;
   openResizeImageDialog: () => void;
   openResizeCanvasDialog: () => void;
-  handleRotate: (
-    amount: import("./useCanvasTransforms").RotateAmount,
-  ) => Promise<void>;
-  handleFlip: (axis: import("./useCanvasTransforms").FlipAxis) => Promise<void>;
-  handleRotateSelectedLayers: (
-    amount: import("./useCanvasTransforms").RotateAmount,
-  ) => Promise<void>;
-  handleFlipSelectedLayers: (
-    axis: import("./useCanvasTransforms").FlipAxis,
-  ) => Promise<void>;
-  layerArrange: import("./useLayerArrange").UseLayerArrangeReturn;
+  handleRotate: (amount: RotateAmount) => Promise<void>;
+  handleFlip: (axis: FlipAxis) => Promise<void>;
+  handleRotateSelectedLayers: (amount: RotateAmount) => Promise<void>;
+  handleFlipSelectedLayers: (axis: FlipAxis) => Promise<void>;
+  layerArrange: UseLayerArrangeReturn;
   openAboutDialog: () => void;
   openShortcutsDialog: () => void;
   openSystemInfoDialog: () => void;
@@ -120,7 +142,7 @@ interface MacNativeMenuParams {
   loadCubeLut: () => Promise<void>;
   setViewTransform: (id: string | null) => void;
 
-  // State for enabled/checked sync
+  // State
   activeLayerId: string | null;
   effectiveSelectedIds: Set<string>;
   isFreeTransformEnabled: boolean;
@@ -147,689 +169,253 @@ interface MacNativeMenuParams {
   handleExportSpritesheetJson: () => void;
   handleExportPaletteAnimationJson: () => void;
   openExportAnimationFramesDialog: () => void;
+
 }
 
 export function useMacNativeMenu(params: MacNativeMenuParams): void {
-  const {
-    isMac,
-    recentFiles,
-    requireTransformDecision,
-    adjustments,
-    filters,
-    handleOpenFilterDialog,
-    handleOpen,
-    handleOpenPath,
-    handleClose,
-    handleCloseAll,
-    handleSave,
-    handleSaveACopy,
-    handleClearRecentFiles,
-    handleUndo,
-    handleRedo,
-    handleCut,
-    handleCopy,
-    handleCopyMerged,
-    handlePaste,
-    handlePasteInto,
-    handleDelete,
-    handleOpenCafDialog,
-    handleNewLayer,
-    handleDuplicateLayer,
-    handleDeleteActiveLayer,
-    handleRasterizeLayer,
-    handleGroupLayers,
-    handleUngroupLayers,
-    handleCreateCompositeLayer,
-    handleAddMaskLayer,
-    handleMergeSelected,
-    handleMergeDown,
-    handleMergeVisible,
-    handleFlattenImage,
-    handleEnterTransform,
-    handleZoomIn,
-    handleZoomOut,
-    handleZoom100,
-    handleFitToWindow,
-    handleToggleGrid,
-    handleToggleRulers,
-    handleToggleGuides,
-    handleApplyGuidePreset,
-    handleSetNormalMode,
-    handleSetTiledMode,
-    handleToggleTileGrid,
-    handleSetAnimationMode,
-    handleSelectAll,
-    handleDeselect,
-    handleSelectAllLayers,
-    handleDeselectLayers,
-    handleFindLayers,
-    colorMode,
-    openNewImageDialog,
-    openExportDialog,
-    openResizeImageDialog,
-    openResizeCanvasDialog,
-    handleRotate,
-    handleFlip,
-    handleRotateSelectedLayers,
-    handleFlipSelectedLayers,
-    layerArrange,
-    openAboutDialog,
-    openShortcutsDialog,
-    openSystemInfoDialog,
-    openColorDitheringSetup,
-    openPreferencesDialog,
-    openLutManagerDialog,
-    loadCubeLut,
-    setViewTransform,
-    activeLayerId,
-    effectiveSelectedIds,
-    isFreeTransformEnabled,
-    isRasterizeLayerEnabled,
-    isMergeSelectedEnabled,
-    hasSelection,
-    isContentAwareFilling,
-    pixelFormat,
-    showGrid,
-    showRulers,
-    showGuides,
-    tiledMode,
-    showTileGrid,
-    animationMode,
-    paletteAnimationActive,
-    onPlayPause,
-    onPrevFrame,
-    onNextFrame,
-    onPrevAnimation,
-    onNextAnimation,
-    openImportSpritesheetFramesDialog,
-    handleExportSpritesheetJson,
-    handleExportPaletteAnimationJson,
-    openExportAnimationFramesDialog,
-  } = params;
+  const { isMac } = params;
 
-  // A ref that holds the latest action dispatcher (avoids stale closures in the IPC listener).
-  const handlerRef = useRef<(actionId: string) => void>(() => {
-    /* noop until mounted */
-  });
-  handlerRef.current = useCallback(
-    (actionId: string): void => {
-      // Dynamic: adjustment / effect layers
-      if (actionId.startsWith("adj:")) {
-        const type = actionId.slice(4) as EffectType;
-        if (type === "color-dithering") {
-          requireTransformDecision(() => openColorDitheringSetup());
-        } else {
-          requireTransformDecision(() =>
-            adjustments.handleCreateAdjustmentLayer(type),
-          );
-        }
-        return;
-      }
-      // Dynamic: filter layers
-      if (actionId.startsWith("filter:")) {
-        const key = actionId.slice(7) as FilterKey;
-        const fi = FILTER_MENU_ITEMS.find((f) => f.key === key);
-        if (fi?.instant) {
-          requireTransformDecision(() => filters.handleInstantFilter(key));
-        } else {
-          handleOpenFilterDialog(key);
-        }
-        return;
-      }
-      // Dynamic: view-transform LUT picks. `lut:setView:` (empty tail) means
-      // clear; `lut:setView:<id>` activates that LUT.
-      if (actionId.startsWith("lut:setView:")) {
-        const id = actionId.slice("lut:setView:".length);
-        setViewTransform(id === "" ? null : id);
-        return;
-      }
-      // Dynamic: recent files
-      if (actionId.startsWith("recentFile:")) {
-        const idx = parseInt(actionId.slice(11), 10);
-        const path = recentFiles[idx];
-        if (path) void handleOpenPath(path);
-        return;
-      }
-      // Static actions
-      switch (actionId) {
-        case "new":
-          openNewImageDialog();
-          break;
-        case "open":
-          void handleOpen();
-          break;
-        case "close":
-          handleClose();
-          break;
-        case "closeAll":
-          handleCloseAll();
-          break;
-        case "save":
-          void handleSave(false);
-          break;
-        case "saveAs":
-          void handleSave(true);
-          break;
-        case "saveACopy":
-          void handleSaveACopy();
-          break;
-        case "export":
-          openExportDialog();
-          break;
-        case "clearRecentFiles":
-          void handleClearRecentFiles();
-          break;
-        case "undo":
-          handleUndo();
-          break;
-        case "redo":
-          handleRedo();
-          break;
-        case "cut":
-          handleCut();
-          break;
-        case "copy":
-          handleCopy();
-          break;
-        case "copyMerged":
-          handleCopyMerged();
-          break;
-        case "paste":
-          handlePaste();
-          break;
-        case "pasteInto":
-          handlePasteInto();
-          break;
-        case "delete":
-          handleDelete();
-          break;
-        case "contentAwareFill":
-          handleOpenCafDialog("fill");
-          break;
-        case "contentAwareDelete":
-          handleOpenCafDialog("delete");
-          break;
-        case "resizeImage":
-          openResizeImageDialog();
-          break;
-        case "resizeCanvas":
-          openResizeCanvasDialog();
-          break;
-        case "rotate90CW":
-          void handleRotate("90cw");
-          break;
-        case "rotate180CW":
-          void handleRotate("180");
-          break;
-        case "rotate270CW":
-          void handleRotate("270cw");
-          break;
-        case "flipHorizontal":
-          void handleFlip("horizontal");
-          break;
-        case "flipVertical":
-          void handleFlip("vertical");
-          break;
-        case "lut:loadCube":
-          void loadCubeLut();
-          break;
-        case "lut:manage":
-          openLutManagerDialog();
-          break;
-        case "layer:rotate90CW":
-          void handleRotateSelectedLayers("90cw");
-          break;
-        case "layer:rotate180CW":
-          void handleRotateSelectedLayers("180");
-          break;
-        case "layer:rotate270CW":
-          void handleRotateSelectedLayers("270cw");
-          break;
-        case "layer:flipHorizontal":
-          void handleFlipSelectedLayers("horizontal");
-          break;
-        case "layer:flipVertical":
-          void handleFlipSelectedLayers("vertical");
-          break;
-        case "layer:alignLeft":
-          layerArrange.handleAlign("left");
-          break;
-        case "layer:alignCenterV":
-          layerArrange.handleAlign("centerV");
-          break;
-        case "layer:alignRight":
-          layerArrange.handleAlign("right");
-          break;
-        case "layer:alignTop":
-          layerArrange.handleAlign("top");
-          break;
-        case "layer:alignCenterH":
-          layerArrange.handleAlign("centerH");
-          break;
-        case "layer:alignBottom":
-          layerArrange.handleAlign("bottom");
-          break;
-        case "layer:distributeH":
-          layerArrange.handleDistribute("horizontal");
-          break;
-        case "layer:distributeV":
-          layerArrange.handleDistribute("vertical");
-          break;
-        case "layer:orderFront":
-          layerArrange.handleOrder("front");
-          break;
-        case "layer:orderBack":
-          layerArrange.handleOrder("back");
-          break;
-        case "layer:orderForward":
-          layerArrange.handleOrder("forward");
-          break;
-        case "layer:orderBackward":
-          layerArrange.handleOrder("backward");
-          break;
-        case "layer:orderReverse":
-          layerArrange.handleOrder("reverse");
-          break;
-        case "freeTransform":
-          requireTransformDecision(handleEnterTransform);
-          break;
-        case "invertSelection":
-          activeScope().selection.invert();
-          break;
-        case "selectAll":
-          handleSelectAll();
-          break;
-        case "deselect":
-          handleDeselect();
-          break;
-        case "selectAllLayers":
-          handleSelectAllLayers();
-          break;
-        case "deselectLayers":
-          handleDeselectLayers();
-          break;
-        case "findLayers":
-          handleFindLayers();
-          break;
-        case "newLayer":
-          handleNewLayer();
-          break;
-        case "newLayerGroup":
-          handleGroupLayers([]);
-          break;
-        case "newCompositeLayer":
-          handleCreateCompositeLayer();
-          break;
-        case "addLayerMask":
-          handleAddMaskLayer();
-          break;
-        case "duplicateLayer":
-          handleDuplicateLayer();
-          break;
-        case "deleteLayer":
-          handleDeleteActiveLayer();
-          break;
-        case "rasterizeLayer":
-          activeLayerId && handleRasterizeLayer(activeLayerId);
-          break;
-        case "groupLayers":
-          handleGroupLayers([...effectiveSelectedIds]);
-          break;
-        case "ungroupLayers":
-          activeLayerId && handleUngroupLayers(activeLayerId);
-          break;
-        case "mergeSelected":
-          handleMergeSelected([...effectiveSelectedIds]);
-          break;
-        case "mergeDown":
-          handleMergeDown();
-          break;
-        case "mergeVisible":
-          handleMergeVisible();
-          break;
-        case "flattenImage":
-          handleFlattenImage();
-          break;
-        case "zoomIn":
-          handleZoomIn();
-          break;
-        case "zoomOut":
-          handleZoomOut();
-          break;
-        case "zoom100":
-          handleZoom100();
-          break;
-        case "fitToWindow":
-          handleFitToWindow();
-          break;
-        case "toggleGrid":
-          handleToggleGrid();
-          break;
-        case "toggleRulers":
-          handleToggleRulers();
-          break;
-        case "toggleGuides":
-          handleToggleGuides();
-          break;
-        case "guidePreset:thirds":
-          handleApplyGuidePreset("thirds");
-          break;
-        case "guidePreset:fourths":
-          handleApplyGuidePreset("fourths");
-          break;
-        case "guidePreset:center-split":
-          handleApplyGuidePreset("center-split");
-          break;
-        case "guidePreset:safe-zone":
-          handleApplyGuidePreset("safe-zone");
-          break;
-        case "setNormalMode":
-          handleSetNormalMode();
-          break;
-        case "setTiledMode":
-          handleSetTiledMode();
-          break;
-        case "setAnimationMode":
-          handleSetAnimationMode(!animationMode);
-          break;
-        case "toggleTileGrid":
-          handleToggleTileGrid();
-          break;
-        case "playPause":
-          onPlayPause();
-          break;
-        case "prevFrame":
-          onPrevFrame();
-          break;
-        case "nextFrame":
-          onNextFrame();
-          break;
-        case "prevAnimation":
-          onPrevAnimation();
-          break;
-        case "nextAnimation":
-          onNextAnimation();
-          break;
-        case "importSpritesheetFrames":
-          openImportSpritesheetFramesDialog();
-          break;
-        case "exportSpritesheetJson":
-          handleExportSpritesheetJson();
-          break;
-        case "exportPaletteAnimationJson":
-          handleExportPaletteAnimationJson();
-          break;
-        case "exportAnimationFrames":
-          openExportAnimationFramesDialog();
-          break;
-        case "preferences":
-          openPreferencesDialog();
-          break;
-        case "about":
-          openAboutDialog();
-          break;
-        case "keyboardShortcuts":
-          openShortcutsDialog();
-          break;
-        case "systemInfo":
-          openSystemInfoDialog();
-          break;
-        case "colorMode:rgba8":
-          colorMode.handleConvertColorMode("rgba8");
-          break;
-        case "colorMode:rgba32f":
-          colorMode.handleConvertColorMode("rgba32f");
-          break;
-        case "colorMode:indexed8":
-          colorMode.handleConvertColorMode("indexed8");
-          break;
-        case "openDevTools":
-          window.api.openDevTools();
-          break;
-        default: {
-          if (actionId.startsWith("togglePanel:")) {
-            dockStore.togglePanel(
-              actionId.slice("togglePanel:".length) as PanelId,
-            );
-          } else if (actionId === "resetPanelLayout") {
-            dockStore.resetLayout();
-          }
-        }
-      }
-    },
-    [
-      requireTransformDecision,
-      adjustments,
-      filters,
-      handleOpenFilterDialog,
-      handleOpen,
-      handleOpenPath,
-      handleClose,
-      handleCloseAll,
-      handleSave,
-      handleSaveACopy,
-      handleClearRecentFiles,
-      recentFiles,
-      handleUndo,
-      handleRedo,
-      handleCut,
-      handleCopy,
-      handlePaste,
-      handlePasteInto,
-      handleDelete,
-      handleNewLayer,
-      handleDuplicateLayer,
-      handleDeleteActiveLayer,
-      handleRasterizeLayer,
-      handleGroupLayers,
-      handleUngroupLayers,
-      handleCreateCompositeLayer,
-      handleAddMaskLayer,
-      handleMergeSelected,
-      handleMergeDown,
-      handleMergeVisible,
-      handleFlattenImage,
-      handleZoomIn,
-      handleZoomOut,
-      handleZoom100,
-      handleFitToWindow,
-      handleToggleGrid,
-      handleToggleRulers,
-      handleToggleGuides,
-      handleApplyGuidePreset,
-      handleEnterTransform,
-      handleSetNormalMode,
-      handleSetTiledMode,
-      handleToggleTileGrid,
-      handleSetAnimationMode,
-      handleSelectAll,
-      handleDeselect,
-      handleSelectAllLayers,
-      handleDeselectLayers,
-      handleFindLayers,
-      handleOpenCafDialog,
-      openNewImageDialog,
-      openExportDialog,
-      openResizeImageDialog,
-      openResizeCanvasDialog,
-      handleRotate,
-      handleFlip,
-      openAboutDialog,
-      openShortcutsDialog,
-      openSystemInfoDialog,
-      openColorDitheringSetup,
-      openPreferencesDialog,
-      openLutManagerDialog,
-      loadCubeLut,
-      setViewTransform,
-      activeLayerId,
-      effectiveSelectedIds,
-      colorMode,
-      onPlayPause,
-      onPrevFrame,
-      onNextFrame,
-      onPrevAnimation,
-      onNextAnimation,
-      openImportSpritesheetFramesDialog,
-      handleExportSpritesheetJson,
-      handleExportPaletteAnimationJson,
-      openExportAnimationFramesDialog,
-    ],
-  );
-
-  // Mirror the LUT registry + active view-transform into local state so the
-  // native menu rebuilds whenever the user loads a `.cube`, imports an OCIO
-  // config, or changes the active view transform.
+  // Subscribe to outside-React stores so the menu rebuilds when LUTs,
+  // the active view transform, or the dock layout change.
   const [luts, setLuts] = useState<LutTransform[]>(() => lutStore.all());
   useEffect(() => lutStore.subscribe(() => setLuts(lutStore.all())), []);
-  const [activeViewLutId, setActiveViewLutId] = useState<string | null>(
+  const [activeViewLut, setActiveViewLut] = useState<string | null>(
     () => displayStore.viewTransformLutId,
   );
   useEffect(() => {
     const fn = (): void =>
-      setActiveViewLutId(displayStore.viewTransformLutId);
+      setActiveViewLut(displayStore.viewTransformLutId);
     displayStore.subscribe(fn);
     return () => displayStore.unsubscribe(fn);
   }, []);
-
-  // Build the native menu (sends the dynamic items list to the main process).
-  // Re-runs whenever recentFiles, the LUT registry, or the active view
-  // transform changes — the macOS menu mirrors all three live.
+  const [openPanelIds, setOpenPanelIds] = useState<ReadonlyArray<PanelId>>(
+    () => dockStore.openPanelIds,
+  );
   useEffect(() => {
-    if (!isMac) return;
-    window.api.buildNativeMenu({
-      adjustments: ADJUSTMENT_MENU_ITEMS.map((i) => ({
-        id: i.type,
-        label: i.label,
-        group: i.group,
-      })),
-      effects: EFFECTS_MENU_ITEMS.map((i) => ({
-        id: i.type,
-        label: i.label,
-        group: i.group,
-      })),
-      filters: FILTER_MENU_ITEMS.map((i) => ({
-        id: i.key,
-        label: i.label,
-        group: i.group,
-      })),
-      recentFiles,
-      luts: luts.map((l) => ({
-        id: l.id,
-        label: l.name,
-        builtin: l.source.kind === "builtin",
-        category: lutCategory(l),
-      })),
-      activeViewLutId,
-    });
-  }, [isMac, recentFiles, luts, activeViewLutId]);
-
-  // Register the IPC action listener once. Handler is always fresh via the ref.
-  useEffect(() => {
-    if (!isMac) return;
-    const cleanup = window.api.onMenuAction((actionId) =>
-      handlerRef.current(actionId),
-    );
-    return cleanup;
-  }, [isMac]);
-
-  // Sync enabled/disabled state of native menu items when app state changes.
-  useEffect(() => {
-    if (!isMac) return;
-    const { isAdjustmentMenuEnabled } = adjustments;
-    const enabled: Record<string, boolean> = {
-      freeTransform: isFreeTransformEnabled,
-      rasterizeLayer: isRasterizeLayerEnabled,
-      mergeSelected: isMergeSelectedEnabled,
-      contentAwareFill: hasSelection && !isContentAwareFilling,
-      contentAwareDelete: hasSelection && !isContentAwareFilling,
-      playPause: animationMode,
-      prevFrame: animationMode,
-      nextFrame: animationMode,
-      // Prev/Next Animation are spritesheet-only — palette animation has
-      // no concept of "next animation".
-      prevAnimation: animationMode && !paletteAnimationActive,
-      nextAnimation: animationMode && !paletteAnimationActive,
-      importSpritesheetFrames: animationMode,
-      exportSpritesheetJson: animationMode,
-      exportPaletteAnimationJson: animationMode,
-      exportAnimationFrames: animationMode,
-      // Top-level Adjustments / Effects / Filters menus are off-limits in
-      // indexed8 — none of those operations work on palette indices.
-      "menu:adjustments": pixelFormat !== "indexed8",
-      "menu:effects": pixelFormat !== "indexed8",
-      "menu:filters": pixelFormat !== "indexed8",
-    };
-    // None of these operate on palette indices, so disable every entry in
-    // indexed8 mode regardless of the underlying isAdjustmentMenuEnabled
-    // gate. (Electron's macOS native menu doesn't reliably grey out a
-    // top-level entry via `enabled`, hence belt-and-braces.)
-    const blockedByIndexed8 = pixelFormat === "indexed8";
-    for (const ai of ADJUSTMENT_MENU_ITEMS)
-      enabled[`adj:${ai.type}`] =
-        !blockedByIndexed8 &&
-        isAdjustmentMenuEnabled &&
-        !(ai.type === "reduce-colors" && pixelFormat !== "rgba8");
-    for (const ei of EFFECTS_MENU_ITEMS)
-      enabled[`adj:${ei.type}`] = !blockedByIndexed8 && isAdjustmentMenuEnabled;
-    for (const fi of FILTER_MENU_ITEMS)
-      enabled[`filter:${fi.key}`] = !blockedByIndexed8 && isAdjustmentMenuEnabled;
-    window.api.setMenuItemEnabled(enabled);
-  }, [
-    isMac,
-    isFreeTransformEnabled,
-    isRasterizeLayerEnabled,
-    isMergeSelectedEnabled,
-    hasSelection,
-    isContentAwareFilling,
-    adjustments,
-    pixelFormat,
-    animationMode,
-    paletteAnimationActive,
-  ]);
-
-  // Sync Show Grid and tiled mode checkbox states.
-  useEffect(() => {
-    if (!isMac) return;
-    window.api.setMenuItemChecked({
-      toggleGrid: showGrid,
-      toggleRulers: showRulers,
-      toggleGuides: showGuides,
-      normalMode: !tiledMode && !animationMode,
-      tiledMode: tiledMode && !animationMode,
-      showTileGrid: showTileGrid,
-      animationMode: animationMode,
-    });
-  }, [
-    isMac,
-    showGrid,
-    showRulers,
-    showGuides,
-    tiledMode,
-    showTileGrid,
-    animationMode,
-  ]);
-
-  // Sync panel open/closed states to native menu checkboxes.
-  useEffect(() => {
-    if (!isMac) return;
-    const sync = () => {
-      const openIds = dockStore.openPanelIds;
-      const panels: PanelId[] = [
-        "Color",
-        "Swatches",
-        "Navigator",
-        "Layers",
-        "History",
-        "Info",
-      ];
-      const updates: Record<string, boolean> = {};
-      for (const id of panels) {
-        updates[`togglePanel:${id}`] = openIds.includes(id);
-      }
-      window.api.setMenuItemChecked(updates);
-    };
+    const sync = (): void => setOpenPanelIds([...dockStore.openPanelIds]);
     sync();
     return dockStore.subscribe(sync);
+  }, []);
+
+  // Build the unified tree from a single deps blob. Memoized on every
+  // input — same approach as TopBar's in-app menu — so we only re-run
+  // build/serialize/IPC when something actually changed.
+  const tree = useMemo(() => {
+    const t = buildMenuTree({
+      // File
+      onNew: params.openNewImageDialog,
+      onOpen: () => void params.handleOpen(),
+      onSave: () => void params.handleSave(false),
+      onSaveAs: () => void params.handleSave(true),
+      onSaveACopy: () => void params.handleSaveACopy(),
+      onExport: params.openExportDialog,
+      onClose: params.handleClose,
+      onCloseAll: params.handleCloseAll,
+      recentFiles: params.recentFiles,
+      onOpenRecent: (p) => void params.handleOpenPath(p),
+      onClearRecentFiles: () => void params.handleClearRecentFiles(),
+      onPreferences: params.openPreferencesDialog,
+      // Exit lives in the macOS app menu via `role: "quit"`; the regular
+      // Exit entry in the File submenu is `targets: "app"` so it doesn't
+      // appear in the native menu. No-op here.
+
+      // Edit
+      onUndo: params.handleUndo,
+      onRedo: params.handleRedo,
+      onCut: params.handleCut,
+      onCopy: params.handleCopy,
+      onCopyMerged: params.handleCopyMerged,
+      onPaste: params.handlePaste,
+      onPasteInto: params.handlePasteInto,
+      onDelete: params.handleDelete,
+      onContentAwareFill: () => params.handleOpenCafDialog("fill"),
+      onContentAwareDelete: () => params.handleOpenCafDialog("delete"),
+      onFreeTransform: () =>
+        params.requireTransformDecision(params.handleEnterTransform),
+      isFreeTransformEnabled: params.isFreeTransformEnabled,
+
+      // Select
+      onSelectAll: params.handleSelectAll,
+      onDeselect: params.handleDeselect,
+      onSelectAllLayers: params.handleSelectAllLayers,
+      onDeselectLayers: params.handleDeselectLayers,
+      onFindLayers: params.handleFindLayers,
+      onInvertSelection: () => activeScope().selection.invert(),
+
+      // Layer
+      onNewLayer: params.handleNewLayer,
+      onNewLayerGroup: () => params.handleGroupLayers([]),
+      onNewCompositeLayer: params.handleCreateCompositeLayer,
+      onAddLayerMask: params.handleAddMaskLayer,
+      onDuplicateLayer: params.handleDuplicateLayer,
+      onDeleteLayer: params.handleDeleteActiveLayer,
+      onRasterizeLayer: () => {
+        if (params.activeLayerId) params.handleRasterizeLayer(params.activeLayerId);
+      },
+      isRasterizeEnabled: params.isRasterizeLayerEnabled,
+      onGroupLayers: () =>
+        params.handleGroupLayers([...params.effectiveSelectedIds]),
+      // Mac side has no explicit isGroupLayers / isUngroupLayers — it
+      // relies on the same fallback `disabled: !on...` semantics the
+      // shared builder uses.
+      onUngroupLayers: () => {
+        if (params.activeLayerId)
+          params.handleUngroupLayers(params.activeLayerId);
+      },
+      onMergeSelected: () =>
+        params.handleMergeSelected([...params.effectiveSelectedIds]),
+      isMergeSelectedEnabled: params.isMergeSelectedEnabled,
+      onMergeDown: params.handleMergeDown,
+      onMergeVisible: params.handleMergeVisible,
+      onFlattenImage: params.handleFlattenImage,
+      onLayerRotate: (amount) =>
+        void params.handleRotateSelectedLayers(
+          amount === "90cw" ? "90cw" : amount === "180" ? "180" : "270cw",
+        ),
+      onLayerFlip: (axis) =>
+        void params.handleFlipSelectedLayers(
+          axis === "horizontal" ? "horizontal" : "vertical",
+        ),
+      onLayerAlign: (edge: AlignEdge) => params.layerArrange.handleAlign(edge),
+      onLayerDistribute: (axis: DistributeAxis) =>
+        params.layerArrange.handleDistribute(axis),
+      onLayerOrder: (op: OrderOp) => params.layerArrange.handleOrder(op),
+
+      // Image
+      pixelFormat: params.pixelFormat,
+      onSetColorMode: (fmt) => {
+        if (fmt === "indexed8") {
+          params.requireTransformDecision(() =>
+            params.openColorDitheringSetup(),
+          );
+        } else {
+          params.colorMode.handleConvertColorMode(fmt);
+        }
+      },
+      onResizeImage: params.openResizeImageDialog,
+      onResizeCanvas: params.openResizeCanvasDialog,
+      onRotate90CW: () => void params.handleRotate("90cw"),
+      onRotate180: () => void params.handleRotate("180"),
+      onRotate270CW: () => void params.handleRotate("270cw"),
+      onFlipHorizontal: () => void params.handleFlip("horizontal"),
+      onFlipVertical: () => void params.handleFlip("vertical"),
+      onLoadLut: () => void params.loadCubeLut(),
+      onManageLuts: params.openLutManagerDialog,
+      onSetViewTransform: params.setViewTransform,
+      luts,
+      activeViewLut,
+
+      // Adjustments / Effects / Filters
+      onCreateAdjustmentLayer: (type) => {
+        if (type === "color-dithering") {
+          params.requireTransformDecision(() =>
+            params.openColorDitheringSetup(),
+          );
+        } else {
+          params.requireTransformDecision(() =>
+            params.adjustments.handleCreateAdjustmentLayer(type),
+          );
+        }
+      },
+      isAdjustmentMenuEnabled: params.adjustments.isAdjustmentMenuEnabled,
+      adjustmentMenuItems: ADJUSTMENT_MENU_ITEMS.map((i) => ({
+        type: i.type,
+        label: i.label,
+        group: i.group,
+      })),
+      effectsMenuItems: EFFECTS_MENU_ITEMS.map((i) => ({
+        type: i.type,
+        label: i.label,
+        group: i.group,
+      })),
+      onOpenFilterDialog: params.handleOpenFilterDialog,
+      onInstantFilter: (key) => {
+        params.requireTransformDecision(() =>
+          params.filters.handleInstantFilter(key),
+        );
+      },
+      isFiltersMenuEnabled: params.adjustments.isAdjustmentMenuEnabled,
+      filterMenuItems: FILTER_MENU_ITEMS.map((i) => ({
+        key: i.key,
+        label: i.label,
+        instant: i.instant,
+        group: i.group,
+      })),
+
+      // Animation
+      animationMode: params.animationMode,
+      isPlaying: false, // macOS menu didn't expose a play/pause label toggle previously; keep label stable
+      paletteAnimationActive: params.paletteAnimationActive,
+      onPlayPause: params.onPlayPause,
+      onPrevFrame: params.onPrevFrame,
+      onNextFrame: params.onNextFrame,
+      onPrevAnimation: params.onPrevAnimation,
+      onNextAnimation: params.onNextAnimation,
+      onImportSpritesheetFrames: params.openImportSpritesheetFramesDialog,
+      onExportSpritesheetJson: params.handleExportSpritesheetJson,
+      onExportPaletteAnimationJson: params.handleExportPaletteAnimationJson,
+      onExportAnimationFrames: params.openExportAnimationFramesDialog,
+
+      // View
+      onZoomIn: params.handleZoomIn,
+      onZoomOut: params.handleZoomOut,
+      onZoom100: params.handleZoom100,
+      onFitToWindow: params.handleFitToWindow,
+      onToggleGrid: params.handleToggleGrid,
+      showGrid: params.showGrid,
+      onToggleRulers: params.handleToggleRulers,
+      showRulers: params.showRulers,
+      onToggleGuides: params.handleToggleGuides,
+      showGuides: params.showGuides,
+      onApplyGuidePreset: params.handleApplyGuidePreset,
+      onSetNormalMode: params.handleSetNormalMode,
+      onSetTiledMode: params.handleSetTiledMode,
+      tiledMode: params.tiledMode,
+      onToggleTileGrid: params.handleToggleTileGrid,
+      showTileGrid: params.showTileGrid,
+      onSetAnimationMode: params.handleSetAnimationMode,
+      openPanelIds: openPanelIds.filter((id): id is PanelId =>
+        ALL_PANEL_IDS.includes(id),
+      ),
+
+      // Help
+      onAbout: params.openAboutDialog,
+      onKeyboardShortcuts: params.openShortcutsDialog,
+      onSystemInfo: params.openSystemInfoDialog,
+      onDebug: () => window.api.openDevTools(),
+      isProd: import.meta.env.PROD,
+    });
+    return filterForTarget(t, "mac");
+  }, [
+    params,
+    luts,
+    activeViewLut,
+    openPanelIds,
+  ]);
+
+  // Build the actionId → action map used by the IPC dispatcher.
+  // Refreshed alongside the tree so handler identity stays in sync.
+  const actionsRef = useRef<Map<string, () => void>>(new Map());
+  useEffect(() => {
+    actionsRef.current = collectActions(tree);
+  }, [tree]);
+
+  // Send the serialized (function-free) tree to the main process.
+  // One IPC channel replaces the previous build/set-enabled/set-checked
+  // /set-visible quartet — see `electron/main/menu.ts`.
+  useEffect(() => {
+    if (!isMac) return;
+    window.api.rebuildNativeMenu(serializeTree(tree));
+  }, [isMac, tree]);
+
+  // Register the IPC menu-action listener once. Lookup is always
+  // against the freshest action map via the ref.
+  useEffect(() => {
+    if (!isMac) return;
+    const cleanup = window.api.onMenuAction((actionId) => {
+      const fn = actionsRef.current.get(actionId);
+      if (fn) fn();
+    });
+    return cleanup;
   }, [isMac]);
 }

@@ -137,31 +137,13 @@ const api = {
     return () => ipcRenderer.removeListener('menu:action', handler)
   },
 
-  /** Send the full menu structure to the main process to build the native macOS menu. */
-  buildNativeMenu: (payload: {
-    adjustments:      Array<{ id: string; label: string; group?: string }>
-    effects:          Array<{ id: string; label: string; group?: string }>
-    filters:          Array<{ id: string; label: string; instant?: boolean; group?: string }>
-    recentFiles:      string[]
-    luts?:            Array<{
-      id: string
-      label: string
-      builtin?: boolean
-      category?: 'view-transform' | 'camera-idt' | 'creative' | 'ocio'
-    }>
-    activeViewLutId?: string | null
-  }): void => {
-    ipcRenderer.send('menu:build', payload)
-  },
-
-  /** Update the enabled state of one or more native menu items by ID. */
-  setMenuItemEnabled: (updates: Record<string, boolean>): void => {
-    ipcRenderer.send('menu:set-enabled', updates)
-  },
-
-  /** Update the checked state of one or more native menu checkboxes by ID. */
-  setMenuItemChecked: (updates: Record<string, boolean>): void => {
-    ipcRenderer.send('menu:set-checked', updates)
+  /** Rebuild the macOS native application menu. The full serialized
+   *  tree is sent on every state change — see
+   *  `src/core/services/useMacNativeMenu.ts` and the comment block in
+   *  `electron/main/menu.ts` for why this is one IPC instead of the
+   *  previous build/set-enabled/set-checked/set-visible quartet. */
+  rebuildNativeMenu: (tree: unknown): void => {
+    ipcRenderer.send('menu:rebuild', tree)
   },
 
   // ── SAM / Object Selection ────────────────────────────────────────────────

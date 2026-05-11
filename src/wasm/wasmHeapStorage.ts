@@ -27,6 +27,7 @@
  * will leak the closure (and the underlying WASM pages). Use in
  * conjunction with explicit destroy hooks (renderer.destroyLayer, etc.).
  */
+import { memoryStore } from "@/core/store/memoryStore";
 import type { PixelOpsModule } from "./types";
 
 interface WasmAlloc {
@@ -75,17 +76,34 @@ export function syncIfGrew(module: PixelOpsModule): void {
 
 /**
  * Allocate `length` bytes in the WASM heap and hand back a Uint8Array
- * view + a pointer. Returns `null` if `_malloc` returned 0 (out of
- * memory, hit the wasm32 4 GB cap, etc.) — caller should fall back.
+ * view + a pointer. Returns `null` if the allocation can't be made —
+ * either `_malloc` returned 0 (out of memory, hit the wasm64 16 GB cap,
+ * etc.) OR the request would push the tracked CPU bucket past the
+ * user's configured buffer-memory cap. Caller should fall back.
+ *
+ * WASM linear memory is system RAM — the same physical bucket as
+ * JS-side typed arrays — so it counts toward `memoryStore`'s CPU
+ * total. Without this, pinning a layer (which copies its JS-heap
+ * buffer into the WASM heap then drops the JS reference) would make
+ * the tracked CPU total *decrease* by the layer's size when the JS
+ * array is GC'd, even though actual RAM use is unchanged.
  */
 export function allocWasmU8(
   module: PixelOpsModule,
   length: number,
   onRefresh: (newView: Uint8Array) => void,
 ): { ptr: number; view: Uint8Array } | null {
+  if (length <= 0) return null;
   syncIfGrew(module);
+  // Reserve against the CPU cap first. `tryAlloc` returns false when
+  // the request would exceed the user's budget (and Max Out is off);
+  // caller falls back rather than throw.
+  if (!memoryStore.tryAlloc("cpu", length)) return null;
   const ptr = module._malloc(length);
-  if (ptr === 0) return null;
+  if (ptr === 0) {
+    memoryStore.release("cpu", length);
+    return null;
+  }
   // _malloc may have grown; resync so the view we make is on the new buffer.
   syncIfGrew(module);
   const alloc: WasmAlloc = {
@@ -105,10 +123,15 @@ export function allocWasmF32(
   length: number,
   onRefresh: (newView: Float32Array) => void,
 ): { ptr: number; view: Float32Array } | null {
+  if (length <= 0) return null;
   syncIfGrew(module);
   const byteLength = length * 4;
+  if (!memoryStore.tryAlloc("cpu", byteLength)) return null;
   const ptr = module._malloc(byteLength);
-  if (ptr === 0) return null;
+  if (ptr === 0) {
+    memoryStore.release("cpu", byteLength);
+    return null;
+  }
   syncIfGrew(module);
   const alloc: WasmAlloc = {
     ptr,
@@ -123,6 +146,10 @@ export function allocWasmF32(
 
 export function freeWasm(module: PixelOpsModule, ptr: number): void {
   if (ptr === 0) return;
-  REGISTRY.delete(ptr);
+  const alloc = REGISTRY.get(ptr);
+  if (alloc) {
+    memoryStore.release("cpu", alloc.byteLength);
+    REGISTRY.delete(ptr);
+  }
   module._free(ptr);
 }

@@ -87,21 +87,7 @@ declare global {
       // Platform & native menu (macOS)
       platform: string
       onMenuAction: (callback: (actionId: string) => void) => (() => void)
-      buildNativeMenu: (payload: {
-        adjustments:    Array<{ id: string; label: string; group?: string }>
-        effects:        Array<{ id: string; label: string; group?: string }>
-        filters:        Array<{ id: string; label: string; instant?: boolean; group?: string }>
-        recentFiles:    string[]
-        luts?:          Array<{
-          id: string
-          label: string
-          builtin?: boolean
-          category?: 'view-transform' | 'camera-idt' | 'creative' | 'ocio'
-        }>
-        activeViewLutId?: string | null
-      }) => void
-      setMenuItemEnabled: (updates: Record<string, boolean>) => void
-      setMenuItemChecked: (updates: Record<string, boolean>) => void
+      rebuildNativeMenu: (tree: unknown) => void
       // SAM / Object Selection
       sam: {
         checkModel: () => Promise<{ encoderReady: boolean; decoderReady: boolean }>

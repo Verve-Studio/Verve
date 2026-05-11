@@ -49,8 +49,8 @@ app.commandLine.appendSwitch(
 
 import { registerIpcHandlers } from './ipc'
 import { registerPreferencesHandlers } from './preferences'
-import { buildAndSetMacMenu, setMacMenuItemEnabled, setMacMenuItemChecked } from './menu'
-import type { MenuBuildPayload } from './menu'
+import { buildAndSetMacMenu } from './menu'
+import type { SerializedMenuNode } from './menu'
 
 // ── Startup file path ─────────────────────────────────────────────────────────
 // Stored at module level; renderer polls once on mount via app:getStartupFile.
@@ -146,18 +146,16 @@ app.whenReady().then(() => {
   })
 
   // ── macOS native application menu ──────────────────────────────────
+  // The renderer rebuilds and re-sends the full menu tree on every
+  // relevant state change (color mode, animation mode, panel layout,
+  // …). One IPC channel replaces the previous build/set-enabled/
+  // set-checked/set-visible quartet — `Menu.buildFromTemplate` plus
+  // `setApplicationMenu` round-trips in ~1 ms, well under any human-
+  // perceptible threshold, and centralises the menu definitions in
+  // `src/ux/main/menu/menuTree.ts`.
   if (process.platform === 'darwin') {
-    // Renderer sends full menu structure (with dynamic adjustment/filter items) on startup.
-    ipcMain.on('menu:build', (_event, payload: MenuBuildPayload) => {
-      buildAndSetMacMenu(payload)
-    })
-    // Renderer sends enabled-state updates when relevant app state changes.
-    ipcMain.on('menu:set-enabled', (_event, updates: Record<string, boolean>) => {
-      setMacMenuItemEnabled(updates)
-    })
-    // Renderer sends checked-state updates (e.g. Show Grid checkbox).
-    ipcMain.on('menu:set-checked', (_event, updates: Record<string, boolean>) => {
-      setMacMenuItemChecked(updates)
+    ipcMain.on('menu:rebuild', (_event, tree: SerializedMenuNode[]) => {
+      buildAndSetMacMenu(tree)
     })
   }
 
