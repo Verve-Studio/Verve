@@ -5,7 +5,7 @@ import { Navigator } from "@/ux/main/RightPanel/Navigator/Navigator";
 import { SwatchPanel } from "@/ux/main/RightPanel/Swatch/SwatchPanel";
 import { HistoryPanel } from "@/ux/main/RightPanel/History/HistoryPanel";
 import { InfoPanel } from "@/ux/main/RightPanel/Info/InfoPanel";
-import { HDRPanel } from "@/ux/main/RightPanel/HDRPanel/HDRPanel";
+import { DisplayPanel } from "@/ux/main/RightPanel/DisplayPanel/DisplayPanel";
 import { Dock } from "./Dock/Dock";
 import { useDockLayoutLoader } from "./Dock/useDockLayout";
 import type { PanelId } from "./Dock/types";
@@ -131,8 +131,8 @@ export function RightPanel({
         return <HistoryPanel />;
       case "Info":
         return <InfoPanel />;
-      case "HDR":
-        return <HDRPanel />;
+      case "Display":
+        return <DisplayPanel />;
       default:
         return null;
     }

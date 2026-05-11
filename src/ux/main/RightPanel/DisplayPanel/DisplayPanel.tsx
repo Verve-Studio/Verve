@@ -4,7 +4,7 @@ import { displayStore } from "@/ux/main/Canvas/displayStore";
 import { lutStore, type LutTransform } from "@/core/lut";
 import { LutSelectOptions } from "@/core/lut/lutSelectOptions";
 import type { ToneMappingOperator } from "@/types";
-import styles from "./HDRPanel.module.scss";
+import styles from "./DisplayPanel.module.scss";
 
 // ─── Display panel ───────────────────────────────────────────────────────────
 //
@@ -17,10 +17,6 @@ import styles from "./HDRPanel.module.scss";
 //     before the sRGB encode.
 //   - Exposure: pre-tone-map gain in EV stops. Useful any time the doc is
 //     rgba32f, regardless of view transform.
-//
-// Renamed from "HDR" because LUT view transforms apply to SDR docs too
-// (creative-look soft-proofing), but we keep the same panel id so saved
-// dock layouts continue to resolve.
 
 const OPERATOR_OPTIONS: { value: ToneMappingOperator; label: string }[] = [
   { value: "clamp", label: "Linear (Clamp)" },
@@ -33,7 +29,7 @@ function useLutList(): LutTransform[] {
   return list;
 }
 
-export function HDRPanel(): React.JSX.Element {
+export function DisplayPanel(): React.JSX.Element {
   const { state } = useAppContext();
   const isHdr = state.pixelFormat === "rgba32f";
   const luts = useLutList();

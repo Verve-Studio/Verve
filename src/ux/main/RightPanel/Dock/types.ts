@@ -5,7 +5,7 @@ export type PanelId =
   | "Layers"
   | "History"
   | "Info"
-  | "HDR";
+  | "Display";
 
 export const ALL_PANEL_IDS: readonly PanelId[] = [
   "Color",
@@ -14,7 +14,7 @@ export const ALL_PANEL_IDS: readonly PanelId[] = [
   "Layers",
   "History",
   "Info",
-  "HDR",
+  "Display",
 ] as const;
 
 export const PANEL_LABELS: Record<PanelId, string> = {
@@ -24,7 +24,7 @@ export const PANEL_LABELS: Record<PanelId, string> = {
   Layers: "Layers",
   History: "History",
   Info: "Info",
-  HDR: "Display",
+  Display: "Display",
 };
 
 export interface DockRowConfig {
@@ -65,6 +65,6 @@ export const DEFAULT_LAYOUT: DockLayout = {
       height: null,
     },
   ],
-  closedPanels: ["HDR"],
+  closedPanels: ["Display"],
   floatingWindows: [],
 };
