@@ -63,6 +63,10 @@
       {
         "from": "resources/models/realesrgan",
         "to": "models/realesrgan"
+      },
+      {
+        "from": "resources/models/lama",
+        "to": "models/lama"
       }
     ],
     "win": {

@@ -139,6 +139,7 @@ export interface MainWindowProps {
     "@/core/services/useCanvasTransforms"
   ).RescaleProgress;
   isAutoMasking: boolean;
+  isInpainting: boolean;
   showLutManager: boolean;
   setShowLutManager: (v: boolean) => void;
   showColorSettings: boolean;
@@ -317,6 +318,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     isRescaling,
     rescaleProgress,
     isAutoMasking,
+    isInpainting,
     showLutManager,
     setShowLutManager,
     showColorSettings,
@@ -462,6 +464,11 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
             visible={isAutoMasking}
             label="Detecting subject…"
             sublabel="Running ISNet"
+          />
+          <ContentAwareFillProgress
+            visible={isInpainting}
+            label="Removing object…"
+            sublabel="Running LaMa"
           />
         </main>
         {animationMode && (

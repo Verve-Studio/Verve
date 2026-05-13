@@ -47,6 +47,7 @@ export type Tool =
   | "smudge"
   | "patch"
   | "healing-brush"
+  | "object-removal"
   | "measure"
   | "hand"
   | "zoom"

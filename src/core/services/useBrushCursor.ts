@@ -31,6 +31,7 @@ import { blurOptions } from "@/core/tools/Blur/Blur";
 import { sharpenOptions } from "@/core/tools/Sharpen/Sharpen";
 import { smudgeOptions } from "@/core/tools/Smudge/Smudge";
 import { healingBrushOptions } from "@/core/tools/HealingBrush/HealingBrush";
+import { objectRemovalOptions } from "@/core/tools/ObjectRemoval/ObjectRemoval";
 import { quickSelectOptions } from "@/core/tools/QuickSelect/QuickSelect";
 import { cloneStampOptions } from "@/core/tools/CloneStamp/CloneStamp";
 import { dodgeOptions, burnOptions } from "@/core/tools/Dodge/Dodge";
@@ -50,6 +51,7 @@ const CIRCLE_CURSOR_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   "sharpen",
   "smudge",
   "healing-brush",
+  "object-removal",
   "quick-select",
 ]);
 
@@ -73,6 +75,8 @@ function sizeForTool(tool: Tool): number {
       return smudgeOptions.size;
     case "healing-brush":
       return healingBrushOptions.size;
+    case "object-removal":
+      return objectRemovalOptions.size;
     case "quick-select":
       return quickSelectOptions.size;
     default:

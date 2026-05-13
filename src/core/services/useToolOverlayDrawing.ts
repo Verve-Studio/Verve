@@ -12,6 +12,7 @@
  *   - clone-stamp: shows the source marker + Δ-offset cursor
  *   - move: sets `cursor: move` on the canvas
  *   - polygonal-selection: switches `cursor` between crosshair and cell
+ *   - object-removal: paints a translucent red overlay where the inpaint mask is set
  */
 import { useEffect } from "react";
 import { drawTransformOverlay } from "@/core/tools/Transform/Transform";
@@ -116,4 +117,43 @@ export function useToolOverlayDrawing(params: ToolOverlayDrawingParams): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, activeTool]);
 
+  // ── Object removal: red translucent mask overlay ──────────────────────────
+  // The store grows monotonically during a stroke (no eraser yet), so this
+  // is a full redraw per change. Mask is sparse for typical brush sizes so
+  // the ImageData fill stays fast enough for interactive feedback.
+  useEffect(() => {
+    if (!isActive || activeTool !== "object-removal") return;
+    const redraw = (): void => {
+      const oc = toolOverlayRef.current;
+      if (!oc) return;
+      const ctx2d = oc.getContext("2d");
+      if (!ctx2d) return;
+      ctx2d.clearRect(0, 0, oc.width, oc.height);
+      const store = activeScope().inpaintMask;
+      const mask = store.mask;
+      if (!mask || store.width !== oc.width || store.height !== oc.height) {
+        return;
+      }
+      const img = ctx2d.createImageData(store.width, store.height);
+      const data = img.data;
+      for (let i = 0; i < mask.length; i++) {
+        if (mask[i] > 0) {
+          const o = i * 4;
+          data[o] = 255;
+          data[o + 1] = 50;
+          data[o + 2] = 50;
+          data[o + 3] = 140;
+        }
+      }
+      ctx2d.putImageData(img, 0, 0);
+    };
+    redraw();
+    activeScope().inpaintMask.subscribe(redraw);
+    return () => {
+      activeScope().inpaintMask.unsubscribe(redraw);
+      const oc = toolOverlayRef.current;
+      oc?.getContext("2d")?.clearRect(0, 0, oc.width, oc.height);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, activeTool]);
 }

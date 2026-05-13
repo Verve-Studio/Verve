@@ -47,6 +47,7 @@ const CIRCLE_CURSOR_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   "sharpen",
   "smudge",
   "healing-brush",
+  "object-removal",
   "quick-select",
 ]);
 
@@ -80,6 +81,9 @@ export function useToolHandler(params: ToolHandlerParams): ToolHandlerApi {
     toolHandlerRef.current = TOOL_REGISTRY[sel].createHandler();
     // Cancel any in-progress polygonal selection when switching tools.
     activeScope().polygonalSelection.cancel();
+    // Drop any leftover inpaint mask when switching away from object-removal
+    // so the red overlay doesn't linger on top of unrelated tools.
+    if (sel !== "object-removal") activeScope().inpaintMask.clear();
     // Hide the circle cursor when switching away from a circle-cursor tool.
     if (brushCursorRef.current) {
       if (!CIRCLE_CURSOR_TOOLS.has(sel)) {

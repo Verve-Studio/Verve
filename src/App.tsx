@@ -25,6 +25,7 @@ import { useLayers } from "@/core/services/useLayers";
 import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
 import { useLutOps } from "@/core/services/useLutOps";
 import { useAutoMask } from "@/core/services/useAutoMask";
+import { useObjectRemoval } from "@/core/services/useObjectRemoval";
 import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
 import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
 import { useTabs } from "@/core/services/useTabs";
@@ -482,6 +483,16 @@ function AppContent(): React.JSX.Element {
     captureHistory,
     dispatch,
     setBusy: setIsAutoMasking,
+  });
+
+  // ── Object Removal (LaMa) ─────────────────────────────────────────
+  const [isInpainting, setIsInpainting] = useState(false);
+  useObjectRemoval({
+    canvasHandleRef,
+    stateRef,
+    captureHistory,
+    dispatch,
+    setBusy: setIsInpainting,
   });
 
   // ── Tab / window guards ───────────────────────────────────────────
@@ -958,6 +969,7 @@ function AppContent(): React.JSX.Element {
         isRescaling={isRescaling}
         rescaleProgress={rescaleProgress}
         isAutoMasking={isAutoMasking}
+        isInpainting={isInpainting}
         showLutManager={showLutManager}
         setShowLutManager={setShowLutManager}
         showColorSettings={showColorSettings}

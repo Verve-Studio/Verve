@@ -161,6 +161,28 @@ const api = {
     ipcRenderer.send('menu:rebuild', tree)
   },
 
+  // ── LaMa inpainting (Object Removal tool) ───────────────────────────────
+  inpaint: {
+    checkModel: (): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> =>
+      ipcRenderer.invoke('inpaint:check-model'),
+
+    run: (params: {
+      rgba: Uint8Array
+      mask: Uint8Array
+      width: number
+      height: number
+    }): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> =>
+      ipcRenderer.invoke('inpaint:run', {
+        rgba: Buffer.from(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength),
+        mask: Buffer.from(params.mask.buffer, params.mask.byteOffset, params.mask.byteLength),
+        width: params.width,
+        height: params.height,
+      }),
+
+    invalidateSession: (): Promise<void> =>
+      ipcRenderer.invoke('inpaint:invalidate-session'),
+  },
+
   // ── ISNet auto-mask (Auto-Mask tool) ─────────────────────────────────────
   isnet: {
     checkModel: (): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> =>

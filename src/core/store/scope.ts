@@ -18,6 +18,7 @@ import { HistoryStore } from "./historyStore";
 import { CropStore } from "./cropStore";
 import { TransformStore } from "./transformStore";
 import { PolygonalSelectionStore } from "./polygonalSelectionStore";
+import { InpaintMaskStore } from "./inpaintMaskStore";
 import { CloneStampStore } from "./cloneStampStore";
 import { AdjustmentPreviewStore } from "./adjustmentPreviewStore";
 import { PaletteCycleStore } from "./paletteCycleStore";
@@ -29,6 +30,7 @@ export interface DocumentScope {
   crop: CropStore;
   transform: TransformStore;
   polygonalSelection: PolygonalSelectionStore;
+  inpaintMask: InpaintMaskStore;
   cloneStamp: CloneStampStore;
   adjustmentPreview: AdjustmentPreviewStore;
   paletteCycle: PaletteCycleStore;
@@ -42,6 +44,7 @@ export function createDocumentScope(): DocumentScope {
     crop: new CropStore(),
     transform: new TransformStore(),
     polygonalSelection: new PolygonalSelectionStore(),
+    inpaintMask: new InpaintMaskStore(),
     cloneStamp: new CloneStampStore(),
     adjustmentPreview: new AdjustmentPreviewStore(),
     paletteCycle: new PaletteCycleStore(),
@@ -78,6 +81,7 @@ export function setActiveScope(scope: DocumentScope): void {
   scope.crop.notify();
   scope.transform.notify();
   scope.polygonalSelection.notify();
+  scope.inpaintMask.notify();
   scope.cloneStamp.notify();
   scope.adjustmentPreview.notify();
   scope.paletteCycle.notify();

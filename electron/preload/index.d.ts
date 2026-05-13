@@ -108,6 +108,17 @@ declare global {
       platform: string
       onMenuAction: (callback: (actionId: string) => void) => (() => void)
       rebuildNativeMenu: (tree: unknown) => void
+      // LaMa inpainting (Object Removal tool)
+      inpaint: {
+        checkModel: () => Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }>
+        run: (params: {
+          rgba: Uint8Array
+          mask: Uint8Array
+          width: number
+          height: number
+        }) => Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }>
+        invalidateSession: () => Promise<void>
+      }
       // ISNet auto-mask (Auto-Mask tool)
       isnet: {
         checkModel: () => Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }>

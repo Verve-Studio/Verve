@@ -17,7 +17,7 @@ npm run typecheck    # Type-check both main (Node) and renderer (web) processes
 
 Verve is an Electron app split into two processes that communicate over IPC:
 
-- **Main process** (`electron/main/`) — Node.js. Native file I/O, OS dialogs, IPC handlers, ML model inference (ISNet auto-mask, RVM matting, Real-ESRGAN upscale). Never imported from the renderer.
+- **Main process** (`electron/main/`) — Node.js. Native file I/O, OS dialogs, IPC handlers, ML model inference (ISNet auto-mask, RVM matting, Real-ESRGAN upscale, LaMa inpainting). Never imported from the renderer.
 - **Preload** (`electron/preload/`) — Exposes a typed, sandboxed API to the renderer via `window.api`. The only bridge between processes.
 - **Renderer** (`src/`) — React 19 app. All UI, canvas drawing, and tool logic lives here.
 
@@ -45,7 +45,7 @@ src/
       CloneStamp/            ← CloneStamp.tsx, cloneStampStroke.ts, clone-stamp.svg
       Dodge/                 ← Dodge.tsx (defines dodge + burn), dodgeBurn.ts,
                                dodge.svg, burn.svg
-      Blur/, Sharpen/, Smudge/, HealingBrush/, QuickSelect/, Patch/,
+      Blur/, Sharpen/, Smudge/, HealingBrush/, ObjectRemoval/, QuickSelect/, Patch/,
       Frame/, Shape/, Crop/, Eyedropper/, Fill/, Gradient/,
       Hand/, Lasso/, Liquify/, MagicWand/, Measure/, Move/, Noop/,
       AutoMask/, Pick/, PolygonalSelection/, Select/, Text/,

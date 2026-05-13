@@ -30,6 +30,7 @@ import { sharpenTool } from "./Sharpen/Sharpen";
 import { smudgeTool } from "./Smudge/Smudge";
 import { patchTool } from "./Patch/Patch";
 import { healingBrushTool } from "./HealingBrush/HealingBrush";
+import { objectRemovalTool } from "./ObjectRemoval/ObjectRemoval";
 import { measureTool } from "./Measure/Measure";
 import { quickSelectTool } from "./QuickSelect/QuickSelect";
 
@@ -55,6 +56,7 @@ const ALL_TOOLS: readonly ITool[] = [
   measureTool,
   cloneStampTool,
   healingBrushTool,
+  objectRemovalTool,
   patchTool,
   dodgeTool,
   burnTool,
