@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
-import { parseProfileDescription } from "@/core/cms/iccProfile";
+import {
+  parseProfileDescription,
+  parseProfileColorSpace,
+} from "@/core/cms/iccProfile";
 
 import styles from "./InfoPanel.module.scss";
 import { activeScope } from "@/core/store/scope";
@@ -82,7 +85,12 @@ export function InfoPanel(): React.JSX.Element {
 
   const profileLabel = useMemo<string>(() => {
     if (!state.iccProfile) return "Untagged";
-    return parseProfileDescription(state.iccProfile) ?? "Embedded (unnamed)";
+    const name =
+      parseProfileDescription(state.iccProfile) ?? "Embedded (unnamed)";
+    const cs = parseProfileColorSpace(state.iccProfile);
+    return cs === "rgb" || cs === "unknown"
+      ? name
+      : `${name} (${cs.toUpperCase()})`;
   }, [state.iccProfile]);
 
   const [cursor, setCursor] = useState<CursorState>({

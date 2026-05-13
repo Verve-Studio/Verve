@@ -37,6 +37,17 @@ export interface AppPreferences {
    * launch by the renderer; persisted thereafter.
    */
   unifiedMemory?: boolean
+
+  // ── Colour management (Tier 2c) ─────────────────────────────────────────
+  /** Default rendering intent applied when converting an imported image's
+   *  embedded profile into the document's working space. */
+  colorImportIntent?: 'perceptual' | 'relative-colorimetric' | 'saturation' | 'absolute-colorimetric'
+  /** Default rendering intent for the Convert to Profile command. */
+  colorConvertIntent?: 'perceptual' | 'relative-colorimetric' | 'saturation' | 'absolute-colorimetric'
+  /** Global Black Point Compensation toggle for ICC transforms. */
+  colorUseBpc?: boolean
+  /** Policy for untagged images on import. */
+  colorMissingProfilePolicy?: 'assume-working-space' | 'ask'
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
@@ -51,6 +62,11 @@ const DEFAULT_PREFERENCES: AppPreferences = {
   // Intentionally undefined here so the renderer's first-load path can
   // seed it from `process.platform`. Once the user has saved prefs at
   // least once, the persisted value wins.
+  // Colour-management defaults match Photoshop conventions.
+  colorImportIntent: 'perceptual',
+  colorConvertIntent: 'relative-colorimetric',
+  colorUseBpc: true,
+  colorMissingProfilePolicy: 'assume-working-space',
 }
 
 function prefsPath(): string {

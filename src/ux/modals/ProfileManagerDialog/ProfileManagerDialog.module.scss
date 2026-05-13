@@ -1,0 +1,129 @@
+@use '@/styles/variables' as vars;
+
+.body {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  min-height: 320px;
+}
+
+.listColumn {
+  flex: 1;
+  min-width: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  background: vars.$color-surface-2;
+  overflow: auto;
+  max-height: 320px;
+  font-size: vars.$font-size-sm;
+}
+
+.groupHeader {
+  padding: 4px 10px;
+  background: vars.$color-surface;
+  color: vars.$color-text-muted;
+  font-size: vars.$font-size-xs;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid vars.$color-border-light;
+  position: sticky;
+  top: 0;
+}
+
+.item {
+  padding: 5px 10px;
+  cursor: default;
+  color: vars.$color-text;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+
+  &.selected {
+    background: vars.$color-accent;
+    color: vars.$color-text;
+  }
+}
+
+.itemName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.itemSize {
+  flex-shrink: 0;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  padding: 14px 12px;
+  color: vars.$color-text-muted;
+  font-size: vars.$font-size-sm;
+  text-align: center;
+  margin: 0;
+}
+
+.detailColumn {
+  flex: 1.1;
+  min-width: 0;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  background: vars.$color-surface-2;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: vars.$font-size-sm;
+}
+
+.detailRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.detailLabel {
+  width: 90px;
+  flex-shrink: 0;
+  color: vars.$color-text-muted;
+  font-size: vars.$font-size-xs;
+}
+
+.detailValue {
+  flex: 1;
+  color: vars.$color-text;
+  overflow-wrap: anywhere;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid vars.$color-border;
+  flex-shrink: 0;
+
+  button {
+    width: auto;
+    padding: 5px 16px;
+  }
+}
+
+.footerSpacer {
+  flex: 1;
+}

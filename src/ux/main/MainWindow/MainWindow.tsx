@@ -30,6 +30,10 @@ import { ImportSpritesheetFramesDialog } from "@/ux/modals/ImportSpritesheetFram
 import { ExportAnimationFramesDialog } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
 import { AboutDialog } from "@/ux/modals/AboutDialog/AboutDialog";
 import { LutManagerDialog } from "@/ux/modals/LutManagerDialog/LutManagerDialog";
+import { ColorSettingsDialog } from "@/ux/modals/ColorSettingsDialog/ColorSettingsDialog";
+import { ProofSetupDialog } from "@/ux/modals/ProofSetupDialog/ProofSetupDialog";
+import { ProfileManagerDialog } from "@/ux/modals/ProfileManagerDialog/ProfileManagerDialog";
+import { ProfilePickerDialog } from "@/ux/modals/ProfilePickerDialog/ProfilePickerDialog";
 import { PreferencesDialog } from "@/ux/modals/PreferencesDialog/PreferencesDialog";
 import { HdrLdrExportWarningDialog } from "@/ux/modals/HdrLdrExportWarningDialog/HdrLdrExportWarningDialog";
 import { KeyboardShortcutsDialog } from "@/ux/modals/KeyboardShortcutsDialog/KeyboardShortcutsDialog";
@@ -124,6 +128,16 @@ export interface MainWindowProps {
   setShowResizeCanvasDialog: (v: boolean) => void;
   showLutManager: boolean;
   setShowLutManager: (v: boolean) => void;
+  showColorSettings: boolean;
+  setShowColorSettings: (v: boolean) => void;
+  showProofSetup: boolean;
+  setShowProofSetup: (v: boolean) => void;
+  onPickProofProfile: () => Promise<void>;
+  onClearProofProfile: () => void;
+  onToggleSimulatePaperColor: () => Promise<void>;
+  onToggleGamutWarning: () => Promise<void>;
+  showProfileManager: boolean;
+  setShowProfileManager: (v: boolean) => void;
   showImportSpritesheetFramesDialog: boolean;
   setShowImportSpritesheetFramesDialog: (v: boolean) => void;
   handleImportSpritesheetFrames: (
@@ -283,6 +297,16 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     setShowResizeCanvasDialog,
     showLutManager,
     setShowLutManager,
+    showColorSettings,
+    setShowColorSettings,
+    showProofSetup,
+    setShowProofSetup,
+    onPickProofProfile,
+    onClearProofProfile,
+    onToggleSimulatePaperColor,
+    onToggleGamutWarning,
+    showProfileManager,
+    setShowProfileManager,
     showImportSpritesheetFramesDialog,
     setShowImportSpritesheetFramesDialog,
     handleImportSpritesheetFrames,
@@ -545,6 +569,23 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         open={showLutManager}
         onClose={() => setShowLutManager(false)}
       />
+      <ColorSettingsDialog
+        open={showColorSettings}
+        onClose={() => setShowColorSettings(false)}
+      />
+      <ProofSetupDialog
+        open={showProofSetup}
+        onClose={() => setShowProofSetup(false)}
+        onPickProofProfile={onPickProofProfile}
+        onClearProofProfile={onClearProofProfile}
+        onToggleSimulatePaperColor={onToggleSimulatePaperColor}
+        onToggleGamutWarning={onToggleGamutWarning}
+      />
+      <ProfileManagerDialog
+        open={showProfileManager}
+        onClose={() => setShowProfileManager(false)}
+      />
+      <ProfilePickerDialog />
       <AboutDialog
         open={showAboutDialog}
         onClose={() => setShowAboutDialog(false)}

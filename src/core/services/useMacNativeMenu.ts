@@ -48,9 +48,26 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
   const [activeViewLut, setActiveViewLut] = useState<string | null>(
     () => displayStore.viewTransformLutId,
   );
+  const [hasDisplayProfile, setHasDisplayProfile] = useState<boolean>(
+    () => displayStore.displayProfileLut !== null,
+  );
+  const [hasProofProfile, setHasProofProfile] = useState<boolean>(
+    () => displayStore.proofProfile !== null,
+  );
+  const [proofColorsActive, setProofColorsActive] = useState<boolean>(
+    () => displayStore.proofEnabled,
+  );
+  const [gamutWarningActive, setGamutWarningActive] = useState<boolean>(
+    () => displayStore.gamutWarningEnabled,
+  );
   useEffect(() => {
-    const fn = (): void =>
+    const fn = (): void => {
       setActiveViewLut(displayStore.viewTransformLutId);
+      setHasDisplayProfile(displayStore.displayProfileLut !== null);
+      setHasProofProfile(displayStore.proofProfile !== null);
+      setProofColorsActive(displayStore.proofEnabled);
+      setGamutWarningActive(displayStore.gamutWarningEnabled);
+    };
     displayStore.subscribe(fn);
     return () => displayStore.unsubscribe(fn);
   }, []);
@@ -74,10 +91,23 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
       luts,
       activeViewLut,
       openPanelIds,
+      hasDisplayProfile,
+      hasProofProfile,
+      proofColorsActive,
+      gamutWarningActive,
       isProd: import.meta.env.PROD,
     });
     return filterForTarget(t, "mac");
-  }, [deps, luts, activeViewLut, openPanelIds]);
+  }, [
+    deps,
+    luts,
+    activeViewLut,
+    openPanelIds,
+    hasDisplayProfile,
+    hasProofProfile,
+    proofColorsActive,
+    gamutWarningActive,
+  ]);
 
   // Build the actionId → action map used by the IPC dispatcher.
   // Refreshed alongside the tree so handler identity stays in sync.

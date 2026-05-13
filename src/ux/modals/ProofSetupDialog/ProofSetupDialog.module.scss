@@ -1,0 +1,108 @@
+@use '@/styles/variables' as vars;
+
+.body {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 20px;
+  gap: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-size: vars.$font-size-sm;
+  font-weight: 600;
+  color: vars.$color-text;
+  margin-bottom: 2px;
+}
+
+.profileRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  button {
+    flex-shrink: 0;
+    padding: 4px 12px;
+  }
+}
+
+.profileName {
+  flex: 1;
+  padding: 5px 10px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.helpText {
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid vars.$color-border;
+  margin: 14px 0;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  cursor: pointer;
+  user-select: none;
+
+  input[type="checkbox"] {
+    margin-top: 2px;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: not-allowed;
+    }
+  }
+
+  span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    strong {
+      font-weight: 500;
+    }
+
+    .help {
+      font-size: vars.$font-size-xs;
+      color: vars.$color-text-muted;
+      font-weight: 400;
+    }
+  }
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid vars.$color-border;
+  flex-shrink: 0;
+
+  button {
+    width: auto;
+    padding: 5px 20px;
+  }
+}

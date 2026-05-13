@@ -254,6 +254,31 @@ export interface MenuDeps {
   // ── Image ─────────────────────────────────────────────────────────────
   pixelFormat?: PixelFormat;
   onSetColorMode?: (format: PixelFormat) => void;
+  /** True when the active document has an embedded ICC profile. Drives
+   *  enabled-state on Convert to Profile / Remove Profile. */
+  hasIccProfile?: boolean;
+  /** Open a file picker, read the chosen .icc/.icm, and assign it to the
+   *  active document. Tag-only — pixel values are unchanged. */
+  onAssignProfile?: () => void;
+  /** Open a file picker and convert the active document's pixels from the
+   *  current profile to the picked profile via lcms2. */
+  onConvertToProfile?: () => void;
+  /** Clear the document's ICC tag (renderer falls back to the working-
+   *  space default for the document's pixel format). */
+  onRemoveProfile?: () => void;
+  /** True when a display-profile correction LUT is currently active. */
+  hasDisplayProfile?: boolean;
+  /** Pick an .icc/.icm file describing the display and apply it as a
+   *  correction LUT in the blit pipeline. Tier 2b. */
+  onSetDisplayProfile?: () => void;
+  /** Clear the active display profile. */
+  onClearDisplayProfile?: () => void;
+  /** Open the Color Settings dialog (default intents, BPC, missing-profile
+   *  policy). Tier 2c. */
+  onOpenColorSettings?: () => void;
+  /** Open the Profile Manager dialog (browse system + user-imported ICC
+   *  profiles, import new ones). Tier 3d. */
+  onOpenProfileManager?: () => void;
   onResizeImage?: () => void;
   onResizeCanvas?: () => void;
   onRotate90CW?: () => void;
@@ -325,6 +350,20 @@ export interface MenuDeps {
   /** Panel ids currently open (used to drive the checkbox states on
    *  the View → <panel name> entries). */
   openPanelIds?: ReadonlyArray<PanelId>;
+  // ── Soft proofing (Tier 3a/3b) ─────────────────────────────────────────
+  /** Open the Proof Setup dialog. */
+  onOpenProofSetup?: () => void;
+  /** Toggle the "Proof Colors" mode (Cmd/Ctrl+Y). */
+  onToggleProofColors?: () => void;
+  /** Toggle gamut warning overlay (Cmd/Ctrl+Shift+Y). */
+  onToggleGamutWarning?: () => void;
+  /** True when soft proofing is currently active. */
+  proofColorsActive?: boolean;
+  /** True when gamut warning overlay is on. */
+  gamutWarningActive?: boolean;
+  /** True when a proof profile has been picked (drives enabled-state on
+   *  the Proof Colors / Gamut Warning toggles). */
+  hasProofProfile?: boolean;
 
   // ── Help ──────────────────────────────────────────────────────────────
   onAbout?: () => void;
@@ -822,6 +861,57 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           ],
         },
         SEP,
+        {
+          label: "Color Settings…",
+          actionId: "iccColorSettings",
+          action: deps.onOpenColorSettings,
+        },
+        {
+          label: "Manage Profiles…",
+          actionId: "iccProfileManager",
+          action: deps.onOpenProfileManager,
+        },
+        {
+          label: "Assign Profile…",
+          actionId: "iccAssignProfile",
+          action: deps.onAssignProfile,
+          // Indexed8 documents don't carry an ICC profile (palette indices
+          // aren't colour values), so the operation is blocked there.
+          disabled: deps.pixelFormat === "indexed8",
+        },
+        {
+          label: "Convert to Profile…",
+          actionId: "iccConvertToProfile",
+          action: deps.onConvertToProfile,
+          disabled: deps.pixelFormat === "indexed8",
+        },
+        {
+          label: "Remove Profile",
+          actionId: "iccRemoveProfile",
+          action: deps.onRemoveProfile,
+          disabled: !deps.hasIccProfile,
+        },
+        {
+          label: "Display Profile",
+          submenu: [
+            {
+              label: "Set Display Profile…",
+              actionId: "iccSetDisplayProfile",
+              action: deps.onSetDisplayProfile,
+            },
+            {
+              label: "Clear Display Profile",
+              actionId: "iccClearDisplayProfile",
+              action: deps.onClearDisplayProfile,
+              disabled: !deps.hasDisplayProfile,
+            },
+          ],
+        },
+        SEP,
+        { label: "Load LUT…", actionId: "lut:loadCube", action: deps.onLoadLut },
+        { label: "Manage LUTs…", actionId: "lut:manage", action: deps.onManageLuts },
+        { label: "View Transform", submenu: viewTransformSubmenu(deps) },
+        SEP,
         { label: "Resize Image…", actionId: "resizeImage", action: deps.onResizeImage },
         { label: "Resize Image Canvas…", actionId: "resizeCanvas", action: deps.onResizeCanvas },
         SEP,
@@ -840,10 +930,7 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
             { label: "Vertical", actionId: "flipVertical", action: deps.onFlipVertical },
           ],
         },
-        SEP,
-        { label: "Load LUT…", actionId: "lut:loadCube", action: deps.onLoadLut },
-        { label: "Manage LUTs…", actionId: "lut:manage", action: deps.onManageLuts },
-        { label: "View Transform", submenu: viewTransformSubmenu(deps) },
+        
       ],
     },
     // Adjustments / Effects / Filters: hidden in indexed8, otherwise
@@ -1030,6 +1117,30 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           action: deps.onToggleTileGrid,
           checked: !!deps.showTileGrid,
           disabled: !deps.tiledMode,
+        },
+        SEP,
+        {
+          label: "Proof Setup…",
+          actionId: "proofSetup",
+          action: deps.onOpenProofSetup,
+        },
+        {
+          label: "Proof Colors",
+          actionId: "proofColors",
+          action: deps.onToggleProofColors,
+          shortcut: "CmdOrCtrl+Y",
+          noIntercept: true,
+          checked: !!deps.proofColorsActive,
+          disabled: !deps.hasProofProfile,
+        },
+        {
+          label: "Gamut Warning",
+          actionId: "gamutWarning",
+          action: deps.onToggleGamutWarning,
+          shortcut: "CmdOrCtrl+Shift+Y",
+          noIntercept: true,
+          checked: !!deps.gamutWarningActive,
+          disabled: !deps.hasProofProfile,
         },
         SEP,
         ...ALL_PANEL_IDS.map((id) => ({

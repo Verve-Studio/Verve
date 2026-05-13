@@ -167,10 +167,25 @@ export class DisplayPresenter {
     const operatorId =
       OPERATOR_SHADER_ID[displayStore.toneMappingOperator] ?? 1;
 
+    // Pick the active LUT for this blit. Precedence:
+    //   1. View transform — OCIO/HLG/Filmic LUTs bake their own display
+    //      encoding; layering anything on top would double-encode.
+    //   2. Soft-proofing LUT (Tier 3a/3b) — when "Proof Colors" is on,
+    //      this replaces the plain display LUT and already includes
+    //      working → proof → display chained inside.
+    //   3. Display-profile correction LUT (Tier 2b).
+    //   4. Analytic path (no LUT).
     const viewLut = displayStore.viewTransformLutId
       ? lutStore.get(displayStore.viewTransformLutId)
       : undefined;
-    const viewBundle = viewLut ? ensureLutOnGpu(device, viewLut) : null;
+    const proofActive =
+      displayStore.proofEnabled && displayStore.proofLut !== null;
+    const activeLut =
+      viewLut ??
+      (proofActive ? displayStore.proofLut : null) ??
+      displayStore.displayProfileLut ??
+      undefined;
+    const viewBundle = activeLut ? ensureLutOnGpu(device, activeLut) : null;
 
     const tmView = this.blitUnifView;
     tmView.setFloat32(0, exposureLinear, true);
@@ -178,8 +193,8 @@ export class DisplayPresenter {
     tmView.setUint32(8, operatorId, true);
     tmView.setUint32(12, viewBundle ? 1 : 0, true);
     tmView.setFloat32(16, viewBundle ? viewBundle.cubeSize : 1, true);
-    tmView.setUint32(20, viewLut?.inputSpace === "srgb" ? 0 : 1, true);
-    tmView.setUint32(24, viewLut?.outputSpace === "srgb" ? 0 : 1, true);
+    tmView.setUint32(20, activeLut?.inputSpace === "srgb" ? 0 : 1, true);
+    tmView.setUint32(24, activeLut?.outputSpace === "srgb" ? 0 : 1, true);
     tmView.setUint32(28, viewBundle?.hasShaper ? 1 : 0, true);
     device.queue.writeBuffer(r.hdrUniformBuffer, 0, this.blitUnifAB);
 

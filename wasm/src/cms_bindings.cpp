@@ -201,6 +201,117 @@ void cms_destroy_transform(uintptr_t handle) {
 // working space, rgba32f → linear-sRGB working space). Returns 0 on success,
 // non-zero on failure.
 
+// ─── Soft-proofing 3D LUT (Tier 3a/3b) ───────────────────────────────────────
+//
+// Builds a single composed LUT for the proofing path: working space → proof
+// profile → display profile, in one transform chain via lcms2's proofing API.
+//
+//   proof_profile        — output device being simulated (e.g. CMYK press)
+//   display_profile      — active display profile, or null/zero-length for
+//                          identity (output is sRGB-encoded, same fallback
+//                          as cms_build_3d_lut without a display profile)
+//   proof_intent         — rendering intent for the working→proof transform
+//   simulate_paper       — when true, simulate the proof's white-point and
+//                          black-point on screen ("Simulate Paper Color" in
+//                          Photoshop — uses ABSOLUTE_COLORIMETRIC + softproof)
+//   gamut_check          — when true, pixels outside the proof gamut are
+//                          rendered using the alarm colour (alarm_r/g/b
+//                          in 0–255 byte space — converted internally to
+//                          the 16-bit alarm-code space lcms2 expects)
+//
+// Returns 0 on success.
+
+EMSCRIPTEN_KEEPALIVE
+int cms_build_proof_lut(
+    const uint8_t* proof_profile, uint32_t proof_len,
+    const uint8_t* display_profile, uint32_t display_len,
+    int layout, int proof_intent, int use_bpc,
+    int simulate_paper, int gamut_check,
+    int alarm_r, int alarm_g, int alarm_b,
+    int size, float* out) {
+  if (size < 2 || !out || !proof_profile || proof_len == 0) return 1;
+  cmsHPROFILE hSrc = workingProfile(layout);
+  if (!hSrc) return 2;
+  cmsHPROFILE hProof = cmsOpenProfileFromMem(proof_profile, proof_len);
+  if (!hProof) {
+    cmsCloseProfile(hSrc);
+    return 3;
+  }
+  // Display profile is optional — without one, the proof transform output
+  // lands in our standard sRGB-encoded display assumption (the LUT body
+  // carries any primary remapping, same as cms_build_3d_lut's fallback).
+  cmsHPROFILE hDst = nullptr;
+  if (display_profile && display_len > 0) {
+    hDst = cmsOpenProfileFromMem(display_profile, display_len);
+  }
+  if (!hDst) {
+    hDst = cmsCreate_sRGBProfile();
+  }
+  if (!hDst) {
+    cmsCloseProfile(hSrc);
+    cmsCloseProfile(hProof);
+    return 4;
+  }
+
+  cmsUInt32Number flags = cmsFLAGS_SOFTPROOFING;
+  if (use_bpc) flags |= cmsFLAGS_BLACKPOINTCOMPENSATION;
+  // "Simulate paper color" maps to ABSOLUTE_COLORIMETRIC + soft-proof,
+  // which preserves the proof's white-point and black-point on screen.
+  cmsUInt32Number displayIntent =
+      simulate_paper ? INTENT_ABSOLUTE_COLORIMETRIC
+                     : INTENT_RELATIVE_COLORIMETRIC;
+
+  if (gamut_check) {
+    flags |= cmsFLAGS_GAMUTCHECK;
+    // lcms2's alarm codes are 16-bit per channel; widen 0–255 → 0–65535.
+    cmsUInt16Number alarm[cmsMAXCHANNELS] = {0};
+    alarm[0] = static_cast<cmsUInt16Number>((alarm_r & 0xff) * 257);
+    alarm[1] = static_cast<cmsUInt16Number>((alarm_g & 0xff) * 257);
+    alarm[2] = static_cast<cmsUInt16Number>((alarm_b & 0xff) * 257);
+    cmsSetAlarmCodes(alarm);
+  }
+
+  cmsHTRANSFORM x = cmsCreateProofingTransform(
+      hSrc, TYPE_RGB_FLT,
+      hDst, TYPE_RGB_FLT,
+      hProof,
+      mapIntent(proof_intent),
+      displayIntent,
+      flags);
+  cmsCloseProfile(hSrc);
+  cmsCloseProfile(hProof);
+  cmsCloseProfile(hDst);
+  if (!x) return 5;
+
+  const int N = size;
+  const float denom = 1.0f / static_cast<float>(N - 1);
+  std::vector<float> inSlice(N * N * 3);
+  std::vector<float> outSlice(N * N * 3);
+  for (int b = 0; b < N; b++) {
+    for (int g = 0; g < N; g++) {
+      for (int r = 0; r < N; r++) {
+        const int i = (g * N + r) * 3;
+        inSlice[i + 0] = r * denom;
+        inSlice[i + 1] = g * denom;
+        inSlice[i + 2] = b * denom;
+      }
+    }
+    cmsDoTransform(x, inSlice.data(), outSlice.data(), N * N);
+    for (int g = 0; g < N; g++) {
+      for (int r = 0; r < N; r++) {
+        const int srcI = (g * N + r) * 3;
+        const int dstI = (r + g * N + b * N * N) * 4;
+        out[dstI + 0] = outSlice[srcI + 0];
+        out[dstI + 1] = outSlice[srcI + 1];
+        out[dstI + 2] = outSlice[srcI + 2];
+        out[dstI + 3] = 1.0f;
+      }
+    }
+  }
+  cmsDeleteTransform(x);
+  return 0;
+}
+
 EMSCRIPTEN_KEEPALIVE
 int cms_build_3d_lut(
     const uint8_t* dst_profile, uint32_t dst_len,

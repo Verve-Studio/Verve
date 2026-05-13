@@ -32,6 +32,9 @@ import {
   getWorkingSpaceProfile,
   type PixelLayout,
 } from "@/core/cms/lcms2";
+import { parseProfileColorSpace } from "@/core/cms/iccProfile";
+import { notificationStore } from "@/core/store/notificationStore";
+import { preferencesStore } from "@/core/store/preferencesStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -545,23 +548,48 @@ export function useFileOps({
         // Convert source-profile pixels into the document's working space
         // (sRGB for rgba8, linear-sRGB for rgba32f) and retag with the
         // working-space profile. Falls back to Tier-1 passthrough when
-        // lcms2 isn't linked into the WASM build.
+        // lcms2 isn't linked into the WASM build. Intent + BPC come from
+        // the user's Color Settings preferences (Tier 2c).
+        //
+        // Tier-3c: drop profiles whose data colour space isn't RGB or
+        // Grayscale. Image decoders (PNG, JPEG, browser TIFF, etc.) always
+        // hand us RGBA pixels, so a CMYK/Lab/etc. profile tag no longer
+        // matches the buffer — applying it would corrupt colour.
         let importPixels: Uint8Array | Float32Array = loaded.data;
         let importIccProfile = loaded.iccProfile;
+        const layout: PixelLayout = loaded.isHdr ? "rgba32f" : "rgba8";
         if (loaded.iccProfile) {
-          const layout: PixelLayout = loaded.isHdr ? "rgba32f" : "rgba8";
-          const converted = await convertToWorkingSpace(
-            loaded.data,
-            loaded.iccProfile,
-            layout,
-            "perceptual",
-            true,
-          );
-          if (converted) {
-            importPixels = converted;
-            const wsProfile = await getWorkingSpaceProfile(layout);
-            if (wsProfile) importIccProfile = wsProfile;
+          const cs = parseProfileColorSpace(loaded.iccProfile);
+          if (cs !== "rgb" && cs !== "gray") {
+            notificationStore.error(
+              `Embedded ${cs.toUpperCase()} profile dropped — pixels were decoded to RGB before reaching the editor.`,
+            );
+            importIccProfile = undefined;
+          } else {
+            const prefs = preferencesStore.get();
+            const converted = await convertToWorkingSpace(
+              loaded.data,
+              loaded.iccProfile,
+              layout,
+              prefs.colorImportIntent,
+              prefs.colorUseBpc,
+            );
+            if (converted) {
+              importPixels = converted;
+              const wsProfile = await getWorkingSpaceProfile(layout);
+              if (wsProfile) importIccProfile = wsProfile;
+            }
           }
+        }
+        if (
+          !importIccProfile &&
+          preferencesStore.get().colorMissingProfilePolicy ===
+            "assume-working-space"
+        ) {
+          // Untagged (or just-untagged-due-to-non-RGB) image: tag with the
+          // working-space profile so export round-trips correctly.
+          const wsProfile = await getWorkingSpaceProfile(layout);
+          if (wsProfile) importIccProfile = wsProfile;
         }
 
         if (loaded.isHdr) {

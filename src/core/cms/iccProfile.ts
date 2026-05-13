@@ -459,6 +459,47 @@ export function embedIccInTiff(
 //   * ICC v2 'desc' type: 'desc' + reserved(4) + asciiLen(u32) + ascii bytes
 //   * ICC v4 'mluc' type: multi-localised — return the first record (UTF-16BE)
 
+/** Data colour-space classification of an ICC profile, parsed from the
+ *  4-byte signature at offset 16 of the profile header. */
+export type ProfileColorSpace =
+  | "rgb"
+  | "cmyk"
+  | "gray"
+  | "lab"
+  | "xyz"
+  | "ycbcr"
+  | "hsv"
+  | "hls"
+  | "cmy"
+  | "named"
+  | "unknown";
+
+/** Return the profile's data colour space. Used at import time to decide
+ *  whether to apply the profile (RGB / Grayscale only) or drop it (CMYK /
+ *  Lab / other — the file's pixels have already been decoded to RGBA by
+ *  the format decoder, so a CMYK profile tag no longer matches the data). */
+export function parseProfileColorSpace(
+  profile: Uint8Array,
+): ProfileColorSpace {
+  if (profile.length < 20) return "unknown";
+  const sig = String.fromCharCode(
+    profile[16], profile[17], profile[18], profile[19],
+  );
+  switch (sig) {
+    case "RGB ": return "rgb";
+    case "CMYK": return "cmyk";
+    case "GRAY": return "gray";
+    case "Lab ": return "lab";
+    case "XYZ ": return "xyz";
+    case "YCbr": return "ycbcr";
+    case "HSV ": return "hsv";
+    case "HLS ": return "hls";
+    case "CMY ": return "cmy";
+    case "nmcl": return "named";
+    default: return "unknown";
+  }
+}
+
 export function parseProfileDescription(profile: Uint8Array): string | null {
   if (profile.length < 128 + 4) return null;
   if (

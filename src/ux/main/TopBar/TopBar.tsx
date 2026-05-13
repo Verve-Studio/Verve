@@ -40,8 +40,26 @@ export function TopBar({
   const [activeViewLut, setActiveViewLut] = useState<string | null>(
     () => displayStore.viewTransformLutId,
   );
+  const [hasDisplayProfile, setHasDisplayProfile] = useState<boolean>(
+    () => displayStore.displayProfileLut !== null,
+  );
+  const [hasProofProfile, setHasProofProfile] = useState<boolean>(
+    () => displayStore.proofProfile !== null,
+  );
+  const [proofColorsActive, setProofColorsActive] = useState<boolean>(
+    () => displayStore.proofEnabled,
+  );
+  const [gamutWarningActive, setGamutWarningActive] = useState<boolean>(
+    () => displayStore.gamutWarningEnabled,
+  );
   useEffect(() => {
-    const fn = (): void => setActiveViewLut(displayStore.viewTransformLutId);
+    const fn = (): void => {
+      setActiveViewLut(displayStore.viewTransformLutId);
+      setHasDisplayProfile(displayStore.displayProfileLut !== null);
+      setHasProofProfile(displayStore.proofProfile !== null);
+      setProofColorsActive(displayStore.proofEnabled);
+      setGamutWarningActive(displayStore.gamutWarningEnabled);
+    };
     displayStore.subscribe(fn);
     return () => displayStore.unsubscribe(fn);
   }, []);
@@ -68,11 +86,24 @@ export function TopBar({
           luts,
           activeViewLut,
           openPanelIds,
+          hasDisplayProfile,
+          hasProofProfile,
+          proofColorsActive,
+          gamutWarningActive,
           isProd: import.meta.env.PROD,
         }),
         "app",
       ),
-    [deps, luts, activeViewLut, openPanelIds],
+    [
+      deps,
+      luts,
+      activeViewLut,
+      openPanelIds,
+      hasDisplayProfile,
+      hasProofProfile,
+      proofColorsActive,
+      gamutWarningActive,
+    ],
   );
 
   // On macOS the native application menu replaces the entire custom top bar.

@@ -13,6 +13,21 @@ import { useSyncExternalStore } from "react";
 /** Theme selection. "auto" follows the host OS via prefers-color-scheme. */
 export type ThemePreference = "light" | "dark" | "auto";
 
+/** ICC rendering intent — matches lcms2's set. Used in tier-2 colour
+ *  management for import-time and Convert-to-Profile transforms. */
+export type RenderingIntentPreference =
+  | "perceptual"
+  | "relative-colorimetric"
+  | "saturation"
+  | "absolute-colorimetric";
+
+/** What to do when an image arrives without an embedded ICC profile.
+ *   - `"assume-working-space"`: tag the document with the working-space
+ *     profile (sRGB / linear-sRGB). No conversion, no prompt.
+ *   - `"ask"`: surface a dialog so the user can pick (deferred — currently
+ *     behaves like assume-working-space until the dialog lands). */
+export type MissingProfilePolicy = "assume-working-space" | "ask";
+
 export interface AppPreferences {
   /** Visual theme. Applied via the `data-theme` attribute on <html>. */
   theme: ThemePreference;
@@ -39,6 +54,19 @@ export interface AppPreferences {
    * integrated Intel/AMD graphics).
    */
   unifiedMemory: boolean;
+
+  // ── Colour management (Tier 2c) ────────────────────────────────────────
+  /** Default rendering intent for file-open conversion (source profile →
+   *  working space). Photoshop's default for imports is Perceptual. */
+  colorImportIntent: RenderingIntentPreference;
+  /** Default rendering intent for the Convert to Profile command.
+   *  Photoshop's default is Relative Colorimetric. */
+  colorConvertIntent: RenderingIntentPreference;
+  /** Global Black Point Compensation toggle, applied to both intents above
+   *  and to the display-profile LUT. */
+  colorUseBpc: boolean;
+  /** Behaviour when opening an image with no embedded ICC profile. */
+  colorMissingProfilePolicy: MissingProfilePolicy;
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
@@ -49,6 +77,11 @@ const DEFAULT_PREFERENCES: AppPreferences = {
   // Auto-detected on first launch in `load()`; this is just the conservative
   // fallback used before that runs (treat as discrete to avoid over-capping).
   unifiedMemory: false,
+  // Colour-management defaults match Photoshop conventions.
+  colorImportIntent: "perceptual",
+  colorConvertIntent: "relative-colorimetric",
+  colorUseBpc: true,
+  colorMissingProfilePolicy: "assume-working-space",
 };
 
 class PreferencesStore {

@@ -58,7 +58,7 @@ if(EMSCRIPTEN)
   )
   if(VERVE_HAS_LCMS2)
     set(VERVE_EXPORTED_FUNCTIONS
-      "${VERVE_EXPORTED_FUNCTIONS},_cms_get_working_profile,_cms_free_buffer,_cms_create_transform,_cms_transform_apply,_cms_destroy_transform,_cms_build_3d_lut"
+      "${VERVE_EXPORTED_FUNCTIONS},_cms_get_working_profile,_cms_free_buffer,_cms_create_transform,_cms_transform_apply,_cms_destroy_transform,_cms_build_3d_lut,_cms_build_proof_lut"
     )
   endif()
 

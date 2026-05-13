@@ -195,6 +195,85 @@ export async function convertPixels(
 
 // ─── 3D LUT (Tier 2b) ────────────────────────────────────────────────────────
 
+export interface ProofLutOptions {
+  /** Output device being simulated. */
+  proofProfile: Uint8Array;
+  /** Active display profile. `null` falls back to the bundled sRGB. */
+  displayProfile: Uint8Array | null;
+  /** Intent for the working→proof transform. Photoshop's default for
+   *  soft proofing is Relative Colorimetric. */
+  intent?: RenderingIntent;
+  /** Black-point compensation on both legs of the transform. */
+  useBpc?: boolean;
+  /** When true, the proof's white-point and black-point show through
+   *  (Photoshop's "Simulate Paper Color"). */
+  simulatePaperColor?: boolean;
+  /** When true, pixels outside the proof gamut come out as `alarmColor`. */
+  gamutCheck?: boolean;
+  /** RGBA alarm colour for the gamut warning, 0-255 bytes. Alpha unused. */
+  alarmColor?: { r: number; g: number; b: number };
+  /** LUT axis size. 33 = Photoshop default. */
+  size?: number;
+}
+
+/** Build a composed soft-proofing LUT: working space → proof profile →
+ *  display profile, in one transform chain. Optionally bakes a gamut
+ *  warning where out-of-proof-gamut working-space pixels come out as a
+ *  configurable alarm colour.
+ *
+ *  Returns `null` when lcms2 isn't linked or the WASM build is missing
+ *  the proof binding. */
+export async function buildProofLut(
+  layout: PixelLayout,
+  opts: ProofLutOptions,
+): Promise<Float32Array | null> {
+  const m = await getPixelOps();
+  if (typeof m._cms_build_proof_lut !== "function") return null;
+  const size = opts.size ?? 33;
+  const proofBytes = opts.proofProfile;
+  const dispBytes = opts.displayProfile;
+  const intentCode = INTENT_CODES[opts.intent ?? "relative-colorimetric"];
+  const useBpc = opts.useBpc ?? true;
+  const simulatePaper = !!opts.simulatePaperColor;
+  const gamutCheck = !!opts.gamutCheck;
+  const alarm = opts.alarmColor ?? { r: 128, g: 128, b: 128 };
+
+  const proofPtr = m._malloc(proofBytes.byteLength);
+  const dispPtr = dispBytes ? m._malloc(dispBytes.byteLength) : 0;
+  const outBytes = size * size * size * 4 * 4;
+  const outPtr = m._malloc(outBytes);
+  try {
+    m.HEAPU8.set(proofBytes, proofPtr);
+    if (dispBytes && dispPtr) m.HEAPU8.set(dispBytes, dispPtr);
+    const rc = m._cms_build_proof_lut(
+      proofPtr,
+      proofBytes.byteLength,
+      dispPtr,
+      dispBytes ? dispBytes.byteLength : 0,
+      LAYOUT_CODES[layout],
+      intentCode,
+      useBpc ? 1 : 0,
+      simulatePaper ? 1 : 0,
+      gamutCheck ? 1 : 0,
+      alarm.r & 0xff,
+      alarm.g & 0xff,
+      alarm.b & 0xff,
+      size,
+      outPtr,
+    );
+    if (rc !== 0) return null;
+    const out = new Float32Array(size * size * size * 4);
+    out.set(
+      new Float32Array(m.HEAPU8.buffer, outPtr, size * size * size * 4),
+    );
+    return out;
+  } finally {
+    m._free(outPtr);
+    if (dispPtr) m._free(dispPtr);
+    m._free(proofPtr);
+  }
+}
+
 /** Build a `size × size × size` RGBA float LUT mapping the working space
  *  for `layout` to `dstProfile`. Suitable for upload to a WebGPU 3D
  *  texture and sampling in the display-correction shader.

@@ -174,6 +174,17 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePaths[0]
   })
 
+  ipcMain.handle('dialog:openIccProfile', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'ICC Profile', extensions: ['icc', 'icm'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+    return canceled ? null : filePaths[0]
+  })
+
   ipcMain.handle('dialog:savePaletteAs', async (_event, defaultPath?: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath,

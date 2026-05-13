@@ -190,6 +190,14 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
     );
     m._cms_destroy_transform = wrapPtrFn(m._cms_destroy_transform!, [0], false);
     m._cms_build_3d_lut = wrapPtrFn(m._cms_build_3d_lut!, [0, 6], false);
+    if (typeof m._cms_build_proof_lut === "function") {
+      // Ptr args: proofProfilePtr(0), displayProfilePtr(2), outPtr(13).
+      m._cms_build_proof_lut = wrapPtrFn(
+        m._cms_build_proof_lut,
+        [0, 2, 13],
+        false,
+      );
+    }
   }
 }
 

@@ -49,6 +49,7 @@ app.commandLine.appendSwitch(
 
 import { registerIpcHandlers } from './ipc'
 import { registerPreferencesHandlers } from './preferences'
+import { registerColorProfileHandlers } from './colorProfiles'
 import { buildAndSetMacMenu } from './menu'
 import type { SerializedMenuNode } from './menu'
 
@@ -134,6 +135,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
   registerPreferencesHandlers()
+  registerColorProfileHandlers()
 
   // Detect startup file from CLI args (Windows / Linux); macOS uses open-file event above.
   if (!startupFilePath) startupFilePath = detectStartupFileFromArgs()

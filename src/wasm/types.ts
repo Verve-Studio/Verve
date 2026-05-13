@@ -499,6 +499,30 @@ export interface PixelOpsModule {
     size: number,
     outPtr: number,
   ): number;
+
+  /** Build a soft-proofing LUT: working space → proof profile → display
+   *  profile. `displayProfilePtr` may be 0 (with `displayLen = 0`) to fall
+   *  back to a built-in sRGB display profile. `simulatePaper` switches the
+   *  display-side intent from Relative to Absolute Colorimetric (so the
+   *  proof's paper white and ink black show through). `gamutCheck` paints
+   *  out-of-proof-gamut pixels with the `alarmR/G/B` byte triple. Output
+   *  layout matches `_cms_build_3d_lut`. Returns 0 on success. */
+  _cms_build_proof_lut?(
+    proofProfilePtr: number,
+    proofLen: number,
+    displayProfilePtr: number,
+    displayLen: number,
+    layout: number,
+    proofIntent: number,
+    useBpc: number,
+    simulatePaper: number,
+    gamutCheck: number,
+    alarmR: number,
+    alarmG: number,
+    alarmB: number,
+    size: number,
+    outPtr: number,
+  ): number;
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

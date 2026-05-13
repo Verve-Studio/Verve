@@ -34,6 +34,21 @@ const api = {
     ipcRenderer.invoke('presets:saveCurvesPresets', presets),
   openPaletteDialog: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openPalette'),
+  openIccProfileDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:openIccProfile'),
+  cmsListProfiles: (): Promise<
+    Array<{ id: string; filename: string; source: 'system' | 'user'; size: number }>
+  > => ipcRenderer.invoke('cms:listProfiles'),
+  cmsReadProfileBytes: (id: string): Promise<string | null> =>
+    ipcRenderer.invoke('cms:readProfileBytes', id),
+  cmsImportProfileDialog: (): Promise<{
+    id: string
+    filename: string
+    source: 'system' | 'user'
+    size: number
+  } | null> => ipcRenderer.invoke('cms:importProfileDialog'),
+  cmsDeleteUserProfile: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('cms:deleteUserProfile', id),
   savePaletteAsDialog: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:savePaletteAs', defaultPath),
   readPaletteFile: (path: string): Promise<string> =>

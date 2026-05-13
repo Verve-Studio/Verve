@@ -10,6 +10,7 @@ import {
 import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
 import { useClipboard } from "@/core/services/useClipboard";
 import { useColorMode } from "@/core/services/useColorMode";
+import { useColorProfile } from "@/core/services/useColorProfile";
 import { useContentAwareFill } from "@/core/services/useContentAwareFill";
 import { useDialogState } from "@/core/services/useDialogState";
 import { useExportOps } from "@/core/services/useExportOps";
@@ -70,6 +71,12 @@ function AppContent(): React.JSX.Element {
     setShowResizeCanvasDialog,
     showLutManager,
     setShowLutManager,
+    showColorSettings,
+    setShowColorSettings,
+    showProofSetup,
+    setShowProofSetup,
+    showProfileManager,
+    setShowProfileManager,
     showAboutDialog,
     setShowAboutDialog,
     showShortcutsDialog,
@@ -438,6 +445,13 @@ function AppContent(): React.JSX.Element {
     onRequestConversionDialog: setPendingConversion,
   });
 
+  const colorProfile = useColorProfile({
+    canvasHandleRef,
+    state,
+    dispatch,
+    captureHistory,
+  });
+
   // ── Polygonal selection keyboard handling ───────────────────────
   usePolygonalSelection();
 
@@ -670,6 +684,16 @@ function AppContent(): React.JSX.Element {
       // ── Image ───────────────────────────────────────────────────
       pixelFormat: state.pixelFormat,
       onSetColorMode: (fmt) => colorMode.handleConvertColorMode(fmt),
+      hasIccProfile: !!state.iccProfile,
+      onAssignProfile: () => void colorProfile.assignProfile(),
+      onConvertToProfile: () => void colorProfile.convertToProfile(),
+      onRemoveProfile: () => colorProfile.removeProfile(),
+      // hasDisplayProfile is filled in by TopBar/useMacNativeMenu from
+      // displayStore subscription; the menu rebuilds when it flips.
+      onSetDisplayProfile: () => void colorProfile.setDisplayProfile(),
+      onClearDisplayProfile: () => colorProfile.clearDisplayProfile(),
+      onOpenColorSettings: () => setShowColorSettings(true),
+      onOpenProfileManager: () => setShowProfileManager(true),
       onResizeImage: () => setShowResizeDialog(true),
       onResizeCanvas: () => setShowResizeCanvasDialog(true),
       onRotate90CW: () => void handleRotate("90cw"),
@@ -734,6 +758,12 @@ function AppContent(): React.JSX.Element {
       onToggleTileGrid: handleToggleTileGrid,
       showTileGrid: state.canvas.showTileGrid,
       onSetAnimationMode: handleSetAnimationMode,
+      // hasProofProfile / proofColorsActive / gamutWarningActive are
+      // filled in by TopBar/useMacNativeMenu from a displayStore
+      // subscription — the menu rebuilds when they flip.
+      onOpenProofSetup: () => setShowProofSetup(true),
+      onToggleProofColors: () => colorProfile.toggleProofColors(),
+      onToggleGamutWarning: () => void colorProfile.toggleGamutWarning(),
 
       // ── Help ────────────────────────────────────────────────────
       onAbout: () => setShowAboutDialog(true),
@@ -894,6 +924,18 @@ function AppContent(): React.JSX.Element {
         setShowResizeCanvasDialog={setShowResizeCanvasDialog}
         showLutManager={showLutManager}
         setShowLutManager={setShowLutManager}
+        showColorSettings={showColorSettings}
+        setShowColorSettings={setShowColorSettings}
+        showProofSetup={showProofSetup}
+        setShowProofSetup={setShowProofSetup}
+        showProfileManager={showProfileManager}
+        setShowProfileManager={setShowProfileManager}
+        onPickProofProfile={() => colorProfile.setProofProfile()}
+        onClearProofProfile={() => colorProfile.clearProofProfile()}
+        onToggleSimulatePaperColor={() =>
+          colorProfile.toggleSimulatePaperColor()
+        }
+        onToggleGamutWarning={() => colorProfile.toggleGamutWarning()}
         showImportSpritesheetFramesDialog={showImportSpritesheetFramesDialog}
         setShowImportSpritesheetFramesDialog={
           setShowImportSpritesheetFramesDialog

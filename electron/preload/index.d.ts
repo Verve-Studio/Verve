@@ -24,6 +24,18 @@ declare global {
       openPaletteDialog: () => Promise<string | null>
       savePaletteAsDialog: (defaultPath?: string) => Promise<string | null>
       readPaletteFile: (path: string) => Promise<string>
+      openIccProfileDialog: () => Promise<string | null>
+      cmsListProfiles: () => Promise<
+        Array<{ id: string; filename: string; source: 'system' | 'user'; size: number }>
+      >
+      cmsReadProfileBytes: (id: string) => Promise<string | null>
+      cmsImportProfileDialog: () => Promise<{
+        id: string
+        filename: string
+        source: 'system' | 'user'
+        size: number
+      } | null>
+      cmsDeleteUserProfile: (id: string) => Promise<boolean>
       writePaletteFile: (path: string, data: string) => Promise<void>
       clipboardWriteImage: (pngBase64: string) => Promise<void>
       clipboardReadImage: () => Promise<string | null>
@@ -56,12 +68,20 @@ declare global {
         bufferMemoryBytes: number
         bufferMemoryMaxOut: boolean
         unifiedMemory?: boolean
+        colorImportIntent?: 'perceptual' | 'relative-colorimetric' | 'saturation' | 'absolute-colorimetric'
+        colorConvertIntent?: 'perceptual' | 'relative-colorimetric' | 'saturation' | 'absolute-colorimetric'
+        colorUseBpc?: boolean
+        colorMissingProfilePolicy?: 'assume-working-space' | 'ask'
       }>
       savePreferences: (prefs: {
         historyMemoryBytes: number
         bufferMemoryBytes: number
         bufferMemoryMaxOut: boolean
         unifiedMemory: boolean
+        colorImportIntent?: 'perceptual' | 'relative-colorimetric' | 'saturation' | 'absolute-colorimetric'
+        colorConvertIntent?: 'perceptual' | 'relative-colorimetric' | 'saturation' | 'absolute-colorimetric'
+        colorUseBpc?: boolean
+        colorMissingProfilePolicy?: 'assume-working-space' | 'ask'
       }) => Promise<void>
       getSystemTotalMemoryBytes: () => Promise<number>
       // Startup file path (CLI arg)

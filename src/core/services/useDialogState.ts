@@ -29,8 +29,17 @@ export function useDialogState() {
     setShowExportAnimationFramesDialog,
   ] = useState(false);
   const [showLutManager, setShowLutManager] = useState(false);
+  const [showColorSettings, setShowColorSettings] = useState(false);
+  const [showProofSetup, setShowProofSetup] = useState(false);
+  const [showProfileManager, setShowProfileManager] = useState(false);
 
   return {
+    showProfileManager,
+    setShowProfileManager,
+    showProofSetup,
+    setShowProofSetup,
+    showColorSettings,
+    setShowColorSettings,
     showLutManager,
     setShowLutManager,
     showImportSpritesheetFramesDialog,
