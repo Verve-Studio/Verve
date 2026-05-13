@@ -7,6 +7,7 @@ import type {
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
+import { activeScope } from "@/core/store/scope";
 import autoMaskIconSvg from "./auto-mask.svg?raw";
 
 // ─── Module-level runner ──────────────────────────────────────────────────────
@@ -16,8 +17,16 @@ import autoMaskIconSvg from "./auto-mask.svg?raw";
 // the actual runner — the runner needs renderer-side dispatch + the canvas
 // handle, neither of which is reachable from inside a tool handler.
 
+/** Region of interest passed from a drag gesture. Canvas-space pixels. */
+export interface AutoMaskRoi {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface AutoMaskRunner {
-  run(): Promise<void>;
+  run(roi?: AutoMaskRoi): Promise<void>;
   isRunning(): boolean;
 }
 
@@ -48,19 +57,71 @@ export function notifyAutoMaskStatusChange(): void {
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 //
-// A single click anywhere on the canvas triggers detection on the active
-// layer. ISNet is a one-shot salient-object detector, so the click position
-// itself doesn't matter — we just want a clear "go" gesture.
+// Two-mode interaction: drag a rectangle to constrain ISNet to that crop, or
+// click without dragging to run on the whole layer. During drag we drive the
+// document's pending selection so the user sees the same animated marching
+// ants any other selection tool produces — and on release we commit the
+// rectangle as a real selection so it sticks around after detection runs.
+
+const MIN_DRAG_PX = 8;
 
 function createAutoMaskHandler(): ToolHandler {
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
+
   return {
-    onPointerDown(_pos: ToolPointerPos) {
+    onPointerDown({ x, y }: ToolPointerPos) {
       if (autoMaskRunner.isRunning()) return;
       if (autoMaskStatus.model !== "ready") return;
-      void autoMaskRunner.run();
+      startX = x;
+      startY = y;
+      dragging = true;
+      activeScope().selection.setPending({
+        type: "rect",
+        x1: x,
+        y1: y,
+        x2: x,
+        y2: y,
+      });
     },
-    onPointerMove() {},
-    onPointerUp() {},
+    onPointerMove({ x, y }: ToolPointerPos) {
+      if (!dragging) return;
+      activeScope().selection.setPending({
+        type: "rect",
+        x1: startX,
+        y1: startY,
+        x2: x,
+        y2: y,
+      });
+    },
+    onPointerUp({ x, y }: ToolPointerPos) {
+      if (!dragging) return;
+      dragging = false;
+      const dx = Math.abs(x - startX);
+      const dy = Math.abs(y - startY);
+      if (dx < MIN_DRAG_PX && dy < MIN_DRAG_PX) {
+        // Treat as a click — full-layer detection, no committed selection.
+        activeScope().selection.setPending(null);
+        void autoMaskRunner.run();
+        return;
+      }
+      const x0 = Math.min(startX, x);
+      const y0 = Math.min(startY, y);
+      const x1 = Math.max(startX, x);
+      const y1 = Math.max(startY, y);
+      // Commit the drag rectangle as a real selection. `setRect` also
+      // clears the pending preview internally so the marching ants
+      // continue from the committed mask without a frame of flicker.
+      activeScope().selection.setRect(x0, y0, x1, y1);
+      void autoMaskRunner.run({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    },
+    onLeave() {
+      if (dragging) {
+        dragging = false;
+        activeScope().selection.setPending(null);
+      }
+    },
   };
 }
 
@@ -105,7 +166,7 @@ function AutoMaskOptions({
           if (disabled) return;
           void autoMaskRunner.run();
         }}
-        title="Run the model on the active layer and add the result as a layer mask"
+        title="Run the model on the whole active layer. Drag a rectangle on the canvas to constrain detection to a region instead."
       >
         {running ? "Detecting…" : "Detect Subject"}
       </button>
