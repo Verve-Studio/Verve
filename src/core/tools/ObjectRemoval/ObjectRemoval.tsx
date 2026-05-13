@@ -8,6 +8,7 @@ import type {
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
+import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { activeScope } from "@/core/store/scope";
 import objectRemovalIconSvg from "./object-removal.svg?raw";
 
@@ -129,26 +130,18 @@ function ObjectRemovalOptions({
   const disabled =
     running || modelStatus !== "ready" || !hasMask;
 
-  const handleSize = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const n = parseInt(e.target.value, 10);
-    if (!isNaN(n)) {
-      const clamped = Math.max(2, Math.min(400, n));
-      objectRemovalOptions.size = clamped;
-      setSize(clamped);
-    }
-  };
-
   return (
     <>
-      <label className={styles.optLabel}>Size</label>
-      <input
-        type="number"
-        className={styles.optInput}
-        min={2}
-        max={400}
-        step={1}
+      <label className={styles.optLabel}>Size:</label>
+      <SliderInput
         value={size}
-        onChange={handleSize}
+        min={1}
+        max={1000}
+        inputWidth={52}
+        onChange={(v) => {
+          objectRemovalOptions.size = v;
+          setSize(v);
+        }}
       />
       <span className={styles.optSep} />
       <button

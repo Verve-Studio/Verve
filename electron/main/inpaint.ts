@@ -165,7 +165,10 @@ function rgbaRegionToChw(
 
 /**
  * Bilinear-resize a region of a single-channel uint8 mask into a CHW float32
- * mask in [0,1]. LaMa expects 1 = inpaint, 0 = keep.
+ * mask. The output is hard-thresholded to {0, 1} at the working resolution —
+ * LaMa is trained on binary masks and soft transition pixels (e.g. 0.7 from
+ * a half-covered sample) push the network off-distribution and tend to
+ * produce blurry/grey results in the inpainted region.
  */
 function maskRegionToChw(
   mask: Uint8Array, srcW: number, srcH: number,
@@ -192,7 +195,8 @@ function maskRegionToChw(
       const a11 = mask[y1 * srcW + x1] >= threshold ? 1 : 0
       const top = a00 * (1 - wx) + a01 * wx
       const bot = a10 * (1 - wx) + a11 * wx
-      out[y * dstW + x] = top * (1 - wy) + bot * wy
+      const soft = top * (1 - wy) + bot * wy
+      out[y * dstW + x] = soft > 0.5 ? 1 : 0
     }
   }
   return out
@@ -358,6 +362,30 @@ export function registerInpaintHandlers(): void {
         cropX0, cropY0, cropW, cropH,
         LAMA_INPUT, LAMA_INPUT,
         MASK_THRESHOLD,
+      )
+
+      // Pre-mask the image: zero out RGB wherever the mask is set. The LaMa
+      // generator was trained to receive `image * (1 - mask)` (the masked
+      // region blanked) plus the mask itself, then to fill those blanked
+      // pixels with plausible content. Full-pipeline ONNX exports do this
+      // step internally; generator-only exports don't — feeding the raw
+      // image to a generator-only export produces grey blobs.
+      // Applying this unconditionally is safe: the full-pipeline export
+      // would just re-zero already-zero pixels.
+      const plane = LAMA_INPUT * LAMA_INPUT
+      let maskedPixels = 0
+      for (let i = 0; i < plane; i++) {
+        if (maskChw[i] > 0.5) {
+          imgChw[i] = 0
+          imgChw[plane + i] = 0
+          imgChw[2 * plane + i] = 0
+          maskedPixels++
+        }
+      }
+      // eslint-disable-next-line no-console
+      console.log(
+        `[inpaint] crop=${cropW}×${cropH}@(${cropX0},${cropY0}) → ${LAMA_INPUT}×${LAMA_INPUT}, ` +
+        `masked=${maskedPixels}px (${((maskedPixels / plane) * 100).toFixed(1)}%)`,
       )
 
       // LaMa input naming convention: "image" + "mask". If the export uses
