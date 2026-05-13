@@ -1,6 +1,7 @@
 import React from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import type { NeonGlowEffectLayer } from "./NeonGlowEffect";
+import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 
@@ -14,9 +15,9 @@ const toHex = (r: number, g: number, b: number): string => {
     Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
   return `#${h(r)}${h(g)}${h(b)}`;
 };
-const fromHex = (s: string): { r: number; g: number; b: number } => {
+const fromHex = (s: string): { r: number; g: number; b: number } | null => {
   const m = /^#?([0-9a-f]{6})$/i.exec(s.trim());
-  if (!m) return { r: 0, g: 0, b: 0 };
+  if (!m) return null;
   const n = parseInt(m[1], 16);
   return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
 };
@@ -82,21 +83,13 @@ export function NeonGlowPanel({
       )}
       <div className={styles.row}>
         <span className={styles.label}>Glow Color</span>
-        <input
-          type="color"
+        <ColorSwatch
           value={toHex(p.glowColor.r, p.glowColor.g, p.glowColor.b)}
-          onChange={(e) => {
-            const { r, g, b } = fromHex(e.target.value);
-            update({ glowColor: { r, g, b, a: 255 } });
+          onChange={(hex) => {
+            const rgb = fromHex(hex);
+            if (rgb) update({ glowColor: { ...rgb, a: 255 } });
           }}
-          style={{
-            width: 36,
-            height: 22,
-            padding: 0,
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-          }}
+          title="Glow color"
         />
         <div className={styles.trackWrap} />
       </div>
