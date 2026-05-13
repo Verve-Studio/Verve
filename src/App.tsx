@@ -24,7 +24,7 @@ import { useLayerGroups } from "@/core/services/useLayerGroups";
 import { useLayers } from "@/core/services/useLayers";
 import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
 import { useLutOps } from "@/core/services/useLutOps";
-import { useObjectSelection } from "@/core/services/useObjectSelection";
+import { useAutoMask } from "@/core/services/useAutoMask";
 import { usePolygonalSelection } from "@/core/services/usePolygonalSelection";
 import { useSpritesheetAnimationOps } from "@/core/services/useSpritesheetAnimationOps";
 import { useTabs } from "@/core/services/useTabs";
@@ -69,6 +69,10 @@ function AppContent(): React.JSX.Element {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showRescaleDialog,
+    setShowRescaleDialog,
+    showRestoreDialog,
+    setShowRestoreDialog,
     showLutManager,
     setShowLutManager,
     showColorSettings,
@@ -240,8 +244,21 @@ function AppContent(): React.JSX.Element {
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch });
 
   // ── Canvas transforms ─────────────────────────────────────────────
+  const [isRescaling, setIsRescaling] = useState(false);
+  const [rescaleProgress, setRescaleProgress] = useState<
+    import("@/core/services/useCanvasTransforms").RescaleProgress
+  >({
+    layerIdx: 0,
+    layerCount: 0,
+    tilesLoaded: 0,
+    tilesTotal: 0,
+    label: "Rescaling",
+  });
+
   const {
     handleResizeImage,
+    handleRescaleImage,
+    handleRestoreImage,
     handleResizeCanvas,
     handleRotate,
     handleFlip,
@@ -258,6 +275,8 @@ function AppContent(): React.JSX.Element {
     pendingLayerLabelRef,
     canvasWidth: state.canvas.width,
     canvasHeight: state.canvas.height,
+    setRescaling: setIsRescaling,
+    setRescaleProgress,
   });
 
   // ── Layer arrange (align / distribute / order) ──────────────────────
@@ -455,13 +474,14 @@ function AppContent(): React.JSX.Element {
   // ── Polygonal selection keyboard handling ───────────────────────
   usePolygonalSelection();
 
-  // ── Object Selection (SAM) ────────────────────────────────────────
-  useObjectSelection({
+  // ── Auto-Mask (ISNet) ─────────────────────────────────────────────
+  const [isAutoMasking, setIsAutoMasking] = useState(false);
+  useAutoMask({
     canvasHandleRef,
     stateRef,
     captureHistory,
-    activeTabId,
-    layers: state.layers,
+    dispatch,
+    setBusy: setIsAutoMasking,
   });
 
   // ── Tab / window guards ───────────────────────────────────────────
@@ -696,6 +716,15 @@ function AppContent(): React.JSX.Element {
       onOpenProfileManager: () => setShowProfileManager(true),
       onResizeImage: () => setShowResizeDialog(true),
       onResizeCanvas: () => setShowResizeCanvasDialog(true),
+      onRescaleImage: () => setShowRescaleDialog(true),
+      // AI rescale runs RGB pixels through Real-ESRGAN. Indexed8/float32
+      // documents need a different path; gate them out of the menu rather
+      // than silently failing.
+      isRescaleEnabled: state.pixelFormat === "rgba8",
+      onRestoreImage: () => setShowRestoreDialog(true),
+      // Restore uses the same model pipeline, so the same format gate
+      // applies.
+      isRestoreEnabled: state.pixelFormat === "rgba8",
       onRotate90CW: () => void handleRotate("90cw"),
       onRotate180: () => void handleRotate("180"),
       onRotate270CW: () => void handleRotate("270cw"),
@@ -922,6 +951,13 @@ function AppContent(): React.JSX.Element {
         setShowResizeDialog={setShowResizeDialog}
         showResizeCanvasDialog={showResizeCanvasDialog}
         setShowResizeCanvasDialog={setShowResizeCanvasDialog}
+        showRescaleDialog={showRescaleDialog}
+        setShowRescaleDialog={setShowRescaleDialog}
+        showRestoreDialog={showRestoreDialog}
+        setShowRestoreDialog={setShowRestoreDialog}
+        isRescaling={isRescaling}
+        rescaleProgress={rescaleProgress}
+        isAutoMasking={isAutoMasking}
         showLutManager={showLutManager}
         setShowLutManager={setShowLutManager}
         showColorSettings={showColorSettings}
@@ -1023,6 +1059,8 @@ function AppContent(): React.JSX.Element {
         handleUngroupLayers={handleUngroupLayers}
         handleCreateCompositeLayer={handleCreateCompositeLayer}
         handleResizeImage={handleResizeImage}
+        handleRescaleImage={handleRescaleImage}
+        handleRestoreImage={handleRestoreImage}
         handleResizeCanvas={handleResizeCanvas}
         isPlaying={playback.isPlaying}
         isLooping={playback.isLooping}

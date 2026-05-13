@@ -80,7 +80,6 @@ export function useToolHandler(params: ToolHandlerParams): ToolHandlerApi {
     toolHandlerRef.current = TOOL_REGISTRY[sel].createHandler();
     // Cancel any in-progress polygonal selection when switching tools.
     activeScope().polygonalSelection.cancel();
-    if (sel !== "object-selection") activeScope().objectSelection.reset();
     // Hide the circle cursor when switching away from a circle-cursor tool.
     if (brushCursorRef.current) {
       if (!CIRCLE_CURSOR_TOOLS.has(sel)) {

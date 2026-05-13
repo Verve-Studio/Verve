@@ -17,7 +17,7 @@ npm run typecheck    # Type-check both main (Node) and renderer (web) processes
 
 Verve is an Electron app split into two processes that communicate over IPC:
 
-- **Main process** (`electron/main/`) — Node.js. Native file I/O, OS dialogs, IPC handlers, ML model inference (SAM, RVM). Never imported from the renderer.
+- **Main process** (`electron/main/`) — Node.js. Native file I/O, OS dialogs, IPC handlers, ML model inference (ISNet auto-mask, RVM matting, Real-ESRGAN upscale). Never imported from the renderer.
 - **Preload** (`electron/preload/`) — Exposes a typed, sandboxed API to the renderer via `window.api`. The only bridge between processes.
 - **Renderer** (`src/`) — React 19 app. All UI, canvas drawing, and tool logic lives here.
 
@@ -48,7 +48,7 @@ src/
       Blur/, Sharpen/, Smudge/, HealingBrush/, QuickSelect/, Patch/,
       Frame/, Shape/, Crop/, Eyedropper/, Fill/, Gradient/,
       Hand/, Lasso/, Liquify/, MagicWand/, Measure/, Move/, Noop/,
-      ObjectSelection/, Pick/, PolygonalSelection/, Select/, Text/,
+      AutoMask/, Pick/, PolygonalSelection/, Select/, Text/,
       Transform/, Zoom/
       toolRegistry.ts        ← register / get / toolbarGroups / resolveShortcutCycle
       index.ts               ← imports each tool file (side-effect registration);
@@ -127,7 +127,7 @@ Defined in `src/core/tools/_shared/ITool.ts`. Each tool declares:
 - **Identity**: `id` (matches the `Tool` union in `src/types`), `label`.
 - **Toolbar presentation**: `shortcut`, `icon` (a `ReactElement`, typically `<SvgIcon src={...} />`), `placement` (`{ group, row, column } | null`).
 - **Optional**: `customRender(props)` — replaces the default toolbar button entirely (Shape uses this for its caret + flyout).
-- **Shortcut cycling**: `shortcutCycle?` — id of the tool to advance to when this tool's shortcut is pressed while it's already active. Pairs (`lasso ↔ polygonal-selection`, `magic-wand ↔ object-selection`) declare each other.
+- **Shortcut cycling**: `shortcutCycle?` — id of the tool to advance to when this tool's shortcut is pressed while it's already active. Pairs (`lasso ↔ polygonal-selection`, `magic-wand ↔ auto-mask`) declare each other.
 - **Behaviour flags**: `modifiesPixels`, `skipAutoHistory`, `paintsOntoPixelLayer`, `worksOnAllLayers`, `pixelOnly`, `indexed8Unsupported`. The toolbar / Canvas read these to gate the tool.
 - **Runtime**: `createHandler()` returns a fresh `ToolHandler` per activation; `Options` is the right-side options-bar component.
 

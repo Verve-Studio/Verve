@@ -9,6 +9,8 @@ import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { ResizeCanvasSettings } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
 import type { ResizeImageSettings } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
+import type { RescaleImageSettings } from "@/ux/modals/RescaleImageDialog/RescaleImageDialog";
+import type { RestoreImageSettings } from "@/ux/modals/RestoreImageDialog/RestoreImageDialog";
 import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
 import {
   flipIndexed,
@@ -25,6 +27,19 @@ import { activeScope } from "@/core/store/scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface RescaleProgress {
+  /** 1-based index of the layer currently running through the model. */
+  layerIdx: number;
+  /** Total number of layers to process this run. */
+  layerCount: number;
+  /** Tiles processed in the current layer. */
+  tilesLoaded: number;
+  /** Total tile count for the current layer. */
+  tilesTotal: number;
+  /** Verb shown in the progress overlay — e.g. "Rescaling", "Restoring". */
+  label: "Rescaling" | "Restoring";
+}
+
 interface UseCanvasTransformsOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
   stateRef: MutableRefObject<AppState>;
@@ -36,6 +51,11 @@ interface UseCanvasTransformsOptions {
   pendingLayerLabelRef: MutableRefObject<string | null>;
   canvasWidth: number;
   canvasHeight: number;
+  /** Toggle to true while AI rescale is running so MainWindow can render
+   *  the blocking progress scrim. */
+  setRescaling?: Dispatch<SetStateAction<boolean>>;
+  /** Per-tile progress for the active rescale layer. */
+  setRescaleProgress?: Dispatch<SetStateAction<RescaleProgress>>;
 }
 
 export type RotateAmount = "90cw" | "180" | "270cw";
@@ -43,6 +63,8 @@ export type FlipAxis = "horizontal" | "vertical";
 
 export interface UseCanvasTransformsReturn {
   handleResizeImage: (settings: ResizeImageSettings) => Promise<void>;
+  handleRescaleImage: (settings: RescaleImageSettings) => Promise<void>;
+  handleRestoreImage: (settings: RestoreImageSettings) => Promise<void>;
   handleResizeCanvas: (settings: ResizeCanvasSettings) => void;
   handleCrop: () => void;
   handleRotate: (amount: RotateAmount) => Promise<void>;
@@ -121,6 +143,8 @@ export function useCanvasTransforms({
   pendingLayerLabelRef,
   canvasWidth,
   canvasHeight,
+  setRescaling,
+  setRescaleProgress,
 }: UseCanvasTransformsOptions): UseCanvasTransformsReturn {
   const handleResizeImage = useCallback(
     async (settings: ResizeImageSettings): Promise<void> => {
@@ -200,6 +224,227 @@ export function useCanvasTransforms({
       setPendingLayerData,
       pendingLayerLabelRef,
       dispatch,
+    ],
+  );
+
+  const handleRescaleImage = useCallback(
+    async (settings: RescaleImageSettings): Promise<void> => {
+      const { width: newW, height: newH, modelId } = settings;
+      const oldW = canvasWidth;
+      const oldH = canvasHeight;
+      if (newW === oldW && newH === oldH) return;
+      const handle = canvasHandleRef.current;
+      if (!handle) return;
+      const { pixelFormat } = stateRef.current;
+      if (pixelFormat !== "rgba8") {
+        console.warn(
+          "[Rescale] AI rescale only supported for rgba8 documents, got",
+          pixelFormat,
+        );
+        return;
+      }
+      // Filter to the layers we'll actually feed into the model so the
+      // progress numerator/denominator matches what the user sees moving.
+      const eligibleLayers = stateRef.current.layers.filter(
+        (l) => handle.getLayerPixels(l.id) !== null,
+      );
+      setRescaling?.(true);
+      setRescaleProgress?.({
+        layerIdx: 0,
+        layerCount: eligibleLayers.length,
+        tilesLoaded: 0,
+        tilesTotal: 0,
+        label: "Rescaling",
+      });
+      // Tile-level progress events arrive from the main process while a
+      // single layer is in flight. We rebroadcast them as updates to the
+      // current layer's tile counters; the layer index is bumped on the
+      // renderer side because the IPC channel doesn't carry it.
+      const unsubProgress = window.api.upscale.onProgress((p) => {
+        setRescaleProgress?.((prev) => ({
+          ...prev,
+          tilesLoaded: p.loaded,
+          tilesTotal: p.total,
+        }));
+      });
+      try {
+        const encoded = new Map<string, string>();
+        for (let i = 0; i < eligibleLayers.length; i++) {
+          const layer = eligibleLayers[i];
+          const pixels = handle.getLayerPixels(layer.id);
+          if (!pixels) continue;
+          setRescaleProgress?.((prev) => ({
+            ...prev,
+            layerIdx: i + 1,
+            tilesLoaded: 0,
+            tilesTotal: 0,
+          }));
+          // Skip empty layers — running a model on a fully transparent
+          // tile burns time and the alpha-bilinear path already produces
+          // the right zeros for free via the resize fallback.
+          let hasOpaque = false;
+          for (let p = 3; p < pixels.length; p += 4) {
+            if (pixels[p] > 0) { hasOpaque = true; break }
+          }
+          let resized: Uint8Array;
+          if (!hasOpaque) {
+            resized = new Uint8Array(newW * newH * 4);
+          } else {
+            const result = await window.api.upscale.run({
+              rgba: pixels,
+              width: oldW,
+              height: oldH,
+              modelId,
+              targetWidth: newW,
+              targetHeight: newH,
+            });
+            resized = result.rgba;
+          }
+          u8TransferStore.set(layer.id, resized);
+          encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+        }
+        captureHistory("Before Rescale Image");
+        const rescaleTabId = activeTabId;
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === rescaleTabId
+              ? {
+                  ...t,
+                  canvasKey: t.canvasKey + 1,
+                  snapshot: {
+                    ...t.snapshot,
+                    canvasWidth: newW,
+                    canvasHeight: newH,
+                  },
+                }
+              : t,
+          ),
+        );
+        setPendingLayerData(encoded);
+        pendingLayerLabelRef.current = "Rescale Image";
+        dispatch({
+          type: "RESIZE_CANVAS",
+          payload: { width: newW, height: newH },
+        });
+      } catch (err) {
+        console.error("[Rescale] Failed to rescale image:", err);
+      } finally {
+        unsubProgress();
+        setRescaling?.(false);
+      }
+    },
+    [
+      canvasWidth,
+      canvasHeight,
+      canvasHandleRef,
+      stateRef,
+      captureHistory,
+      activeTabId,
+      setTabs,
+      setPendingLayerData,
+      pendingLayerLabelRef,
+      dispatch,
+      setRescaling,
+      setRescaleProgress,
+    ],
+  );
+
+  const handleRestoreImage = useCallback(
+    async (settings: RestoreImageSettings): Promise<void> => {
+      const { modelId } = settings;
+      const W = canvasWidth;
+      const H = canvasHeight;
+      const handle = canvasHandleRef.current;
+      if (!handle) return;
+      const { pixelFormat } = stateRef.current;
+      if (pixelFormat !== "rgba8") {
+        console.warn(
+          "[Restore] AI restore only supported for rgba8 documents, got",
+          pixelFormat,
+        );
+        return;
+      }
+      const eligibleLayers = stateRef.current.layers.filter(
+        (l) => handle.getLayerPixels(l.id) !== null,
+      );
+      setRescaling?.(true);
+      setRescaleProgress?.({
+        layerIdx: 0,
+        layerCount: eligibleLayers.length,
+        tilesLoaded: 0,
+        tilesTotal: 0,
+        label: "Restoring",
+      });
+      const unsubProgress = window.api.upscale.onProgress((p) => {
+        setRescaleProgress?.((prev) => ({
+          ...prev,
+          tilesLoaded: p.loaded,
+          tilesTotal: p.total,
+        }));
+      });
+      try {
+        const encoded = new Map<string, string>();
+        for (let i = 0; i < eligibleLayers.length; i++) {
+          const layer = eligibleLayers[i];
+          const pixels = handle.getLayerPixels(layer.id);
+          if (!pixels) continue;
+          setRescaleProgress?.((prev) => ({
+            ...prev,
+            layerIdx: i + 1,
+            tilesLoaded: 0,
+            tilesTotal: 0,
+          }));
+          let hasOpaque = false;
+          for (let p = 3; p < pixels.length; p += 4) {
+            if (pixels[p] > 0) { hasOpaque = true; break }
+          }
+          // Fully-transparent layers carry no signal to restore.
+          if (!hasOpaque) continue;
+          const result = await window.api.upscale.run({
+            rgba: pixels,
+            width: W,
+            height: H,
+            modelId,
+            targetWidth: W,
+            targetHeight: H,
+          });
+          u8TransferStore.set(layer.id, result.rgba);
+          encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+        }
+        if (encoded.size === 0) return;
+        captureHistory("Before Restore Image");
+        const restoreTabId = activeTabId;
+        // No snapshot or dimension change — restore returns pixels at the
+        // source resolution. The canvasKey bump just forces a remount so
+        // pendingLayerData is consumed.
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === restoreTabId
+              ? { ...t, canvasKey: t.canvasKey + 1 }
+              : t,
+          ),
+        );
+        setPendingLayerData(encoded);
+        pendingLayerLabelRef.current = "Restore Image";
+      } catch (err) {
+        console.error("[Restore] Failed to restore image:", err);
+      } finally {
+        unsubProgress();
+        setRescaling?.(false);
+      }
+    },
+    [
+      canvasWidth,
+      canvasHeight,
+      canvasHandleRef,
+      stateRef,
+      captureHistory,
+      activeTabId,
+      setTabs,
+      setPendingLayerData,
+      pendingLayerLabelRef,
+      setRescaling,
+      setRescaleProgress,
     ],
   );
 
@@ -747,6 +992,8 @@ export function useCanvasTransforms({
 
   return {
     handleResizeImage,
+    handleRescaleImage,
+    handleRestoreImage,
     handleResizeCanvas,
     handleCrop,
     handleRotate,

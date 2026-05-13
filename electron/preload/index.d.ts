@@ -108,25 +108,33 @@ declare global {
       platform: string
       onMenuAction: (callback: (actionId: string) => void) => (() => void)
       rebuildNativeMenu: (tree: unknown) => void
-      // SAM / Object Selection
-      sam: {
-        checkModel: () => Promise<{ encoderReady: boolean; decoderReady: boolean }>
-        downloadModel: () => Promise<{ success: true } | { error: string }>
-        encodeImage: (
-          imageData: Uint8Array,
-          origWidth: number,
-          origHeight: number,
-        ) => Promise<{ embeddings: Uint8Array }>
-        decodeMask: (params: {
-          embeddings: Uint8Array | null
-          points: Array<{ x: number; y: number; positive: boolean }>
-          box: { x1: number; y1: number; x2: number; y2: number } | null
-          origWidth: number
-          origHeight: number
-        }) => Promise<{ mask: Uint8Array; width: number; height: number; iouScore: number }>
-        invalidateCache: () => Promise<void>
-        onDownloadProgress: (
-          callback: (p: { file: 'encoder' | 'decoder'; progress: number }) => void,
+      // ISNet auto-mask (Auto-Mask tool)
+      isnet: {
+        checkModel: () => Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }>
+        run: (params: {
+          rgba: Uint8Array
+          width: number
+          height: number
+        }) => Promise<{ mask: Uint8Array; width: number; height: number; provider: string }>
+        invalidateSession: () => Promise<void>
+      }
+      // AI Upscale (Rescale Image)
+      upscale: {
+        listModels: () => Promise<Array<{ id: string; label: string; scale: number }>>
+        checkModel: (
+          modelId: string,
+        ) => Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }>
+        run: (params: {
+          rgba: Uint8Array
+          width: number
+          height: number
+          modelId: string
+          targetWidth: number
+          targetHeight: number
+        }) => Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }>
+        invalidateSession: (modelId?: string) => Promise<void>
+        onProgress: (
+          callback: (p: { progress: number; loaded: number; total: number }) => void,
         ) => () => void
       }
       // Alpha matting (Refine Edge)

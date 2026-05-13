@@ -26,6 +26,8 @@ import { NewImageDialog } from "@/ux/modals/NewImageDialog/NewImageDialog";
 import { ExportDialog } from "@/ux/modals/ExportDialog/ExportDialog";
 import { ResizeImageDialog } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import { ResizeCanvasDialog } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
+import { RescaleImageDialog } from "@/ux/modals/RescaleImageDialog/RescaleImageDialog";
+import { RestoreImageDialog } from "@/ux/modals/RestoreImageDialog/RestoreImageDialog";
 import { ImportSpritesheetFramesDialog } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
 import { ExportAnimationFramesDialog } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
 import { AboutDialog } from "@/ux/modals/AboutDialog/AboutDialog";
@@ -49,6 +51,8 @@ import { DialogButton } from "@/ux/widgets/DialogButton/DialogButton";
 import type { NewImageSettings } from "@/ux/modals/NewImageDialog/NewImageDialog";
 import type { ResizeImageSettings } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import type { ResizeCanvasSettings } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
+import type { RescaleImageSettings } from "@/ux/modals/RescaleImageDialog/RescaleImageDialog";
+import type { RestoreImageSettings } from "@/ux/modals/RestoreImageDialog/RestoreImageDialog";
 import styles from "./MainWindow.module.scss";
 import { activeScope } from "@/core/store/scope";
 
@@ -126,6 +130,15 @@ export interface MainWindowProps {
   setShowResizeDialog: (v: boolean) => void;
   showResizeCanvasDialog: boolean;
   setShowResizeCanvasDialog: (v: boolean) => void;
+  showRescaleDialog: boolean;
+  setShowRescaleDialog: (v: boolean) => void;
+  showRestoreDialog: boolean;
+  setShowRestoreDialog: (v: boolean) => void;
+  isRescaling: boolean;
+  rescaleProgress: import(
+    "@/core/services/useCanvasTransforms"
+  ).RescaleProgress;
+  isAutoMasking: boolean;
   showLutManager: boolean;
   setShowLutManager: (v: boolean) => void;
   showColorSettings: boolean;
@@ -207,6 +220,8 @@ export interface MainWindowProps {
 
   // Canvas transform handlers (used by dialogs)
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>;
+  handleRescaleImage: (s: RescaleImageSettings) => Promise<void>;
+  handleRestoreImage: (s: RestoreImageSettings) => Promise<void>;
   handleResizeCanvas: (s: ResizeCanvasSettings) => void;
 
   findLayersCounter: number;
@@ -295,6 +310,13 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showRescaleDialog,
+    setShowRescaleDialog,
+    showRestoreDialog,
+    setShowRestoreDialog,
+    isRescaling,
+    rescaleProgress,
+    isAutoMasking,
     showLutManager,
     setShowLutManager,
     showColorSettings,
@@ -350,6 +372,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleUngroupLayers,
     handleCreateCompositeLayer,
     handleResizeImage,
+    handleRescaleImage,
+    handleRestoreImage,
     handleResizeCanvas,
     findLayersCounter,
     handleToolChange,
@@ -420,6 +444,24 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
             visible={isContentAwareFilling}
             label={contentAwareFillLabel}
             sublabel="Analyzing image…"
+          />
+          <ContentAwareFillProgress
+            visible={isRescaling}
+            label={
+              rescaleProgress.layerCount > 1
+                ? `${rescaleProgress.label} layer ${rescaleProgress.layerIdx} of ${rescaleProgress.layerCount}…`
+                : `${rescaleProgress.label} image…`
+            }
+            sublabel={
+              rescaleProgress.tilesTotal > 0
+                ? `Tile ${rescaleProgress.tilesLoaded} of ${rescaleProgress.tilesTotal}`
+                : "Running model…"
+            }
+          />
+          <ContentAwareFillProgress
+            visible={isAutoMasking}
+            label="Detecting subject…"
+            sublabel="Running ISNet"
           />
         </main>
         {animationMode && (
@@ -542,6 +584,26 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         onConfirm={(s) => {
           handleResizeCanvas(s);
           setShowResizeCanvasDialog(false);
+        }}
+      />
+      <RescaleImageDialog
+        open={showRescaleDialog}
+        currentWidth={canvasWidth}
+        currentHeight={canvasHeight}
+        onCancel={() => setShowRescaleDialog(false)}
+        onConfirm={(s) => {
+          setShowRescaleDialog(false);
+          void handleRescaleImage(s);
+        }}
+      />
+      <RestoreImageDialog
+        open={showRestoreDialog}
+        currentWidth={canvasWidth}
+        currentHeight={canvasHeight}
+        onCancel={() => setShowRestoreDialog(false)}
+        onConfirm={(s) => {
+          setShowRestoreDialog(false);
+          void handleRestoreImage(s);
         }}
       />
       <ImportSpritesheetFramesDialog

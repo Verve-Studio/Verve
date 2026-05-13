@@ -215,7 +215,7 @@ class MagicWandTool implements ITool {
     row: 2,
     column: 0,
   } as const;
-  readonly shortcutCycle = "object-selection" as const;
+  readonly shortcutCycle = "auto-mask" as const;
   createHandler(): ToolHandler {
     return createMagicWandHandler();
   }

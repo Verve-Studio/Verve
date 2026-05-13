@@ -3,8 +3,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
-import { registerSamHandlers } from './sam'
 import { registerMattingHandlers } from './matting'
+import { registerUpscaleHandlers } from './upscale'
+import { registerIsnetHandlers } from './isnet'
 import { SUPPORTED_FILE_TYPES, getRegisteredExtensions, applyExtensions } from './fileAssociations'
 
 export function registerIpcHandlers(): void {
@@ -392,8 +393,9 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  registerSamHandlers()
   registerMattingHandlers()
+  registerUpscaleHandlers()
+  registerIsnetHandlers()
 
   // ── File Associations ─────────────────────────────────────────────────────────
 

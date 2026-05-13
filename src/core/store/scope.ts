@@ -17,7 +17,6 @@ import { SelectionStore } from "./selectionStore";
 import { HistoryStore } from "./historyStore";
 import { CropStore } from "./cropStore";
 import { TransformStore } from "./transformStore";
-import { ObjectSelectionStore } from "./objectSelectionStore";
 import { PolygonalSelectionStore } from "./polygonalSelectionStore";
 import { CloneStampStore } from "./cloneStampStore";
 import { AdjustmentPreviewStore } from "./adjustmentPreviewStore";
@@ -29,7 +28,6 @@ export interface DocumentScope {
   history: HistoryStore;
   crop: CropStore;
   transform: TransformStore;
-  objectSelection: ObjectSelectionStore;
   polygonalSelection: PolygonalSelectionStore;
   cloneStamp: CloneStampStore;
   adjustmentPreview: AdjustmentPreviewStore;
@@ -43,7 +41,6 @@ export function createDocumentScope(): DocumentScope {
     history: new HistoryStore(),
     crop: new CropStore(),
     transform: new TransformStore(),
-    objectSelection: new ObjectSelectionStore(),
     polygonalSelection: new PolygonalSelectionStore(),
     cloneStamp: new CloneStampStore(),
     adjustmentPreview: new AdjustmentPreviewStore(),
@@ -80,7 +77,6 @@ export function setActiveScope(scope: DocumentScope): void {
   scope.history.notify();
   scope.crop.notify();
   scope.transform.notify();
-  scope.objectSelection.notify();
   scope.polygonalSelection.notify();
   scope.cloneStamp.notify();
   scope.adjustmentPreview.notify();

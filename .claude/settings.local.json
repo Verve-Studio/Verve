@@ -11,7 +11,8 @@
       "Bash(xargs grep -l \"^export.*EffectLayerOf\\\\|^type.*EffectLayerOf\")",
       "Bash(grep -rn \"effect\\\\\\\\.Panel\\\\|effectRegistry\\\\\\\\.get.*Panel\" \"d:\\\\VerveStudio\\\\Verve\\\\src\" --include=\"*.tsx\" --include=\"*.ts\")",
       "Bash(xargs grep -c \"texture_storage_2d\")",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(dir resources\\\\models)"
     ]
   }
 }

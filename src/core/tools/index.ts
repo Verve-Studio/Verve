@@ -9,7 +9,7 @@ import { selectTool } from "./Select/Select";
 import { lassoTool } from "./Lasso/Lasso";
 import { magicWandTool } from "./MagicWand/MagicWand";
 import { polygonalSelectionTool } from "./PolygonalSelection/PolygonalSelection";
-import { objectSelectionTool } from "./ObjectSelection/ObjectSelection";
+import { autoMaskTool } from "./AutoMask/AutoMask";
 import { fillTool } from "./Fill/Fill";
 import { eyedropperTool } from "./Eyedropper/Eyedropper";
 import { zoomTool } from "./Zoom/Zoom";
@@ -41,7 +41,7 @@ const ALL_TOOLS: readonly ITool[] = [
   polygonalSelectionTool,
   quickSelectTool,
   magicWandTool,
-  objectSelectionTool,
+  autoMaskTool,
   brushTool,
   pencilTool,
   eraserTool,

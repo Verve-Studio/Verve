@@ -25,7 +25,7 @@ export type Tool =
   | "select"
   | "lasso"
   | "polygonal-selection"
-  | "object-selection"
+  | "auto-mask"
   | "quick-select"
   | "magic-wand"
   | "crop"

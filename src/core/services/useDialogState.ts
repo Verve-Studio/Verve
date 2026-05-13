@@ -6,6 +6,8 @@ export function useDialogState() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showResizeDialog, setShowResizeDialog] = useState(false);
   const [showResizeCanvasDialog, setShowResizeCanvasDialog] = useState(false);
+  const [showRescaleDialog, setShowRescaleDialog] = useState(false);
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showSystemInfoDialog, setShowSystemInfoDialog] = useState(false);
@@ -54,6 +56,10 @@ export function useDialogState() {
     setShowResizeDialog,
     showResizeCanvasDialog,
     setShowResizeCanvasDialog,
+    showRescaleDialog,
+    setShowRescaleDialog,
+    showRestoreDialog,
+    setShowRestoreDialog,
     showAboutDialog,
     setShowAboutDialog,
     showShortcutsDialog,

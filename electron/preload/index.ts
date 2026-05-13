@@ -161,34 +161,66 @@ const api = {
     ipcRenderer.send('menu:rebuild', tree)
   },
 
-  // ── SAM / Object Selection ────────────────────────────────────────────────
-  sam: {
-    checkModel: (): Promise<{ encoderReady: boolean; decoderReady: boolean }> =>
-      ipcRenderer.invoke('sam:check-model'),
+  // ── ISNet auto-mask (Auto-Mask tool) ─────────────────────────────────────
+  isnet: {
+    checkModel: (): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> =>
+      ipcRenderer.invoke('isnet:check-model'),
 
-    encodeImage: (
-      imageData: Uint8Array,
-      origWidth: number,
-      origHeight: number,
-    ): Promise<{ embeddings: Uint8Array }> =>
-      ipcRenderer.invoke(
-        'sam:encode-image',
-        Buffer.from(imageData.buffer, imageData.byteOffset, imageData.byteLength),
-        origWidth,
-        origHeight,
-      ),
+    run: (params: {
+      rgba: Uint8Array
+      width: number
+      height: number
+    }): Promise<{ mask: Uint8Array; width: number; height: number; provider: string }> =>
+      ipcRenderer.invoke('isnet:run', {
+        rgba: Buffer.from(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength),
+        width: params.width,
+        height: params.height,
+      }),
 
-    decodeMask: (params: {
-      embeddings: Uint8Array | null
-      points: Array<{ x: number; y: number; positive: boolean }>
-      box: { x1: number; y1: number; x2: number; y2: number } | null
-      origWidth: number
-      origHeight: number
-    }): Promise<{ mask: Uint8Array; width: number; height: number; iouScore: number }> =>
-      ipcRenderer.invoke('sam:decode-mask', params),
+    invalidateSession: (): Promise<void> =>
+      ipcRenderer.invoke('isnet:invalidate-session'),
+  },
 
-    invalidateCache: (): Promise<void> =>
-      ipcRenderer.invoke('sam:invalidate-cache'),
+  // ── AI Upscale (Rescale Image) ────────────────────────────────
+  upscale: {
+    listModels: (): Promise<Array<{ id: string; label: string; scale: number }>> =>
+      ipcRenderer.invoke('upscale:list-models'),
+
+    checkModel: (
+      modelId: string,
+    ): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> =>
+      ipcRenderer.invoke('upscale:check-model', modelId),
+
+    run: (params: {
+      rgba: Uint8Array
+      width: number
+      height: number
+      modelId: string
+      targetWidth: number
+      targetHeight: number
+    }): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> =>
+      ipcRenderer.invoke('upscale:run', {
+        rgba: Buffer.from(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength),
+        width: params.width,
+        height: params.height,
+        modelId: params.modelId,
+        targetWidth: params.targetWidth,
+        targetHeight: params.targetHeight,
+      }),
+
+    invalidateSession: (modelId?: string): Promise<void> =>
+      ipcRenderer.invoke('upscale:invalidate-session', modelId),
+
+    onProgress: (
+      callback: (p: { progress: number; loaded: number; total: number }) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: IpcRendererEvent,
+        p: { progress: number; loaded: number; total: number },
+      ): void => callback(p)
+      ipcRenderer.on('upscale:progress', handler)
+      return () => ipcRenderer.removeListener('upscale:progress', handler)
+    },
   },
 
   // ── Alpha matting (Refine Edge) ─────────────────────────────────

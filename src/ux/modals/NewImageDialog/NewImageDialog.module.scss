@@ -18,9 +18,24 @@
   width: 290px;
   flex-shrink: 0;
   padding: 14px 14px 12px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  // Constrain to the body height so the inner scroll container has a
+  // bounded parent — without `min-height: 0` the flex item refuses to
+  // shrink and the overflow never kicks in.
+  min-height: 0;
+}
+
+// Inner scroll container holds every preset group. The clipboard button
+// stays outside this and stays pinned to the bottom of the panel.
+.presetsScroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  // Pad the right edge a bit so the scrollbar doesn't sit on top of the
+  // preset cards.
+  padding-right: 4px;
+  margin-right: -4px;
 }
 
 .sectionTitle {
@@ -122,6 +137,9 @@
   align-items: center;
   gap: 7px;
   margin-top: 12px;
+  // Keeps the button visible at the bottom of the panel while the
+  // preset groups above it scroll independently.
+  flex-shrink: 0;
   padding: 7px 10px;
   background: vars.$color-surface-2;
   border: 1px solid vars.$color-border-light;

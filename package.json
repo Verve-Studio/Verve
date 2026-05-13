@@ -53,12 +53,16 @@
     ],
     "extraResources": [
       {
-        "from": "resources/models/efficientsam",
-        "to": "models/efficientsam"
+        "from": "resources/models/isnet",
+        "to": "models/isnet"
       },
       {
         "from": "resources/models/rvm",
         "to": "models/rvm"
+      },
+      {
+        "from": "resources/models/realesrgan",
+        "to": "models/realesrgan"
       }
     ],
     "win": {

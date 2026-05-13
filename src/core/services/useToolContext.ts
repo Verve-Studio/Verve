@@ -56,7 +56,7 @@ const NO_LAYER_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   "select",
   "lasso",
   "polygonal-selection",
-  "object-selection",
+  "auto-mask",
   "crop",
 ]);
 

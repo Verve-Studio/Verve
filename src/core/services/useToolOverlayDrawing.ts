@@ -12,7 +12,6 @@
  *   - clone-stamp: shows the source marker + Δ-offset cursor
  *   - move: sets `cursor: move` on the canvas
  *   - polygonal-selection: switches `cursor` between crosshair and cell
- *   - object-selection: draws drag rect + positive/negative point prompts
  */
 import { useEffect } from "react";
 import { drawTransformOverlay } from "@/core/tools/Transform/Transform";
@@ -117,60 +116,4 @@ export function useToolOverlayDrawing(params: ToolOverlayDrawingParams): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, activeTool]);
 
-  // ── Object selection: drag rect + point prompts ───────────────────────────
-  useEffect(() => {
-    if (!isActive || activeTool !== "object-selection") return;
-    const redraw = (): void => {
-      const oc = toolOverlayRef.current;
-      if (!oc) return;
-      const ctx2d = oc.getContext("2d");
-      if (!ctx2d) return;
-      ctx2d.clearRect(0, 0, oc.width, oc.height);
-      const store = activeScope().objectSelection;
-
-      // Drag rectangle (two-tone dash for legibility on any background).
-      if (store.dragRect) {
-        const { x1, y1, x2, y2 } = store.dragRect;
-        const rx = Math.min(x1, x2);
-        const ry = Math.min(y1, y2);
-        const rw = Math.abs(x2 - x1);
-        const rh = Math.abs(y2 - y1);
-        ctx2d.strokeStyle = "rgba(0,0,0,0.6)";
-        ctx2d.lineWidth = 2;
-        ctx2d.setLineDash([5, 4]);
-        ctx2d.strokeRect(rx, ry, rw, rh);
-        ctx2d.strokeStyle = "white";
-        ctx2d.lineWidth = 1;
-        ctx2d.setLineDash([5, 4]);
-        ctx2d.strokeRect(rx, ry, rw, rh);
-        ctx2d.setLineDash([]);
-      }
-
-      // Point prompts (positive = green +, negative = red −).
-      for (const pt of store.points) {
-        const color = pt.positive ? "#22cc44" : "#ee3333";
-        ctx2d.beginPath();
-        ctx2d.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
-        ctx2d.fillStyle = color;
-        ctx2d.fill();
-        ctx2d.strokeStyle = "white";
-        ctx2d.lineWidth = 1.5;
-        ctx2d.setLineDash([]);
-        ctx2d.stroke();
-        ctx2d.fillStyle = "white";
-        ctx2d.font = "bold 9px sans-serif";
-        ctx2d.textAlign = "center";
-        ctx2d.textBaseline = "middle";
-        ctx2d.fillText(pt.positive ? "+" : "−", pt.x, pt.y);
-      }
-    };
-    redraw();
-    activeScope().objectSelection.subscribe(redraw);
-    return () => {
-      activeScope().objectSelection.unsubscribe(redraw);
-      const oc = toolOverlayRef.current;
-      oc?.getContext("2d")?.clearRect(0, 0, oc.width, oc.height);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, activeTool]);
 }

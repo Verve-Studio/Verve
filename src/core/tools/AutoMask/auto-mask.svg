@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Subject silhouette: head + shoulders, centered slightly left so the AI sparkle has its own corner -->
+  <circle cx="10" cy="10" r="3.2" />
+  <path d="M3.5 20.5 C 4 16, 7 13.4, 10 13.4 C 13 13.4, 16 16, 16.5 20.5" />
+  <!-- AI sparkle in the upper-right corner -->
+  <path d="M19 3 L19.6 4.4 L21 5 L19.6 5.6 L19 7 L18.4 5.6 L17 5 L18.4 4.4 Z" fill="currentColor" stroke="none" />
+</svg>

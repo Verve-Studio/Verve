@@ -43,6 +43,20 @@ const DIGITAL_PRESETS: Preset[] = [
   { label: "3840 × 2160", sub: "4K", width: 3840, height: 2160 },
 ];
 
+// Legacy screen resolutions paired with their 16:9 widescreen counterparts.
+// The widescreen variant keeps the original vertical resolution and grows the
+// width to round(height × 16 / 9) — so each row is a natural before/after.
+const RETRO_PRESETS: Preset[] = [
+  { label: "320 × 200", sub: "DOS", width: 320, height: 200 },
+  { label: "356 × 200", sub: "16:9", width: 356, height: 200 },
+  { label: "320 × 240", sub: "QVGA", width: 320, height: 240 },
+  { label: "427 × 240", sub: "16:9", width: 427, height: 240 },
+  { label: "640 × 480", sub: "VGA", width: 640, height: 480 },
+  { label: "854 × 480", sub: "FWVGA", width: 854, height: 480 },
+  { label: "1024 × 768", sub: "XGA", width: 1024, height: 768 },
+  { label: "1366 × 768", sub: "WXGA", width: 1366, height: 768 },
+];
+
 // Portrait dimensions at 300 PPI
 const mm = (mm_: number): number => Math.round((mm_ / 25.4) * 300);
 const PRINT_PRESETS: Preset[] = [
@@ -316,38 +330,56 @@ export function NewImageDialog({
         <div className={styles.presetsPanel}>
           <p className={styles.sectionTitle}>PRESETS</p>
 
-          <p className={styles.presetGroupLabel}>Digital</p>
-          <div className={styles.presetsGrid}>
-            {DIGITAL_PRESETS.map((p) => (
-              <DialogButton
-                key={p.label}
-                className={`${styles.presetCard} ${selectedPreset === p.label ? styles.presetSelected : ""}`}
-                onClick={() => handlePreset(p)}
-                title={`${p.width} × ${p.height} px`}
-              >
-                <DocIcon />
-                <span className={styles.presetDims}>{p.label}</span>
-                <span className={styles.presetSub}>{p.sub}</span>
-              </DialogButton>
-            ))}
-          </div>
+          <div className={styles.presetsScroll}>
+            <p className={styles.presetGroupLabel}>Digital</p>
+            <div className={styles.presetsGrid}>
+              {DIGITAL_PRESETS.map((p) => (
+                <DialogButton
+                  key={p.label}
+                  className={`${styles.presetCard} ${selectedPreset === p.label ? styles.presetSelected : ""}`}
+                  onClick={() => handlePreset(p)}
+                  title={`${p.width} × ${p.height} px`}
+                >
+                  <DocIcon />
+                  <span className={styles.presetDims}>{p.label}</span>
+                  <span className={styles.presetSub}>{p.sub}</span>
+                </DialogButton>
+              ))}
+            </div>
 
-          <p className={styles.presetGroupLabel}>
-            Print <span className={styles.presetGroupNote}>@ 300 ppi</span>
-          </p>
-          <div className={styles.presetsGrid}>
-            {PRINT_PRESETS.map((p) => (
-              <DialogButton
-                key={p.label}
-                className={`${styles.presetCard} ${selectedPreset === p.label ? styles.presetSelected : ""}`}
-                onClick={() => handlePreset(p)}
-                title={`${p.width} × ${p.height} px`}
-              >
-                <DocIcon />
-                <span className={styles.presetDims}>{p.label}</span>
-                <span className={styles.presetSub}>{p.sub}</span>
-              </DialogButton>
-            ))}
+            <p className={styles.presetGroupLabel}>Retro</p>
+            <div className={styles.presetsGrid}>
+              {RETRO_PRESETS.map((p) => (
+                <DialogButton
+                  key={p.label}
+                  className={`${styles.presetCard} ${selectedPreset === p.label ? styles.presetSelected : ""}`}
+                  onClick={() => handlePreset(p)}
+                  title={`${p.width} × ${p.height} px`}
+                >
+                  <DocIcon />
+                  <span className={styles.presetDims}>{p.label}</span>
+                  <span className={styles.presetSub}>{p.sub}</span>
+                </DialogButton>
+              ))}
+            </div>
+
+            <p className={styles.presetGroupLabel}>
+              Print <span className={styles.presetGroupNote}>@ 300 ppi</span>
+            </p>
+            <div className={styles.presetsGrid}>
+              {PRINT_PRESETS.map((p) => (
+                <DialogButton
+                  key={p.label}
+                  className={`${styles.presetCard} ${selectedPreset === p.label ? styles.presetSelected : ""}`}
+                  onClick={() => handlePreset(p)}
+                  title={`${p.width} × ${p.height} px`}
+                >
+                  <DocIcon />
+                  <span className={styles.presetDims}>{p.label}</span>
+                  <span className={styles.presetSub}>{p.sub}</span>
+                </DialogButton>
+              ))}
+            </div>
           </div>
 
           <button

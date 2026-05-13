@@ -281,6 +281,10 @@ export interface MenuDeps {
   onOpenProfileManager?: () => void;
   onResizeImage?: () => void;
   onResizeCanvas?: () => void;
+  onRescaleImage?: () => void;
+  isRescaleEnabled?: boolean;
+  onRestoreImage?: () => void;
+  isRestoreEnabled?: boolean;
   onRotate90CW?: () => void;
   onRotate180?: () => void;
   onRotate270CW?: () => void;
@@ -914,6 +918,18 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
         SEP,
         { label: "Resize Image…", actionId: "resizeImage", action: deps.onResizeImage },
         { label: "Resize Image Canvas…", actionId: "resizeCanvas", action: deps.onResizeCanvas },
+        {
+          label: "Rescale Image…",
+          actionId: "rescaleImage",
+          action: deps.onRescaleImage,
+          disabled: !deps.isRescaleEnabled,
+        },
+        {
+          label: "Restore Image…",
+          actionId: "restoreImage",
+          action: deps.onRestoreImage,
+          disabled: !deps.isRestoreEnabled,
+        },
         SEP,
         {
           label: "Rotate",
