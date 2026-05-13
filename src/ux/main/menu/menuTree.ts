@@ -101,6 +101,10 @@ export interface MenuNode {
   hidden?: boolean;
   separator?: boolean;
   submenu?: MenuNode[];
+  /** Windows/Linux only. Override the dropdown width (in px) for this
+   *  node's `submenu`. Ignored by the macOS native menu, which sizes
+   *  its dropdowns automatically. */
+  width?: number;
 }
 
 /** Function-free shape that gets sent over IPC. Identical to MenuNode but

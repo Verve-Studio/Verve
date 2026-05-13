@@ -47,6 +47,11 @@ function SubmenuItem({ item, onClose }: SubmenuItemProps): React.JSX.Element {
           <ul
             className={`${styles.dropdown} ${styles.submenuDropdown}`}
             role="menu"
+            style={
+              item.width !== undefined
+                ? { width: item.width, minWidth: item.width }
+                : undefined
+            }
           >
             {item.submenu.map((sub, i) =>
               sub.separator ? (
@@ -150,7 +155,15 @@ export function MenuBar({ menus }: MenuBarProps): React.JSX.Element {
           </button>
 
           {openMenu === menu.label && !menu.disabled && menu.submenu && (
-            <ul className={styles.dropdown} role="menu">
+            <ul
+              className={styles.dropdown}
+              role="menu"
+              style={
+                menu.width !== undefined
+                  ? { width: menu.width, minWidth: menu.width }
+                  : undefined
+              }
+            >
               {menu.submenu.map((item, i) =>
                 item.separator ? (
                   <li key={i} role="separator" className={styles.separator} />
