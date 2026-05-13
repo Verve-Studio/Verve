@@ -1,5 +1,6 @@
 import { readPsd, type Psd, type Layer, type BlendMode } from "ag-psd";
 import type { BlendMode as VerveBlendMode } from "@/types";
+import { extractIccFromPsd } from "@/core/cms/iccProfile";
 
 // ─── Imported PSD layer (intermediate shape) ──────────────────────────────────
 
@@ -52,6 +53,9 @@ export interface PsdImportResult {
   nodes: PsdImportedNode[];
   /** True if any unsupported layer types were encountered and skipped. */
   hadUnsupportedLayers: boolean;
+  /** Document-level ICC profile (Image Resource ID 1039), preserved verbatim
+   *  for round-trip. `undefined` if the PSD has no embedded profile. */
+  iccProfile?: Uint8Array;
 }
 
 // ─── Blend-mode mapping ───────────────────────────────────────────────────────
@@ -250,10 +254,14 @@ export function loadPsdLayers(buffer: ArrayBuffer): PsdImportResult {
   });
   const state = { idCounter: 0, hadUnsupported: false };
   const nodes = walkLayers(psd.children, state);
+  // ag-psd doesn't surface Image Resource 1039 in its typed API, so parse
+  // the resource block directly from the source bytes.
+  const iccProfile = extractIccFromPsd(new Uint8Array(buffer)) ?? undefined;
   return {
     width: psd.width,
     height: psd.height,
     nodes,
     hadUnsupportedLayers: state.hadUnsupported,
+    iccProfile,
   };
 }

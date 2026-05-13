@@ -27,6 +27,11 @@ import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
 import { activeScope, createDocumentScope, setActiveScope } from "@/core/store/scope";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
+import {
+  convertToWorkingSpace,
+  getWorkingSpaceProfile,
+  type PixelLayout,
+} from "@/core/cms/lcms2";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -365,6 +370,7 @@ export function useFileOps({
           swatchGroups: [],
           pixelBrushes: [],
           pixelFormat: "rgba8",
+          iccProfile: psd.iccProfile,
         };
         const snapshot = captureActiveSnapshot();
         const savedLayerData = serializeActiveTabPixels();
@@ -409,6 +415,7 @@ export function useFileOps({
             showTileGrid: false,
             swatches: newSnapshot.swatches,
             swatchGroups: newSnapshot.swatchGroups,
+            iccProfile: psd.iccProfile,
           },
         });
         const updatedRecent = await window.api.addRecentFile(path);
@@ -534,10 +541,33 @@ export function useFileOps({
         const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
         const { width, height } = loaded;
 
+        // ── Tier-2 early-binding ICC conversion ─────────────────────────────
+        // Convert source-profile pixels into the document's working space
+        // (sRGB for rgba8, linear-sRGB for rgba32f) and retag with the
+        // working-space profile. Falls back to Tier-1 passthrough when
+        // lcms2 isn't linked into the WASM build.
+        let importPixels: Uint8Array | Float32Array = loaded.data;
+        let importIccProfile = loaded.iccProfile;
+        if (loaded.iccProfile) {
+          const layout: PixelLayout = loaded.isHdr ? "rgba32f" : "rgba8";
+          const converted = await convertToWorkingSpace(
+            loaded.data,
+            loaded.iccProfile,
+            layout,
+            "perceptual",
+            true,
+          );
+          if (converted) {
+            importPixels = converted;
+            const wsProfile = await getWorkingSpaceProfile(layout);
+            if (wsProfile) importIccProfile = wsProfile;
+          }
+        }
+
         if (loaded.isHdr) {
           // HDR file — create a rgba32f tab, store float pixels via f32TransferStore
           const layerId = "layer-0";
-          const f32Data = loaded.data as Float32Array;
+          const f32Data = importPixels as Float32Array;
           const layerDataKey = `f32:${layerId}`;
           // Encode float pixels as data URL for savedLayerData map
           const u8 = new Uint8Array(f32Data.buffer);
@@ -572,6 +602,7 @@ export function useFileOps({
             swatchGroups: [],
             pixelBrushes: [],
             pixelFormat: "rgba32f",
+            iccProfile: importIccProfile,
           };
           const snapshot = captureActiveSnapshot();
           const savedLayerData = serializeActiveTabPixels();
@@ -619,6 +650,7 @@ export function useFileOps({
               pixelFormat: "rgba32f",
               swatches: newSnapshot.swatches,
               swatchGroups: newSnapshot.swatchGroups,
+              iccProfile: importIccProfile,
             },
           });
           const updatedRecent = await window.api.addRecentFile(path);
@@ -627,7 +659,7 @@ export function useFileOps({
           return;
         }
 
-        const data = loaded.data as Uint8Array;
+        const data = importPixels as Uint8Array;
         const layerId = "layer-0";
         const newId = makeTabId();
       const newScope = createDocumentScope();
@@ -658,6 +690,7 @@ export function useFileOps({
           swatchGroups: [],
           pixelBrushes: [],
           pixelFormat: "rgba8",
+          iccProfile: importIccProfile,
         };
         const snapshot = captureActiveSnapshot();
         const savedLayerData = serializeActiveTabPixels();
@@ -702,6 +735,7 @@ export function useFileOps({
             showTileGrid: false,
             swatches: newSnapshot.swatches,
             swatchGroups: newSnapshot.swatchGroups,
+            iccProfile: importIccProfile,
           },
         });
         const updatedRecent = await window.api.addRecentFile(path);
@@ -745,6 +779,7 @@ export function useFileOps({
         swatchGroups?: unknown;
         pixelBrushes?: unknown;
         spritesheet?: unknown;
+        iccProfileBase64?: string | null;
       };
 
       // ── Legacy field migration ────────────────────────────────────────────
@@ -844,6 +879,17 @@ export function useFileOps({
       ) {
         docSpritesheet = doc.spritesheet as import("@/types").SpritesheetState;
       }
+      let docIccProfile: Uint8Array | undefined;
+      if (typeof doc.iccProfileBase64 === "string" && doc.iccProfileBase64) {
+        try {
+          const bin = atob(doc.iccProfileBase64);
+          const out = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+          docIccProfile = out;
+        } catch {
+          docIccProfile = undefined;
+        }
+      }
       const newSnapshot: TabSnapshot = {
         canvasWidth: doc.canvas.width,
         canvasHeight: doc.canvas.height,
@@ -856,6 +902,7 @@ export function useFileOps({
         pixelBrushes: docPixelBrushes,
         pixelFormat: docPixelFormat,
         spritesheet: docSpritesheet,
+        iccProfile: docIccProfile,
       };
       const snapshot = captureActiveSnapshot();
       const savedLayerData = serializeActiveTabPixels();
@@ -903,6 +950,7 @@ export function useFileOps({
           pixelFormat: docPixelFormat,
           swatches: docSwatches,
           swatchGroups: docSwatchGroups,
+          iccProfile: docIccProfile,
         },
       });
       dispatch({ type: "SET_PIXEL_BRUSHES", payload: docPixelBrushes });
@@ -1037,6 +1085,9 @@ export function useFileOps({
         swatchGroups: state.swatchGroups,
         pixelBrushes: state.pixelBrushes,
         spritesheet: state.spritesheet,
+        iccProfileBase64: state.iccProfile
+          ? uint8ToBase64(state.iccProfile)
+          : null,
       };
       await window.api.saveverveFile(path, JSON.stringify(doc));
       const savedPath = path;
@@ -1139,6 +1190,9 @@ export function useFileOps({
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,
       spritesheet: state.spritesheet,
+      iccProfileBase64: state.iccProfile
+        ? uint8ToBase64(state.iccProfile)
+        : null,
     };
     await window.api.saveverveFile(path, JSON.stringify(doc2));
     // The current tab's filePath is NOT updated — this is a copy.

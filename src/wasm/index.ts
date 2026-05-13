@@ -168,6 +168,29 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
   m._pixelops_brush_bake_coverage = wrapPtrFn(m._pixelops_brush_bake_coverage, [0, 1, 4, 7], false);
   m._pixelops_brush_stamp_bitmap = wrapPtrFn(m._pixelops_brush_stamp_bitmap, [0, 1, 2, 3, 4], false);
   m._pixelops_brush_stamp_bitmap_batch = wrapPtrFn(m._pixelops_brush_stamp_bitmap_batch, [0, 2, 3, 4, 5], false);
+
+  // ── lcms2 colour management (optional — only present when vendored) ──
+  if (typeof m._cms_get_working_profile === "function") {
+    // returns a ptr (i64) and takes an out-size ptr (i64).
+    m._cms_get_working_profile = wrapPtrFn(
+      m._cms_get_working_profile,
+      [1],
+      true,
+    );
+    m._cms_free_buffer = wrapPtrFn(m._cms_free_buffer!, [0], false);
+    m._cms_create_transform = wrapPtrFn(
+      m._cms_create_transform!,
+      [0, 2],
+      true,
+    );
+    m._cms_transform_apply = wrapPtrFn(
+      m._cms_transform_apply!,
+      [0, 1, 2],
+      false,
+    );
+    m._cms_destroy_transform = wrapPtrFn(m._cms_destroy_transform!, [0], false);
+    m._cms_build_3d_lut = wrapPtrFn(m._cms_build_3d_lut!, [0, 6], false);
+  }
 }
 
 // ─── Memory helpers ───────────────────────────────────────────────────────────

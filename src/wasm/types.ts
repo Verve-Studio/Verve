@@ -440,6 +440,65 @@ export interface PixelOpsModule {
     bmW: number,
     bmH: number,
   ): void;
+
+  // ── lcms2 colour management ──────────────────────────────────────────────
+  //
+  // All six exports are optional — they only exist when the WASM module was
+  // built with lcms2 vendored. Callers must feature-detect via `typeof
+  // module._cms_create_transform === "function"` and fall back gracefully.
+  //
+  // Layout codes: 0 = rgba8 (sRGB working space), 1 = rgba32f (linear-sRGB).
+  // Intent codes: 0 = perceptual, 1 = relative colorimetric,
+  //               2 = saturation, 3 = absolute colorimetric.
+
+  /** Generate the canonical working-space profile for `layout`. Writes the
+   *  byte length to `*outSizePtr` and returns a malloc'd buffer (caller
+   *  must free via `_cms_free_buffer`). Returns 0 on failure. */
+  _cms_get_working_profile?(layout: number, outSizePtr: number): number;
+
+  /** Free a buffer previously returned by `_cms_get_working_profile`. */
+  _cms_free_buffer?(ptr: number): void;
+
+  /** Build a reusable transform. Returns an opaque handle, or 0 on failure.
+   *  Profile buffers are parsed once and the transform compiled — apply via
+   *  `_cms_transform_apply`, destroy via `_cms_destroy_transform`. */
+  _cms_create_transform?(
+    srcProfilePtr: number,
+    srcLen: number,
+    dstProfilePtr: number,
+    dstLen: number,
+    layout: number,
+    intent: number,
+    useBpc: number,
+  ): number;
+
+  /** Apply a transform to `pixelCount` RGBA pixels (4 channels). The input
+   *  and output buffers may alias. Layout (rgba8 / rgba32f) is fixed when
+   *  the transform was created. */
+  _cms_transform_apply?(
+    handle: number,
+    inPtr: number,
+    outPtr: number,
+    pixelCount: number,
+  ): void;
+
+  /** Destroy a transform handle and free its internal lcms2 resources. */
+  _cms_destroy_transform?(handle: number): void;
+
+  /** Sample a `size × size × size` 3D LUT mapping the working space to
+   *  `dstProfile`. Writes `size^3 * 4` floats (RGBA, alpha=1) into `outPtr`.
+   *  Coordinate convention: index (r,g,b) is at offset
+   *  `(r + g*size + b*size*size) * 4` with r/g/b spanning [0, size-1] over
+   *  the [0, 1] working-space range. Returns 0 on success. */
+  _cms_build_3d_lut?(
+    dstProfilePtr: number,
+    dstLen: number,
+    layout: number,
+    intent: number,
+    useBpc: number,
+    size: number,
+    outPtr: number,
+  ): number;
 }
 
 /** Factory function exported by the Emscripten-generated ES module */

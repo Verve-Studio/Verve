@@ -3,6 +3,10 @@
 // JPEG does not support transparency. Any alpha channel in the source pixels
 // is composited over a solid background colour before encoding.
 // Quality ranges from 0 (worst) to 100 (best); the canvas API uses 0–1.
+// An embedded ICC profile is added post-encode via APP2 markers — the
+// browser's encoder doesn't accept profile bytes directly.
+
+import { embedIccInJpeg } from "@/core/cms/iccProfile";
 
 export interface JpegExportOptions {
   /**
@@ -15,6 +19,8 @@ export interface JpegExportOptions {
    * Default: '#ffffff'.
    */
   background: string;
+  /** Raw ICC profile bytes to embed as APP2 marker(s). */
+  iccProfile?: Uint8Array;
 }
 
 /**
@@ -61,5 +67,21 @@ export function exportJpeg(
   dstCtx.drawImage(src, 0, 0);
 
   const quality = Math.max(0, Math.min(100, options.quality)) / 100;
-  return dst.toDataURL("image/jpeg", quality);
+  const dataUrl = dst.toDataURL("image/jpeg", quality);
+  if (!options.iccProfile) return dataUrl;
+
+  // Inject APP2 ICC profile segments into the browser-encoded JPEG.
+  const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
+  const bin = atob(base64);
+  const raw = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
+  const withProfile = embedIccInJpeg(raw, options.iccProfile);
+  let str = "";
+  const CHUNK = 65536;
+  for (let i = 0; i < withProfile.length; i += CHUNK) {
+    str += String.fromCharCode(
+      ...withProfile.subarray(i, Math.min(i + CHUNK, withProfile.length)),
+    );
+  }
+  return `data:image/jpeg;base64,${btoa(str)}`;
 }

@@ -237,9 +237,10 @@ export function useExportOps({
                 : clampF32ToUint8(flatLayer.data)
               : flatLayer.data;
 
+          const iccProfile = stateRef.current.iccProfile;
           let dataUrl: string;
           if (settings.format === "png") {
-            dataUrl = exportPng(fullPixels, w, h);
+            dataUrl = await exportPng(fullPixels, w, h, { iccProfile });
           } else if (settings.format === "webp") {
             dataUrl = exportWebp(fullPixels, w, h, {
               quality: settings.webpQuality,
@@ -247,11 +248,12 @@ export function useExportOps({
           } else if (settings.format === "tga") {
             dataUrl = exportTga(fullPixels, w, h);
           } else if (settings.format === "tiff") {
-            dataUrl = exportTiff(fullPixels, w, h);
+            dataUrl = exportTiff(fullPixels, w, h, { iccProfile });
           } else {
             dataUrl = exportJpeg(fullPixels, w, h, {
               quality: settings.jpegQuality,
               background: settings.jpegBackground,
+              iccProfile,
             });
           }
           const filename = `${stem}_${sanitiseName(ls.name)}${ext}`;
@@ -693,8 +695,10 @@ export function useExportOps({
             : flat.data;
       }
 
+      const iccProfile = stateRef.current.iccProfile;
       let dataUrl: string;
-      if (settings.format === "png") dataUrl = exportPng(data, width, height);
+      if (settings.format === "png")
+        dataUrl = await exportPng(data, width, height, { iccProfile });
       else if (settings.format === "webp")
         dataUrl = exportWebp(data, width, height, {
           quality: settings.webpQuality,
@@ -702,11 +706,12 @@ export function useExportOps({
       else if (settings.format === "tga")
         dataUrl = exportTga(data, width, height);
       else if (settings.format === "tiff")
-        dataUrl = exportTiff(data, width, height);
+        dataUrl = exportTiff(data, width, height, { iccProfile });
       else
         dataUrl = exportJpeg(data, width, height, {
           quality: settings.jpegQuality,
           background: settings.jpegBackground,
+          iccProfile,
         });
       await window.api.exportImage(
         settings.filePath,

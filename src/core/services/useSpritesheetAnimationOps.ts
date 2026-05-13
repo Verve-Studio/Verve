@@ -255,21 +255,24 @@ export function useSpritesheetAnimationOps({
 
       const isGif = settings.format === "gif";
 
-      const encode = (
+      const iccProfile = s.iccProfile;
+      const encode = async (
         data: Uint8Array,
         w: number,
         h: number,
-      ): string => {
-        if (settings.format === "png") return exportPng(data, w, h);
+      ): Promise<string> => {
+        if (settings.format === "png")
+          return exportPng(data, w, h, { iccProfile });
         if (settings.format === "jpeg")
           return exportJpeg(data, w, h, {
             quality: settings.jpegQuality,
             background: "#ffffff",
+            iccProfile,
           });
         if (settings.format === "webp")
           return exportWebp(data, w, h, { quality: settings.webpQuality });
         if (settings.format === "tga") return exportTga(data, w, h);
-        return exportTiff(data, w, h);
+        return exportTiff(data, w, h, { iccProfile });
       };
 
       // GIF builds a single file at the end — buffer per-frame RGBA copies
@@ -291,7 +294,7 @@ export function useSpritesheetAnimationOps({
           gifH = h;
           return;
         }
-        const dataUrl = encode(data, w, h);
+        const dataUrl = await encode(data, w, h);
         const filename = `${settings.baseName}${pad(settings.startIndex + i, settings.padDigits)}${ext}`;
         const filePath = `${settings.folder}${sep}${filename}`;
         const base64 = dataUrl.replace(/^data:[^;]+;base64,/, "");

@@ -10,6 +10,7 @@ import type {
 } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
+import { notificationStore } from "@/core/store/notificationStore";
 import {
   convertRgba8ToF32Raw,
   convertF32ToRgba8,
@@ -185,6 +186,17 @@ export function useColorMode({
       }
 
       dispatch({ type: "SET_PIXEL_FORMAT", payload: toFormat });
+
+      // Indexed8 carries palette indices, not colour values — an attached
+      // ICC profile is meaningless in that mode (every modern app strips
+      // it on conversion). Drop the profile and surface a one-shot notice
+      // so the user knows the round-trip won't preserve it.
+      if (toFormat === "indexed8" && state.iccProfile) {
+        dispatch({ type: "SET_ICC_PROFILE", payload: undefined });
+        notificationStore.error(
+          "Embedded ICC profile dropped on conversion to Indexed Color.",
+        );
+      }
 
       // Tag every converted pixel layer with the user-declared source space
       // so the renderer's inline IDT interprets the float values correctly.

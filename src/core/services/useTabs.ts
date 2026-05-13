@@ -118,6 +118,7 @@ export function useTabs(
       pixelFormat: state.pixelFormat,
       spritesheet: state.spritesheet,
       paletteAnimation: state.paletteAnimation,
+      iccProfile: state.iccProfile,
     }),
     [state],
   );
@@ -219,6 +220,7 @@ export function useTabs(
           pixelFormat: toTab.snapshot.pixelFormat ?? "rgba8",
           swatches: toTab.snapshot.swatches ?? DEFAULT_SWATCHES,
           swatchGroups: toTab.snapshot.swatchGroups ?? [],
+          iccProfile: toTab.snapshot.iccProfile,
         },
       });
       dispatch({

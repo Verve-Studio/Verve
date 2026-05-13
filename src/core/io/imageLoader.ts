@@ -7,6 +7,11 @@ import {
   decodeDdsF32,
   DdsFormat,
 } from "@/wasm";
+import {
+  extractIccFromPng,
+  extractIccFromJpeg,
+  extractIccFromTiff,
+} from "@/core/cms/iccProfile";
 
 // ─── Supported image extensions + MIME types ─────────────────────────────────
 
@@ -256,6 +261,10 @@ export async function loadImagePixels(
   width: number;
   height: number;
   isHdr?: boolean;
+  /** Raw ICC profile bytes extracted from the source file, when present.
+   *  PNG iCCP chunks, JPEG APP2 markers, and TIFF tag 34675 are honoured;
+   *  every other format returns no profile. */
+  iccProfile?: Uint8Array;
 }> {
   // DDS — decoded via WASM.
   if (dataUrl.startsWith("data:image/vnd.ms-dds;base64,")) {
@@ -367,6 +376,7 @@ export async function loadImagePixels(
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const iccProfile = extractIccFromTiff(bytes) ?? undefined;
       const ifds = UTIF.decode(bytes.buffer as ArrayBuffer);
       if (ifds.length === 0) throw new Error("No images found in TIFF file");
       UTIF.decodeImage(bytes.buffer as ArrayBuffer, ifds[0]);
@@ -401,6 +411,7 @@ export async function loadImagePixels(
           width: w,
           height: h,
           isHdr: true,
+          iccProfile,
         });
       }
       const rgba = UTIF.toRGBA8(ifds[0]);
@@ -408,11 +419,38 @@ export async function loadImagePixels(
         data: rgba,
         width: ifds[0].width,
         height: ifds[0].height,
+        iccProfile,
       });
     } catch (err) {
       return Promise.reject(
         new Error(`Failed to decode TIFF: ${(err as Error).message}`),
       );
+    }
+  }
+
+  // PNG / JPEG decode through the browser's <img> element, which strips
+  // any embedded ICC profile. Extract the profile from the raw bytes
+  // first, then hand off pixel decoding to the browser.
+  let extractedProfile: Uint8Array | undefined;
+  if (dataUrl.startsWith("data:image/png;base64,")) {
+    try {
+      const base64 = dataUrl.slice("data:image/png;base64,".length);
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      extractedProfile = (await extractIccFromPng(bytes)) ?? undefined;
+    } catch {
+      extractedProfile = undefined;
+    }
+  } else if (dataUrl.startsWith("data:image/jpeg;base64,")) {
+    try {
+      const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      extractedProfile = extractIccFromJpeg(bytes) ?? undefined;
+    } catch {
+      extractedProfile = undefined;
     }
   }
 
@@ -431,6 +469,7 @@ export async function loadImagePixels(
         ),
         width: img.naturalWidth,
         height: img.naturalHeight,
+        iccProfile: extractedProfile,
       });
     };
     img.onerror = () => reject(new Error("Failed to decode image"));

@@ -85,6 +85,7 @@ export type AppAction =
         pixelFormat?: PixelFormat;
         swatches?: RGBAColor[];
         swatchGroups?: SwatchGroup[];
+        iccProfile?: Uint8Array;
       };
     }
   | {
@@ -101,6 +102,7 @@ export type AppAction =
         pixelFormat?: PixelFormat;
         swatches?: RGBAColor[];
         swatchGroups?: SwatchGroup[];
+        iccProfile?: Uint8Array;
       };
     }
   | {
@@ -121,8 +123,10 @@ export type AppAction =
         // carries over).
         swatches?: RGBAColor[];
         swatchGroups?: SwatchGroup[];
+        iccProfile?: Uint8Array;
       };
     }
+  | { type: "SET_ICC_PROFILE"; payload: Uint8Array | undefined }
   | {
       type: "RESTORE_LAYERS";
       payload: { layers: LayerState[]; activeLayerId: string | null };
@@ -996,6 +1000,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         animationMode: false,
         spritesheet: initialState.spritesheet,
         paletteAnimation: initialState.paletteAnimation,
+        iccProfile: undefined,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -1019,6 +1024,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
         swatches: action.payload.swatches ?? DEFAULT_SWATCHES,
         swatchGroups: action.payload.swatchGroups ?? [],
+        iccProfile: action.payload.iccProfile,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -1031,6 +1037,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
         },
         history: { canUndo: false, canRedo: false },
       };
+
+    case "SET_ICC_PROFILE":
+      return { ...state, iccProfile: action.payload };
 
     case "RESTORE_LAYERS":
       return {
@@ -1058,6 +1067,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
+        iccProfile: action.payload.iccProfile,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
@@ -1091,6 +1101,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeLayerId: action.payload.activeLayerId,
         selectedLayerIds: [],
         pixelFormat: action.payload.pixelFormat ?? "rgba8",
+        iccProfile: action.payload.iccProfile,
         animationMode: false,
         spritesheet: initialState.spritesheet,
         paletteAnimation: initialState.paletteAnimation,

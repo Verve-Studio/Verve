@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAppContext } from "@/core/store/AppContext";
 import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
+import { parseProfileDescription } from "@/core/cms/iccProfile";
 
 import styles from "./InfoPanel.module.scss";
 import { activeScope } from "@/core/store/scope";
@@ -78,6 +79,11 @@ export function InfoPanel(): React.JSX.Element {
   const format = state.pixelFormat ?? "rgba8";
   const isFloat = format === "rgba32f";
   const isIndexed = format === "indexed8";
+
+  const profileLabel = useMemo<string>(() => {
+    if (!state.iccProfile) return "Untagged";
+    return parseProfileDescription(state.iccProfile) ?? "Embedded (unnamed)";
+  }, [state.iccProfile]);
 
   const [cursor, setCursor] = useState<CursorState>({
     x: cursorStore.x,
@@ -248,6 +254,12 @@ export function InfoPanel(): React.JSX.Element {
               <td className={styles.ch}>Size</td>
               <td className={styles.val} colSpan={3}>
                 {memoryEstimate(width, height, format)}
+              </td>
+            </tr>
+            <tr>
+              <td className={styles.ch}>ICC</td>
+              <td className={styles.val} colSpan={3} title={profileLabel}>
+                {profileLabel}
               </td>
             </tr>
           </tbody>

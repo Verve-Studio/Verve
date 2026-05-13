@@ -661,4 +661,10 @@ export interface AppState {
   animationMode: boolean;
   spritesheet: SpritesheetState;
   paletteAnimation: PaletteAnimationState;
+  /** Raw ICC profile bytes embedded in the source file (or assigned later),
+   *  preserved verbatim on round-trip. `undefined` means "no profile" —
+   *  the renderer treats untagged rgba8 as sRGB and untagged rgba32f as
+   *  linear-light sRGB (current behaviour). Always `undefined` for
+   *  indexed8 documents; the profile is stripped on conversion. */
+  iccProfile?: Uint8Array;
 }
