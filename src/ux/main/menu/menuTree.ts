@@ -204,6 +204,7 @@ export interface MenuDeps {
   onSaveACopy?: () => void;
   onExport?: () => void;
   onClose?: () => void;
+  onCloseOthers?: () => void;
   onCloseAll?: () => void;
   recentFiles?: string[];
   onOpenRecent?: (path: string) => void;
@@ -610,6 +611,7 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
         { label: "Open Recent", submenu: recentSubmenu },
         SEP,
         { label: "Close", actionId: "close", action: deps.onClose },
+        { label: "Close Others", actionId: "closeOthers", action: deps.onCloseOthers },
         { label: "Close All", actionId: "closeAll", action: deps.onCloseAll },
         SEP,
         { label: "Save", actionId: "save", action: deps.onSave, shortcut: "CmdOrCtrl+S" },

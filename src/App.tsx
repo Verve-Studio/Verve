@@ -698,6 +698,11 @@ function AppContent(): React.JSX.Element {
   }, [guardedCloseTab, activeTabId]);
 
   const handleCloseAll = useCallback((): void => {
+    const ids = tabs.map((t) => t.id);
+    for (const id of ids) handleCloseTab(id);
+  }, [tabs, handleCloseTab]);
+
+  const handleCloseOthers = useCallback((): void => {
     const ids = tabs.filter((t) => t.id !== activeTabId).map((t) => t.id);
     for (const id of ids) handleCloseTab(id);
   }, [tabs, activeTabId, handleCloseTab]);
@@ -834,6 +839,7 @@ function AppContent(): React.JSX.Element {
       onSaveACopy: () => void handleSaveACopy(),
       onExport: () => setShowExportDialog(true),
       onClose: handleClose,
+      onCloseOthers: handleCloseOthers,
       onCloseAll: handleCloseAll,
       recentFiles,
       onOpenRecent: (path) => void handleOpenPath(path),
