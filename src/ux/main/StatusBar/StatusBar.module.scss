@@ -120,3 +120,11 @@
   flex-shrink: 0;
   margin: 0 2px;
 }
+
+.statusMessage {
+  margin-left: auto;
+  font-size: vars.$font-size-sm;
+  color: var(--color-accent-blue, #4a9eff);
+  white-space: nowrap;
+  flex-shrink: 0;
+}

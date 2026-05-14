@@ -43,12 +43,18 @@ export const AddNoiseEffect: IPipelineEffect<
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-add-noise", "fs_add_noise");
     const { amount, distribution, monochromatic, seed } = entry.params;
+    const isLinear =
+      dstTex.format === "rgba16float" || dstTex.format === "rgba32float";
     const paramsBuf = rt.makeParamsBuf(
       new Uint32Array([
         amount,
         distribution === "gaussian" ? 1 : 0,
         monochromatic ? 1 : 0,
         seed,
+        isLinear ? 1 : 0,
+        0,
+        0,
+        0,
       ]),
     );
     rt.encodeRenderPass(

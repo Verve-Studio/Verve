@@ -38,11 +38,19 @@ export const SharpenMoreEffect: IPipelineEffect<
   encode({ engine, encoder, srcTex, dstTex }) {
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-sharpen-more", "fs_sharpen_more");
+    const isLinear =
+      dstTex.format === "rgba16float" || dstTex.format === "rgba32float";
+    const paramsBuf = rt.makeParamsBuf(
+      new Uint32Array([isLinear ? 1 : 0, 0, 0, 0]),
+    );
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(pair, dstTex),
       dstTex,
-      [{ binding: 0, resource: srcTex.createView() }],
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
     );
   },
 

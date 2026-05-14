@@ -65,8 +65,10 @@ export const UnsharpMaskEffect: IPipelineEffect<
         { binding: 2, resource: { buffer: gaussParamsBuf } },
       ],
     );
+    const isLinear =
+      dstTex.format === "rgba16float" || dstTex.format === "rgba32float";
     const combineParamsBuf = rt.makeParamsBuf(
-      new Uint32Array([amount, threshold, 0, 0]),
+      new Uint32Array([amount, threshold, isLinear ? 1 : 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

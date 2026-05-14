@@ -11,11 +11,17 @@ import { DdsFormat, DdsHeaderMode } from "@/wasm";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState, ToneMappingOperator } from "@/types";
 import { showOperationError } from "@/utils/userFeedback";
+import { statusMessageStore } from "@/core/store/statusMessageStore";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 import { buildRootLayerIds, getDescendantIds } from "@/utils/layerTree";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { ExportSettings } from "@/ux/modals/ExportDialog/ExportDialog";
 import { useCallback, useState, type MutableRefObject } from "react";
+
+function exportFileName(path: string): string {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i >= 0 ? path.slice(i + 1) : path;
+}
 
 // ─── Tone-mapping helper ──────────────────────────────────────────────────────
 
@@ -1017,6 +1023,9 @@ export function useExportOps({
           return;
         }
         await doExport(settings);
+        statusMessageStore.show(
+          `Exported ${exportFileName(settings.filePath)}`,
+        );
       } catch (error) {
         console.error("[useExportOps] Export failed:", error);
         showOperationError("Export failed.", error);
@@ -1031,6 +1040,7 @@ export function useExportOps({
     setPendingLdrExport(null);
     try {
       await doExport(settings);
+      statusMessageStore.show(`Exported ${exportFileName(settings.filePath)}`);
     } catch (error) {
       console.error("[useExportOps] Export failed:", error);
       showOperationError("Export failed.", error);

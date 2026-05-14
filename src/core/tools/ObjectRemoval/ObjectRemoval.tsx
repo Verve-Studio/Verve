@@ -104,9 +104,6 @@ function ObjectRemovalOptions({
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
   const [modelStatus, setModelStatus] = useState(objectRemovalStatus.model);
-  const [searchedPaths, setSearchedPaths] = useState(
-    objectRemovalStatus.searchedPaths,
-  );
   const [running, setRunning] = useState(objectRemovalRunner.isRunning());
   const [size, setSize] = useState(objectRemovalOptions.size);
   const [outputToNewLayer, setOutputToNewLayer] = useState(
@@ -119,7 +116,6 @@ function ObjectRemovalOptions({
   useEffect(() => {
     const sync = (): void => {
       setModelStatus(objectRemovalStatus.model);
-      setSearchedPaths(objectRemovalStatus.searchedPaths);
       setRunning(objectRemovalRunner.isRunning());
     };
     objectRemovalStatus.subscribers.add(sync);

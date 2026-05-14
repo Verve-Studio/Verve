@@ -254,7 +254,10 @@ export function encodeDropShadowPass(
   cu[8] = args.knockout ? 1 : 0;
 
   const compParamsBuf = runtime.makeParamsBuf(compBuf);
-  const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!args.selMaskLayer);
+  const maskFlagsBuf = runtime.makeMaskFlagsBuf(
+    !!args.selMaskLayer,
+    dstTex.format === "rgba16float" || dstTex.format === "rgba32float",
+  );
   const dummyMask = args.selMaskLayer?.texture ?? srcTex;
 
   const compBG = device.createBindGroup({

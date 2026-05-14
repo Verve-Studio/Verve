@@ -38,6 +38,18 @@ export interface ColorGradingParams {
     saturation: number;
     hue: number;
     lumMix: number;
+    /**
+     * HDR-aware grading mode. When enabled, the shader drops the
+     * stage-by-stage `[0,1]` clamps so scene-linear pixels above 1.0
+     * survive the grade, replaces the bell-curve midtone weight with a
+     * non-negative variant (the original `4·lum·(1−lum)` flips sign past
+     * lum=1 and inverts the gamma stage on HDR pixels), and routes the
+     * hue / saturation / vibrance stages through OKLab — an HDR-defined
+     * colour space — instead of HSL, which is only well-defined for
+     * inputs in `[0, 1]`. Disabled by default so SDR docs and existing
+     * grades keep their calibrated look bit-for-bit.
+     */
+    hdrMode: boolean;
 }
 
 export type ColorGradingEffectLayer = EffectLayerOf<"color-grading", ColorGradingParams>;
@@ -67,6 +79,7 @@ export const ColorGradingEffect: IPipelineEffect<
     saturation: 50,
     hue: 50,
     lumMix: 0,
+    hdrMode: false,
   },
 
   buildPlanEntry(layer, { mask }) {
@@ -110,7 +123,21 @@ export const ColorGradingEffect: IPipelineEffect<
     f[24] = entry.params.saturation;
     f[25] = entry.params.hue;
     f[26] = entry.params.lumMix;
-    f[27] = 0;
+    // `inputIsLinear`: tell the shader whether the composite ping-pong it's
+    // sampling holds scene-linear floats (rgba32f docs) or sRGB-encoded
+    // bytes (rgba8 docs). The grading math was authored for perceptual
+    // inputs; the shader gamma-encodes/decodes around its body when this
+    // flag is set so the same slider numbers produce the same look in
+    // either pixel format.
+    const isLinear =
+      format === "rgba16float" || format === "rgba32float";
+    f[27] = isLinear ? 1 : 0;
+    // `hdrMode`: when on, the shader runs its dedicated HDR grading path
+    // (no clamps, OKLab for hue/sat, weight-luminance clamped so wMid
+    // doesn't go negative on HDR pixels). User-controlled — see the
+    // ColorGradingPanel toggle. Defaults to off so existing SDR grades
+    // round-trip bit-for-bit.
+    f[28] = entry.params.hdrMode ? 1 : 0;
 
     engine.runtime.encodeStdAdjRenderPass(
       encoder,

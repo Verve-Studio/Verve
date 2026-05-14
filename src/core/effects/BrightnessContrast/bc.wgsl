@@ -23,9 +23,10 @@ struct MaskFlags {
 
 
 struct BCParams {
-  brightness : f32,
-  contrast   : f32,
-  _pad       : vec2f,
+  brightness    : f32,
+  contrast      : f32,
+  inputIsLinear : f32,
+  _pad          : f32,
 }
 
 @group(0) @binding(0) var srcTex   : texture_2d<f32>;
@@ -34,16 +35,33 @@ struct BCParams {
 @group(0) @binding(3) var selMask  : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
 
+// Contrast pivots at 0.5 sRGB-midgray (50% display brightness). On
+// scene-linear floats 0.5 represents ~73% display brightness — the same
+// numerical pivot lands much higher up the tone curve and skews the
+// result. Run the math in perceptual space.
+fn srgbEncodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(1.055 * pow(x, 1.0 / 2.4) - 0.055, x * 12.92, x <= 0.0031308);
+}
+fn srgbDecodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(pow((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045);
+}
+fn srgbEncode(rgb: vec3f) -> vec3f { return vec3f(srgbEncodeF(rgb.r), srgbEncodeF(rgb.g), srgbEncodeF(rgb.b)); }
+fn srgbDecode(rgb: vec3f) -> vec3f { return vec3f(srgbDecodeF(rgb.r), srgbDecodeF(rgb.g), srgbDecodeF(rgb.b)); }
+
 @fragment
 fn fs_brightness_contrast(in: AdjVertOut) -> @location(0) vec4<f32> {
   let src = textureSample(srcTex, smp, in.uv);
   if (src.a < 0.0001) { return src; }
 
-  var rgb = src.rgb;
+  let inputIsLinear = params.inputIsLinear > 0.5;
+  var rgb = select(src.rgb, srgbEncode(src.rgb), inputIsLinear);
   let b = params.brightness / 100.0;
   rgb = clamp(rgb + b, vec3f(0.0), vec3f(1.0));
   let cFactor = (params.contrast + 100.0) / 100.0;
   rgb = clamp((rgb - 0.5) * cFactor + 0.5, vec3f(0.0), vec3f(1.0));
+  rgb = select(rgb, srgbDecode(rgb), inputIsLinear);
 
   let adjusted = vec4f(rgb, src.a);
   var mask = 1.0f;

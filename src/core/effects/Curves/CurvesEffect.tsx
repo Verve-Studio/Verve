@@ -138,7 +138,7 @@ export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
     const pipeline = runtime.selectPipeline(pair, format);
     const textures = ensureLutTextures(runtime.device, entry.layerId, entry.luts);
 
-    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer, format === "rgba16float" || format === "rgba32float");
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
     runtime.encodeRenderPass(encoder, pipeline, dstTex, [

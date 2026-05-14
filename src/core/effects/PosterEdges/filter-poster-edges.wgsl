@@ -15,7 +15,22 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
   return AdjVertOut(vec4f(positions[vi], 0.0, 1.0), uvs[vi]);
 }
 
-struct MaskFlags { hasMask : u32, _pad : vec3u, }
+struct MaskFlags {
+  hasMask       : u32,
+  inputIsLinear : u32,
+  _pad          : vec2u,
+}
+
+fn srgbEncodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(1.055 * pow(x, 1.0 / 2.4) - 0.055, x * 12.92, x <= 0.0031308);
+}
+fn srgbDecodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(pow((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045);
+}
+fn srgbEncode(rgb: vec3f) -> vec3f { return vec3f(srgbEncodeF(rgb.r), srgbEncodeF(rgb.g), srgbEncodeF(rgb.b)); }
+fn srgbDecode(rgb: vec3f) -> vec3f { return vec3f(srgbDecodeF(rgb.r), srgbDecodeF(rgb.g), srgbDecodeF(rgb.b)); }
 
 struct PosterEdgesParams {
   edgeThickness: f32,  // 0..10
@@ -42,21 +57,32 @@ fn fs_poster_edges(in: AdjVertOut) -> @location(0) vec4<f32> {
   let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
   let src = textureLoad(srcTex, coord, 0);
 
+  let inputIsLinear = maskFlags.inputIsLinear != 0u;
+  let srcP = select(src.rgb, srgbEncode(src.rgb), inputIsLinear);
+
   // Posterise each channel. posterization 0..6 → 2..8 levels per channel.
   let L = 2.0 + params.posterization;
-  let posterized = floor(src.rgb * (L - 1.0) + 0.5) / (L - 1.0);
+  let posterized = floor(srcP * (L - 1.0) + 0.5) / (L - 1.0);
 
   // Sobel edge magnitude. edgeThickness 0..10 widens the gradient samples,
   // which both broadens detected edges and increases the threshold.
   let step = max(1, i32(round(params.edgeThickness * 0.4)));
-  let tl = luma(textureLoad(srcTex, clampPx(coord + vec2i(-step, -step), dims), 0).rgb);
-  let tc = luma(textureLoad(srcTex, clampPx(coord + vec2i(0, -step), dims), 0).rgb);
-  let tr = luma(textureLoad(srcTex, clampPx(coord + vec2i( step, -step), dims), 0).rgb);
-  let ml = luma(textureLoad(srcTex, clampPx(coord + vec2i(-step, 0), dims), 0).rgb);
-  let mr = luma(textureLoad(srcTex, clampPx(coord + vec2i( step, 0), dims), 0).rgb);
-  let bl = luma(textureLoad(srcTex, clampPx(coord + vec2i(-step,  step), dims), 0).rgb);
-  let bc = luma(textureLoad(srcTex, clampPx(coord + vec2i(0,  step), dims), 0).rgb);
-  let br = luma(textureLoad(srcTex, clampPx(coord + vec2i( step,  step), dims), 0).rgb);
+  let tlS = textureLoad(srcTex, clampPx(coord + vec2i(-step, -step), dims), 0).rgb;
+  let tcS = textureLoad(srcTex, clampPx(coord + vec2i(0, -step), dims), 0).rgb;
+  let trS = textureLoad(srcTex, clampPx(coord + vec2i( step, -step), dims), 0).rgb;
+  let mlS = textureLoad(srcTex, clampPx(coord + vec2i(-step, 0), dims), 0).rgb;
+  let mrS = textureLoad(srcTex, clampPx(coord + vec2i( step, 0), dims), 0).rgb;
+  let blS = textureLoad(srcTex, clampPx(coord + vec2i(-step,  step), dims), 0).rgb;
+  let bcS = textureLoad(srcTex, clampPx(coord + vec2i(0,  step), dims), 0).rgb;
+  let brS = textureLoad(srcTex, clampPx(coord + vec2i( step,  step), dims), 0).rgb;
+  let tl = luma(select(tlS, srgbEncode(tlS), inputIsLinear));
+  let tc = luma(select(tcS, srgbEncode(tcS), inputIsLinear));
+  let tr = luma(select(trS, srgbEncode(trS), inputIsLinear));
+  let ml = luma(select(mlS, srgbEncode(mlS), inputIsLinear));
+  let mr = luma(select(mrS, srgbEncode(mrS), inputIsLinear));
+  let bl = luma(select(blS, srgbEncode(blS), inputIsLinear));
+  let bc = luma(select(bcS, srgbEncode(bcS), inputIsLinear));
+  let br = luma(select(brS, srgbEncode(brS), inputIsLinear));
 
   let gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
   let gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
@@ -69,7 +95,8 @@ fn fs_poster_edges(in: AdjVertOut) -> @location(0) vec4<f32> {
 
   // Composite black outline over the posterised image.
   let out = posterized * (1.0 - edgeMask);
-  let result = vec4f(out, src.a);
+  let outRgb = select(out, srgbDecode(out), inputIsLinear);
+  let result = vec4f(outRgb, src.a);
 
   if (maskFlags.hasMask != 0u) {
     let m = textureSampleLevel(selMask, smp, in.uv, 0.0).r;

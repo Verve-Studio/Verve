@@ -88,8 +88,10 @@ export const FilmGrainEffect: IPipelineEffect<
       );
       finalNoiseTex = noiseTexB;
     }
+    const isLinear =
+      dstTex.format === "rgba16float" || dstTex.format === "rgba32float";
     const combineParamsBuf = rt.makeParamsBuf(
-      new Uint32Array([intensity, roughness, 0, 0]),
+      new Uint32Array([intensity, roughness, isLinear ? 1 : 0, 0]),
     );
     rt.encodeRenderPass(
       encoder,

@@ -145,7 +145,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     const blurRadius = Math.max(1, Math.round(entry.params.spread / scaleFactor));
 
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
-    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer, format === "rgba16float" || format === "rgba32float");
 
     // Pass 1: Extract — target format matches the scratch (doc format).
     const extract = runtime.getRenderPipelineWithBGL(
@@ -154,8 +154,12 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
       format,
       STD_BINDINGS,
     );
+    // Forward the doc-format flag to both extract + composite shaders so
+    // the perceptual envelope kicks in for rgba32f docs (threshold + screen
+    // blend get sRGB-encoded before the math, decoded back on the way out).
+    const isLinear = format === "rgba16float" || format === "rgba32float";
     const extractParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.params.threshold, 0, 0, 0]),
+      new Float32Array([entry.params.threshold, isLinear ? 1 : 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,
@@ -240,7 +244,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     );
     const compPipeline = runtime.selectPipeline(compPair, format);
     const compParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.params.strength, 0, 0, 0]),
+      new Float32Array([entry.params.strength, isLinear ? 1 : 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,

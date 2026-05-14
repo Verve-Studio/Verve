@@ -88,10 +88,10 @@ export const VignetteEffect: IPipelineEffect<
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
     const p = entry.params;
     const { r, g, b } = p.color;
-    // VignetteParams layout (32 bytes):
+    // VignetteParams layout (48 bytes after adding inputIsLinear):
     //   0  shape u32; 4 spread f32; 8 softness f32; 12 opacity f32;
-    //  16  color vec3f; 28 roundness f32
-    const buf = new ArrayBuffer(32);
+    //  16  color vec3f; 28 roundness f32; 32 inputIsLinear f32; 36..47 pad
+    const buf = new ArrayBuffer(48);
     const u = new Uint32Array(buf);
     const f = new Float32Array(buf);
     u[0] = p.shape === "ellipse" ? 0 : 1;
@@ -102,6 +102,8 @@ export const VignetteEffect: IPipelineEffect<
     f[5] = g / 255;
     f[6] = b / 255;
     f[7] = p.roundness;
+    const isLinear = format === "rgba16float" || format === "rgba32float";
+    f[8] = isLinear ? 1 : 0;
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("vignette", "fs_vignette", STD_BINDINGS),

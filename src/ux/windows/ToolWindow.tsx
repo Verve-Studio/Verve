@@ -85,6 +85,15 @@ export function AdjustmentPanel({
     case "lut":
       panelWidth = 300;
       break;
+    case "lens-flare":
+      panelWidth = 300;
+      break;
+    case "add-noise":
+      panelWidth = 260;
+      break;
+    case "clouds":
+      panelWidth = 260;
+      break;
     default:
       panelWidth = 236;
   }

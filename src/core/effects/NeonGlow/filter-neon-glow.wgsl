@@ -15,7 +15,22 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
   return AdjVertOut(vec4f(positions[vi], 0.0, 1.0), uvs[vi]);
 }
 
-struct MaskFlags { hasMask : u32, _pad : vec3u, }
+struct MaskFlags {
+  hasMask       : u32,
+  inputIsLinear : u32,
+  _pad          : vec2u,
+}
+
+fn srgbEncodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(1.055 * pow(x, 1.0 / 2.4) - 0.055, x * 12.92, x <= 0.0031308);
+}
+fn srgbDecodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(pow((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045);
+}
+fn srgbEncode(rgb: vec3f) -> vec3f { return vec3f(srgbEncodeF(rgb.r), srgbEncodeF(rgb.g), srgbEncodeF(rgb.b)); }
+fn srgbDecode(rgb: vec3f) -> vec3f { return vec3f(srgbDecodeF(rgb.r), srgbDecodeF(rgb.g), srgbDecodeF(rgb.b)); }
 
 struct NeonGlowParams {
   glowSize     : f32,   // -24..24
@@ -42,6 +57,9 @@ fn fs_neon_glow(in: AdjVertOut) -> @location(0) vec4<f32> {
   let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
   let src = textureLoad(srcTex, coord, 0);
 
+  let inputIsLinear = maskFlags.inputIsLinear != 0u;
+  let srcP = select(src.rgb, srgbEncode(src.rgb), inputIsLinear);
+
   // Sample a local-mean luma in a small kernel — produces the soft
   // "neon spread" between midtones. Glow size is signed: positive
   // expands the glow into bright areas, negative pulls it toward dark.
@@ -51,12 +69,14 @@ fn fs_neon_glow(in: AdjVertOut) -> @location(0) vec4<f32> {
   for (var dy = -r; dy <= r; dy = dy + 1) {
     for (var dx = -r; dx <= r; dx = dx + 1) {
       let c = clamp(coord + vec2i(dx, dy), vec2i(0), dims - vec2i(1));
-      sumL = sumL + luma(textureLoad(srcTex, c, 0).rgb);
+      let s = textureLoad(srcTex, c, 0).rgb;
+      let sP = select(s, srgbEncode(s), inputIsLinear);
+      sumL = sumL + luma(sP);
       count = count + 1.0;
     }
   }
   let avgL = sumL / max(count, 1.0);
-  let centerL = luma(src.rgb);
+  let centerL = luma(srcP);
 
   // Mix between centre and blurred luma; negative glowSize biases toward
   // the centre (sharper neon), positive biases toward the blurred
@@ -75,7 +95,8 @@ fn fs_neon_glow(in: AdjVertOut) -> @location(0) vec4<f32> {
   out = mix(out, vec3f(1.0), lHigh);
   out = out * (0.5 + bright);
 
-  let result = vec4f(out, src.a);
+  let outRgb = select(out, srgbDecode(out), inputIsLinear);
+  let result = vec4f(outRgb, src.a);
   if (maskFlags.hasMask != 0u) {
     let m = textureSampleLevel(selMask, smp, in.uv, 0.0).r;
     return mix(src, result, m);

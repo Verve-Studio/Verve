@@ -86,3 +86,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.hdrRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border-light);
+  margin-top: 6px;
+}
+
+.hdrToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.hdrHint {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}

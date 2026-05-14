@@ -23,6 +23,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DialogButton } from "../../widgets/DialogButton/DialogButton";
 import { ModalDialog } from "../ModalDialog/ModalDialog";
 import { notificationStore } from "@/core/store/notificationStore";
+import { statusMessageStore } from "@/core/store/statusMessageStore";
 import {
   colorProfileStore,
   useColorProfileCatalog,
@@ -445,6 +446,7 @@ export function PrintPreviewDialog({
         dpi,
       });
       if (result.success) {
+        statusMessageStore.show(`Sent to printer: ${deviceName}`);
         onClose();
       } else {
         notificationStore.error(

@@ -4,6 +4,7 @@ import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
+import { useStatusMessage } from "@/core/store/statusMessageStore";
 import type { PixelFormat } from "@/types";
 import styles from "./StatusBar.module.scss";
 
@@ -23,6 +24,7 @@ export function StatusBar(): React.JSX.Element {
   const { width, height, showGrid, gridSize, gridColor, gridType } =
     state.canvas;
   const formatLabel = FORMAT_LABELS[state.pixelFormat ?? "rgba8"];
+  const statusMessage = useStatusMessage();
 
   const [cursor, setCursor] = useState<{
     x: number;
@@ -109,6 +111,10 @@ export function StatusBar(): React.JSX.Element {
           </>
         )}
       </div>
+
+      {statusMessage && (
+        <div className={styles.statusMessage}>{statusMessage}</div>
+      )}
 
       {/* Centre: grid controls — only visible when grid is on */}
       {showGrid && (

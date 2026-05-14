@@ -34,6 +34,7 @@ import {
 } from "@/core/cms/lcms2";
 import { parseProfileColorSpace } from "@/core/cms/iccProfile";
 import { notificationStore } from "@/core/store/notificationStore";
+import { statusMessageStore } from "@/core/store/statusMessageStore";
 import { preferencesStore } from "@/core/store/preferencesStore";
 
 // ─── Linked-layer path helpers ────────────────────────────────────────────────
@@ -1254,6 +1255,7 @@ export function useFileOps({
       );
       const updated = await window.api.addRecentFile(savedPath);
       onRecentFilesUpdated?.(updated);
+      statusMessageStore.show(`Saved ${title}`);
     },
     [tabs, activeTabId, state, canvasHandleRef, setTabs, onRecentFilesUpdated],
   );
@@ -1372,6 +1374,7 @@ export function useFileOps({
     };
     await window.api.saveverveFile(path, JSON.stringify(doc2));
     // The current tab's filePath is NOT updated — this is a copy.
+    statusMessageStore.show(`Saved a copy to ${fileTitle(path)}`);
   }, [tabs, activeTabId, state, canvasHandleRef]);
 
   return {

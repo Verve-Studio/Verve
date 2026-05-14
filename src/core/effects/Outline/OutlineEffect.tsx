@@ -280,7 +280,10 @@ export const OutlineEffect: IPipelineEffect<
     cf[3] = colorA;
     cf[4] = opacityN;
     const compParamsBuf = runtime.makeParamsBuf(compBuf);
-    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(
+      !!entry.selMaskLayer,
+      dstTex.format === "rgba16float" || dstTex.format === "rgba32float",
+    );
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
     const compBG = device.createBindGroup({

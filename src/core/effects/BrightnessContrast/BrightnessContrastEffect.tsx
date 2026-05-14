@@ -52,7 +52,13 @@ export const BrightnessContrastEffect: IPipelineEffect<
   },
 
   encode({ engine, encoder, srcTex, dstTex, format }, entry) {
-    const params = new Float32Array([entry.params.brightness, entry.params.contrast, 0, 0]);
+    const isLinear = format === "rgba16float" || format === "rgba32float";
+    const params = new Float32Array([
+      entry.params.brightness,
+      entry.params.contrast,
+      isLinear ? 1 : 0,
+      0,
+    ]);
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("bc", "fs_brightness_contrast", STD_BINDINGS),

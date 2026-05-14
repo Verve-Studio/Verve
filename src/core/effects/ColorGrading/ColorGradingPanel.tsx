@@ -188,6 +188,22 @@ export function ColorGradingPanel({
         </div>
       </div>
 
+      <div className={styles.hdrRow}>
+        <label className={styles.hdrToggle}>
+          <input
+            type="checkbox"
+            checked={params.hdrMode}
+            onChange={(e) => update("hdrMode", e.target.checked)}
+          />
+          <span>HDR mode</span>
+        </label>
+        <span className={styles.hdrHint}>
+          Removes the per-stage [0,1] clamp and uses OKLab for hue/sat so
+          scene-linear values &gt; 1 survive the grade. Use on rgba32f docs
+          with HDR content.
+        </span>
+      </div>
+
       <div className={styles.footer}>
         <span className={styles.footerInfo}>
           <ParentConnectorIcon />

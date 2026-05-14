@@ -73,6 +73,14 @@ export const LensFlareEffect: IPipelineEffect<
     buf[7] = p.streakRotation;
     buf[8] = dstTex.width;
     buf[9] = dstTex.height;
+    // `inputIsLinear`: tell the shader whether the composite ping-pong it's
+    // sampling holds scene-linear floats (rgba32f docs) or sRGB-encoded
+    // bytes (rgba8 docs). The flare overlay colours were authored against
+    // perceptual sRGB; the shader encodes/decodes around the additive
+    // composite when this flag is set so the on-screen brightness matches
+    // in either pixel format.
+    const isLinear = format === "rgba16float" || format === "rgba32float";
+    buf[10] = isLinear ? 1 : 0;
     engine.runtime.encodeStdAdjRenderPass(
       encoder,
       engine.runtime.getRenderPipelinePair("filter-lens-flare", "fs_lens_flare", STD_BINDINGS),

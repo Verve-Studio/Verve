@@ -111,7 +111,7 @@ export const HalationEffect: IPipelineEffect<
     const { glowATex, glowBTex } = ensureTextures(runtime.device, w, h, format);
 
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
-    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer, format === "rgba16float" || format === "rgba32float");
 
     // Pass 1: Extract — target format matches the scratch (doc format).
     const extract = runtime.getRenderPipelineWithBGL(
@@ -120,8 +120,9 @@ export const HalationEffect: IPipelineEffect<
       format,
       STD_BINDINGS,
     );
+    const isLinear = format === "rgba16float" || format === "rgba32float";
     const extractParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.params.threshold, 0, 0, 0]),
+      new Float32Array([entry.params.threshold, isLinear ? 1 : 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,
@@ -179,7 +180,7 @@ export const HalationEffect: IPipelineEffect<
     );
     const compPipeline = runtime.selectPipeline(compPair, format);
     const compParamsBuf = runtime.makeParamsBuf(
-      new Float32Array([entry.params.strength, 0, 0, 0]),
+      new Float32Array([entry.params.strength, isLinear ? 1 : 0, 0, 0]),
     );
     runtime.encodeRenderPass(
       encoder,

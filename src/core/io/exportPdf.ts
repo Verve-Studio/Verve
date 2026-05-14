@@ -450,27 +450,6 @@ function buildPathInPageSpace_shape(
   return out;
 }
 
-function buildPathInPageSpace_path(
-  ctx: BuildContext,
-  p: PathLayerState,
-): string {
-  if (p.nodes.length < 2) return "";
-  const flipY = (y: number): number => ctx.pageHeight - y;
-  let out = "";
-  const first = p.nodes[0];
-  out += `${fmt(first.x)} ${fmt(flipY(first.y))} m\n`;
-  const last = p.closed ? p.nodes.length : p.nodes.length - 1;
-  for (let i = 0; i < last; i++) {
-    const a = p.nodes[i];
-    const b = p.nodes[(i + 1) % p.nodes.length];
-    out += `${fmt(a.x + a.outX)} ${fmt(flipY(a.y + a.outY))} `;
-    out += `${fmt(b.x + b.inX)} ${fmt(flipY(b.y + b.inY))} `;
-    out += `${fmt(b.x)} ${fmt(flipY(b.y))} c\n`;
-  }
-  if (p.closed) out += "h\n";
-  return out;
-}
-
 function ensureFont(ctx: BuildContext, name: string): string {
   let id = ctx.fontIds.get(name);
   if (!id) {

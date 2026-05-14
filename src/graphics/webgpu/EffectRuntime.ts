@@ -393,10 +393,24 @@ export class EffectRuntime {
     return buf;
   }
 
-  /** Build the standard 32-byte mask-flags uniform buffer. */
-  makeMaskFlagsBuf(present: boolean): GPUBuffer {
+  /**
+   * Build the standard 32-byte mask-flags uniform buffer.
+   *
+   * Layout (WGSL `MaskFlags { hasMask: u32, inputIsLinear: u32, _pad: vec2u }`):
+   *   - `data[0]`  hasMask         — 1 when a selection mask is bound, else 0.
+   *   - `data[1]`  inputIsLinear   — 1 when the composite ping-pong holds
+   *     scene-linear floats (rgba32f doc), 0 when sRGB-encoded bytes (rgba8).
+   *     Shaders tuned for perceptual inputs read this and sRGB-encode `src`
+   *     before their math, decoding the result back on the way out.
+   *
+   * `linear` is optional for backward compat; callers that haven't been
+   * updated yet effectively pass `0`, which is also the right answer for
+   * rgba8 docs (the historical default).
+   */
+  makeMaskFlagsBuf(present: boolean, linear?: boolean): GPUBuffer {
     const data = new Uint32Array(8);
     data[0] = present ? 1 : 0;
+    data[1] = linear ? 1 : 0;
     const buf = createUniformBuffer(this.device, 32);
     writeUniformBuffer(this.device, buf, data);
     this.pendingDestroyBuffers.push(buf);
@@ -473,7 +487,9 @@ export class EffectRuntime {
   ): void {
     const pipeline = this.selectPipeline(pair, format);
     const paramsBuf = this.makeParamsBuf(paramsBuffer);
-    const maskFlagsBuf = this.makeMaskFlagsBuf(!!selMaskLayer);
+    const isLinear =
+      format === "rgba16float" || format === "rgba32float";
+    const maskFlagsBuf = this.makeMaskFlagsBuf(!!selMaskLayer, isLinear);
     const dummyMask = selMaskLayer?.texture ?? srcTex;
 
     this.encodeRenderPass(

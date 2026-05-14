@@ -106,7 +106,7 @@ export const ColorDitheringEffect: IPipelineEffect<
     );
     runtime.pendingDestroyBuffers.push(palBuf);
 
-    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer, format === "rgba16float" || format === "rgba32float");
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
     runtime.encodeRenderPass(encoder, pipeline, dstTex, [

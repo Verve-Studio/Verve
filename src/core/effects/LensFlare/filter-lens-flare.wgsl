@@ -26,7 +26,16 @@ struct LensFlareParams {
   streakRotation: u32,
   imgWidth      : u32,
   imgHeight     : u32,
-  _pad0         : u32,
+  // 0 when the composite ping-pong is sRGB-encoded (rgba8 docs), 1 when it
+  // holds scene-linear floats (rgba32f docs). The flare colours
+  // (`vec3(1.0, 0.40, 0.06)`, etc.) were authored as perceptual sRGB
+  // values; adding them directly to scene-linear `src.rgb` makes the
+  // flare appear noticeably stronger because the same numerical value
+  // represents more emitted light in linear space. When this flag is 1
+  // the shader sRGB-encodes `src` before the additive composite and
+  // decodes the result back, so the flare lands at the same on-screen
+  // brightness in either pixel format.
+  inputIsLinear : u32,
   _pad1         : u32,
 }
 
@@ -40,6 +49,24 @@ struct MaskFlags {
 @group(0) @binding(2) var<uniform> params    : LensFlareParams;
 @group(0) @binding(3) var selMask  : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
+
+// sRGB transfer functions — bridge scene-linear rgba32f input into the
+// perceptual space the flare overlay colours were authored in. `pow` of a
+// negative number is undefined; `max(c, 0)` keeps things well-behaved.
+fn srgbEncodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(1.055 * pow(x, 1.0 / 2.4) - 0.055, x * 12.92, x <= 0.0031308);
+}
+fn srgbDecodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(pow((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045);
+}
+fn srgbEncode(rgb: vec3f) -> vec3f {
+  return vec3f(srgbEncodeF(rgb.r), srgbEncodeF(rgb.g), srgbEncodeF(rgb.b));
+}
+fn srgbDecode(rgb: vec3f) -> vec3f {
+  return vec3f(srgbDecodeF(rgb.r), srgbDecodeF(rgb.g), srgbDecodeF(rgb.b));
+}
 
 fn gauss1(d : f32, sigma : f32) -> f32 {
   return exp(-(d * d) / (sigma * sigma));
@@ -195,11 +222,30 @@ fn fs_lens_flare(in: AdjVertOut) -> @location(0) vec4<f32> {
   // Lens flare is bright/translucent — additive blending is the photographic
   // norm; existing transparent regions stay transparent unless the flare
   // contributes light there.
+  //
+  // The flare colours (e.g. `vec3(1.0, 0.40, 0.06)`) were authored against
+  // perceptual sRGB. For rgba32f docs, sRGB-encode `src` so the additive
+  // composite happens in the same space the flare was tuned for, then
+  // decode back to scene-linear for the output buffer. For rgba8 docs the
+  // encode/decode are no-ops and the math is identical to the legacy path.
   let src = textureSample(srcTex, smp, in.uv);
-  let composited = vec4f(
-    clamp(src.rgb + flare.rgb, vec3f(0.0), vec3f(1.0)),
-    max(src.a, flare.a),
-  );
+  let inputIsLinear = params.inputIsLinear != 0u;
+  let srcPerc       = select(src.rgb, srgbEncode(src.rgb), inputIsLinear);
+
+  // Additive composite in perceptual space. rgba8 path keeps the legacy
+  // [0,1] clamp because the destination texture can't hold HDR anyway.
+  // rgba32f path only clamps negatives so an HDR src highlight stays
+  // intact even where the flare adds energy on top of it — `srgbDecode`
+  // is defined for inputs > 1 (the gamma curve keeps growing), so the
+  // round-trip preserves scene-referred range.
+  var summedOut : vec3f;
+  if (inputIsLinear) {
+    let summedP = max(srcPerc + flare.rgb, vec3f(0.0));
+    summedOut = srgbDecode(summedP);
+  } else {
+    summedOut = clamp(srcPerc + flare.rgb, vec3f(0.0), vec3f(1.0));
+  }
+  let composited = vec4f(summedOut, max(src.a, flare.a));
 
   var mask = 1.0f;
   if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }

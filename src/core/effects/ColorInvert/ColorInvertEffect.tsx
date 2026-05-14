@@ -59,7 +59,7 @@ export const ColorInvertEffect: IPipelineEffect<
       INVERT_BINDINGS,
     );
     const pipeline = engine.runtime.selectPipeline(pair, format);
-    const maskFlagsBuf = engine.runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = engine.runtime.makeMaskFlagsBuf(!!entry.selMaskLayer, format === "rgba16float" || format === "rgba32float");
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
     engine.runtime.encodeRenderPass(encoder, pipeline, dstTex, [

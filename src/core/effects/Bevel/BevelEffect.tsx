@@ -164,7 +164,10 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
     cf[2] = 2 * heightR;
 
     const compParamsBuf = runtime.makeParamsBuf(compBuf);
-    const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer);
+    const maskFlagsBuf = runtime.makeMaskFlagsBuf(
+      !!entry.selMaskLayer,
+      dstTex.format === "rgba16float" || dstTex.format === "rgba32float",
+    );
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
 
     const compBG = device.createBindGroup({

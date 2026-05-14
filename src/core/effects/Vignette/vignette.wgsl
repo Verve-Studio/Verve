@@ -22,12 +22,17 @@ struct MaskFlags {
 
 struct VignetteParams {
   // 0 = ellipse, 1 = rectangle (super-ellipse controlled by roundness)
-  shape     : u32,
-  spread    : f32,   // 0..1: where the falloff begins (0 = at centre, 1 = at corner)
-  softness  : f32,   // 0..1: width of the falloff band
-  opacity   : f32,   // 0..1: overall vignette overlay opacity
-  color     : vec3f, // 0..1 sRGB
-  roundness : f32,   // 0 = sharp rectangle, 1 = ellipse (only for shape == 1)
+  shape         : u32,
+  spread        : f32,   // 0..1: where the falloff begins (0 = at centre, 1 = at corner)
+  softness      : f32,   // 0..1: width of the falloff band
+  opacity       : f32,   // 0..1: overall vignette overlay opacity
+  color         : vec3f, // 0..1 sRGB
+  roundness     : f32,   // 0 = sharp rectangle, 1 = ellipse (only for shape == 1)
+  inputIsLinear : f32,   // 0 = src is sRGB-encoded (rgba8 docs), 1 = scene-linear (rgba32f)
+  // No explicit trailing pad — the struct's alignment (16, from `color: vec3f`)
+  // pads the size to 48 bytes implicitly. Adding a `_pad: vec3f` field would
+  // push the WGSL struct size to 64 and require the encoder to allocate 64
+  // bytes instead of 48.
 }
 
 @group(0) @binding(0) var srcTex     : texture_2d<f32>;
@@ -35,6 +40,20 @@ struct VignetteParams {
 @group(0) @binding(2) var<uniform> params    : VignetteParams;
 @group(0) @binding(3) var selMask    : texture_2d<f32>;
 @group(0) @binding(4) var<uniform> maskFlags : MaskFlags;
+
+// `params.color` was authored against perceptual sRGB; mix it with `src`
+// in the same space so the visible vignette tone matches across rgba8 and
+// rgba32f docs.
+fn srgbEncodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(1.055 * pow(x, 1.0 / 2.4) - 0.055, x * 12.92, x <= 0.0031308);
+}
+fn srgbDecodeF(c: f32) -> f32 {
+  let x = max(c, 0.0);
+  return select(pow((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045);
+}
+fn srgbEncode(rgb: vec3f) -> vec3f { return vec3f(srgbEncodeF(rgb.r), srgbEncodeF(rgb.g), srgbEncodeF(rgb.b)); }
+fn srgbDecode(rgb: vec3f) -> vec3f { return vec3f(srgbDecodeF(rgb.r), srgbDecodeF(rgb.g), srgbDecodeF(rgb.b)); }
 
 @fragment
 fn fs_vignette(in: AdjVertOut) -> @location(0) vec4<f32> {
@@ -83,7 +102,11 @@ fn fs_vignette(in: AdjVertOut) -> @location(0) vec4<f32> {
     alpha = alpha * mask;
   }
 
-  // Composite the vignette colour over the source. Alpha is preserved.
-  let outRgb = mix(src.rgb, params.color, alpha);
+  // Composite the vignette colour over the source in perceptual sRGB.
+  // `params.color` and the user's calibration both live there.
+  let inputIsLinear = params.inputIsLinear > 0.5;
+  let srcP   = select(src.rgb, srgbEncode(src.rgb), inputIsLinear);
+  let mixedP = mix(srcP, params.color, alpha);
+  let outRgb = select(mixedP, srgbDecode(mixedP), inputIsLinear);
   return vec4f(outRgb, src.a);
 }
