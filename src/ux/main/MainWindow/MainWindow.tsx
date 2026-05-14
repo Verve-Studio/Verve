@@ -42,7 +42,7 @@ import { KeyboardShortcutsDialog } from "@/ux/modals/KeyboardShortcutsDialog/Key
 import { SystemInfoDialog } from "@/ux/modals/SystemInfoDialog/SystemInfoDialog";
 import { GeneratePaletteDialog } from "@/ux/modals/GeneratePaletteDialog/GeneratePaletteDialog";
 import { ColorDitheringSetupModal } from "@/ux/modals/ColorDitheringSetupModal/ColorDitheringSetupModal";
-import { ContentAwareFillProgress } from "@/ux";
+import { ProgressOverlay } from "@/ux";
 import { ContentAwareFillOptionsDialog } from "@/ux/modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog";
 import { ConvertColorModeDialog } from "@/ux/modals/ConvertColorModeDialog/ConvertColorModeDialog";
 import { ModalDialog } from "@/ux/modals/ModalDialog/ModalDialog";
@@ -442,12 +442,12 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
               />
             );
           })}
-          <ContentAwareFillProgress
+          <ProgressOverlay
             visible={isContentAwareFilling}
             label={contentAwareFillLabel}
             sublabel="Analyzing image…"
           />
-          <ContentAwareFillProgress
+          <ProgressOverlay
             visible={isRescaling}
             label={
               rescaleProgress.layerCount > 1
@@ -460,15 +460,13 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
                 : "Running model…"
             }
           />
-          <ContentAwareFillProgress
+          <ProgressOverlay
             visible={isAutoMasking}
             label="Detecting subject…"
-            sublabel="Running ISNet"
           />
-          <ContentAwareFillProgress
+          <ProgressOverlay
             visible={isInpainting}
             label="Removing object…"
-            sublabel="Running LaMa"
           />
         </main>
         {animationMode && (

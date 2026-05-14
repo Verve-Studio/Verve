@@ -15,8 +15,8 @@
   gap: 12px;
   padding: 20px 28px;
   min-width: 180px;
-  background: #2d2d2d;
-  border: 1px solid #191919;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 3px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.5);
 }
@@ -36,13 +36,13 @@
 
 .label {
   font-size: 12px;
-  color: var(--color-text, #d4d4d4);
+  color: var(--color-text);
   text-align: center;
   margin: 0;
 }
 
 .sublabel {
   font-size: 10px;
-  color: var(--color-text-muted, #7a7a7a);
+  color: var(--color-text-muted);
   margin: 0;
 }

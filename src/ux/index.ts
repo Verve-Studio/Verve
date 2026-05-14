@@ -15,8 +15,8 @@ export { ColorDitheringSetupModal } from "./modals/ColorDitheringSetupModal/Colo
 export type { ColorDitheringSetupModalProps } from "./modals/ColorDitheringSetupModal/ColorDitheringSetupModal";
 export { ContentAwareFillOptionsDialog } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog";
 export type { ContentAwareFillOptionsDialogProps } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillOptionsDialog";
-export { ContentAwareFillProgress } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress";
-export type { ContentAwareFillProgressProps } from "./modals/ContentAwareFillOptionsDialog/ContentAwareFillProgress/ContentAwareFillProgress";
+export { ProgressOverlay } from "./widgets/ProgressOverlay/ProgressOverlay";
+export type { ProgressOverlayProps } from "./widgets/ProgressOverlay/ProgressOverlay";
 export { ConvertColorModeDialog } from "./modals/ConvertColorModeDialog/ConvertColorModeDialog";
 export type { ConvertColorModeDialogProps } from "./modals/ConvertColorModeDialog/ConvertColorModeDialog";
 export { ExportDialog } from "./modals/ExportDialog/ExportDialog";

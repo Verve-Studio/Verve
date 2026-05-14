@@ -5,6 +5,7 @@ import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { AppAction } from "@/core/store/AppContext";
 import { activeScope } from "@/core/store/scope";
 import {
+  objectRemovalOptions,
   objectRemovalRunner,
   objectRemovalStatus,
   notifyObjectRemovalStatusChange,
@@ -15,6 +16,11 @@ interface UseObjectRemovalOptions {
   stateRef: MutableRefObject<AppState>;
   captureHistory: (label: string) => void;
   dispatch: Dispatch<AppAction>;
+  /** Sets the React-side label used by the next `captureHistory` call after
+   *  a new-layer insertion, so the entry shows "Object Removal" instead of
+   *  the generic auto-capture label. Mirrors the pattern used by the
+   *  duplicate / new-layer paths. */
+  pendingLayerLabelRef: MutableRefObject<string | null>;
   /** Flips while LaMa inference is in flight so MainWindow can render a
    *  blocking progress overlay. */
   setBusy?: Dispatch<SetStateAction<boolean>>;
@@ -34,7 +40,8 @@ export function useObjectRemoval({
   canvasHandleRef,
   stateRef,
   captureHistory,
-  dispatch: _dispatch,
+  dispatch,
+  pendingLayerLabelRef,
   setBusy,
 }: UseObjectRemovalOptions): void {
   const runningRef = useRef(false);
@@ -128,8 +135,42 @@ export function useObjectRemoval({
             `inpaint returned rgba length ${result.rgba.length}; expected ${w * h * 4}`,
           );
         }
-        captureHistory("Before Object Removal");
-        handle.writeLayerPixels(activeId, result.rgba);
+        if (objectRemovalOptions.outputToNewLayer) {
+          // Build a transparent-outside-mask patch so the new layer holds
+          // ONLY the inpainted region. The user can then erase / blend /
+          // toggle visibility to revert without touching the original.
+          const patch = new Uint8Array(w * h * 4);
+          for (let i = 0; i < w * h; i++) {
+            if (mask[i] > 0) {
+              const o = i * 4;
+              patch[o] = result.rgba[o];
+              patch[o + 1] = result.rgba[o + 1];
+              patch[o + 2] = result.rgba[o + 2];
+              patch[o + 3] = result.rgba[o + 3];
+            }
+          }
+          const newId = `layer-${Date.now()}`;
+          const newName = `${activeLayer.name} retouch`;
+          handle.prepareNewLayer(newId, newName, patch);
+          pendingLayerLabelRef.current = "Object Removal";
+          dispatch({
+            type: "INSERT_LAYER_ABOVE",
+            payload: {
+              aboveId: activeId,
+              layer: {
+                id: newId,
+                name: newName,
+                visible: true,
+                opacity: 1,
+                locked: false,
+                blendMode: "normal",
+              },
+            },
+          });
+        } else {
+          captureHistory("Before Object Removal");
+          handle.writeLayerPixels(activeId, result.rgba);
+        }
         maskStore.clear();
       } catch (err) {
         console.error("[ObjectRemoval] inference failed:", err);
@@ -143,5 +184,5 @@ export function useObjectRemoval({
       objectRemovalRunner.apply = async () => {};
       objectRemovalRunner.isRunning = () => false;
     };
-  }, [canvasHandleRef, stateRef, captureHistory, setBusy]);
+  }, [canvasHandleRef, stateRef, captureHistory, dispatch, pendingLayerLabelRef, setBusy]);
 }

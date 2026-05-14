@@ -40,6 +40,7 @@ import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { toolRegistry } from "@/core/tools/toolRegistry";
+import { isGroupLayer } from "@/types";
 import type { LayerState, Tool } from "@/types";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
@@ -492,6 +493,7 @@ function AppContent(): React.JSX.Element {
     stateRef,
     captureHistory,
     dispatch,
+    pendingLayerLabelRef,
     setBusy: setIsInpainting,
   });
 
@@ -631,6 +633,11 @@ function AppContent(): React.JSX.Element {
       const l = state.layers.find((x) => x.id === id);
       return l !== undefined && isPixelRootLayer(l);
     }).length >= 2;
+  // Group needs ≥2 layers selected (matches `handleGroupLayers`'s own guard).
+  // Ungroup needs the active layer to actually be a group.
+  const isGroupLayersEnabled = effectiveSelectedIds.size >= 2;
+  const isUngroupLayersEnabled =
+    activeLayer !== null && isGroupLayer(activeLayer);
 
   // ── Unified menu deps ─────────────────────────────────────────────
   //
@@ -697,9 +704,11 @@ function AppContent(): React.JSX.Element {
         : undefined,
       isRasterizeEnabled: isRasterizeLayerEnabled,
       onGroupLayers: () => handleGroupLayers([...effectiveSelectedIds]),
+      isGroupLayersEnabled,
       onUngroupLayers: state.activeLayerId
         ? () => handleUngroupLayers(state.activeLayerId!)
         : undefined,
+      isUngroupLayersEnabled,
       onMergeSelected: () =>
         handleMergeSelected([...effectiveSelectedIds]),
       isMergeSelectedEnabled,
@@ -851,7 +860,9 @@ function AppContent(): React.JSX.Element {
       state.activeLayerId,
       isRasterizeLayerEnabled,
       effectiveSelectedIds,
+      isGroupLayersEnabled,
       handleUngroupLayers,
+      isUngroupLayersEnabled,
       handleMergeSelected,
       isMergeSelectedEnabled,
       handleMergeDown,

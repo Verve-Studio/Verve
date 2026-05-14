@@ -18,6 +18,12 @@ export const objectRemovalOptions = {
   /** Brush diameter in canvas pixels. Read both by the tool handler (for
    *  mask stamping) and by `useBrushCursor` (for the CSS-circle cursor). */
   size: 40,
+  /** When true, Apply deposits the inpainted region on a new layer above
+   *  the active layer (transparent outside the painted mask). When false,
+   *  Apply overwrites the active layer's pixels in place. Default is true
+   *  because non-destructive retouching is the more recoverable workflow
+   *  — the original is preserved underneath. */
+  outputToNewLayer: true,
 };
 
 export interface ObjectRemovalRunner {
@@ -103,6 +109,9 @@ function ObjectRemovalOptions({
   );
   const [running, setRunning] = useState(objectRemovalRunner.isRunning());
   const [size, setSize] = useState(objectRemovalOptions.size);
+  const [outputToNewLayer, setOutputToNewLayer] = useState(
+    objectRemovalOptions.outputToNewLayer,
+  );
   const [hasMask, setHasMask] = useState(
     activeScope().inpaintMask.hasMaskedPixels(),
   );
@@ -144,6 +153,21 @@ function ObjectRemovalOptions({
         }}
       />
       <span className={styles.optSep} />
+      <label
+        className={styles.optCheckLabel}
+        title="Deposit the inpainted region on a new layer above the active layer (transparent outside the painted mask). When unchecked, overwrites the active layer's pixels in place."
+      >
+        <input
+          type="checkbox"
+          checked={outputToNewLayer}
+          onChange={(e) => {
+            objectRemovalOptions.outputToNewLayer = e.target.checked;
+            setOutputToNewLayer(e.target.checked);
+          }}
+        />
+        Output to new layer
+      </label>
+      <span className={styles.optSep} />
       <button
         className={styles.optBtn}
         disabled={disabled}
@@ -167,15 +191,14 @@ function ObjectRemovalOptions({
       </button>
       <span className={styles.optSep} />
       <span className={styles.optLabel}>
-        {modelStatus === "ready" && "Model ready"}
-        {modelStatus === "checking" && "Checking model…"}
+        {modelStatus === "ready" && ""}
+        {modelStatus === "checking" && "Loading…"}
         {modelStatus === "missing" && (
           <>
-            Model missing — place <code>lama_fp32.onnx</code> in{" "}
-            <code>{searchedPaths[0] ?? "…/models/lama/"}</code>
+            Required components not available.
           </>
         )}
-        {modelStatus === "error" && "Model load failed"}
+        {modelStatus === "error" && "Could not load object removal tool"}
       </span>
     </>
   );
