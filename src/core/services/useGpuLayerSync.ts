@@ -41,6 +41,28 @@ import {
 import { activeScope } from "@/core/store/scope";
 import { notificationStore } from "@/core/store/notificationStore";
 
+/**
+ * Tracks the parameter signature most recently baked into a linked layer's
+ * GpuLayer buffer. The mirror-flags pass re-rasterises a linked layer only
+ * when its signature changes — without this guard EVERY state change (a
+ * neighbouring layer's opacity, a selection edit, …) would re-rasterise the
+ * canvas-sized buffer and re-run the sRGB→linear pass for rgba32f docs.
+ * That's the linked-layer perf cliff in f32 mode.
+ *
+ * Keyed by layer id at module scope so it survives renderer recreations
+ * (the signature includes `pixelFormat`, which changes across a format
+ * conversion remount — that's enough to force a re-rasterise after a
+ * convert-color-mode → rgba32f). Cleared on layer destroy.
+ */
+const lastLinkedRasterSig = new Map<string, string>();
+
+function linkedSig(
+  ls: import("@/types").LinkedLayerState,
+  pixelFormat: PixelFormat,
+): string {
+  return `${pixelFormat}|${ls.centerX}|${ls.centerY}|${ls.scaleX}|${ls.scaleY}|${ls.rotation}|${ls.refreshNonce}|${ls.source.absolutePath}`;
+}
+
 export interface GpuLayerSyncParams {
   isActive: boolean;
   rendererRef: React.RefObject<WebGPURenderer | null>;
@@ -135,6 +157,20 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         // we paint a placeholder, kick the decode, and re-rasterise on ready.
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, pixelFormat);
         map.set(ls.id, gl);
+        // Seed the sig so the mirror-flags pass that runs further down in
+        // this same effect tick doesn't kick a second redundant rasterise.
+        lastLinkedRasterSig.set(ls.id, linkedSig(ls, pixelFormat));
+        const flushAndRender = (): void => {
+          if (!map.get(ls.id)) return;
+          renderer.markFullDirty(gl);
+          renderer.flushLayer(gl);
+          // Belt-and-braces: bust the frame-skip cache so the post-rasterise
+          // render isn't elided. Symptom this guards against: post-`Convert
+          // Color Mode` to rgba32f, a bare linked layer rendered invisible
+          // until hide/unhide forced a fresh sync pass.
+          renderer.invalidateRenderCache();
+          doRender();
+        };
         void rasterizeLinkedToLayer(
           ls,
           gl,
@@ -142,11 +178,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
           swatches as RGBAColor[],
           cw,
           ch,
-        ).then(() => {
-          if (!map.get(ls.id)) return;
-          renderer.flushLayer(gl);
-          doRender();
-        });
+        ).then(flushAndRender);
         ensureLinkedDecoded(ls, window.api.readFileBase64, () => {
           if (!map.get(ls.id)) return;
           const err = tryGetLinkedSourceError(ls);
@@ -159,11 +191,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
             swatches as RGBAColor[],
             cw,
             ch,
-          ).then(() => {
-            if (!map.get(ls.id)) return;
-            renderer.flushLayer(gl);
-            doRender();
-          });
+          ).then(flushAndRender);
         });
       } else {
         // Pixel layers start at 128×128 centred on the canvas.
@@ -192,6 +220,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
       if (!stateIds.has(id)) {
         renderer.destroyLayer(gl);
         map.delete(id);
+        lastLinkedRasterSig.delete(id);
       }
     }
     for (const [id, gl] of adjustmentMaskMapRef.current) {
@@ -219,8 +248,19 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
       gl.opacity = "opacity" in ls ? ls.opacity : 1;
       gl.visible = ls.visible;
       gl.blendMode = "blendMode" in ls ? ls.blendMode : "normal";
-      gl.colorSpace =
-        "colorSpace" in ls && ls.colorSpace ? ls.colorSpace : "auto";
+      // Linked layers paint via Canvas2D + `convertRgba8ToF32`, producing
+      // scene-linear floats. Tag as `linear-srgb` in rgba32f docs so the
+      // renderer's IDT skips its sRGB decode — otherwise the linear floats
+      // are re-decoded a second time at composite time and the layer
+      // appears black/invisible (the "invisible linked layer after Convert
+      // Color Mode to rgba32f" bug). The user can still override via the
+      // layer-state colorSpace field if they really want a different tag.
+      if ("type" in ls && ls.type === "linked" && pixelFormat === "rgba32f") {
+        gl.colorSpace = ls.colorSpace ?? "linear-srgb";
+      } else {
+        gl.colorSpace =
+          "colorSpace" in ls && ls.colorSpace ? ls.colorSpace : "auto";
+      }
       if ("type" in ls && ls.type === "text") {
         // Always reset offset — the move tool may have shifted it
         // temporarily for preview.
@@ -250,12 +290,30 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
       } else if ("type" in ls && ls.type === "linked") {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
+        // Skip the re-rasterise entirely when nothing relevant to this
+        // linked layer has changed. Sync's effect re-fires for ANY state
+        // change in any layer; without this gate every keystroke on a
+        // neighbouring text layer (or any unrelated state update) would
+        // re-run the canvas-sized Canvas2D paint + sRGB→linear conversion
+        // — a multi-hundred-MB pass on an f32 doc.
+        const sig = linkedSig(ls, pixelFormat);
+        if (lastLinkedRasterSig.get(ls.id) === sig) continue;
+        lastLinkedRasterSig.set(ls.id, sig);
         // Don't reset `gl.offsetX/Y` up-front. The Move tool shifts the
         // offset during drag for live preview; if we cleared it before the
         // async rasterise paints the new `centerX/Y` into the buffer, the
         // compositor would show the OLD buffer at offset 0 for one frame —
         // a visible snap-back. Reset the offset inside the rasterise
         // continuation so the swap is atomic.
+        const flushAndRender = (): void => {
+          if (!map.get(ls.id)) return;
+          gl.offsetX = 0;
+          gl.offsetY = 0;
+          renderer.markFullDirty(gl);
+          renderer.flushLayer(gl);
+          renderer.invalidateRenderCache();
+          doRender();
+        };
         void rasterizeLinkedToLayer(
           ls,
           gl,
@@ -263,13 +321,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
           swatches as RGBAColor[],
           cw,
           ch,
-        ).then(() => {
-          if (!map.get(ls.id)) return;
-          gl.offsetX = 0;
-          gl.offsetY = 0;
-          renderer.flushLayer(gl);
-          doRender();
-        });
+        ).then(flushAndRender);
         ensureLinkedDecoded(ls, window.api.readFileBase64, () => {
           if (!map.get(ls.id)) return;
           const err = tryGetLinkedSourceError(ls);
@@ -282,13 +334,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
             swatches as RGBAColor[],
             cw,
             ch,
-          ).then(() => {
-            if (!map.get(ls.id)) return;
-            gl.offsetX = 0;
-            gl.offsetY = 0;
-            renderer.flushLayer(gl);
-            doRender();
-          });
+          ).then(flushAndRender);
         });
       } else if ("type" in ls && ls.type === "frame") {
         const cw = renderer.pixelWidth;

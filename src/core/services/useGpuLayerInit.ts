@@ -43,6 +43,7 @@ import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import {
   ensureLinkedDecoded,
   rasterizeLinkedToLayer,
+  tryGetDecodedLinkedSource,
   tryGetLinkedSourceError,
 } from "@/ux/main/Canvas/linkedLayerRasterizer";
 import { decodePng } from "@/ux/main/Canvas/pngHelpers";
@@ -345,9 +346,9 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
           rasterizePathToLayer(ls, layer, cw, ch, initialPixelFormat);
         } else if ("type" in ls && ls.type === "linked") {
           // Linked layers are canvas-sized — the source is painted into the
-          // buffer via Canvas2D with the layer's transform applied. Decode
-          // the source file synchronously here so the layer renders correctly
-          // on the very first frame.
+          // buffer via Canvas2D with the layer's transform applied at
+          // rasterise time. Decode + rasterise the source file here so the
+          // layer is ready on the very first frame.
           layer = renderer.createLayer(
             ls.id,
             ls.name,
@@ -357,14 +358,35 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
             0,
             initialPixelFormat,
           );
+          // Publish the freshly-created GpuLayer to the map BEFORE the
+          // async awaits. Other render passes that may fire during the
+          // decode (post-remount on a format conversion, parallel React
+          // effects, …) would otherwise see a state-layer with no matching
+          // GpuLayer and either skip it or cache a stale composite that
+          // omits the linked child — the user-visible symptom was an
+          // invisible composite after `Convert Color Mode` to rgba32f that
+          // a hide/unhide cycle fixed. The buffer is zero-initialised so
+          // any render in the gap shows transparent (correct), and the
+          // `flushLayer` after the rasterise bumps contentVersion which
+          // invalidates any composite cache entry computed against this
+          // empty interim.
+          glLayersRef.current.set(ls.id, layer);
           const linkedLayer = layer;
           const linkedLs = ls;
-          await new Promise<void>((resolve) =>
-            ensureLinkedDecoded(linkedLs, window.api.readFileBase64, () =>
-              resolve(),
-            ),
-          );
-          if (isStale()) return;
+          // First-pass rasterise. If the source bitmap is cached (most
+          // common path on a format-conversion remount — the module-level
+          // `_bitmapCache` survives across renderers), this paints the
+          // correct pixels immediately. Otherwise it paints a placeholder
+          // and `ensureLinkedDecoded` re-rasterises once the decode
+          // finishes.
+          //
+          // CRITICAL: do NOT await an `ensureLinkedDecoded`-wrapped
+          // promise here. `ensureLinkedDecoded` is fire-and-forget —
+          // when the bitmap is already cached it returns WITHOUT
+          // invoking the ready callback, so any await would hang the
+          // init loop forever and the layer would never reach the outer
+          // flush/doRender, leaving it invisible until hide/unhide
+          // forced a fresh sync pass.
           await rasterizeLinkedToLayer(
             linkedLs,
             linkedLayer,
@@ -375,6 +397,30 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
           );
           const err = tryGetLinkedSourceError(linkedLs);
           if (err) notificationStore.error(err.errorMessage);
+          renderer.markFullDirty(linkedLayer);
+          renderer.flushLayer(linkedLayer);
+          renderer.invalidateRenderCache();
+          // Re-rasterise once if the decode completes after init exits.
+          ensureLinkedDecoded(linkedLs, window.api.readFileBase64, () => {
+            if (isStale()) return;
+            if (glLayersRef.current.get(linkedLs.id) !== linkedLayer) return;
+            if (!tryGetDecodedLinkedSource(linkedLs)) return;
+            void rasterizeLinkedToLayer(
+              linkedLs,
+              linkedLayer,
+              initialPixelFormat,
+              swatchesRef.current as RGBAColor[],
+              cw,
+              ch,
+            ).then(() => {
+              if (isStale()) return;
+              if (glLayersRef.current.get(linkedLs.id) !== linkedLayer) return;
+              renderer.markFullDirty(linkedLayer);
+              renderer.flushLayer(linkedLayer);
+              renderer.invalidateRenderCache();
+              doRender();
+            });
+          });
         } else if ("type" in ls && ls.type === "mask") {
           // Mask layers full-canvas; init all-white (fully reveal parent).
           layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
