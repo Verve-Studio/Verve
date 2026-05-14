@@ -62,20 +62,16 @@ function wrapLine(
 }
 
 /**
- * Rasterize a TextLayerState's text into the WebGL layer's pixel buffer.
- * The layer must already be canvas-sized (offsetX=0, offsetY=0).
- * Call renderer.flushLayer() after this to upload to GPU.
+ * Draw a TextLayerState onto an arbitrary 2D context at its `ls.x / ls.y`
+ * canvas-space position. Shared by both `rasterizeTextToLayer` (GPU upload
+ * path) and the overlay-canvas live-preview path used during drag, so the
+ * two are guaranteed to render identically.
  */
-export function rasterizeTextToLayer(ls: TextLayerState, gl: GpuLayer): void {
-  const w = gl.layerWidth;
-  const h = gl.layerHeight;
-  gl.data.fill(0); // clear existing pixels
+export function drawTextToCtx2d(
+  ctx2d: CanvasRenderingContext2D,
+  ls: TextLayerState,
+): void {
   if (!ls.text) return;
-
-  const tmp = document.createElement("canvas");
-  tmp.width = w;
-  tmp.height = h;
-  const ctx2d = tmp.getContext("2d")!;
 
   const fontStyle = [
     ls.italic ? "italic" : "",
@@ -165,6 +161,39 @@ export function rasterizeTextToLayer(ls: TextLayerState, gl: GpuLayer): void {
   });
 
   if (boxW > 0 && boxH > 0) ctx2d.restore();
+}
 
+/**
+ * Rasterize a TextLayerState's text into the WebGL layer's pixel buffer.
+ * The layer must already be canvas-sized (offsetX=0, offsetY=0).
+ * Call renderer.flushLayer() after this to upload to GPU.
+ */
+export function rasterizeTextToLayer(ls: TextLayerState, gl: GpuLayer): void {
+  const w = gl.layerWidth;
+  const h = gl.layerHeight;
+  gl.data.fill(0); // clear existing pixels
+  if (!ls.text) return;
+
+  const tmp = document.createElement("canvas");
+  tmp.width = w;
+  tmp.height = h;
+  const ctx2d = tmp.getContext("2d")!;
+  drawTextToCtx2d(ctx2d, ls);
   gl.data.set(new Uint8Array(ctx2d.getImageData(0, 0, w, h).data.buffer));
+}
+
+/**
+ * Draw a TextLayerState onto the tool overlay canvas at its current
+ * `ls.x / ls.y` position. Used during live drag so the GPU layer can be
+ * hidden (skipping rasterization, GPU upload, and per-frame effect
+ * re-encoding) while the user sees the text move in real time.
+ */
+export function drawTextEditOverlay(
+  oc: HTMLCanvasElement,
+  ls: TextLayerState,
+): void {
+  const c = oc.getContext("2d");
+  if (!c) return;
+  c.clearRect(0, 0, oc.width, oc.height);
+  drawTextToCtx2d(c, ls);
 }

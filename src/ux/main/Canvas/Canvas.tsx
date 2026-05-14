@@ -416,7 +416,31 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     pixelFormat: state.pixelFormat,
     activeTool: state.activeTool,
     doRender,
+    editingTextLayerId: editingLayerId,
   });
+
+  // While the inline text editor is open, hide the text GpuLayer and put the
+  // renderer in preview mode. The editor's textarea renders the text on its
+  // own (DOM-rendered, full-fidelity caret + selection), so keeping the GPU
+  // layer visible would be redundant — and rebuilding its rasterised bitmap +
+  // re-encoding any effects applied to the layer on every keystroke is what
+  // made editing feel sluggish. Effects are restored on close via the final
+  // re-rasterise triggered by `useGpuLayerSync`.
+  useEffect(() => {
+    if (!editingLayerId) return;
+    const gl = glLayersRef.current.get(editingLayerId);
+    const renderer = rendererRef.current;
+    if (!gl || !renderer) return;
+    const wasVisible = gl.visible;
+    gl.visible = false;
+    renderer.setPreviewMode(true);
+    doRender();
+    return () => {
+      gl.visible = wasVisible;
+      renderer.setPreviewMode(false);
+      doRender();
+    };
+  }, [editingLayerId, doRender, glLayersRef, rendererRef]);
 
   // ── Indexed8 palette housekeeping ─────────────────────────────────────────
   useIndexedSwatchSync({

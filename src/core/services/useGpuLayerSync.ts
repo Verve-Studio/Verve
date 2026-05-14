@@ -43,6 +43,12 @@ export interface GpuLayerSyncParams {
   pixelFormat: PixelFormat;
   activeTool: Tool;
   doRender: () => void;
+  /** When a text layer is being live-edited in the inline editor, skip its
+   *  per-keystroke GPU rasterisation — the editor overlays the textarea on
+   *  top of the canvas and the GpuLayer is hidden during edit, so rebuilding
+   *  the bitmap and uploading it on every keypress is wasted work. The
+   *  rasterisation happens once on edit-end. */
+  editingTextLayerId?: string | null;
 }
 
 export function useGpuLayerSync(params: GpuLayerSyncParams): void {
@@ -56,6 +62,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
     pixelFormat,
     activeTool,
     doRender,
+    editingTextLayerId,
   } = params;
 
   // ── Layer list sync ───────────────────────────────────────────────────────
@@ -167,8 +174,15 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         // temporarily for preview.
         gl.offsetX = 0;
         gl.offsetY = 0;
-        rasterizeTextToLayer(ls, gl);
-        renderer.flushLayer(gl);
+        // Skip the heavy rasterise + upload while this layer is being
+        // live-edited. The editor textarea shows the text directly, the
+        // GpuLayer is hidden during edit, and we re-rasterise once when
+        // the editor closes (the dep on `editingTextLayerId` makes this
+        // effect re-run on that transition).
+        if (ls.id !== editingTextLayerId) {
+          rasterizeTextToLayer(ls, gl);
+          renderer.flushLayer(gl);
+        }
       } else if ("type" in ls && ls.type === "shape") {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
@@ -196,7 +210,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
 
     doRender();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers, isActive]);
+  }, [layers, isActive, editingTextLayerId]);
 
   // ── Swatch re-rasterise for palette-indexed shapes ────────────────────────
   useEffect(() => {

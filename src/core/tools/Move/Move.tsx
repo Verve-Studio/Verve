@@ -20,6 +20,7 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import moveIconSvg from "./move.svg?raw";
 import { activeScope } from "@/core/store/scope";
+import { drawTextEditOverlay } from "@/ux/main/Canvas/textRasterizer";
 
 // ─── Snap-to-guide options ────────────────────────────────────────────────────
 
@@ -393,6 +394,13 @@ function createMoveHandler(): ToolHandler {
     render(layers);
   }
 
+  // While dragging a text layer, we hide its GpuLayer and render the text on
+  // the overlay canvas via Canvas2D. This skips per-frame GPU rasterisation,
+  // texture upload, AND effect re-encoding (the adjustment-group cache key
+  // includes the layer's offsetX/Y, so shifting offset would otherwise bust
+  // the cache and force every layer effect to recompute every frame).
+  let hiddenTextLayer: { visible: boolean } | null = null;
+
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
       startX = Math.round(x);
@@ -406,6 +414,18 @@ function createMoveHandler(): ToolHandler {
         ctx.shapeLayers.find((s) => s.id === ctx.layer.id) ?? null;
       frameLayerSnapshot =
         ctx.frameLayers.find((f) => f.id === ctx.layer.id) ?? null;
+
+      // Set up the overlay-canvas drag preview for text layers (skipped when
+      // a selection mask is active — that goes through the pixel-copy path).
+      if (
+        textLayerSnapshot &&
+        ctx.overlayCanvas &&
+        !activeScope().selection.mask
+      ) {
+        drawTextEditOverlay(ctx.overlayCanvas, textLayerSnapshot);
+        hiddenTextLayer = ctx.layer;
+        ctx.layer.visible = false;
+      }
 
       const selMask = activeScope().selection.mask;
       if (selMask) {
@@ -546,8 +566,16 @@ function createMoveHandler(): ToolHandler {
           ctx.zoom,
         );
 
-        if (textLayerSnapshot || shapeLayerSnapshot) {
-          // Active text/shape: shift via GpuLayer offset; final rasterise
+        if (textLayerSnapshot && ctx.overlayCanvas) {
+          // Active text: GpuLayer is hidden — repaint the overlay at the
+          // dragged position via Canvas2D. No GPU work, no cache busts.
+          drawTextEditOverlay(ctx.overlayCanvas, {
+            ...textLayerSnapshot,
+            x: textLayerOrigX + sdx,
+            y: textLayerOrigY + sdy,
+          });
+        } else if (textLayerSnapshot || shapeLayerSnapshot) {
+          // Active shape: shift via GpuLayer offset; final rasterise
           // happens on pointer-up.
           ctx.layer.offsetX = sdx;
           ctx.layer.offsetY = sdy;
@@ -615,6 +643,23 @@ function createMoveHandler(): ToolHandler {
         );
 
         ctx.renderer.setPreviewMode(false);
+
+        // Restore the hidden text-layer visibility and clear the overlay
+        // before the commit re-rasterises and re-renders, so the GpuLayer
+        // shows at its new position without a one-frame flicker.
+        if (hiddenTextLayer) {
+          hiddenTextLayer.visible = true;
+          hiddenTextLayer = null;
+        }
+        if (ctx.overlayCanvas) {
+          const oc2d = ctx.overlayCanvas.getContext("2d");
+          oc2d?.clearRect(
+            0,
+            0,
+            ctx.overlayCanvas.width,
+            ctx.overlayCanvas.height,
+          );
+        }
 
         // Active layer commit — parametric paths bake the offset into the
         // layer's parametric x/y/cx/cy and reset GpuLayer offset to 0.

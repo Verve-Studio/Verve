@@ -116,10 +116,20 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
     actionsRef.current = collectActions(tree);
   }, [tree]);
 
-  // Ship the serialized (function-free) tree to the main process.
+  // Ship the serialized (function-free) tree to the main process — but
+  // only when the serialized payload actually changed. Without this guard,
+  // any App re-render that invalidates the `menuDeps` memo (e.g. typing
+  // into a text layer dispatches UPDATE_TEXT_LAYER on every keystroke)
+  // would IPC a fresh tree to main, which calls `Menu.setApplicationMenu`
+  // and causes the macOS menu bar to visibly flicker.
+  const lastSerializedRef = useRef<string>("");
   useEffect(() => {
     if (!isMac) return;
-    window.api.rebuildNativeMenu(serializeTree(tree));
+    const serialized = serializeTree(tree);
+    const json = JSON.stringify(serialized);
+    if (json === lastSerializedRef.current) return;
+    lastSerializedRef.current = json;
+    window.api.rebuildNativeMenu(serialized);
   }, [isMac, tree]);
 
   // Register the IPC menu-action listener once. Lookup is always

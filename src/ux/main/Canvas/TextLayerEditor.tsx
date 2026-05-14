@@ -211,13 +211,22 @@ export function TextLayerEditor({
         autoFocus
         className={styles.textEditor}
         style={{
+          // The GpuLayer is hidden during edit (Canvas.tsx toggles
+          // visibility), so the textarea must render the text itself —
+          // hence the explicit colour + visible WebkitTextFillColor. Any
+          // layer-level effects (drop shadow, etc.) are intentionally not
+          // applied during edit; they come back when the editor closes.
           font: fontStyle,
-          color: "transparent",
+          color: ls.color
+            ? `rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255})`
+            : "#ffffff",
           caretColor: ls.color
             ? `rgb(${ls.color.r},${ls.color.g},${ls.color.b})`
             : "#ffffff",
           background: "transparent",
-          WebkitTextFillColor: "transparent",
+          WebkitTextFillColor: ls.color
+            ? `rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255})`
+            : "#ffffff",
           textDecoration: "none",
           textAlign: ls.align === "justify" ? "justify" : ls.align,
           letterSpacing: `${(ls.letterSpacing ?? 0) * cssZoom}px`,

@@ -567,6 +567,7 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
       actionId: "keyboardShortcuts",
       action: deps.onKeyboardShortcuts,
       shortcut: "?",
+      noIntercept: true,
     },
     {
       label: "System Information",
