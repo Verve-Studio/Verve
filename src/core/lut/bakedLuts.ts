@@ -401,17 +401,24 @@ function getCameraIdts(): LutTransform[] {
   ];
 }
 
-// ─── ACEScg → sRGB display (view transform) ─────────────────────────────────
+// ─── ACEScg → sRGB display (view transforms) ────────────────────────────────
 //
-// Full ACES-style view transform for ACEScg-tagged content: gamut transform
-// AP1 → linear sRGB primaries, then the Narkowicz approximation of the
-// ACES RRT + sRGB ODT (lightweight tone-map + display encode in one
-// rational function). Output is sRGB-encoded display ready for the swap
-// chain. Use the layer-tag IDT for editing-pipeline correctness; use this
-// view transform when you want the canvas preview to show ACES-graded
-// output.
+// Two flavours of the ACEScg→sRGB display path, both exposed as view-transform
+// LUTs:
+//
+//   * "ACES filmic" — gamut transform AP1 → linear sRGB primaries, then the
+//     Narkowicz approximation of the ACES RRT + sRGB ODT (tone-map + display
+//     encode in one rational function). This is the canonical "ACES look":
+//     highlight roll-off, shadow deepening, the filmic feel. Use when you
+//     want the canvas preview to show ACES-graded output.
+//
+//   * "gamut only" — gamut transform AP1 → linear sRGB primaries, then a
+//     plain sRGB transfer-function encode. No tone-map. Use when you want
+//     the canvas to faithfully reproduce the un-graded ACEScg pixel values
+//     (e.g. an sRGB image that was Convert-to-Profile'd into ACEScg and
+//     should round-trip visually back to the original).
 
-function bakeAcesCgToSrgb(): LutTransform {
+function bakeAcesCgToSrgbFilmic(): LutTransform {
   const cube = bakeCube((r, g, b) => {
     // Step 1: AP1 → linear sRGB primaries.
     const [lr, lg, lb] = applyMatrix3(ACESCG_TO_REC709, [r, g, b]);
@@ -425,12 +432,32 @@ function bakeAcesCgToSrgb(): LutTransform {
   });
   return {
     id: "builtin:acescg-to-srgb",
-    name: "ACEScg → sRGB",
+    name: "ACEScg → sRGB (ACES filmic)",
     inputSpace: "aces-cg",
     outputSpace: "srgb",
     category: "view-transform",
     cube,
     source: { kind: "builtin", key: "acescg-to-srgb" },
+  };
+}
+
+function bakeAcesCgToSrgbGamutOnly(): LutTransform {
+  const cube = bakeCube((r, g, b) => {
+    // AP1 → linear sRGB primaries, then plain sRGB encode. No tone-map,
+    // so an sRGB image round-tripped through ACEScg looks identical to
+    // the original when this view transform is active.
+    const [lr, lg, lb] = applyMatrix3(ACESCG_TO_REC709, [r, g, b]);
+    const [sr, sg, sb] = toSrgb(lr, lg, lb);
+    return [sr, sg, sb];
+  });
+  return {
+    id: "builtin:acescg-to-srgb-gamut",
+    name: "ACEScg → sRGB (gamut only)",
+    inputSpace: "aces-cg",
+    outputSpace: "srgb",
+    category: "view-transform",
+    cube,
+    source: { kind: "builtin", key: "acescg-to-srgb-gamut" },
   };
 }
 
@@ -447,7 +474,8 @@ export function getBuiltInLuts(): LutTransform[] {
     bakeFilmicToSrgb(),
     bakeRec2020ToSrgb(),
     bakeAgxToSrgb(),
-    bakeAcesCgToSrgb(),
+    bakeAcesCgToSrgbFilmic(),
+    bakeAcesCgToSrgbGamutOnly(),
     ...getCameraIdts(),
   ];
   return cached;

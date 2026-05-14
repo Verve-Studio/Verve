@@ -115,6 +115,8 @@ export function useHistory({
         canvasWidth: s.canvas.width,
         canvasHeight: s.canvas.height,
         swatches: overrides?.swatches ?? s.swatches,
+        iccProfile: s.iccProfile,
+        pixelFormat: s.pixelFormat,
       });
     },
     [canvasHandleRef, stateRef],
@@ -151,6 +153,10 @@ export function useHistory({
       if (entry.swatches) {
         dispatch({ type: "SET_SWATCHES", payload: entry.swatches });
       }
+      dispatch({ type: "SET_ICC_PROFILE", payload: entry.iccProfile });
+      if (entry.pixelFormat) {
+        dispatch({ type: "SET_PIXEL_FORMAT", payload: entry.pixelFormat });
+      }
       setTimeout(() => {
         isRestoringRef.current = false;
       }, 200);
@@ -169,7 +175,14 @@ export function useHistory({
       const currentW = stateRef.current.canvas.width;
       const currentH = stateRef.current.canvas.height;
 
-      if (entry.canvasWidth !== currentW || entry.canvasHeight !== currentH) {
+      const formatChanged =
+        entry.pixelFormat !== undefined &&
+        entry.pixelFormat !== stateRef.current.pixelFormat;
+      if (
+        entry.canvasWidth !== currentW ||
+        entry.canvasHeight !== currentH ||
+        formatChanged
+      ) {
         const encoded = new Map<string, string>();
         for (const [id, pixels] of entry.layerPixels) {
           const geo = entry.layerGeometry?.get(id);
@@ -255,6 +268,10 @@ export function useHistory({
             zoom: stateRef.current.canvas.zoom,
             tiledMode: stateRef.current.canvas.tiledMode,
             showTileGrid: stateRef.current.canvas.showTileGrid,
+            // Preserve current format when the entry predates pixel-format
+            // capture; the SWITCH_TAB reducer would otherwise reset to rgba8.
+            pixelFormat: entry.pixelFormat ?? stateRef.current.pixelFormat,
+            iccProfile: entry.iccProfile,
           },
         });
         if (entry.swatches) {
@@ -278,6 +295,10 @@ export function useHistory({
         });
         if (entry.swatches) {
           dispatch({ type: "SET_SWATCHES", payload: entry.swatches });
+        }
+        dispatch({ type: "SET_ICC_PROFILE", payload: entry.iccProfile });
+        if (entry.pixelFormat) {
+          dispatch({ type: "SET_PIXEL_FORMAT", payload: entry.pixelFormat });
         }
       }
 

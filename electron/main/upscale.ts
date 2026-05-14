@@ -169,6 +169,7 @@ async function loadSession(m: ModelDescriptor): Promise<LoadedSession> {
   const providers = preferredProviders()
   let session: OrtInferenceSession | null = null
   let usedProvider = 'cpu'
+  const failures: string[] = []
 
   // Try providers in priority order. We can't ask ORT "is dml available?"
   // up-front, so we attempt the GPU EP first and fall back on throw.
@@ -181,12 +182,17 @@ async function loadSession(m: ModelDescriptor): Promise<LoadedSession> {
       usedProvider = ep
       break
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      failures.push(`${ep}: ${msg}`)
       // eslint-disable-next-line no-console
-      console.warn(`[upscale] EP "${ep}" failed:`, err instanceof Error ? err.message : err)
+      console.warn(`[upscale] EP "${ep}" failed:`, msg)
     }
   }
   if (!session) {
-    throw new Error('Failed to create ONNX inference session for any execution provider')
+    throw new Error(
+      `Failed to create ONNX inference session for model "${m.file}" at ${path}. ` +
+      `Attempted providers — ${failures.join(' | ')}`,
+    )
   }
   // eslint-disable-next-line no-console
   console.log(`[upscale] loaded ${m.id} via "${usedProvider}". inputs=${session.inputNames.join(',')} outputs=${session.outputNames.join(',')}`)

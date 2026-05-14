@@ -12,6 +12,7 @@ import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
 import { notificationStore } from "@/core/store/notificationStore";
 import {
+  convertRgba8ToF32,
   convertRgba8ToF32Raw,
   convertF32ToRgba8,
   convertIndexedToRgba8,
@@ -60,24 +61,32 @@ function isPixelLayer(layer: { id: string; [key: string]: unknown }): boolean {
   return !("type" in layer);
 }
 
-/** Convert raw pixel data from one format to another. The rgba8 → rgba32f
- *  path is **non-destructive**: bytes are promoted to floats via `/255`
- *  with no transfer-function decode. The renderer's inline IDT (driven by
- *  the layer's `colorSpace` tag) is the single place colour-space
- *  conversion happens. The `sourceColorSpace` parameter is plumbed through
- *  for symmetry and future use; it doesn't affect the conversion math but
- *  is used by the caller to tag the resulting layer. */
+/** Convert raw pixel data from one format to another. For `rgba8 → rgba32f`
+ *  the result is **scene-linear** floats (CLAUDE.md's "rgba32f = linear
+ *  light" rule). When `sourceColorSpace` is `'auto'` / `'srgb'` / undefined
+ *  we apply the sRGB transfer function so the float buffer matches what
+ *  lcms2's working profile, Convert to Profile, and file I/O all assume.
+ *  For log / linear / wide-gamut sources we keep a non-destructive `/255`
+ *  promotion — those signals don't carry the sRGB curve and the renderer's
+ *  inline IDT pre-pass decodes them at composite time via the layer's
+ *  `colorSpace` tag. */
 async function convertBuffer(
   data: Uint8Array | Float32Array,
   fromFormat: PixelFormat,
   toFormat: PixelFormat,
   palette: RGBAColor[],
-  _sourceColorSpace?: LayerColorSpace,
+  sourceColorSpace?: LayerColorSpace,
 ): Promise<Uint8Array | Float32Array> {
   if (fromFormat === toFormat) return data;
 
   if (fromFormat === "rgba8" && toFormat === "rgba32f") {
-    return convertRgba8ToF32Raw(data as Uint8Array);
+    const isSrgbSource =
+      sourceColorSpace === undefined ||
+      sourceColorSpace === "auto" ||
+      sourceColorSpace === "srgb";
+    return isSrgbSource
+      ? convertRgba8ToF32(data as Uint8Array)
+      : convertRgba8ToF32Raw(data as Uint8Array);
   }
   if (fromFormat === "rgba32f" && toFormat === "rgba8") {
     return convertF32ToRgba8(data as Float32Array);
@@ -198,21 +207,38 @@ export function useColorMode({
         );
       }
 
-      // Tag every converted pixel layer with the user-declared source space
-      // so the renderer's inline IDT interprets the float values correctly.
-      // The conversion was a non-destructive `/255` promotion — the float
-      // values still encode the original byte signal, and the tag tells
-      // the renderer how to decode them at composite time.
-      //
-      // `'auto'` resolves to `'linear-srgb'` on an rgba32f layer, which
-      // would skip the decode and render the sRGB-promoted floats as if
-      // they were already linear (wrong colours). When the user picked
-      // Auto / sRGB we must explicitly tag the result `'srgb'`.
+      // rgba8 → rgba32f rewrites every pixel: Auto / sRGB sources are
+      // gamma-decoded to scene-linear, log / linear / wide-gamut sources
+      // are non-destructively promoted but no longer carry the document's
+      // old sRGB-encoded interpretation. Either way, the previous ICC tag
+      // (typically `sRGB` from import) no longer matches the buffer — a
+      // later Convert to Profile would otherwise re-apply the sRGB decode
+      // through lcms2 and crush the image by ~12× in shadows. Clear it so
+      // the document falls back to the rgba32f working space (linear-sRGB)
+      // which is what the bytes actually encode.
+      if (
+        fromFormat === "rgba8" &&
+        toFormat === "rgba32f" &&
+        state.iccProfile
+      ) {
+        dispatch({ type: "SET_ICC_PROFILE", payload: undefined });
+      }
+
+      // Tag every converted pixel layer so the renderer's inline IDT
+      // interprets the float values correctly. For Auto / sRGB sources we
+      // already gamma-decoded inside `convertBuffer`, so the data is
+      // scene-linear and the layer is tagged `'linear-srgb'` (the renderer
+      // skips its decode). For log / wide-gamut / already-linear sources
+      // we left the bytes promoted untouched and forward the user-declared
+      // tag so the renderer's IDT pre-pass can do the decode.
       if (fromFormat === "rgba8" && toFormat === "rgba32f") {
-        const tag: LayerColorSpace =
-          sourceColorSpace === undefined || sourceColorSpace === "auto"
-            ? "srgb"
-            : sourceColorSpace;
+        const isSrgbSource =
+          sourceColorSpace === undefined ||
+          sourceColorSpace === "auto" ||
+          sourceColorSpace === "srgb";
+        const tag: LayerColorSpace = isSrgbSource
+          ? "linear-srgb"
+          : sourceColorSpace;
         for (const layerId of conversions.keys()) {
           dispatch({
             type: "SET_LAYER_COLOR_SPACE",

@@ -19,7 +19,7 @@
 import { useCallback } from "react";
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
-import type { AppState, PixelFormat } from "@/types";
+import type { AppState, LayerColorSpace, PixelFormat } from "@/types";
 import type { LutTransform } from "@/core/lut/LUT";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
@@ -83,6 +83,33 @@ function rejectIfNotRgb(profileBytes: Uint8Array, role: string): string | null {
     `${name} is a ${cs.toUpperCase()} profile and can't be used as a ` +
     `${role} for an RGB document. Pick an RGB profile instead.`
   );
+}
+
+/** Best-effort mapping from an ICC profile's `desc` string to one of our
+ *  renderer-known `LayerColorSpace` tags. Used by Convert to Profile to
+ *  re-tag layers after the pixel data has moved into the destination space
+ *  — the renderer's inline IDT keys off this tag, so leaving it pointing
+ *  at the old space would double-decode.
+ *
+ *  Returns null when the destination doesn't match anything the renderer
+ *  has a built-in IDT for; the caller keeps the existing tag in that case
+ *  (lcms2 already moved the pixel values, and the document's `iccProfile`
+ *  carries the authoritative space for export). */
+function classifyDestProfile(profile: Uint8Array): LayerColorSpace | null {
+  const desc = parseProfileDescription(profile)?.toLowerCase() ?? "";
+  if (!desc) return null;
+  // ACES variants. AP1 / "cg" both indicate the scene-linear working space
+  // the renderer's ACES IDT decodes; AP0 ("aces2065-1") doesn't have its
+  // own tag, so we don't claim it.
+  if (desc.includes("aces")) {
+    if (desc.includes("cg") || desc.includes("ap1")) return "aces-cg";
+    return null;
+  }
+  // sRGB variants. "Linear sRGB" / "sRGB-elle-V2-g10" / etc. — the "linear"
+  // qualifier must win over the bare "srgb" check.
+  if (desc.includes("linear") && desc.includes("srgb")) return "linear-srgb";
+  if (desc.includes("srgb") || desc.includes("iec 61966")) return "srgb";
+  return null;
 }
 
 /** Open the shared ProfilePickerDialog. Resolves with the chosen profile
@@ -199,8 +226,21 @@ export function useColorProfile({
       }
 
       // Phase 2: apply atomically.
+      const newTag = classifyDestProfile(dstProfile);
       for (const [layerId, newData] of newBuffers) {
         handle.replaceLayerData(layerId, newData, state.pixelFormat, undefined);
+        // Keep the renderer's inline IDT in sync with the new pixel data.
+        // Without this, layers tagged from a previous conversion (e.g.
+        // `'srgb'` or `'linear-srgb'`) would be decoded again by the
+        // renderer even though their values now live in the destination
+        // space. We only re-tag when we can confidently map the
+        // destination profile to a known `LayerColorSpace`.
+        if (newTag !== null) {
+          dispatch({
+            type: "SET_LAYER_COLOR_SPACE",
+            payload: { id: layerId, colorSpace: newTag },
+          });
+        }
       }
       dispatch({ type: "SET_ICC_PROFILE", payload: dstProfile });
       captureHistory("Convert to Profile");

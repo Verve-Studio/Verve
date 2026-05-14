@@ -1,4 +1,4 @@
-import type { LayerState, RGBAColor } from "@/types";
+import type { LayerState, PixelFormat, RGBAColor } from "@/types";
 
 // ─── History entry ────────────────────────────────────────────────────────────
 
@@ -33,6 +33,13 @@ export interface HistoryEntry {
   canvasHeight: number;
   /** Swatch collection at the time of this snapshot. Optional so old entries are backward-compatible. */
   swatches?: RGBAColor[];
+  /** Document ICC profile bytes at the time of this snapshot. `undefined`
+   *  means the document was untagged. Optional for backward-compat with
+   *  pre-CMS history entries. */
+  iccProfile?: Uint8Array;
+  /** Document-wide pixel format at the time of this snapshot. Optional for
+   *  backward-compat with pre-format-history entries. */
+  pixelFormat?: PixelFormat;
 }
 
 export interface ClearHistoryOptions {
@@ -102,6 +109,8 @@ export function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
       ? new Map(entry.layerContentVersions)
       : undefined,
     swatches: entry.swatches ? [...entry.swatches] : undefined,
+    iccProfile: entry.iccProfile ? new Uint8Array(entry.iccProfile) : undefined,
+    pixelFormat: entry.pixelFormat,
   };
 }
 

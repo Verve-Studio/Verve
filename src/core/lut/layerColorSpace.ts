@@ -61,7 +61,7 @@ export const ALL_LAYER_COLOR_SPACES: LayerColorSpace[] = [
 ];
 
 export const LAYER_COLOR_SPACE_LABEL: Record<LayerColorSpace, string> = {
-  auto: "Auto (document working space)",
+  auto: "Working space",
   srgb: "sRGB (display-encoded)",
   "linear-srgb": "Linear sRGB (scene-linear)",
   "aces-cg": "ACEScg (AP1 primaries, scene-linear)",
