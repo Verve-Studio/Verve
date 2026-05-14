@@ -296,5 +296,24 @@
   z-index: 9999;
   pointer-events: auto;
   caret-color: currentColor;
+
+  // Per-paragraph rendering rules. Each direct `<div>` child of the editor
+  // represents one paragraph; the CSS custom properties on `.textEditor`
+  // (set inline from the TextLayerState fields) drive paragraph-level
+  // spacing, first-line indent, etc., so the editor preview matches the
+  // rasteriser's per-paragraph composition exactly.
+  > div {
+    margin: 0;
+    padding: 0;
+    text-indent: var(--text-first-line-indent, 0);
+    // `spaceBefore` is added between paragraphs (not before the first),
+    // matching the rasteriser's `if (wl.isFirstOfPara && i > 0)` guard.
+    &:not(:first-child) {
+      margin-top: var(--text-space-before, 0);
+    }
+    // `spaceAfter` after every paragraph — matches the rasteriser's
+    // `if (wl.isLastOfPara) cursorY += spaceAfter`.
+    margin-bottom: var(--text-space-after, 0);
+  }
 }
 
