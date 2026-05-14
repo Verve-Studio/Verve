@@ -148,6 +148,7 @@ export function SliderInput({
         createPortal(
           <span
             ref={popupRef}
+            data-slider-popup
             className={styles.popup}
             style={{ top: popupPos.top, left: popupPos.left }}
             onMouseDown={() => {

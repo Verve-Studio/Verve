@@ -1,9 +1,122 @@
 import { useAppContext } from "@/core/store/AppContext";
-import type { TextAlign, TextLayerState } from "@/types";
-import { ColorPickerDialog } from "@/ux/modals/ColorPickerDialog/ColorPickerDialog";
+import type { RGBAColor, TextAlign, TextLayerState } from "@/types";
+import { EmbedColorPicker } from "@/ux/widgets/EmbedColorPicker/EmbedColorPicker";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+
+// ─── RGBA swatch with embedded popup picker ──────────────────────────────────
+//
+// Replaces the modal ColorPickerDialog throughout the text tool. Mirrors the
+// pattern in `ColorSwatch`, but keeps full RGBA (255-based) values so it can
+// drop into existing text-color/stroke-color flows without conversion churn.
+function RgbaColorSwatch({
+  value,
+  onChange,
+  title,
+  allowNull = false,
+  size = 22,
+}: {
+  value: RGBAColor | null;
+  onChange: (c: RGBAColor) => void;
+  title: string;
+  allowNull?: boolean;
+  size?: number;
+}): React.JSX.Element {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const popupW = 220;
+    const popupH = 290;
+    const top =
+      r.top > popupH + 8 ? r.top - popupH - 6 : Math.min(r.bottom + 6, window.innerHeight - popupH - 8);
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - popupW - 8));
+    setPos({ top, left });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: PointerEvent): void => {
+      if (popupRef.current?.contains(e.target as Node)) return;
+      if (btnRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("pointerdown", handler, { capture: true });
+  }, [open]);
+
+  const bg = value
+    ? `rgba(${value.r},${value.g},${value.b},${value.a / 255})`
+    : "repeating-linear-gradient(45deg,#444 0 3px,#888 3px 6px)";
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        title={title}
+        data-text-editor-safe
+        data-text-adv-popover={allowNull ? "" : undefined}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: size,
+          height: size,
+          background: bg,
+          border: "1px solid var(--color-border)",
+          borderRadius: 2,
+          cursor: "pointer",
+          flexShrink: 0,
+          padding: 0,
+        }}
+      />
+      {open &&
+        ReactDOM.createPortal(
+          <div
+            ref={popupRef}
+            data-text-editor-safe
+            data-text-adv-popover={allowNull ? "" : undefined}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 4,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+              zIndex: 10000,
+              padding: 8,
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <EmbedColorPicker
+              value={{
+                r: (value?.r ?? 255) / 255,
+                g: (value?.g ?? 255) / 255,
+                b: (value?.b ?? 255) / 255,
+                a: (value?.a ?? 255) / 255,
+              }}
+              onChange={(c) =>
+                onChange({
+                  r: Math.round(Math.min(c.r, 1) * 255),
+                  g: Math.round(Math.min(c.g, 1) * 255),
+                  b: Math.round(Math.min(c.b, 1) * 255),
+                  a: Math.round(c.a * 255),
+                })
+              }
+            />
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
 import type {
   ToolContext,
   ToolHandler,
@@ -34,6 +147,28 @@ export const textOptions = {
     b: number;
     a: number;
   },
+  // ── PSD-compatible defaults (carried into new text layers) ────────────
+  horizontalScale: 100,
+  verticalScale: 100,
+  baselineShift: 0,
+  fauxBold: false,
+  fauxItalic: false,
+  allCaps: false,
+  smallCaps: false,
+  superscript: false,
+  subscript: false,
+  antiAlias: "smooth" as import("@/types").TextAntiAlias,
+  strokeColor: null as import("@/types").RGBAColor | null,
+  strokeWidth: 0,
+  ligatures: "standard" as import("@/types").TextLigatures,
+  firstLineIndent: 0,
+  leftIndent: 0,
+  rightIndent: 0,
+  spaceBefore: 0,
+  spaceAfter: 0,
+  hyphenate: false,
+  noBreak: false,
+  direction: "ltr" as "ltr" | "rtl",
 };
 
 // ─── System font enumeration ──────────────────────────────────────────────────
@@ -109,13 +244,21 @@ export function getTextBounds(ls: TextLayerState): {
     .filter(Boolean)
     .join(" ");
   _measureCtx.font = fontStyle;
-  const lines = (ls.text || "M").split("\n");
+  const upperIfNeeded = (s: string): string =>
+    ls.allCaps ? s.toUpperCase() : s;
+  const lines = (ls.text || "M").split("\n").map(upperIfNeeded);
   const textW = Math.max(
     ...lines.map((line) => _measureCtx.measureText(line || "M").width),
   );
   const lineH = ls.fontSize * (ls.lineHeight ?? 1.2);
-  const w = Math.max(ls.fontSize * 2, textW);
-  const h = Math.max(lineH, lines.length * lineH);
+  const hScale = (ls.horizontalScale ?? 100) / 100;
+  const vScale = (ls.verticalScale ?? 100) / 100;
+  const w = Math.max(ls.fontSize * 2, textW) * hScale;
+  // Account for paragraph spacing between paragraphs.
+  const paraGapTotal =
+    Math.max(0, lines.length - 1) *
+    ((ls.spaceBefore ?? 0) + (ls.spaceAfter ?? 0));
+  const h = (Math.max(lineH, lines.length * lineH) + paraGapTotal) * vScale;
   return { x: ls.x, y: ls.y, w, h };
 }
 
@@ -236,6 +379,28 @@ function createTextHandler(): ToolHandler {
           b: Math.round(Math.min(ctx.primaryColor.b, 1) * 255),
           a: Math.round(ctx.primaryColor.a * 255),
         },
+        // PSD-compatible character/paragraph attributes.
+        horizontalScale: textOptions.horizontalScale,
+        verticalScale: textOptions.verticalScale,
+        baselineShift: textOptions.baselineShift,
+        fauxBold: textOptions.fauxBold,
+        fauxItalic: textOptions.fauxItalic,
+        allCaps: textOptions.allCaps,
+        smallCaps: textOptions.smallCaps,
+        superscript: textOptions.superscript,
+        subscript: textOptions.subscript,
+        antiAlias: textOptions.antiAlias,
+        strokeColor: textOptions.strokeColor,
+        strokeWidth: textOptions.strokeWidth,
+        ligatures: textOptions.ligatures,
+        firstLineIndent: textOptions.firstLineIndent,
+        leftIndent: textOptions.leftIndent,
+        rightIndent: textOptions.rightIndent,
+        spaceBefore: textOptions.spaceBefore,
+        spaceAfter: textOptions.spaceAfter,
+        hyphenate: textOptions.hyphenate,
+        noBreak: textOptions.noBreak,
+        direction: textOptions.direction,
       };
       dragging = false;
       ctx.addTextLayer(layer);
@@ -442,6 +607,436 @@ function FontPicker({
   );
 }
 
+// ─── Advanced (PSD-compatible) text options popover ─────────────────────────
+//
+// Exposes all character/paragraph attributes that aren't on the inline
+// Options bar: faux bold/italic, all-caps, small-caps, super/sub, h/v scale,
+// baseline shift, anti-alias preset, stroke colour/width, ligature mode,
+// paragraph indents, paragraph spacing, direction. All PSD-compatible.
+function AdvancedTextPopover({
+  activeTextLayer,
+  apply,
+}: {
+  activeTextLayer: TextLayerState | undefined;
+  apply: (patch: Partial<TextLayerState>) => void;
+}): React.JSX.Element {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
+
+  // Source of truth for current values: active layer ?? module defaults.
+  const src = activeTextLayer;
+  const v = {
+    horizontalScale: src?.horizontalScale ?? textOptions.horizontalScale,
+    verticalScale: src?.verticalScale ?? textOptions.verticalScale,
+    baselineShift: src?.baselineShift ?? textOptions.baselineShift,
+    fauxBold: src?.fauxBold ?? textOptions.fauxBold,
+    fauxItalic: src?.fauxItalic ?? textOptions.fauxItalic,
+    allCaps: src?.allCaps ?? textOptions.allCaps,
+    smallCaps: src?.smallCaps ?? textOptions.smallCaps,
+    superscript: src?.superscript ?? textOptions.superscript,
+    subscript: src?.subscript ?? textOptions.subscript,
+    antiAlias: src?.antiAlias ?? textOptions.antiAlias,
+    strokeColor: src?.strokeColor ?? textOptions.strokeColor,
+    strokeWidth: src?.strokeWidth ?? textOptions.strokeWidth,
+    ligatures: src?.ligatures ?? textOptions.ligatures,
+    firstLineIndent: src?.firstLineIndent ?? textOptions.firstLineIndent,
+    leftIndent: src?.leftIndent ?? textOptions.leftIndent,
+    rightIndent: src?.rightIndent ?? textOptions.rightIndent,
+    spaceBefore: src?.spaceBefore ?? textOptions.spaceBefore,
+    spaceAfter: src?.spaceAfter ?? textOptions.spaceAfter,
+    direction: src?.direction ?? textOptions.direction,
+    hyphenate: src?.hyphenate ?? textOptions.hyphenate,
+    noBreak: src?.noBreak ?? textOptions.noBreak,
+  };
+
+  // Bidirectional mirror: write to module options so the next created layer
+  // inherits, AND write to the active layer via apply().
+  const setField = <K extends keyof TextLayerState>(
+    key: K,
+    val: TextLayerState[K],
+  ): void => {
+    apply({ [key]: val } as Partial<TextLayerState>);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (textOptions as any)[key] = val;
+  };
+  /** Apply multiple keys atomically — needed when one toggle must clear
+   *  another (super/sub are mutually exclusive). Two sequential `setField`
+   *  calls would dispatch twice with the SAME stale `activeTextLayer`
+   *  snapshot, so the second dispatch would overwrite the first key. */
+  const setFields = (patch: Partial<TextLayerState>): void => {
+    apply(patch);
+    for (const [k, val] of Object.entries(patch)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (textOptions as any)[k] = val;
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: PointerEvent): void => {
+      const target = e.target as Element;
+      // Keep the popover open when the click lands on:
+      //  - one of our own elements (the popover root + slider wrappers carry
+      //    `data-text-adv-popover`),
+      //  - a `SliderInput` portal-spawned popup (`data-slider-popup`), or
+      //  - an embedded color picker portal popup (`data-text-editor-safe` —
+      //    we re-use the existing marker already wired up for the color
+      //    swatch + its portal popup body).
+      if (
+        target.closest?.(
+          "[data-text-adv-popover], [data-slider-popup], [data-text-editor-safe]",
+        )
+      )
+        return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("pointerdown", handler, { capture: true });
+  }, [open]);
+
+  const handleToggle = (): void => {
+    if (!open && buttonRef.current) {
+      const r = buttonRef.current.getBoundingClientRect();
+      setDropPos({ top: r.bottom + 2, left: r.left });
+    }
+    setOpen((o) => !o);
+  };
+
+  const row: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 8px",
+    fontSize: 12,
+    color: "var(--color-text)",
+  };
+  const groupTitle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "var(--color-text-muted)",
+    padding: "6px 8px 2px",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  };
+  const labelW: React.CSSProperties = { width: 90, flexShrink: 0 };
+  const slider = (
+    val: number,
+    setVal: (n: number) => void,
+    opts: { min: number; max: number; step?: number; width?: number } = {
+      min: -1000,
+      max: 1000,
+    },
+  ): React.JSX.Element => (
+    <span data-text-adv-popover data-text-editor-safe>
+      <SliderInput
+        value={Number.isFinite(val) ? val : 0}
+        min={opts.min}
+        max={opts.max}
+        step={opts.step ?? 1}
+        inputWidth={opts.width ?? 56}
+        onChange={setVal}
+      />
+    </span>
+  );
+  const toggleBtn = (
+    label: string,
+    active: boolean,
+    title: string,
+    onClick: () => void,
+  ): React.JSX.Element => (
+    <button
+      type="button"
+      title={title}
+      data-text-adv-popover
+      data-text-editor-safe
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      style={{
+        height: 22,
+        minWidth: 28,
+        padding: "0 6px",
+        background: active ? "var(--color-surface-selected)" : "var(--color-surface)",
+        color: "var(--color-text)",
+        border: "1px solid var(--color-border)",
+        borderRadius: 3,
+        cursor: "pointer",
+        fontSize: 12,
+        outline: active ? "2px solid #0078ff" : "none",
+        outlineOffset: "-2px",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        title="Advanced text options"
+        data-text-adv-popover
+        data-text-editor-safe
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={handleToggle}
+        style={{
+          height: 22,
+          padding: "0 8px",
+          background: "var(--color-surface)",
+          color: "var(--color-text)",
+          border: "1px solid var(--color-border)",
+          borderRadius: 3,
+          cursor: "pointer",
+          fontSize: 12,
+        }}
+      >
+        ⋯
+      </button>
+      {open &&
+        ReactDOM.createPortal(
+          <div
+            data-text-adv-popover
+            data-text-editor-safe
+            style={{
+              position: "fixed",
+              top: dropPos.top,
+              left: dropPos.left,
+              minWidth: 260,
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 4,
+              zIndex: 9999,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+              padding: "4px 0 8px",
+            }}
+          >
+            <div style={groupTitle}>Character</div>
+            <div style={row}>
+              {toggleBtn("B", v.fauxBold, "Faux Bold", () =>
+                setField("fauxBold", !v.fauxBold),
+              )}
+              {toggleBtn("I", v.fauxItalic, "Faux Italic", () =>
+                setField("fauxItalic", !v.fauxItalic),
+              )}
+              {toggleBtn("TT", v.allCaps, "All Caps", () =>
+                setField("allCaps", !v.allCaps),
+              )}
+              {toggleBtn("Tt", v.smallCaps, "Small Caps", () =>
+                setField("smallCaps", !v.smallCaps),
+              )}
+              {toggleBtn("T¹", v.superscript, "Superscript", () => {
+                const next = !v.superscript;
+                setFields({
+                  superscript: next,
+                  subscript: next ? false : v.subscript,
+                });
+              })}
+              {toggleBtn("T₁", v.subscript, "Subscript", () => {
+                const next = !v.subscript;
+                setFields({
+                  subscript: next,
+                  superscript: next ? false : v.superscript,
+                });
+              })}
+            </div>
+            <div style={row}>
+              <span style={labelW}>H Scale (%)</span>
+              {slider(v.horizontalScale, (n) => setField("horizontalScale", n), {
+                min: 1,
+                max: 1000,
+                step: 1,
+              })}
+              <span style={{ width: 12 }} />
+              <span style={{ width: 60 }}>V Scale (%)</span>
+              {slider(v.verticalScale, (n) => setField("verticalScale", n), {
+                min: 1,
+                max: 1000,
+                step: 1,
+              })}
+            </div>
+            <div style={row}>
+              <span style={labelW}>Baseline shift</span>
+              {slider(v.baselineShift, (n) => setField("baselineShift", n), {
+                min: -1000,
+                max: 1000,
+                step: 1,
+              })}
+            </div>
+            <div style={row}>
+              <span style={labelW}>Anti-alias</span>
+              <select
+                value={v.antiAlias}
+                onChange={(e) =>
+                  setField(
+                    "antiAlias",
+                    e.target.value as import("@/types").TextAntiAlias,
+                  )
+                }
+                style={{
+                  height: 22,
+                  background: "var(--color-bg)",
+                  color: "var(--color-text)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 3,
+                  padding: "0 4px",
+                  fontSize: 12,
+                }}
+              >
+                <option value="none">None</option>
+                <option value="sharp">Sharp</option>
+                <option value="crisp">Crisp</option>
+                <option value="strong">Strong</option>
+                <option value="smooth">Smooth</option>
+              </select>
+            </div>
+            <div style={row}>
+              <span style={labelW}>Ligatures</span>
+              <select
+                value={v.ligatures}
+                onChange={(e) =>
+                  setField(
+                    "ligatures",
+                    e.target.value as import("@/types").TextLigatures,
+                  )
+                }
+                style={{
+                  height: 22,
+                  background: "var(--color-bg)",
+                  color: "var(--color-text)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 3,
+                  padding: "0 4px",
+                  fontSize: 12,
+                }}
+              >
+                <option value="none">None</option>
+                <option value="standard">Standard</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div style={row}>
+              <span style={labelW}>Stroke</span>
+              <RgbaColorSwatch
+                title="Stroke colour"
+                value={v.strokeColor}
+                allowNull
+                onChange={(c) => {
+                  setField("strokeColor", c);
+                  if (v.strokeWidth === 0) setField("strokeWidth", 1);
+                }}
+              />
+              {slider(v.strokeWidth, (n) => setField("strokeWidth", n), {
+                min: 0,
+                max: 200,
+                step: 0.5,
+              })}
+              {v.strokeColor && (
+                <button
+                  type="button"
+                  data-text-adv-popover
+                  data-text-editor-safe
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setField("strokeColor", null);
+                    setField("strokeWidth", 0);
+                  }}
+                  style={{
+                    height: 22,
+                    padding: "0 6px",
+                    background: "var(--color-surface)",
+                    color: "var(--color-text)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 3,
+                    cursor: "pointer",
+                    fontSize: 11,
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div style={groupTitle}>Paragraph</div>
+            <div style={row}>
+              <span style={labelW}>First-line indent</span>
+              {slider(v.firstLineIndent, (n) => setField("firstLineIndent", n), {
+                min: -2000,
+                max: 2000,
+                step: 1,
+              })}
+            </div>
+            <div style={row}>
+              <span style={labelW}>Left indent</span>
+              {slider(v.leftIndent, (n) => setField("leftIndent", n), {
+                min: 0,
+                max: 2000,
+                step: 1,
+              })}
+              <span style={{ width: 12 }} />
+              <span style={{ width: 50 }}>Right</span>
+              {slider(v.rightIndent, (n) => setField("rightIndent", n), {
+                min: 0,
+                max: 2000,
+                step: 1,
+              })}
+            </div>
+            <div style={row}>
+              <span style={labelW}>Space before</span>
+              {slider(v.spaceBefore, (n) => setField("spaceBefore", n), {
+                min: 0,
+                max: 2000,
+                step: 1,
+              })}
+              <span style={{ width: 12 }} />
+              <span style={{ width: 50 }}>After</span>
+              {slider(v.spaceAfter, (n) => setField("spaceAfter", n), {
+                min: 0,
+                max: 2000,
+                step: 1,
+              })}
+            </div>
+            <div style={row}>
+              <span style={labelW}>Direction</span>
+              <select
+                value={v.direction}
+                onChange={(e) =>
+                  setField("direction", e.target.value as "ltr" | "rtl")
+                }
+                style={{
+                  height: 22,
+                  background: "var(--color-bg)",
+                  color: "var(--color-text)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 3,
+                  padding: "0 4px",
+                  fontSize: 12,
+                }}
+              >
+                <option value="ltr">Left to Right</option>
+                <option value="rtl">Right to Left</option>
+              </select>
+            </div>
+            <div style={row}>
+              {toggleBtn("Hyphenate", v.hyphenate, "Auto hyphenation", () =>
+                setField("hyphenate", !v.hyphenate),
+              )}
+              {toggleBtn(
+                "No Break",
+                v.noBreak,
+                "Suppress automatic line breaks",
+                () => setField("noBreak", !v.noBreak),
+              )}
+            </div>
+
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 // ─── Options UI ───────────────────────────────────────────────────────────────
 
 function TextOptions({
@@ -488,7 +1083,6 @@ function TextOptions({
     b: number;
     a: number;
   }>(activeTextLayer?.color ?? textOptions.color);
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [fonts, setFonts] = useState<string[]>([textOptions.fontFamily]);
 
   const activeId = activeTextLayer?.id;
@@ -792,44 +1386,16 @@ function TextOptions({
         <option value="none">None</option>
       </select>
       <span className={styles.optSep} data-text-editor-safe />
-      <div
+      <RgbaColorSwatch
         title="Text Color"
-        data-text-editor-safe
-        style={{
-          width: 22,
-          height: 22,
-          background: `rgb(${color.r},${color.g},${color.b})`,
-          border: "1px solid var(--color-border)",
-          cursor: "pointer",
-          borderRadius: 2,
-          flexShrink: 0,
+        value={color}
+        onChange={(c) => {
+          setColor(c);
+          applyChange({ color: c });
         }}
-        onClick={() => setShowColorPicker(true)}
       />
-      {showColorPicker && (
-        <ColorPickerDialog
-          open={showColorPicker}
-          title="Text Color"
-          initialColor={{
-            r: color.r / 255,
-            g: color.g / 255,
-            b: color.b / 255,
-            a: color.a / 255,
-          }}
-          onConfirm={(c) => {
-            const newColor = {
-              r: Math.round(c.r * 255),
-              g: Math.round(c.g * 255),
-              b: Math.round(c.b * 255),
-              a: Math.round(c.a * 255),
-            };
-            setColor(newColor);
-            setShowColorPicker(false);
-            applyChange({ color: newColor });
-          }}
-          onCancel={() => setShowColorPicker(false)}
-        />
-      )}
+      <span className={styles.optSep} data-text-editor-safe />
+      <AdvancedTextPopover activeTextLayer={activeTextLayer} apply={applyChange} />
     </>
   );
 }

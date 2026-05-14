@@ -190,6 +190,72 @@ export function TextLayerEditor({
     .filter(Boolean)
     .join(" ");
 
+  // Browsers center each glyph vertically inside its line-box, so the first
+  // line's glyph top sits half a line's worth of leading below the textarea
+  // top. The Canvas2D rasteriser (textBaseline:"top") puts the glyph top
+  // exactly at `ls.y`. Without compensation, entering edit mode shifts the
+  // visible text downward by that half-leading. Pull the textarea up by it.
+  const lineHeightFactor = ls.lineHeight ?? 1.2;
+  const halfLeadingPx = ((lineHeightFactor - 1) / 2) * fontSizePx;
+
+  // ── PSD-compatible attributes: mirror what the rasteriser will draw so
+  //    the user sees an accurate preview while typing AND when re-entering
+  //    edit mode on an already-styled layer. Per-paragraph before/after
+  //    spacing is the only thing we can't reproduce inside a flat textarea;
+  //    it appears the moment the editor closes and the layer re-rasterises.
+  const hScale = (ls.horizontalScale ?? 100) / 100;
+  const vScale = (ls.verticalScale ?? 100) / 100;
+  // Super/subscript: matches the rasteriser's 0.583 scale + ±0.33em baseline
+  // shift. Applied uniformly to all glyphs via the textarea transform.
+  const supSubScale = ls.superscript || ls.subscript ? 0.583 : 1;
+  const supSubBaselinePx = ls.superscript
+    ? ls.fontSize * 0.33 * cssZoom
+    : ls.subscript
+      ? -ls.fontSize * 0.33 * cssZoom
+      : 0;
+  const baselineShiftPx =
+    (ls.baselineShift ?? 0) * cssZoom + supSubBaselinePx;
+  const fauxItalicShearDeg = ls.fauxItalic ? -12 : 0;
+  const totalHScale = hScale * supSubScale;
+  const totalVScale = vScale * supSubScale;
+  const needsTransform =
+    totalHScale !== 1 ||
+    totalVScale !== 1 ||
+    fauxItalicShearDeg !== 0 ||
+    baselineShiftPx !== 0;
+  const taTransform = needsTransform
+    ? `translateY(${-baselineShiftPx}px) scale(${totalHScale}, ${totalVScale}) skewX(${fauxItalicShearDeg}deg)`
+    : undefined;
+
+  const textTransformCss: "uppercase" | "none" = ls.allCaps
+    ? "uppercase"
+    : "none";
+  const fontVariantCapsCss: "small-caps" | "normal" =
+    ls.smallCaps && !ls.allCaps ? "small-caps" : "normal";
+  const fontVariantLigaturesCss =
+    ls.ligatures === "none"
+      ? "no-common-ligatures no-discretionary-ligatures"
+      : ls.ligatures === "all"
+        ? "common-ligatures discretionary-ligatures"
+        : "common-ligatures no-discretionary-ligatures";
+  const dirAttr: "ltr" | "rtl" = ls.direction === "rtl" ? "rtl" : "ltr";
+
+  // Synthetic outline matches `-webkit-text-stroke`. Width is in CSS px so
+  // we scale by cssZoom to stay in lock-step with the rasteriser, which
+  // works in canvas-space.
+  const strokePx = (ls.strokeWidth ?? 0) * cssZoom;
+  const strokeCss =
+    ls.strokeColor && strokePx > 0
+      ? `${strokePx}px rgba(${ls.strokeColor.r},${ls.strokeColor.g},${ls.strokeColor.b},${ls.strokeColor.a / 255})`
+      : undefined;
+
+  // Faux-bold approximation while typing: a 1-px text-shadow in the fill
+  // colour. The rasteriser uses strokeText for the same effect at output.
+  const fauxBoldShadow =
+    ls.fauxBold && ls.color
+      ? `0 0 0.4px rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255}), 0.4px 0 0.4px rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255})`
+      : undefined;
+
   const editor = (
     <div
       data-text-editor-root
@@ -238,7 +304,25 @@ export function TextLayerEditor({
           outline: "none",
           border: "none",
           padding: 0,
+          marginTop: -halfLeadingPx,
+          textTransform: textTransformCss,
+          fontVariantCaps: fontVariantCapsCss,
+          fontVariantLigatures: fontVariantLigaturesCss,
+          direction: dirAttr,
+          // Paragraph indents — best-effort within a single-block textarea.
+          // `textIndent` only applies to the first visible line, so it
+          // matches `firstLineIndent` for the topmost paragraph but not for
+          // mid-text paragraphs (where the rasterised result is the truth
+          // shown on close). `paddingLeft`/`Right` simulate left/right
+          // indent for every line.
+          paddingLeft: `${(ls.leftIndent ?? 0) * cssZoom}px`,
+          paddingRight: `${(ls.rightIndent ?? 0) * cssZoom}px`,
+          textIndent: `${(ls.firstLineIndent ?? 0) * cssZoom}px`,
+          ...(taTransform ? { transform: taTransform, transformOrigin: "top left" } : {}),
+          ...(strokeCss ? { WebkitTextStroke: strokeCss } : {}),
+          ...(fauxBoldShadow ? { textShadow: fauxBoldShadow } : {}),
         }}
+        dir={dirAttr}
         value={ls.text}
         onChange={(e) => onCommit({ ...ls, text: e.target.value })}
         onKeyDown={(e) => {

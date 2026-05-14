@@ -202,6 +202,15 @@ export interface PixelLayerState {
 
 export type TextAlign = "left" | "center" | "right" | "justify";
 
+/** PSD-compatible anti-aliasing modes. Photoshop ships these five presets in
+ *  the Character panel; preserving the value lets us round-trip the layer
+ *  even when the renderer can only approximate the visual result. */
+export type TextAntiAlias = "none" | "sharp" | "crisp" | "strong" | "smooth";
+
+/** PSD ligature mode. "standard" = `liga` only, "all" = `liga` + `dlig`
+ *  (discretionary). PSD also exposes "none". */
+export type TextLigatures = "none" | "standard" | "all";
+
 export interface TextLayerState {
   id: string;
   name: string;
@@ -219,7 +228,9 @@ export interface TextLayerState {
   boxHeight: number;
   fontFamily: string;
   fontSize: number;
+  /** Selects the bold OS/font variant when available. PSD: `FontStyle = Bold`. */
   bold: boolean;
+  /** Selects the italic font variant. PSD: `FontStyle = Italic`. */
   italic: boolean;
   underline: boolean;
   strikethrough: boolean;
@@ -228,6 +239,59 @@ export interface TextLayerState {
   lineHeight: number; // em multiplier; default 1.2
   kerning: "auto" | "none";
   color: RGBAColor;
+
+  // ── PSD-compatible character extensions ─────────────────────────────────
+  // All optional + backwards-compatible. Older documents/imports without
+  // these fields render exactly as before. PSD round-trip code can read &
+  // write these without lossy conversions.
+
+  /** Horizontal glyph scale, percent. PSD `HorizontalScale`. Default 100. */
+  horizontalScale?: number;
+  /** Vertical glyph scale, percent. PSD `VerticalScale`. Default 100. */
+  verticalScale?: number;
+  /** Per-character baseline shift in canvas pixels (positive = up).
+   *  PSD `BaselineShift`. Default 0. */
+  baselineShift?: number;
+  /** Synthetic bold (algorithmic stroke widening) — independent of `bold`,
+   *  which selects an actual font variant. PSD `FauxBold`. */
+  fauxBold?: boolean;
+  /** Synthetic italic (algorithmic shear). PSD `FauxItalic`. */
+  fauxItalic?: boolean;
+  /** Render all glyphs in upper case. PSD `FontCaps = AllCaps`. */
+  allCaps?: boolean;
+  /** Render lowercase glyphs as small caps. PSD `FontCaps = SmallCaps`. */
+  smallCaps?: boolean;
+  /** PSD `Superscript`. Renders glyphs scaled & baseline-shifted up. */
+  superscript?: boolean;
+  /** PSD `Subscript`. Renders glyphs scaled & baseline-shifted down. */
+  subscript?: boolean;
+  /** Anti-alias preset. PSD `AntiAlias`. Default "smooth". */
+  antiAlias?: TextAntiAlias;
+  /** Outline (stroke) colour. PSD `StrokeColor`. null = no stroke. */
+  strokeColor?: RGBAColor | null;
+  /** Outline width in canvas pixels. PSD `StrokeWidth`. Default 0. */
+  strokeWidth?: number;
+  /** OpenType ligature mode. PSD `Ligatures` / `DiscretionaryLigatures`. */
+  ligatures?: TextLigatures;
+
+  // ── PSD-compatible paragraph extensions ─────────────────────────────────
+
+  /** First-line indent in canvas pixels. PSD `FirstLineIndent`. */
+  firstLineIndent?: number;
+  /** Left indent of every line in canvas pixels. PSD `StartIndent`. */
+  leftIndent?: number;
+  /** Right indent of every line in canvas pixels. PSD `EndIndent`. */
+  rightIndent?: number;
+  /** Vertical space above each paragraph in canvas pixels. PSD `SpaceBefore`. */
+  spaceBefore?: number;
+  /** Vertical space after each paragraph in canvas pixels. PSD `SpaceAfter`. */
+  spaceAfter?: number;
+  /** Enable automatic hyphenation. PSD `Hyphenate`. */
+  hyphenate?: boolean;
+  /** Suppress automatic line breaks. PSD `NoBreak`. */
+  noBreak?: boolean;
+  /** Writing direction. PSD `DirectionalRunType`. Default "ltr". */
+  direction?: "ltr" | "rtl";
 }
 
 /**

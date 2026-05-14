@@ -61,11 +61,26 @@ function wrapLine(
   return lines.length > 0 ? lines : [""];
 }
 
+/** Apply per-character casing transforms (allCaps wins over smallCaps when
+ *  both are set, matching PSD precedence). Returns the line as it should be
+ *  measured & drawn. smallCaps is handled via the browser's `fontVariantCaps`
+ *  property so the underlying glyph substitution is OS-native. */
+function applyCasing(text: string, allCaps: boolean): string {
+  return allCaps ? text.toUpperCase() : text;
+}
+
 /**
  * Draw a TextLayerState onto an arbitrary 2D context at its `ls.x / ls.y`
  * canvas-space position. Shared by both `rasterizeTextToLayer` (GPU upload
  * path) and the overlay-canvas live-preview path used during drag, so the
  * two are guaranteed to render identically.
+ *
+ * Honours the full PSD-compatible TextLayerState surface: faux bold/italic,
+ * horizontal/vertical scale, baseline shift, all-caps / small-caps,
+ * super/subscript, stroke (outline), ligature mode, paragraph indents and
+ * before/after spacing. Anti-alias preset is applied via the canvas
+ * `textRendering` hint; for round-trip purposes the field value is preserved
+ * on the layer even when the OS can only approximate the visual difference.
  */
 export function drawTextToCtx2d(
   ctx2d: CanvasRenderingContext2D,
@@ -73,10 +88,36 @@ export function drawTextToCtx2d(
 ): void {
   if (!ls.text) return;
 
+  // ── Resolve PSD-compatible character attributes ────────────────────────
+  const hScale = (ls.horizontalScale ?? 100) / 100;
+  const vScale = (ls.verticalScale ?? 100) / 100;
+  const baselineShift = ls.baselineShift ?? 0;
+  const fauxBold = ls.fauxBold ?? false;
+  const fauxItalic = ls.fauxItalic ?? false;
+  const allCaps = ls.allCaps ?? false;
+  const smallCaps = ls.smallCaps ?? false;
+  const isSuper = ls.superscript ?? false;
+  const isSub = ls.subscript ?? false;
+  const stroke = ls.strokeColor ?? null;
+  const strokeW = ls.strokeWidth ?? 0;
+  const ligatures: "none" | "standard" | "all" = ls.ligatures ?? "standard";
+  const antiAlias = ls.antiAlias ?? "smooth";
+
+  // Super/subscript shrink the glyphs to ~58% and shift the baseline.
+  // (Same factor PSD uses by default; the user can layer baselineShift on
+  // top to fine-tune.)
+  const supSubScale = isSuper || isSub ? 0.583 : 1;
+  const supSubBaseline = isSuper
+    ? ls.fontSize * 0.33
+    : isSub
+      ? -ls.fontSize * 0.33
+      : 0;
+  const effectiveFontSize = ls.fontSize * supSubScale;
+
   const fontStyle = [
     ls.italic ? "italic" : "",
     ls.bold ? "bold" : "",
-    `${ls.fontSize}px`,
+    `${effectiveFontSize}px`,
     `"${ls.fontFamily}", sans-serif`,
   ]
     .filter(Boolean)
@@ -92,6 +133,41 @@ export function drawTextToCtx2d(
     (ctx2d as CanvasRenderingContext2D & { fontKerning?: string }).fontKerning =
       (ls.kerning ?? "auto") === "auto" ? "auto" : "none";
   }
+  // Browser-native small-caps substitution.
+  if ("fontVariantCaps" in ctx2d) {
+    (
+      ctx2d as CanvasRenderingContext2D & { fontVariantCaps?: string }
+    ).fontVariantCaps = smallCaps && !allCaps ? "small-caps" : "normal";
+  }
+  // OpenType ligature controls — Canvas2D supports these via
+  // `fontFeatureSettings` on most modern engines (Chromium/Electron).
+  if ("fontFeatureSettings" in ctx2d) {
+    const ff =
+      ligatures === "none"
+        ? '"liga" 0, "dlig" 0'
+        : ligatures === "all"
+          ? '"liga" 1, "dlig" 1'
+          : '"liga" 1, "dlig" 0';
+    (
+      ctx2d as CanvasRenderingContext2D & { fontFeatureSettings?: string }
+    ).fontFeatureSettings = ff;
+  }
+  // Anti-alias hint — best-effort. The Canvas2D spec accepts the
+  // `textRendering` property and Chromium honours it for font hinting.
+  if ("textRendering" in ctx2d) {
+    const tr =
+      antiAlias === "none"
+        ? "optimizeSpeed"
+        : antiAlias === "sharp" || antiAlias === "crisp"
+          ? "geometricPrecision"
+          : "optimizeLegibility";
+    (
+      ctx2d as CanvasRenderingContext2D & { textRendering?: string }
+    ).textRendering = tr;
+  }
+  if (antiAlias === "none") {
+    ctx2d.imageSmoothingEnabled = false;
+  }
 
   const lineHeight = ls.fontSize * (ls.lineHeight ?? 1.2);
   const underlineThick = Math.max(1, Math.round(ls.fontSize / 14));
@@ -100,8 +176,18 @@ export function drawTextToCtx2d(
   const boxH = ls.boxHeight > 0 ? ls.boxHeight : 0;
   const align = ls.align ?? "left";
 
-  // For area text, clip rendering to the bounding box so overflow is pixel-clipped
-  // rather than whole-line-skipped (which would hide the first line if box is slightly too small).
+  const firstLineIndent = ls.firstLineIndent ?? 0;
+  const leftIndent = ls.leftIndent ?? 0;
+  const rightIndent = ls.rightIndent ?? 0;
+  const spaceBefore = ls.spaceBefore ?? 0;
+  const spaceAfter = ls.spaceAfter ?? 0;
+  const noBreak = ls.noBreak ?? false;
+
+  // Effective wrapping width: bounding box minus left/right indents.
+  const wrapW = boxW > 0 ? Math.max(0, boxW - leftIndent - rightIndent) : 0;
+
+  // For area text, clip rendering to the bounding box so overflow is pixel-
+  // clipped rather than whole-line-skipped.
   if (boxW > 0 && boxH > 0) {
     ctx2d.save();
     ctx2d.beginPath();
@@ -109,34 +195,101 @@ export function drawTextToCtx2d(
     ctx2d.clip();
   }
 
-  // Build final wrapped line list
-  const wrappedLines: string[] = [];
-  for (const para of ls.text.split("\n")) {
-    const wrapped = wrapLine(ctx2d, para, boxW);
-    wrappedLines.push(...wrapped);
+  // Apply horizontal/vertical scale + faux italic via a transform so glyph
+  // metrics, stroke widths, and underlines all scale uniformly. The origin
+  // is `(ls.x, ls.y)` so subsequent coords stay in the layer's own space.
+  const needsTransform =
+    hScale !== 1 || vScale !== 1 || fauxItalic || smallCaps; // smallCaps doesn't need transform; kept benign
+  if (needsTransform || fauxItalic) {
+    ctx2d.save();
+    ctx2d.translate(ls.x, ls.y);
+    // PSD faux italic ≈ 12° shear (tan(12°) ≈ 0.2126).
+    const shear = fauxItalic ? -0.2126 : 0;
+    ctx2d.transform(hScale, 0, shear, vScale, 0, 0);
+    ctx2d.translate(-ls.x, -ls.y);
   }
 
-  wrappedLines.forEach((line, i) => {
-    const lineY = ls.y + i * lineHeight;
+  // Build final wrapped line list. We track which wrapped lines are the FIRST
+  // line of a paragraph (for first-line-indent and space-before/after) and
+  // which are LAST lines (so justified text doesn't justify the final line).
+  type WrappedLine = {
+    text: string;
+    isFirstOfPara: boolean;
+    isLastOfPara: boolean;
+  };
+  const wrappedLines: WrappedLine[] = [];
+  const paragraphs = ls.text.split("\n");
+  paragraphs.forEach((para) => {
+    // First wrap line of a paragraph uses (wrapW - firstLineIndent) as max.
+    const firstWrapW = Math.max(0, wrapW - firstLineIndent);
+    const cased = applyCasing(para, allCaps);
+    let pieces: string[];
+    if (noBreak || wrapW <= 0) {
+      pieces = [cased];
+    } else {
+      // Wrap with two widths: first line shorter (indented), rest normal.
+      // Approximate by wrapping with the narrower width across the whole
+      // paragraph if firstLineIndent > 0 (PSD uses a per-line composer; this
+      // is a conservative approximation that prevents overflow).
+      const effWrap =
+        firstLineIndent > 0 ? Math.min(firstWrapW, wrapW) : wrapW;
+      pieces = wrapLine(ctx2d, cased, effWrap);
+    }
+    pieces.forEach((p, idx) =>
+      wrappedLines.push({
+        text: p,
+        isFirstOfPara: idx === 0,
+        isLastOfPara: idx === pieces.length - 1,
+      }),
+    );
+  });
 
-    let drawX = ls.x;
+  // Cursor Y advances by lineHeight per line, plus spaceBefore at the start
+  // of each paragraph and spaceAfter at the end.
+  let cursorY = ls.y;
+
+  wrappedLines.forEach((wl, i) => {
+    if (wl.isFirstOfPara && i > 0) cursorY += spaceBefore;
+    const line = wl.text;
+    const lineY = cursorY - baselineShift - supSubBaseline;
+
+    const indent = wl.isFirstOfPara ? firstLineIndent : 0;
+    const lineBoxLeft = ls.x + leftIndent + indent;
+    const lineBoxRight = ls.x + (boxW > 0 ? boxW - rightIndent : 0);
+    const innerW = boxW > 0 ? lineBoxRight - lineBoxLeft : 0;
+
+    let drawX = lineBoxLeft;
     const textW = ctx2d.measureText(line).width;
 
-    if (boxW > 0) {
+    if (innerW > 0) {
       if (align === "center") {
-        drawX = ls.x + (boxW - textW) / 2;
+        drawX = lineBoxLeft + (innerW - textW) / 2;
       } else if (align === "right") {
-        drawX = ls.x + boxW - textW;
-      } else if (align === "justify" && i < wrappedLines.length - 1) {
-        // Justified: stretch spaces between words
+        drawX = lineBoxLeft + innerW - textW;
+      } else if (align === "justify" && !wl.isLastOfPara) {
         const words = line.split(" ");
         if (words.length > 1) {
           const spaceW =
-            (boxW - ctx2d.measureText(line.replace(/ /g, "")).width) /
+            (innerW - ctx2d.measureText(line.replace(/ /g, "")).width) /
             (words.length - 1);
-          let cx = ls.x;
-          words.forEach((word, _wi) => {
+          let cx = lineBoxLeft;
+          words.forEach((word) => {
+            if (stroke && strokeW > 0) {
+              ctx2d.save();
+              ctx2d.strokeStyle = `rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`;
+              ctx2d.lineWidth = strokeW;
+              ctx2d.lineJoin = "round";
+              ctx2d.strokeText(word, cx, lineY);
+              ctx2d.restore();
+            }
             ctx2d.fillText(word, cx, lineY);
+            if (fauxBold) {
+              ctx2d.save();
+              ctx2d.strokeStyle = ctx2d.fillStyle as string;
+              ctx2d.lineWidth = Math.max(1, ls.fontSize / 30);
+              ctx2d.strokeText(word, cx, lineY);
+              ctx2d.restore();
+            }
             const ww = ctx2d.measureText(word).width;
             if (ls.underline && word.length > 0) {
               ctx2d.fillRect(cx, lineY + ls.fontSize + 2, ww, underlineThick);
@@ -146,20 +299,40 @@ export function drawTextToCtx2d(
             }
             cx += ww + spaceW;
           });
+          cursorY += lineHeight;
+          if (wl.isLastOfPara) cursorY += spaceAfter;
           return;
         }
       }
     }
 
+    if (stroke && strokeW > 0) {
+      ctx2d.save();
+      ctx2d.strokeStyle = `rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`;
+      ctx2d.lineWidth = strokeW;
+      ctx2d.lineJoin = "round";
+      ctx2d.strokeText(line, drawX, lineY);
+      ctx2d.restore();
+    }
     ctx2d.fillText(line, drawX, lineY);
+    if (fauxBold) {
+      ctx2d.save();
+      ctx2d.strokeStyle = ctx2d.fillStyle as string;
+      ctx2d.lineWidth = Math.max(1, ls.fontSize / 30);
+      ctx2d.strokeText(line, drawX, lineY);
+      ctx2d.restore();
+    }
     if (ls.underline && line.length > 0) {
       ctx2d.fillRect(drawX, lineY + ls.fontSize + 2, textW, underlineThick);
     }
     if ((ls.strikethrough ?? false) && line.length > 0) {
       ctx2d.fillRect(drawX, lineY + ls.fontSize * 0.35, textW, strikeThick);
     }
+    cursorY += lineHeight;
+    if (wl.isLastOfPara) cursorY += spaceAfter;
   });
 
+  if (needsTransform || fauxItalic) ctx2d.restore();
   if (boxW > 0 && boxH > 0) ctx2d.restore();
 }
 
