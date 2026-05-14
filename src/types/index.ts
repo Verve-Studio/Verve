@@ -238,6 +238,11 @@ export interface TextLayerState {
   letterSpacing: number; // canvas pixels; 0 = no extra tracking
   lineHeight: number; // em multiplier; default 1.2
   kerning: "auto" | "none";
+  /** Text fill colour. **Float RGBA**: r/g/b ∈ [0, ∞) (>1 is HDR, valid in
+   *  rgba32f documents), a ∈ [0, 1]. Matches the convention of
+   *  `AppState.primaryColor`. Conversion to 0–255 sRGB happens at the
+   *  Canvas2D rasterisation boundary; 32-bit PSDs round-trip the float
+   *  values via FRGB without precision loss. */
   color: RGBAColor;
 
   // ── PSD-compatible character extensions ─────────────────────────────────
@@ -267,7 +272,8 @@ export interface TextLayerState {
   subscript?: boolean;
   /** Anti-alias preset. PSD `AntiAlias`. Default "smooth". */
   antiAlias?: TextAntiAlias;
-  /** Outline (stroke) colour. PSD `StrokeColor`. null = no stroke. */
+  /** Outline (stroke) colour. PSD `StrokeColor`. Float RGBA (same range as
+   *  `color`). null = no stroke. */
   strokeColor?: RGBAColor | null;
   /** Outline width in canvas pixels. PSD `StrokeWidth`. Default 0. */
   strokeWidth?: number;

@@ -7,9 +7,9 @@ import ReactDOM from "react-dom";
 
 // ─── RGBA swatch with embedded popup picker ──────────────────────────────────
 //
-// Replaces the modal ColorPickerDialog throughout the text tool. Mirrors the
-// pattern in `ColorSwatch`, but keeps full RGBA (255-based) values so it can
-// drop into existing text-color/stroke-color flows without conversion churn.
+// Replaces the modal ColorPickerDialog throughout the text tool. Speaks the
+// same float-RGBA dialect as `EmbedColorPicker` (and `AppState.primaryColor`),
+// so values pass straight through without scaling churn.
 function RgbaColorSwatch({
   value,
   onChange,
@@ -51,8 +51,12 @@ function RgbaColorSwatch({
       document.removeEventListener("pointerdown", handler, { capture: true });
   }, [open]);
 
+  // CSS swatch preview: clamp HDR (>1) into the display range and emit
+  // 0–255 ints in the rgba() string. The stored value keeps its float range.
+  const toByte = (v: number): number =>
+    Math.max(0, Math.min(255, Math.round(v * 255)));
   const bg = value
-    ? `rgba(${value.r},${value.g},${value.b},${value.a / 255})`
+    ? `rgba(${toByte(value.r)},${toByte(value.g)},${toByte(value.b)},${value.a})`
     : "repeating-linear-gradient(45deg,#444 0 3px,#888 3px 6px)";
 
   return (
@@ -97,19 +101,12 @@ function RgbaColorSwatch({
           >
             <EmbedColorPicker
               value={{
-                r: (value?.r ?? 255) / 255,
-                g: (value?.g ?? 255) / 255,
-                b: (value?.b ?? 255) / 255,
-                a: (value?.a ?? 255) / 255,
+                r: value?.r ?? 1,
+                g: value?.g ?? 1,
+                b: value?.b ?? 1,
+                a: value?.a ?? 1,
               }}
-              onChange={(c) =>
-                onChange({
-                  r: Math.round(Math.min(c.r, 1) * 255),
-                  g: Math.round(Math.min(c.g, 1) * 255),
-                  b: Math.round(Math.min(c.b, 1) * 255),
-                  a: Math.round(c.a * 255),
-                })
-              }
+              onChange={(c) => onChange({ r: c.r, g: c.g, b: c.b, a: c.a })}
             />
           </div>,
           document.body,
@@ -141,7 +138,9 @@ export const textOptions = {
   letterSpacing: 0, // milliems (UI unit)
   lineHeight: 1.2,
   kerning: "auto" as "auto" | "none",
-  color: { r: 255, g: 255, b: 255, a: 255 } as {
+  // Float RGBA (matches `AppState.primaryColor` convention). r/g/b in
+  // [0, ∞) where >1 is HDR-valid for rgba32f documents; a in [0, 1].
+  color: { r: 1, g: 1, b: 1, a: 1 } as {
     r: number;
     g: number;
     b: number;
@@ -373,11 +372,13 @@ function createTextHandler(): ToolHandler {
           (textOptions.letterSpacing / 1000) * textOptions.fontSize,
         lineHeight: textOptions.lineHeight,
         kerning: textOptions.kerning,
+        // Float RGBA — primaryColor is already in the right space; the
+        // Canvas2D rasteriser clamps + scales when actually drawing.
         color: {
-          r: Math.round(Math.min(ctx.primaryColor.r, 1) * 255),
-          g: Math.round(Math.min(ctx.primaryColor.g, 1) * 255),
-          b: Math.round(Math.min(ctx.primaryColor.b, 1) * 255),
-          a: Math.round(ctx.primaryColor.a * 255),
+          r: ctx.primaryColor.r,
+          g: ctx.primaryColor.g,
+          b: ctx.primaryColor.b,
+          a: ctx.primaryColor.a,
         },
         // PSD-compatible character/paragraph attributes.
         horizontalScale: textOptions.horizontalScale,

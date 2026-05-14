@@ -298,15 +298,37 @@ export function TextLayerEditor({
         : "common-ligatures no-discretionary-ligatures";
   const dirAttr: "ltr" | "rtl" = ls.direction === "rtl" ? "rtl" : "ltr";
 
+  // Float-RGBA → CSS string with HDR clamped at the Canvas/browser boundary.
+  // Mirrors `floatRgbaToCss` in the rasteriser so the editor preview and the
+  // rasterised output use identical colour values.
+  const colorToCss = (c: {
+    r: number;
+    g: number;
+    b: number;
+    a: number;
+  }): string => {
+    const r = Math.max(0, Math.min(255, Math.round(c.r * 255)));
+    const g = Math.max(0, Math.min(255, Math.round(c.g * 255)));
+    const b = Math.max(0, Math.min(255, Math.round(c.b * 255)));
+    const a = Math.max(0, Math.min(1, c.a));
+    return `rgba(${r},${g},${b},${a})`;
+  };
+  const colorRgbCss = (c: { r: number; g: number; b: number }): string => {
+    const r = Math.max(0, Math.min(255, Math.round(c.r * 255)));
+    const g = Math.max(0, Math.min(255, Math.round(c.g * 255)));
+    const b = Math.max(0, Math.min(255, Math.round(c.b * 255)));
+    return `rgb(${r},${g},${b})`;
+  };
+
   const strokePx = (ls.strokeWidth ?? 0) * cssZoom;
   const strokeCss =
     ls.strokeColor && strokePx > 0
-      ? `${strokePx}px rgba(${ls.strokeColor.r},${ls.strokeColor.g},${ls.strokeColor.b},${ls.strokeColor.a / 255})`
+      ? `${strokePx}px ${colorToCss(ls.strokeColor)}`
       : undefined;
 
   const fauxBoldShadow =
     ls.fauxBold && ls.color
-      ? `0 0 0.4px rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255}), 0.4px 0 0.4px rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255})`
+      ? `0 0 0.4px ${colorToCss(ls.color)}, 0.4px 0 0.4px ${colorToCss(ls.color)}`
       : undefined;
 
   // Per-paragraph CSS values exposed via CSS variables.
@@ -341,16 +363,10 @@ export function TextLayerEditor({
         className={styles.textEditor}
         style={{
           font: fontStyle,
-          color: ls.color
-            ? `rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255})`
-            : "#ffffff",
-          caretColor: ls.color
-            ? `rgb(${ls.color.r},${ls.color.g},${ls.color.b})`
-            : "#ffffff",
+          color: ls.color ? colorToCss(ls.color) : "#ffffff",
+          caretColor: ls.color ? colorRgbCss(ls.color) : "#ffffff",
           background: "transparent",
-          WebkitTextFillColor: ls.color
-            ? `rgba(${ls.color.r},${ls.color.g},${ls.color.b},${ls.color.a / 255})`
-            : "#ffffff",
+          WebkitTextFillColor: ls.color ? colorToCss(ls.color) : "#ffffff",
           textDecoration: "none",
           textAlign: ls.align === "justify" ? "justify" : ls.align,
           letterSpacing: `${(ls.letterSpacing ?? 0) * cssZoom}px`,

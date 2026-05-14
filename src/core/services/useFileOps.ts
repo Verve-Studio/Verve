@@ -299,6 +299,23 @@ export function useFileOps({
               if (parentChildIds) parentChildIds.push(node.id);
               continue;
             }
+            if (node.kind === "text") {
+              // Live text layer — emit a TextLayerState directly, no pixel
+              // buffer. The renderer's parametric-layer pipeline rasterises
+              // it the same way it does any text layer authored in Verve.
+              layers.push({
+                id: node.id,
+                name: node.name,
+                visible: node.visible,
+                opacity: node.opacity,
+                locked: false,
+                blendMode: node.blendMode,
+                type: "text",
+                ...node.text,
+              });
+              if (parentChildIds) parentChildIds.push(node.id);
+              continue;
+            }
             const psdLayer = node;
             const storeKey = `${newId}:${psdLayer.id}`;
             u8TransferStore.set(storeKey, psdLayer.pixels);

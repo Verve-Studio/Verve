@@ -69,6 +69,17 @@ function applyCasing(text: string, allCaps: boolean): string {
   return allCaps ? text.toUpperCase() : text;
 }
 
+/** Float RGBA → CSS `rgba(r,g,b,a)` with r/g/b clamped + scaled to 0–255 and
+ *  alpha in 0..1. HDR text colours (>1) visibly clip at the Canvas2D
+ *  boundary; the stored layer value preserves the float for PSD round-trip. */
+function floatRgbaToCss(c: { r: number; g: number; b: number; a: number }): string {
+  const r = Math.max(0, Math.min(255, Math.round(c.r * 255)));
+  const g = Math.max(0, Math.min(255, Math.round(c.g * 255)));
+  const b = Math.max(0, Math.min(255, Math.round(c.b * 255)));
+  const a = Math.max(0, Math.min(1, c.a));
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 /**
  * Draw a TextLayerState onto an arbitrary 2D context at its `ls.x / ls.y`
  * canvas-space position. Shared by both `rasterizeTextToLayer` (GPU upload
@@ -125,7 +136,7 @@ export function drawTextToCtx2d(
 
   ctx2d.font = fontStyle;
   ctx2d.textBaseline = "top";
-  ctx2d.fillStyle = `rgba(${ls.color.r}, ${ls.color.g}, ${ls.color.b}, ${ls.color.a / 255})`;
+  ctx2d.fillStyle = floatRgbaToCss(ls.color);
   (
     ctx2d as CanvasRenderingContext2D & { letterSpacing?: string }
   ).letterSpacing = `${ls.letterSpacing ?? 0}px`;
@@ -276,7 +287,7 @@ export function drawTextToCtx2d(
           words.forEach((word) => {
             if (stroke && strokeW > 0) {
               ctx2d.save();
-              ctx2d.strokeStyle = `rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`;
+              ctx2d.strokeStyle = floatRgbaToCss(stroke);
               ctx2d.lineWidth = strokeW;
               ctx2d.lineJoin = "round";
               ctx2d.strokeText(word, cx, lineY);

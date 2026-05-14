@@ -466,6 +466,34 @@ export function useExportOps({
                 });
                 continue;
               }
+              if (t === "text") {
+                // Round-trip the text layer as a live PSD text record —
+                // Photoshop opens it as an editable type layer with the same
+                // font / size / colour / paragraph attributes the artist set.
+                const tls = ls as import("@/types").TextLayerState;
+                const {
+                  id: _id,
+                  name,
+                  visible,
+                  opacity,
+                  blendMode,
+                  locked: _locked,
+                  type: _type,
+                  ...textFields
+                } = tls;
+                void _id;
+                void _locked;
+                void _type;
+                out.push({
+                  kind: "text",
+                  name,
+                  visible,
+                  opacity,
+                  blendMode,
+                  text: textFields,
+                });
+                continue;
+              }
             }
             const node = await buildPixelNode(ls);
             if (node) out.push(node);
@@ -484,7 +512,16 @@ export function useExportOps({
             "PSD export needs at least one pixel layer. Rasterize text/shape/frame layers first.",
           );
         }
-        const bytes = exportPsd({ width: cw, height: ch, layers: psdNodes });
+        const bytes = exportPsd({
+          width: cw,
+          height: ch,
+          layers: psdNodes,
+          // Source-doc colour depth: passed through so text fill/stroke
+          // colours round-trip as FRGB (HDR-safe) when the Verve doc is
+          // rgba32f, and as 0–255 RGB otherwise.
+          bitsPerChannel:
+            stateRef.current.pixelFormat === "rgba32f" ? 32 : 8,
+        });
         const b64 = bytesToBase64(bytes);
         await window.api.exportImage(settings.filePath, b64);
         return;

@@ -1,5 +1,12 @@
-import { readPsd, type Psd, type Layer, type BlendMode } from "ag-psd";
-import type { BlendMode as VerveBlendMode } from "@/types";
+import { readPsd, type Psd, type Layer, type BlendMode, type Color as PsdColor } from "ag-psd";
+import type {
+  BlendMode as VerveBlendMode,
+  RGBAColor,
+  TextAlign,
+  TextAntiAlias,
+  TextLayerState,
+  TextLigatures,
+} from "@/types";
 import { extractIccFromPsd } from "@/core/cms/iccProfile";
 
 // ─── Imported PSD layer (intermediate shape) ──────────────────────────────────
@@ -43,7 +50,34 @@ export interface PsdImportedGroup {
   children: PsdImportedNode[];
 }
 
-export type PsdImportedNode = PsdImportedLayer | PsdImportedGroup;
+/**
+ * Live (non-rasterised) text layer imported from a PSD. Carries the full
+ * PSD character/paragraph attribute set so the renderer can re-rasterise
+ * with the same fidelity Photoshop would. Anything we can't represent
+ * (style runs — per-character variation — and ag-psd's read-only text path)
+ * is intentionally dropped here; the rest of the per-character defaults are
+ * taken from `text.style` and the per-paragraph defaults from
+ * `text.paragraphStyle`.
+ */
+export interface PsdImportedText {
+  kind: "text";
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  blendMode: VerveBlendMode;
+  /** Fields mirror `TextLayerState`'s PSD-compatible set; the consumer
+   *  builds a `TextLayerState` from these. */
+  text: Omit<
+    TextLayerState,
+    "id" | "name" | "visible" | "opacity" | "locked" | "blendMode" | "type"
+  >;
+}
+
+export type PsdImportedNode =
+  | PsdImportedLayer
+  | PsdImportedGroup
+  | PsdImportedText;
 
 export interface PsdImportResult {
   width: number;
@@ -92,6 +126,173 @@ function blendModeFromPsd(mode: BlendMode | undefined): VerveBlendMode {
     default:
       return "normal";
   }
+}
+
+// ─── PSD text-layer mapping ───────────────────────────────────────────────────
+
+/** PSD colour → our float RGBA. PSD can carry colour in many spaces; this
+ *  normalises to the float convention used everywhere else in the app
+ *  (r/g/b in [0, ∞), a in [0, 1]) so HDR values round-trip through 32-bit
+ *  PSDs without precision loss. */
+function psdColorToRgba(c: PsdColor | undefined): RGBAColor | null {
+  if (!c) return null;
+  // RGBA — values are 0–255 ints (or 16-bit values that ag-psd has already
+  // down-converted into the same 0–255 range).
+  if ("r" in c && "g" in c && "b" in c) {
+    const r = (c as { r: number }).r ?? 0;
+    const g = (c as { g: number }).g ?? 0;
+    const b = (c as { b: number }).b ?? 0;
+    const a =
+      "a" in c && typeof (c as { a: unknown }).a === "number"
+        ? (c as { a: number }).a
+        : 255;
+    return { r: r / 255, g: g / 255, b: b / 255, a: a / 255 };
+  }
+  // FRGB (0..1+ floats) — pass through verbatim, including HDR.
+  if ("fr" in c) {
+    const fc = c as { fr: number; fg: number; fb: number };
+    return { r: fc.fr ?? 0, g: fc.fg ?? 0, b: fc.fb ?? 0, a: 1 };
+  }
+  // Grayscale (0–255).
+  if ("k" in c && !("c" in c)) {
+    const k = ((c as { k: number }).k ?? 0) / 255;
+    return { r: k, g: k, b: k, a: 1 };
+  }
+  // CMYK / LAB / HSB — best-effort fall-through to white. PSD text fills
+  // are overwhelmingly RGB / FRGB in practice; the exotic spaces are rare
+  // enough that we accept the lossiness rather than carry a full CMS here.
+  return { r: 1, g: 1, b: 1, a: 1 };
+}
+
+function psdJustificationToAlign(j: string | undefined): TextAlign {
+  switch (j) {
+    case "left":
+      return "left";
+    case "right":
+      return "right";
+    case "center":
+      return "center";
+    case "justify-left":
+    case "justify-right":
+    case "justify-center":
+    case "justify-all":
+      return "justify";
+    default:
+      return "left";
+  }
+}
+
+function psdAntiAliasToVerve(
+  v: NonNullable<Layer["text"]>["antiAlias"],
+): TextAntiAlias {
+  switch (v) {
+    case "none":
+      return "none";
+    case "sharp":
+      return "sharp";
+    case "crisp":
+      return "crisp";
+    case "strong":
+      return "strong";
+    case "smooth":
+    case "platform":
+    case "platformLCD":
+    default:
+      return "smooth";
+  }
+}
+
+/** Build a TextLayerState-shaped object from ag-psd's `LayerTextData`. */
+function buildPsdTextFields(t: NonNullable<Layer["text"]>): PsdImportedText["text"] {
+  const charStyle = t.style ?? {};
+  const paraStyle = t.paragraphStyle ?? {};
+
+  // PSD's text.transform = [a, b, c, d, tx, ty]; we use tx/ty as the layer
+  // origin. The non-translation components (scale/rotation) are folded into
+  // horizontal/verticalScale below — full affine isn't expressible on our
+  // TextLayerState, but the common identity-rotation case round-trips.
+  const tx = t.transform?.[4] ?? 0;
+  const ty = t.transform?.[5] ?? 0;
+  const a = t.transform?.[0] ?? 1;
+  const d = t.transform?.[3] ?? 1;
+
+  const fontSize = (charStyle.fontSize ?? 12) * Math.abs(a);
+  // PSD tracking is in milliems (1/1000 em); convert to canvas px.
+  const tracking = charStyle.tracking ?? 0;
+  const letterSpacing = (tracking / 1000) * fontSize;
+
+  // fontCaps: 0 = normal, 1 = smallCaps, 2 = allCaps.
+  const allCaps = charStyle.fontCaps === 2;
+  const smallCaps = charStyle.fontCaps === 1;
+  // fontBaseline: 0 = normal, 1 = super, 2 = sub.
+  const superscript = charStyle.fontBaseline === 1;
+  const subscript = charStyle.fontBaseline === 2;
+
+  // Ligature combination.
+  let ligatures: TextLigatures = "standard";
+  if (charStyle.ligatures === false && charStyle.dLigatures !== true)
+    ligatures = "none";
+  else if (charStyle.dLigatures === true) ligatures = "all";
+
+  // Box bounds — for area text, PSD ships [left, top, right, bottom].
+  const isBox = t.shapeType === "box";
+  let boxWidth = 0;
+  let boxHeight = 0;
+  if (isBox && t.boxBounds && t.boxBounds.length >= 4) {
+    boxWidth = Math.max(0, t.boxBounds[2] - t.boxBounds[0]);
+    boxHeight = Math.max(0, t.boxBounds[3] - t.boxBounds[1]);
+  }
+
+  const fill = psdColorToRgba(charStyle.fillColor);
+  const stroke =
+    charStyle.strokeFlag !== false
+      ? psdColorToRgba(charStyle.strokeColor)
+      : null;
+
+  return {
+    text: t.text,
+    x: Math.round(tx),
+    y: Math.round(ty),
+    boxWidth: Math.round(boxWidth),
+    boxHeight: Math.round(boxHeight),
+    fontFamily: charStyle.font?.name ?? "Arial",
+    fontSize,
+    bold: false, // PSD encodes weight inside font.name; faux* covers synthetic
+    italic: false,
+    underline: charStyle.underline ?? false,
+    strikethrough: charStyle.strikethrough ?? false,
+    align: psdJustificationToAlign(paraStyle.justification),
+    letterSpacing,
+    lineHeight:
+      !charStyle.autoLeading && charStyle.leading && fontSize > 0
+        ? charStyle.leading / fontSize
+        : 1.2,
+    kerning: charStyle.autoKerning === false ? "none" : "auto",
+    color: fill ?? { r: 1, g: 1, b: 1, a: 1 },
+
+    horizontalScale: (charStyle.horizontalScale ?? 1) * 100,
+    verticalScale: (charStyle.verticalScale ?? 1) * 100 * Math.abs(d / a),
+    baselineShift: charStyle.baselineShift ?? 0,
+    fauxBold: charStyle.fauxBold ?? false,
+    fauxItalic: charStyle.fauxItalic ?? false,
+    allCaps,
+    smallCaps,
+    superscript,
+    subscript,
+    antiAlias: psdAntiAliasToVerve(t.antiAlias),
+    strokeColor: stroke,
+    strokeWidth: charStyle.outlineWidth ?? 0,
+    ligatures,
+
+    firstLineIndent: paraStyle.firstLineIndent ?? 0,
+    leftIndent: paraStyle.startIndent ?? 0,
+    rightIndent: paraStyle.endIndent ?? 0,
+    spaceBefore: paraStyle.spaceBefore ?? 0,
+    spaceAfter: paraStyle.spaceAfter ?? 0,
+    hyphenate: paraStyle.autoHyphenate ?? false,
+    noBreak: charStyle.noBreak ?? false,
+    direction: "ltr",
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -184,13 +385,26 @@ function walkLayers(
       });
       continue;
     }
-    // Adjustment layer / smart object / text layer / etc. — out of scope.
-    // ag-psd attaches a `text`, `adjustment`, `placedLayer`, etc. property to
-    // these. The cheapest detection: no image data + a non-pixel marker.
+    // Live text layer — ag-psd parses the engine-data record into `layer.text`
+    // (LayerTextData). Round-trip these as PsdImportedText so we keep the
+    // full PSD character/paragraph attribute set, rather than rasterising
+    // the type into a flat pixel layer.
+    if ("text" in layer && layer.text) {
+      out.push({
+        kind: "text",
+        id: `psd-t-${state.idCounter++}`,
+        name: layer.name ?? `Text ${state.idCounter}`,
+        visible: layer.hidden !== true,
+        opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
+        blendMode: blendModeFromPsd(layer.blendMode),
+        text: buildPsdTextFields(layer.text),
+      });
+      continue;
+    }
+    // Adjustment layer / smart object / etc. — out of scope.
     const hasImageOrCanvas = !!(layer.imageData || layer.canvas);
     const isPixelLeaf =
       hasImageOrCanvas &&
-      !("text" in layer && (layer as { text?: unknown }).text) &&
       !("adjustment" in layer && (layer as { adjustment?: unknown }).adjustment) &&
       !("placedLayer" in layer && (layer as { placedLayer?: unknown }).placedLayer);
     if (!isPixelLeaf) {
