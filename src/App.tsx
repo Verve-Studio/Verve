@@ -43,11 +43,17 @@ import { toolRegistry } from "@/core/tools/toolRegistry";
 import { isGroupLayer, isLinkedLayer } from "@/types";
 import type { LayerState, LinkedLayerState, Tool } from "@/types";
 import { loadImagePixels, EXT_TO_MIME } from "@/core/io/imageLoader";
+import {
+  convertRgba8ToF32,
+  convertF32ToRgba8,
+} from "@/utils/pixelFormatConvert";
+import { matchPaletteIndices } from "@/wasm";
 import { notificationStore } from "@/core/store/notificationStore";
 import { fileTitle } from "@/core/store/tabTypes";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
+import { PrintPreviewDialog } from "@/ux/modals/PrintPreviewDialog/PrintPreviewDialog";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MenuDeps } from "@/ux/main/menu/menuTree";
 import {
@@ -86,6 +92,8 @@ function AppContent(): React.JSX.Element {
     setShowProofSetup,
     showProfileManager,
     setShowProfileManager,
+    showPrintPreviewDialog,
+    setShowPrintPreviewDialog,
     showAboutDialog,
     setShowAboutDialog,
     showShortcutsDialog,
@@ -308,6 +316,97 @@ function AppContent(): React.JSX.Element {
     if (!layer || !isLinkedLayer(layer)) return;
     dispatch({ type: "REFRESH_LINKED_LAYER", payload: id });
   }, [dispatch, stateRef]);
+
+  // ── Open image as a new pixel layer in the current document ──────
+  // Reads an image from disk, converts to the doc's pixel format, and
+  // inserts it as a regular pixel layer above the active layer (centred
+  // on the canvas). Distinct from "New Linked Layer…" which keeps a live
+  // link to the source — this bakes the pixels in once.
+  const handleOpenAsLayer = useCallback(async (): Promise<void> => {
+    const handle = canvasHandleRef.current;
+    if (!handle) return;
+    const path = await window.api.openFile();
+    if (!path) return;
+    try {
+      const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+      const mime = EXT_TO_MIME[ext] ?? "image/png";
+      const base64 = await window.api.readFileBase64(path);
+      const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
+      const { width, height } = loaded;
+      const fmt = stateRef.current.pixelFormat;
+
+      let pixels: Uint8Array | Float32Array;
+      if (fmt === "rgba32f") {
+        pixels = loaded.isHdr
+          ? (loaded.data as Float32Array)
+          : convertRgba8ToF32(loaded.data as Uint8Array);
+      } else if (fmt === "indexed8") {
+        const rgba = loaded.isHdr
+          ? convertF32ToRgba8(loaded.data as Float32Array)
+          : (loaded.data as Uint8Array);
+        pixels = await matchPaletteIndices(
+          rgba,
+          stateRef.current.swatches,
+          255,
+        );
+      } else {
+        pixels = loaded.isHdr
+          ? convertF32ToRgba8(loaded.data as Float32Array)
+          : (loaded.data as Uint8Array);
+      }
+
+      // Centre the layer on the canvas; allow the rect to extend off-edge
+      // when the source is larger than the document (matches Photoshop's
+      // Place / drag-drop behaviour).
+      const cw = stateRef.current.canvas.width;
+      const ch = stateRef.current.canvas.height;
+      const offsetX = Math.round((cw - width) / 2);
+      const offsetY = Math.round((ch - height) / 2);
+
+      const id = `layer-${Date.now()}`;
+      const name = fileTitle(path);
+      handle.prepareNewLayer(
+        id,
+        name,
+        pixels,
+        width,
+        height,
+        offsetX,
+        offsetY,
+        fmt,
+      );
+
+      pendingLayerLabelRef.current = "Open into Layer";
+      const newLayer: LayerState = {
+        id,
+        name,
+        visible: true,
+        opacity: 1,
+        locked: false,
+        blendMode: "normal",
+        // rgba8→rgba32f decoded path is scene-linear; tag accordingly so
+        // the renderer's IDT skips its sRGB decode (mirrors the linked-
+        // layer fix in `useGpuLayerSync`).
+        ...(fmt === "rgba32f"
+          ? { colorSpace: "linear-srgb" as const }
+          : {}),
+      };
+      const activeId = stateRef.current.activeLayerId;
+      if (activeId) {
+        dispatch({
+          type: "INSERT_LAYER_ABOVE",
+          payload: { layer: newLayer, aboveId: activeId },
+        });
+      } else {
+        dispatch({ type: "ADD_LAYER", payload: newLayer });
+      }
+      dispatch({ type: "SET_ACTIVE_LAYER", payload: id });
+    } catch (err) {
+      notificationStore.error(
+        `Failed to open image as layer: ${(err as Error).message}`,
+      );
+    }
+  }, [canvasHandleRef, dispatch, stateRef, pendingLayerLabelRef]);
 
   const isLinkedLayerActive =
     !!state.activeLayerId &&
@@ -726,6 +825,10 @@ function AppContent(): React.JSX.Element {
       // ── File ────────────────────────────────────────────────────
       onNew: () => setShowNewImageDialog(true),
       onOpen: () => void handleOpen(),
+      onOpenAsLayer: () => void handleOpenAsLayer(),
+      isOpenAsLayerEnabled: hasActiveDocument,
+      onPrint: () => setShowPrintPreviewDialog(true),
+      isPrintEnabled: hasActiveDocument,
       onSave: () => void handleSave(false),
       onSaveAs: () => void handleSave(true),
       onSaveACopy: () => void handleSaveACopy(),
@@ -981,6 +1084,25 @@ function AppContent(): React.JSX.Element {
 
   useMacNativeMenu({ isMac, deps: menuDeps });
 
+  // Composite the current document to raw sRGB RGBA bytes for the print
+  // preview / job submission. rgba32f docs are converted via the standard
+  // linear→sRGB path so downstream consumers (PNG encode, lcms2 transform)
+  // can treat everything as 8-bit sRGB.
+  const getPrintComposite = useCallback(async (): Promise<{
+    rgba: Uint8Array;
+    width: number;
+    height: number;
+  }> => {
+    const handle = canvasHandleRef.current;
+    if (!handle) throw new Error("Canvas not ready");
+    const composite = await handle.rasterizeComposite("export");
+    const rgba =
+      composite.data instanceof Float32Array
+        ? convertF32ToRgba8(composite.data)
+        : (composite.data as Uint8Array);
+    return { rgba, width: composite.width, height: composite.height };
+  }, [canvasHandleRef]);
+
   return (
     <>
       <SplashScreen
@@ -989,6 +1111,13 @@ function AppContent(): React.JSX.Element {
         onOpen={() => {
           void handleOpen();
         }}
+      />
+      <PrintPreviewDialog
+        open={showPrintPreviewDialog}
+        documentWidth={state.canvas.width}
+        documentHeight={state.canvas.height}
+        getComposite={getPrintComposite}
+        onClose={() => setShowPrintPreviewDialog(false)}
       />
       <MainWindow
         isMac={isMac}

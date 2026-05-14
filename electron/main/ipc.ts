@@ -430,4 +430,169 @@ export function registerIpcHandlers(): void {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
+
+  // ── Print pipeline ──────────────────────────────────────────────────────
+  // The renderer drives the Print Preview UI; main owns the OS-level print
+  // job. Flow: renderer rasterises the document to a PNG, hands it to main
+  // with print options, main spawns an offscreen BrowserWindow that lays
+  // out the image at exact page-mm dimensions, then drives
+  // webContents.print({ silent: true, ... }) so the OS print dialog is
+  // never surfaced — every choice the user made in our dialog is honoured.
+
+  ipcMain.handle('printer:list', async (event) => {
+    const wc = event.sender
+    try {
+      const printers = await wc.getPrintersAsync()
+      return printers.map(p => {
+        // CUPS / Linux / macOS expose default-ness via the per-printer
+        // options bag; Windows does not, so we accept any of the common
+        // keys. Empty options object means "default unknown".
+        const opts = (p.options ?? {}) as Record<string, unknown>
+        const isDefault =
+          opts['printer-is-default'] === 'true' ||
+          opts['printer-is-default'] === true ||
+          opts['is-default'] === 'true'
+        return {
+          name: p.name,
+          displayName: p.displayName,
+          description: p.description,
+          isDefault,
+        }
+      })
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  type PrintOptions = {
+    deviceName: string
+    pngBase64: string
+    /** Page size: standard name or custom microns (1mm = 1000µm). */
+    pageSize:
+      | 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid'
+      | { widthMicrons: number; heightMicrons: number }
+    landscape: boolean
+    /** Margins in microns. `marginType` controls whether `custom` values are
+     *  used; 'none' / 'default' / 'printableArea' ignore the custom values. */
+    margins: {
+      marginType: 'default' | 'none' | 'printableArea' | 'custom'
+      topMicrons?: number
+      bottomMicrons?: number
+      leftMicrons?: number
+      rightMicrons?: number
+    }
+    color: boolean
+    copies: number
+    collate: boolean
+    /** Renderer-side image is already rasterised at the chosen DPI; we still
+     *  pass it through to Electron so the driver honours its preferred DPI. */
+    dpi: number
+  }
+
+  ipcMain.handle('printer:print', async (_event, opts: PrintOptions) => {
+    // Build an off-screen window sized to the page (1in = 96 CSS px;
+    // Electron's print pipeline measures the document in CSS pixels and
+    // rasterises at the printer's DPI from there). The page-size CSS makes
+    // Chromium emit exactly one page per layout box.
+    let pageCss: string
+    let pageWidthIn: number
+    let pageHeightIn: number
+    const SIZES_IN: Record<string, [number, number]> = {
+      A3: [11.69, 16.54],
+      A4: [8.27, 11.69],
+      A5: [5.83, 8.27],
+      Legal: [8.5, 14],
+      Letter: [8.5, 11],
+      Tabloid: [11, 17],
+    }
+    if (typeof opts.pageSize === 'string') {
+      const [w, h] = SIZES_IN[opts.pageSize]
+      pageWidthIn = opts.landscape ? h : w
+      pageHeightIn = opts.landscape ? w : h
+      pageCss = `${opts.pageSize}${opts.landscape ? ' landscape' : ''}`
+    } else {
+      pageWidthIn = opts.pageSize.widthMicrons / 25400
+      pageHeightIn = opts.pageSize.heightMicrons / 25400
+      if (opts.landscape) [pageWidthIn, pageHeightIn] = [pageHeightIn, pageWidthIn]
+      pageCss = `${pageWidthIn}in ${pageHeightIn}in`
+    }
+
+    const m = opts.margins
+    const cssMarginIn = (microns: number | undefined): string =>
+      microns !== undefined ? `${microns / 25400}in` : '0'
+    const marginsCss =
+      m.marginType === 'custom'
+        ? `${cssMarginIn(m.topMicrons)} ${cssMarginIn(m.rightMicrons)} ${cssMarginIn(m.bottomMicrons)} ${cssMarginIn(m.leftMicrons)}`
+        : m.marginType === 'none'
+          ? '0'
+          : '0.5in'
+
+    const html = `<!doctype html><html><head><style>
+      @page { size: ${pageCss}; margin: ${marginsCss}; }
+      html, body { margin: 0; padding: 0; background: white; }
+      .page { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
+      .page img {
+        max-width: 100%;
+        max-height: 100%;
+        ${opts.color ? '' : 'filter: grayscale(100%);'}
+        object-fit: contain;
+        image-rendering: -webkit-optimize-contrast;
+      }
+      </style></head><body>
+      <div class="page"><img src="data:image/png;base64,${opts.pngBase64}" /></div>
+      </body></html>`
+
+    const win = new BrowserWindow({
+      show: false,
+      width: Math.round(pageWidthIn * 96),
+      height: Math.round(pageHeightIn * 96),
+      webPreferences: { offscreen: false },
+    })
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+      // Give the <img> a microtask to lay out before printing.
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      const printOptions: Parameters<typeof win.webContents.print>[0] = {
+        silent: true,
+        printBackground: true,
+        color: opts.color,
+        margins: {
+          marginType: m.marginType,
+          ...(m.marginType === 'custom'
+            ? {
+                top: (m.topMicrons ?? 0) / 25400,
+                bottom: (m.bottomMicrons ?? 0) / 25400,
+                left: (m.leftMicrons ?? 0) / 25400,
+                right: (m.rightMicrons ?? 0) / 25400,
+              }
+            : {}),
+        },
+        landscape: opts.landscape,
+        copies: Math.max(1, Math.floor(opts.copies)),
+        collate: opts.collate,
+        deviceName: opts.deviceName,
+        pageSize:
+          typeof opts.pageSize === 'string'
+            ? opts.pageSize
+            : { width: opts.pageSize.widthMicrons, height: opts.pageSize.heightMicrons },
+        dpi: { horizontal: opts.dpi, vertical: opts.dpi },
+      }
+
+      return await new Promise<{ success: boolean; reason?: string; error?: string }>(
+        resolve => {
+          win.webContents.print(printOptions, (success, reason) => {
+            // Defer close to the next tick — webContents.print resolves
+            // before the OS spool queue accepts the job on some drivers.
+            setTimeout(() => win.destroy(), 500)
+            if (success) resolve({ success: true })
+            else resolve({ success: false, reason })
+          })
+        },
+      )
+    } catch (e) {
+      win.destroy()
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }

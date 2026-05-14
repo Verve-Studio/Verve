@@ -34,8 +34,11 @@ export function useDialogState() {
   const [showColorSettings, setShowColorSettings] = useState(false);
   const [showProofSetup, setShowProofSetup] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
+  const [showPrintPreviewDialog, setShowPrintPreviewDialog] = useState(false);
 
   return {
+    showPrintPreviewDialog,
+    setShowPrintPreviewDialog,
     showProfileManager,
     setShowProfileManager,
     showProofSetup,

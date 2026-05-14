@@ -898,6 +898,20 @@ export function createTransformHandler(): ToolHandler {
   let paramsAtDragStart: TransformParams | null = null;
 
   return {
+    onActivate(ctx: ToolContext): void {
+      // `useCanvasPointerInput` clears the overlay canvas on every tool /
+      // active-layer change before invoking `onActivate`. Repaint the
+      // transform handles + live preview straight away so the user sees
+      // them on the very first frame after Ctrl+T — without this the
+      // overlay stays blank until the next param tweak (drag a handle,
+      // toggle aspect lock, etc.) re-fires the transform store's notify.
+      if (!activeScope().transform.isActive || !ctx.overlayCanvas) return;
+      drawTransformOverlay(
+        ctx.overlayCanvas,
+        activeScope().transform,
+        ctx.zoom,
+      );
+    },
     onPointerDown(pos: ToolPointerPos, ctx: ToolContext): void {
       if (!activeScope().transform.isActive) return;
       if (

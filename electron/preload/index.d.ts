@@ -148,6 +148,35 @@ declare global {
           callback: (p: { progress: number; loaded: number; total: number }) => void,
         ) => () => void
       }
+      // Printing
+      listPrinters: () => Promise<
+        | Array<{
+            name: string
+            displayName?: string
+            description?: string
+            isDefault?: boolean
+          }>
+        | { error: string }
+      >
+      print: (opts: {
+        deviceName: string
+        pngBase64: string
+        pageSize:
+          | 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid'
+          | { widthMicrons: number; heightMicrons: number }
+        landscape: boolean
+        margins: {
+          marginType: 'default' | 'none' | 'printableArea' | 'custom'
+          topMicrons?: number
+          bottomMicrons?: number
+          leftMicrons?: number
+          rightMicrons?: number
+        }
+        color: boolean
+        copies: number
+        collate: boolean
+        dpi: number
+      }) => Promise<{ success: boolean; reason?: string; error?: string }>
       // Alpha matting (Refine Edge)
       matting: {
         checkModel: () => Promise<{ ready: boolean; path: string | null }>

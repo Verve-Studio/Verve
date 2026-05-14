@@ -121,6 +121,38 @@ const api = {
     return () => ipcRenderer.removeListener('app:open-file', handler)
   },
 
+  // ── Printing ──────────────────────────────────────────────────────────────────
+  listPrinters: (): Promise<
+    | Array<{
+        name: string
+        displayName?: string
+        description?: string
+        isDefault?: boolean
+      }>
+    | { error: string }
+  > => ipcRenderer.invoke('printer:list'),
+
+  print: (opts: {
+    deviceName: string
+    pngBase64: string
+    pageSize:
+      | 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid'
+      | { widthMicrons: number; heightMicrons: number }
+    landscape: boolean
+    margins: {
+      marginType: 'default' | 'none' | 'printableArea' | 'custom'
+      topMicrons?: number
+      bottomMicrons?: number
+      leftMicrons?: number
+      rightMicrons?: number
+    }
+    color: boolean
+    copies: number
+    collate: boolean
+    dpi: number
+  }): Promise<{ success: boolean; reason?: string; error?: string }> =>
+    ipcRenderer.invoke('printer:print', opts),
+
   // ── File Associations ─────────────────────────────────────────────────────────
   getFileAssocState: (): Promise<{
     supported: Array<{ ext: string; label: string }>

@@ -193,6 +193,12 @@ export interface MenuDeps {
   // ── File ──────────────────────────────────────────────────────────────
   onNew?: () => void;
   onOpen?: () => void;
+  onOpenAsLayer?: () => void;
+  /** Enabled state for `onOpenAsLayer` — needs an active document to insert into. */
+  isOpenAsLayerEnabled?: boolean;
+  onPrint?: () => void;
+  /** Enabled state for `onPrint` — needs an active document to print. */
+  isPrintEnabled?: boolean;
   onSave?: () => void;
   onSaveAs?: () => void;
   onSaveACopy?: () => void;
@@ -595,6 +601,12 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
       submenu: [
         { label: "New…", actionId: "new", action: deps.onNew, shortcut: "CmdOrCtrl+N" },
         { label: "Open…", actionId: "open", action: deps.onOpen, shortcut: "CmdOrCtrl+O" },
+        {
+          label: "Open into new Layer…",
+          actionId: "openAsLayer",
+          action: deps.onOpenAsLayer,
+          disabled: !deps.isOpenAsLayerEnabled,
+        },
         { label: "Open Recent", submenu: recentSubmenu },
         SEP,
         { label: "Close", actionId: "close", action: deps.onClose },
@@ -609,6 +621,14 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
         },
         { label: "Save a Copy…", actionId: "saveACopy", action: deps.onSaveACopy },
         { label: "Export As…", actionId: "export", action: deps.onExport, shortcut: "CmdOrCtrl+E" },
+        SEP,
+        {
+          label: "Print…",
+          actionId: "print",
+          action: deps.onPrint,
+          shortcut: "CmdOrCtrl+P",
+          disabled: !deps.isPrintEnabled,
+        },
         // Preferences and Exit appear here only on Windows/Linux (macOS has
         // them in the app menu). `appOnly` keeps the native menu clean.
         appOnly(SEP),
