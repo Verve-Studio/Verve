@@ -195,7 +195,7 @@ function ObjectRemovalOptions({
         {modelStatus === "checking" && "Loading…"}
         {modelStatus === "missing" && (
           <>
-            Required components not available.
+            Required components not available.-=
           </>
         )}
         {modelStatus === "error" && "Could not load object removal tool"}

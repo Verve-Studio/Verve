@@ -142,6 +142,30 @@ function drawTextBoundsOverlay(
   ctx2d.restore();
 }
 
+function drawDragRect(
+  canvas: HTMLCanvasElement,
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+): void {
+  const ctx2d = canvas.getContext("2d");
+  if (!ctx2d) return;
+  ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+  const x = Math.min(sx, ex);
+  const y = Math.min(sy, ey);
+  const w = Math.abs(ex - sx);
+  const h = Math.abs(ey - sy);
+  ctx2d.save();
+  ctx2d.strokeStyle = "#0078ff";
+  ctx2d.lineWidth = 1;
+  ctx2d.setLineDash([4, 3]);
+  ctx2d.shadowColor = "#000";
+  ctx2d.shadowBlur = 2;
+  ctx2d.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1);
+  ctx2d.restore();
+}
+
 function clearOverlay(canvas: HTMLCanvasElement): void {
   const ctx2d = canvas.getContext("2d");
   if (ctx2d) ctx2d.clearRect(0, 0, canvas.width, canvas.height);
@@ -163,11 +187,14 @@ function createTextHandler(): ToolHandler {
       dragStart = { x: Math.round(x), y: Math.round(y) };
       dragging = false;
     },
-    onPointerMove({ x, y }: ToolPointerPos): void {
+    onPointerMove({ x, y }: ToolPointerPos, ctx: ToolContext): void {
       if (!dragStart) return;
       const dx = Math.abs(x - dragStart.x);
       const dy = Math.abs(y - dragStart.y);
       if (dx > 4 || dy > 4) dragging = true;
+      if (dragging && ctx.overlayCanvas) {
+        drawDragRect(ctx.overlayCanvas, dragStart.x, dragStart.y, x, y);
+      }
     },
     onPointerUp({ x, y }: ToolPointerPos, ctx: ToolContext): void {
       if (!dragStart) return;
@@ -176,6 +203,7 @@ function createTextHandler(): ToolHandler {
       const ex = Math.round(x);
       const ey = Math.round(y);
       dragStart = null;
+      if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
 
       const id = `text-${Date.now()}`;
       const layer: TextLayerState = {
@@ -524,24 +552,7 @@ function TextOptions({
   const handleSize = (v: number): void => {
     setFontSize(v);
     const lsPx = (letterSpacingMilliems / 1000) * v;
-    const patch: Partial<TextLayerState> = { fontSize: v, letterSpacing: lsPx };
-    if (
-      activeTextLayer &&
-      activeTextLayer.boxWidth > 0 &&
-      activeTextLayer.boxHeight > 0 &&
-      activeTextLayer.fontSize > 0
-    ) {
-      const scale = v / activeTextLayer.fontSize;
-      patch.boxWidth = Math.max(
-        20,
-        Math.round(activeTextLayer.boxWidth * scale),
-      );
-      patch.boxHeight = Math.max(
-        20,
-        Math.round(activeTextLayer.boxHeight * scale),
-      );
-    }
-    applyChange(patch);
+    applyChange({ fontSize: v, letterSpacing: lsPx });
   };
   const handleBold = (v: boolean): void => {
     setBold(v);
