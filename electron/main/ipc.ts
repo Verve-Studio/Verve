@@ -1,5 +1,5 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
@@ -527,6 +527,16 @@ export function registerIpcHandlers(): void {
           ? '0'
           : '0.5in'
 
+    // Stage the print job in a temp directory. Embedding the PNG as a
+    // `data:` URI inside a `data:text/html` URL blew past Chromium's URL
+    // length cap (ERR_INVALID_URL -300) on any non-trivial document.
+    // Writing the PNG + HTML to disk and loading the HTML via `loadFile`
+    // sidesteps URL-length limits entirely while letting the HTML
+    // reference the image with a plain `file://` src.
+    const tempDir = await mkdtemp(join(app.getPath('temp'), 'verve-print-'))
+    const pngPath = join(tempDir, 'page.png')
+    const htmlPath = join(tempDir, 'page.html')
+    await writeFile(pngPath, Buffer.from(opts.pngBase64, 'base64'))
     const html = `<!doctype html><html><head><style>
       @page { size: ${pageCss}; margin: ${marginsCss}; }
       html, body { margin: 0; padding: 0; background: white; }
@@ -539,8 +549,17 @@ export function registerIpcHandlers(): void {
         image-rendering: -webkit-optimize-contrast;
       }
       </style></head><body>
-      <div class="page"><img src="data:image/png;base64,${opts.pngBase64}" /></div>
+      <div class="page"><img src="page.png" /></div>
       </body></html>`
+    await writeFile(htmlPath, html, 'utf-8')
+
+    const cleanupTemp = async (): Promise<void> => {
+      try {
+        await rm(tempDir, { recursive: true, force: true })
+      } catch {
+        /* best-effort */
+      }
+    }
 
     const win = new BrowserWindow({
       show: false,
@@ -549,7 +568,7 @@ export function registerIpcHandlers(): void {
       webPreferences: { offscreen: false },
     })
     try {
-      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+      await win.loadFile(htmlPath)
       // Give the <img> a microtask to lay out before printing.
       await new Promise(resolve => setTimeout(resolve, 50))
 
@@ -582,9 +601,15 @@ export function registerIpcHandlers(): void {
       return await new Promise<{ success: boolean; reason?: string; error?: string }>(
         resolve => {
           win.webContents.print(printOptions, (success, reason) => {
-            // Defer close to the next tick — webContents.print resolves
-            // before the OS spool queue accepts the job on some drivers.
-            setTimeout(() => win.destroy(), 500)
+            // Defer close + temp-dir cleanup — webContents.print resolves
+            // before the OS spool queue has accepted the job on some
+            // drivers, and destroying the BrowserWindow too eagerly can
+            // cancel the in-flight job. 500ms is enough headroom in
+            // practice without making the dialog feel sluggish.
+            setTimeout(() => {
+              win.destroy()
+              void cleanupTemp()
+            }, 500)
             if (success) resolve({ success: true })
             else resolve({ success: false, reason })
           })
@@ -592,6 +617,7 @@ export function registerIpcHandlers(): void {
       )
     } catch (e) {
       win.destroy()
+      void cleanupTemp()
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
