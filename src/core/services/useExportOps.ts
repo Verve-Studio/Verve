@@ -266,6 +266,227 @@ export function useExportOps({
         return;
       }
 
+      // PDF — emits a single-page PDF. Text and shape layers export as live
+      // PDF text and vector paths; everything else (raster / frame / group /
+      // composite, plus text/shape layers whose look depends on attached
+      // adjustments or masks) is rasterized and embedded as an RGB image.
+      if (settings.format === "pdf") {
+        const { exportPdf } = await import("@/core/io/exportPdf");
+        type PdfExportNodeT = import("@/core/io/exportPdf").PdfExportNode;
+        const layers = stateRef.current.layers;
+        const cw = stateRef.current.canvas.width;
+        const ch = stateRef.current.canvas.height;
+        const isHdrDocPdf = stateRef.current.pixelFormat === "rgba32f";
+
+        const hasAttachedChildren = (id: string): boolean =>
+          layers.some(
+            (l) =>
+              "type" in l &&
+              ((l as { type: string }).type === "adjustment" ||
+                (l as { type: string }).type === "mask") &&
+              (l as { parentId?: string }).parentId === id,
+          );
+
+        // Reuse the PSD per-layer rasterization recipe to bake a layer's
+        // pixels (with its attached children) at canvas size, then crop to
+        // the non-transparent bounding box.
+        const rasterizeLayerCropped = async (
+          ls: AppState["layers"][number],
+        ): Promise<
+          | {
+              pixels: Uint8Array;
+              width: number;
+              height: number;
+              x: number;
+              y: number;
+            }
+          | null
+        > => {
+          const isComposite =
+            "type" in ls && (ls as { type: string }).type === "composite";
+          const adjChildren = layers.filter(
+            (l) =>
+              "type" in l &&
+              (l as { type: string }).type === "adjustment" &&
+              (l as { parentId?: string }).parentId === ls.id,
+          );
+          const maskChild = layers.find(
+            (l) =>
+              "type" in l &&
+              (l as { type: string }).type === "mask" &&
+              (l as { parentId?: string }).parentId === ls.id,
+          );
+          const lsForRaster = {
+            ...ls,
+            opacity: 1,
+            visible: true,
+            blendMode: "normal",
+          } as typeof ls;
+          const adjForRaster = adjChildren.map(
+            (a) => ({ ...a, visible: true }) as typeof a,
+          );
+          let subset: AppState["layers"][number][];
+          if (isComposite) {
+            const descIds = new Set(getDescendantIds(layers, ls.id));
+            const descendants = layers.filter((l) => descIds.has(l.id));
+            const descAttachments = layers.filter((l) => {
+              if (!("type" in l)) return false;
+              const t = (l as { type: string }).type;
+              if (t !== "mask" && t !== "adjustment") return false;
+              const pid = (l as { parentId?: string }).parentId;
+              return pid !== undefined && descIds.has(pid);
+            });
+            subset = [
+              lsForRaster,
+              ...descendants,
+              ...adjForRaster,
+              ...descAttachments,
+            ];
+          } else {
+            subset = [lsForRaster, ...adjForRaster];
+            if (maskChild) subset.push(maskChild);
+          }
+          const flatLayer = await handle.rasterizeLayers(subset, "export");
+          const fullPixels: Uint8Array =
+            flatLayer.data instanceof Float32Array
+              ? clampF32ToUint8(flatLayer.data)
+              : flatLayer.data;
+          const fw = flatLayer.width;
+          const fh = flatLayer.height;
+          let minX = fw,
+            minY = fh,
+            maxX = -1,
+            maxY = -1;
+          for (let y = 0; y < fh; y++) {
+            for (let x = 0; x < fw; x++) {
+              if (fullPixels[(y * fw + x) * 4 + 3] !== 0) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+          if (maxX < 0) return null;
+          const bw = maxX - minX + 1;
+          const bh = maxY - minY + 1;
+          const cropped = new Uint8Array(bw * bh * 4);
+          for (let y = 0; y < bh; y++) {
+            const srcRow = ((minY + y) * fw + minX) * 4;
+            cropped.set(
+              fullPixels.subarray(srcRow, srcRow + bw * 4),
+              y * bw * 4,
+            );
+          }
+          return {
+            pixels: cropped,
+            width: bw,
+            height: bh,
+            x: minX,
+            y: minY,
+          };
+        };
+
+        const textIsAsciiSafe = (s: string): boolean => {
+          for (let i = 0; i < s.length; i++) {
+            const c = s.charCodeAt(i);
+            if (c > 126 && c !== 10 && c !== 13 && c !== 9) return false;
+            if (c < 32 && c !== 10 && c !== 13 && c !== 9) return false;
+          }
+          return true;
+        };
+
+        const pdfNodes: PdfExportNodeT[] = [];
+
+        // Walk all visible non-attachment layers in z-order (state.layers is
+        // bottom-first). Group/composite "container" layers themselves don't
+        // emit anything — their leaves do.
+        for (const ls of layers) {
+          if (!ls.visible) continue;
+          if ("type" in ls) {
+            const t = (ls as { type: string }).type;
+            if (t === "mask" || t === "adjustment") continue;
+            // Groups don't draw on their own.
+            if (t === "group") continue;
+            if (
+              t === "text" &&
+              !hasAttachedChildren(ls.id) &&
+              textIsAsciiSafe((ls as import("@/types").TextLayerState).text)
+            ) {
+              pdfNodes.push({
+                kind: "text",
+                layer: ls as import("@/types").TextLayerState,
+                layerOpacity: (ls as { opacity: number }).opacity,
+                blendMode: (ls as { blendMode: import("@/types").BlendMode })
+                  .blendMode,
+              });
+              continue;
+            }
+            if (t === "shape" && !hasAttachedChildren(ls.id)) {
+              pdfNodes.push({
+                kind: "shape",
+                layer: ls as import("@/types").ShapeLayerState,
+                layerOpacity: (ls as { opacity: number }).opacity,
+                blendMode: (ls as { blendMode: import("@/types").BlendMode })
+                  .blendMode,
+              });
+              continue;
+            }
+          }
+          // Anything else — rasterize and embed.
+          const raster = await rasterizeLayerCropped(ls);
+          if (!raster) continue;
+          pdfNodes.push({
+            kind: "image",
+            pixels: raster.pixels,
+            width: raster.width,
+            height: raster.height,
+            x: raster.x,
+            y: raster.y,
+            layerOpacity: "opacity" in ls ? ls.opacity : 1,
+            blendMode:
+              "blendMode" in ls
+                ? (ls as { blendMode: import("@/types").BlendMode }).blendMode
+                : "normal",
+          });
+        }
+
+        // If the document has nothing emittable, fall back to a flattened
+        // single-image PDF so the user still gets a valid file.
+        if (pdfNodes.length === 0) {
+          const flatAll = await handle.rasterizeLayers(layers, "export");
+          const ldr: Uint8Array =
+            flatAll.data instanceof Float32Array
+              ? isHdrDocPdf
+                ? toneMapToUint8(
+                    flatAll.data,
+                    displayStore.toneMappingOperator,
+                    displayStore.exposureEV,
+                  )
+                : clampF32ToUint8(flatAll.data)
+              : flatAll.data;
+          pdfNodes.push({
+            kind: "image",
+            pixels: ldr,
+            width: flatAll.width,
+            height: flatAll.height,
+            x: 0,
+            y: 0,
+            layerOpacity: 1,
+            blendMode: "normal",
+          });
+        }
+
+        const bytes = await exportPdf({
+          width: cw,
+          height: ch,
+          nodes: pdfNodes,
+          iccProfile: stateRef.current.iccProfile,
+        });
+        await window.api.exportImage(settings.filePath, bytesToBase64(bytes));
+        return;
+      }
+
       // PSD — preserves per-layer pixel data + masks. Each emitted layer is
       // rasterized through the unified flatten-then-encode pipeline on its
       // own (with attached adjustment/effect/filter children) so non-

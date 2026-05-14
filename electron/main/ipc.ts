@@ -136,6 +136,7 @@ export function registerIpcHandlers(): void {
       ext === 'hdr'    ? [{ name: 'Radiance HDR',      extensions: ['hdr']         }] :
       ext === 'dds'    ? [{ name: 'DDS Texture',        extensions: ['dds']         }] :
       ext === 'psd'    ? [{ name: 'Photoshop Document', extensions: ['psd']         }] :
+      ext === 'pdf'    ? [{ name: 'PDF Document',       extensions: ['pdf']         }] :
                          [{ name: 'JPEG Image',        extensions: ['jpg', 'jpeg'] }]
     const { canceled, filePath } = await dialog.showSaveDialog({ filters })
     return canceled ? null : filePath

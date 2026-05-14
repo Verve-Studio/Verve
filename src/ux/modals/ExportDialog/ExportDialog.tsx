@@ -15,7 +15,8 @@ export type ExportFormat =
   | "hdr"
   | "tiff32"
   | "dds"
-  | "psd";
+  | "psd"
+  | "pdf";
 export type DdsCompression = "bc1" | "bc3" | "bc7" | "bc6h" | "rgba32f";
 
 /** How layers are encoded into the exported file(s).
@@ -83,9 +84,11 @@ function applyExtension(filePath: string, format: ExportFormat): string {
                     ? ".dds"
                     : format === "psd"
                       ? ".psd"
-                      : ".jpg";
+                      : format === "pdf"
+                        ? ".pdf"
+                        : ".jpg";
   return (
-    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds|psd)$/i, "") + ext
+    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds|psd|pdf)$/i, "") + ext
   );
 }
 
@@ -283,6 +286,7 @@ export function ExportDialog({
             <option value="tiff">TIFF</option>
             <option value="dds">DDS</option>
             <option value="psd">PSD (Photoshop)</option>
+            <option value="pdf">PDF</option>
             {isHdrDocument && (
               <>
                 <option disabled>──────────</option>
@@ -560,6 +564,23 @@ export function ExportDialog({
                     ),
                   )}
                 </select>
+              </div>
+            </>
+          )}
+
+          {format === "pdf" && (
+            <>
+              <p className={styles.sectionTitle}>PDF OPTIONS</p>
+              <div className={styles.fieldRow}>
+                <label className={styles.fieldLabel}>Output</label>
+                <span className={styles.staticNote}>
+                  Text layers export as live, selectable PDF text (Helvetica /
+                  Times / Courier — closest base font is picked from the layer's
+                  family). Shape layers export as native vector paths. All
+                  other layers (raster, frame, group, composite, text with
+                  attached adjustments or non-ASCII characters) are rasterized
+                  into the PDF.
+                </span>
               </div>
             </>
           )}
