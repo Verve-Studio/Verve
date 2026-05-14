@@ -36,6 +36,74 @@ import { parseProfileColorSpace } from "@/core/cms/iccProfile";
 import { notificationStore } from "@/core/store/notificationStore";
 import { preferencesStore } from "@/core/store/preferencesStore";
 
+// ─── Linked-layer path helpers ────────────────────────────────────────────────
+// Renderer-side path arithmetic for the linked-layer feature. The renderer
+// can't import `node:path`, but `.verve` documents and linked sources always
+// come from a single OS at a time, so we detect the separator from the input
+// string and operate on it directly. Cross-OS sharing of `.verve` files with
+// linked layers relies on the relative path being portable — slashes vs
+// backslashes are normalised on resolve.
+
+function detectSep(p: string): "\\" | "/" {
+  return p.includes("\\") && !p.includes("/") ? "\\" : "/";
+}
+
+/** Strip the trailing path component (filename) and return the directory. */
+function directoryOf(p: string): string {
+  const sep = detectSep(p);
+  const i = p.lastIndexOf(sep);
+  return i >= 0 ? p.slice(0, i) : "";
+}
+
+/** Compute `target` expressed relative to `fromDir`. Falls back to the
+ *  absolute target when the two paths don't share a root (different drive
+ *  letters on Windows, different filesystems, etc.). */
+function relativePathFrom(fromDir: string, target: string): string {
+  if (!fromDir) return target;
+  const sep = detectSep(target);
+  const norm = (s: string): string[] =>
+    s.replace(/[\\/]+$/, "").split(/[\\/]+/).filter(Boolean);
+  const fromParts = norm(fromDir);
+  const targetParts = norm(target);
+  // Windows: bail to absolute if drive letters differ.
+  if (
+    fromParts[0]?.endsWith(":") &&
+    targetParts[0]?.endsWith(":") &&
+    fromParts[0].toLowerCase() !== targetParts[0].toLowerCase()
+  ) {
+    return target;
+  }
+  let common = 0;
+  while (
+    common < fromParts.length &&
+    common < targetParts.length &&
+    fromParts[common] === targetParts[common]
+  ) {
+    common++;
+  }
+  const up = Array(fromParts.length - common).fill("..");
+  const down = targetParts.slice(common);
+  const rel = [...up, ...down].join(sep);
+  return rel || ".";
+}
+
+/** Resolve `relative` against `fromDir`, collapsing `..` and `.` segments. */
+function resolveRelative(fromDir: string, relative: string): string {
+  if (!fromDir) return relative;
+  const sep = detectSep(fromDir);
+  const parts = (fromDir + sep + relative)
+    .split(/[\\/]+/)
+    .filter((p) => p.length > 0 && p !== ".");
+  const out: string[] = [];
+  for (const part of parts) {
+    if (part === "..") out.pop();
+    else out.push(part);
+  }
+  // Preserve a leading separator on POSIX paths (lost by the split).
+  const leading = fromDir.startsWith("/") ? "/" : "";
+  return leading + out.join(sep);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface UseFileOpsOptions {
@@ -849,6 +917,7 @@ export function useFileOps({
         }
       }
 
+      const docDir = directoryOf(path);
       const layerData = new Map<string, string>();
       const layers: LayerState[] = doc.layers.map(
         ({
@@ -871,6 +940,21 @@ export function useFileOps({
             layerData.set(`${meta.id}:geo`, JSON.stringify(layerGeo));
           if (adjustmentMaskPng)
             layerData.set(`${meta.id}:adjustment-mask`, adjustmentMaskPng);
+          // For linked layers, prefer the relative path (resolved against
+          // the document we just opened) over the stale absolute path. The
+          // init hook just reads `source.absolutePath`, so re-stamp it here.
+          if ("type" in meta && meta.type === "linked") {
+            const m = meta as unknown as import("@/types").LinkedLayerState;
+            if (m.source && m.source.relativePath && docDir) {
+              return {
+                ...m,
+                source: {
+                  ...m.source,
+                  absolutePath: resolveRelative(docDir, m.source.relativePath),
+                },
+              } as LayerState;
+            }
+          }
           return meta as LayerState;
         },
       );
@@ -1089,7 +1173,11 @@ export function useFileOps({
             const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id);
             if (idx) layerIndexedData[layer.id] = uint8ToBase64(idx);
           }
-        } else if (layer.type !== "adjustment" && layer.type !== "group") {
+        } else if (
+          layer.type !== "adjustment" &&
+          layer.type !== "group" &&
+          layer.type !== "linked"
+        ) {
           // Text, shape, mask layers — always serialized as PNG (they are always rgba8 internally)
           const result = canvasHandleRef.current?.exportLayerPng(layer.id);
           if (result) {
@@ -1102,6 +1190,8 @@ export function useFileOps({
             };
           }
         }
+        // Linked layers persist only their `source` metadata in the doc JSON;
+        // pixels are re-read from the source file on next open.
         if ("type" in layer && layer.type === "adjustment") {
           const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(
             layer.id,
@@ -1109,6 +1199,7 @@ export function useFileOps({
           if (maskPng) adjustmentMaskPngs[layer.id] = maskPng;
         }
       }
+      const docDir = directoryOf(path);
       const doc = {
         version: 6,
         pixelFormat: state.pixelFormat,
@@ -1118,14 +1209,33 @@ export function useFileOps({
           backgroundFill: state.canvas.backgroundFill,
         },
         activeLayerId: state.activeLayerId,
-        layers: state.layers.map((l) => ({
-          ...l,
-          layerDataRGBA8: layerPngs[l.id] ?? null,
-          layerDataF32: layerF32Data[l.id] ?? null,
-          layerDataIndexed: layerIndexedData[l.id] ?? null,
-          layerGeo: layerGeos[l.id] ?? null,
-          adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
-        })),
+        layers: state.layers.map((l) => {
+          // Linked layers re-stamp their `source.relativePath` against the
+          // document being saved so the link survives if the user later moves
+          // both files together.
+          if ("type" in l && l.type === "linked") {
+            return {
+              ...l,
+              source: {
+                ...l.source,
+                relativePath: relativePathFrom(docDir, l.source.absolutePath),
+              },
+              layerDataRGBA8: null,
+              layerDataF32: null,
+              layerDataIndexed: null,
+              layerGeo: null,
+              adjustmentMaskPng: null,
+            };
+          }
+          return {
+            ...l,
+            layerDataRGBA8: layerPngs[l.id] ?? null,
+            layerDataF32: layerF32Data[l.id] ?? null,
+            layerDataIndexed: layerIndexedData[l.id] ?? null,
+            layerGeo: layerGeos[l.id] ?? null,
+            adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
+          };
+        }),
         swatches: state.swatches,
         swatchGroups: state.swatchGroups,
         pixelBrushes: state.pixelBrushes,
@@ -1195,7 +1305,11 @@ export function useFileOps({
           const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id);
           if (idx) layerIndexedData2[layer.id] = uint8ToBase64(idx);
         }
-      } else if (layer.type !== "adjustment" && layer.type !== "group") {
+      } else if (
+        layer.type !== "adjustment" &&
+        layer.type !== "group" &&
+        layer.type !== "linked"
+      ) {
         const result = canvasHandleRef.current?.exportLayerPng(layer.id);
         if (result) {
           layerPngs2[layer.id] = result.png;
@@ -1214,6 +1328,7 @@ export function useFileOps({
         if (maskPng) adjustmentMaskPngs2[layer.id] = maskPng;
       }
     }
+    const docDir2 = directoryOf(path);
     const doc2 = {
       version: 6,
       pixelFormat: state.pixelFormat,
@@ -1223,14 +1338,30 @@ export function useFileOps({
         backgroundFill: state.canvas.backgroundFill,
       },
       activeLayerId: state.activeLayerId,
-      layers: state.layers.map((l) => ({
-        ...l,
-        layerDataRGBA8: layerPngs2[l.id] ?? null,
-        layerDataF32: layerF32Data2[l.id] ?? null,
-        layerDataIndexed: layerIndexedData2[l.id] ?? null,
-        layerGeo: layerGeos2[l.id] ?? null,
-        adjustmentMaskPng: adjustmentMaskPngs2[l.id] ?? null,
-      })),
+      layers: state.layers.map((l) => {
+        if ("type" in l && l.type === "linked") {
+          return {
+            ...l,
+            source: {
+              ...l.source,
+              relativePath: relativePathFrom(docDir2, l.source.absolutePath),
+            },
+            layerDataRGBA8: null,
+            layerDataF32: null,
+            layerDataIndexed: null,
+            layerGeo: null,
+            adjustmentMaskPng: null,
+          };
+        }
+        return {
+          ...l,
+          layerDataRGBA8: layerPngs2[l.id] ?? null,
+          layerDataF32: layerF32Data2[l.id] ?? null,
+          layerDataIndexed: layerIndexedData2[l.id] ?? null,
+          layerGeo: layerGeos2[l.id] ?? null,
+          adjustmentMaskPng: adjustmentMaskPngs2[l.id] ?? null,
+        };
+      }),
       swatches: state.swatches,
       swatchGroups: state.swatchGroups,
       pixelBrushes: state.pixelBrushes,

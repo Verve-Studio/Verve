@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer } from "react";
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame } from "@/types";
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame, LinkedLayerState } from "@/types";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isContainerLayer, isCompositeLayer } from "@/types";
 import {
@@ -44,6 +44,9 @@ export type AppAction =
   | { type: "UPDATE_PATH_LAYER"; payload: import("@/types").PathLayerState }
   | { type: "ADD_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "UPDATE_FRAME_LAYER"; payload: FrameLayerState }
+  | { type: "ADD_LINKED_LAYER"; payload: LinkedLayerState }
+  | { type: "UPDATE_LINKED_LAYER"; payload: LinkedLayerState }
+  | { type: "REFRESH_LINKED_LAYER"; payload: string }
   | { type: "ADD_MASK_LAYER"; payload: MaskLayerState }
   | { type: "ADD_ADJUSTMENT_LAYER"; payload: EffectLayerState }
   | { type: "UPDATE_ADJUSTMENT_LAYER"; payload: EffectLayerState }
@@ -745,6 +748,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         layers: state.layers.map((l) =>
           l.id === action.payload.id ? action.payload : l,
+        ),
+      };
+
+    case "ADD_LINKED_LAYER":
+      return {
+        ...state,
+        layers: [...state.layers, action.payload],
+        activeLayerId: action.payload.id,
+      };
+
+    case "UPDATE_LINKED_LAYER":
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.payload.id ? action.payload : l,
+        ),
+      };
+
+    case "REFRESH_LINKED_LAYER":
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.payload && "type" in l && l.type === "linked"
+            ? { ...l, refreshNonce: l.refreshNonce + 1 }
+            : l,
         ),
       };
 

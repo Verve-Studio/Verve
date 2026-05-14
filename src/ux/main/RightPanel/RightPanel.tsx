@@ -26,6 +26,7 @@ interface RightPanelProps {
   onGroupSelected: (layerIds: string[]) => void;
   onUngroup: (groupId: string) => void;
   onCreateCompositeLayer: () => void;
+  onRefreshLinkedLayer: () => void;
 }
 
 const MIN_WIDTH = 200;
@@ -48,6 +49,7 @@ export function RightPanel({
   onGroupSelected,
   onUngroup,
   onCreateCompositeLayer,
+  onRefreshLinkedLayer,
 }: RightPanelProps): React.JSX.Element {
   useDockLayoutLoader();
 
@@ -123,6 +125,7 @@ export function RightPanel({
             onGroupSelected={onGroupSelected}
             onUngroup={onUngroup}
             onCreateCompositeLayer={onCreateCompositeLayer}
+            onRefreshLinkedLayer={onRefreshLinkedLayer}
             activeTabId={activeTabId}
             findLayersTrigger={findLayersTrigger}
           />

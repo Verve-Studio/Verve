@@ -52,7 +52,8 @@ export type Tool =
   | "hand"
   | "zoom"
   | "transform"
-  | "pen";
+  | "pen"
+  | "linked";
 
 // ─── Free Transform ───────────────────────────────────────────────────────────
 
@@ -652,6 +653,57 @@ export interface CompositeLayerState {
   childIds: string[];
 }
 
+/**
+ * Linked Layer — a raster layer whose pixel data is sourced from an external
+ * image file on disk. Behaves like a regular pixel layer for compositing,
+ * masking, and adjustments, but its pixels are read-only: paint tools are
+ * blocked because the layer is treated as parametric. On document open and
+ * when the user invokes Refresh, pixels are re-read from the source file.
+ *
+ * The source path is stored as both an absolute path and a path relative to
+ * the document file (when known), so moving the document + asset together
+ * still resolves. On miss, the layer renders a checkerboard placeholder.
+ */
+export interface LinkedLayerSource {
+  /** Absolute path on disk to the source image. */
+  absolutePath: string;
+  /** Path relative to the host `.verve` document at the time of linking,
+   *  or `null` when the document has not yet been saved. */
+  relativePath: string | null;
+  /** Width of the source image at link time (canvas pixels). Used for the
+   *  placeholder when the file is missing on reload. */
+  sourceWidth: number;
+  /** Height of the source image at link time. */
+  sourceHeight: number;
+}
+
+export interface LinkedLayerState {
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "linked";
+  source: LinkedLayerSource;
+  /** Canvas-space centre of the source image after scale + rotation. The
+   *  Move tool updates this field. Using a centre (rather than a top-left
+   *  offset) keeps the anchor stable under rotation. */
+  centerX: number;
+  centerY: number;
+  /** Non-destructive transform — applied at rasterise time only. The source
+   *  file on disk is never modified. Negative scales flip horizontally /
+   *  vertically. Rotation is in degrees, clockwise, around `(centerX, centerY)`. */
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+  /** Incremented by `REFRESH_LINKED_LAYER` so `useGpuLayerSync` knows to
+   *  re-read the source file. */
+  refreshNonce: number;
+  /** Optional colour-space tag — same semantics as `PixelLayerState.colorSpace`. */
+  colorSpace?: LayerColorSpace;
+}
+
 export type LayerState =
   | PixelLayerState
   | TextLayerState
@@ -661,7 +713,8 @@ export type LayerState =
   | MaskLayerState
   | EffectLayerState
   | GroupLayerState
-  | CompositeLayerState;
+  | CompositeLayerState
+  | LinkedLayerState;
 
 export function isPathLayer(l: LayerState): l is PathLayerState {
   return "type" in l && l.type === "path";
@@ -688,6 +741,10 @@ export function isContainerLayer(
 
 export function isPixelLayer(l: LayerState): l is PixelLayerState {
   return !("type" in l);
+}
+
+export function isLinkedLayer(l: LayerState): l is LinkedLayerState {
+  return "type" in l && l.type === "linked";
 }
 
 export type BackgroundFill = "white" | "black" | "transparent";

@@ -134,6 +134,8 @@ function editToolFor(ctx: ToolContext, id: string): Tool {
   if (ctx.shapeLayers.some((s) => s.id === id)) return "shape";
   if (ctx.pathLayers.some((p) => p.id === id)) return "pen";
   if (ctx.frameLayers.some((f) => f.id === id)) return "frame";
+  const ls = ctx.layerStates.find((l) => l.id === id);
+  if (ls && "type" in ls && ls.type === "linked") return "linked";
   return "move";
 }
 

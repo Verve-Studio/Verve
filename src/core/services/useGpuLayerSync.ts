@@ -32,7 +32,14 @@ import {
   rasterizeFrameToLayer,
   ensureContentDecoded,
 } from "@/ux/main/Canvas/frameRasterizer";
+import {
+  ensureLinkedDecoded,
+  rasterizeLinkedToLayer,
+  tryGetDecodedLinkedSource,
+  tryGetLinkedSourceError,
+} from "@/ux/main/Canvas/linkedLayerRasterizer";
 import { activeScope } from "@/core/store/scope";
+import { notificationStore } from "@/core/store/notificationStore";
 
 export interface GpuLayerSyncParams {
   isActive: boolean;
@@ -119,6 +126,45 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         gl.data.fill(255);
         renderer.flushLayer(gl);
         map.set(ls.id, gl);
+      } else if ("type" in ls && ls.type === "linked") {
+        // Linked layers are canvas-sized — the source bitmap is painted in
+        // via Canvas2D with the layer transform applied at rasterise time.
+        // The decode runs through the rasteriser's `path:refreshNonce` cache;
+        // if the bitmap is already there (e.g. the New Linked Layer handler
+        // pre-warmed it), the first rasterise renders immediately. Otherwise
+        // we paint a placeholder, kick the decode, and re-rasterise on ready.
+        const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0, pixelFormat);
+        map.set(ls.id, gl);
+        void rasterizeLinkedToLayer(
+          ls,
+          gl,
+          pixelFormat,
+          swatches as RGBAColor[],
+          cw,
+          ch,
+        ).then(() => {
+          if (!map.get(ls.id)) return;
+          renderer.flushLayer(gl);
+          doRender();
+        });
+        ensureLinkedDecoded(ls, window.api.readFileBase64, () => {
+          if (!map.get(ls.id)) return;
+          const err = tryGetLinkedSourceError(ls);
+          if (err) notificationStore.error(err.errorMessage);
+          if (!tryGetDecodedLinkedSource(ls)) return;
+          void rasterizeLinkedToLayer(
+            ls,
+            gl,
+            pixelFormat,
+            swatches as RGBAColor[],
+            cw,
+            ch,
+          ).then(() => {
+            if (!map.get(ls.id)) return;
+            renderer.flushLayer(gl);
+            doRender();
+          });
+        });
       } else {
         // Pixel layers start at 128×128 centred on the canvas.
         const initW = Math.min(128, cw);
@@ -201,6 +247,49 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         gl.offsetY = 0;
         rasterizePathToLayer(ls, gl, cw, ch, pixelFormat);
         renderer.flushLayer(gl);
+      } else if ("type" in ls && ls.type === "linked") {
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        // Don't reset `gl.offsetX/Y` up-front. The Move tool shifts the
+        // offset during drag for live preview; if we cleared it before the
+        // async rasterise paints the new `centerX/Y` into the buffer, the
+        // compositor would show the OLD buffer at offset 0 for one frame —
+        // a visible snap-back. Reset the offset inside the rasterise
+        // continuation so the swap is atomic.
+        void rasterizeLinkedToLayer(
+          ls,
+          gl,
+          pixelFormat,
+          swatches as RGBAColor[],
+          cw,
+          ch,
+        ).then(() => {
+          if (!map.get(ls.id)) return;
+          gl.offsetX = 0;
+          gl.offsetY = 0;
+          renderer.flushLayer(gl);
+          doRender();
+        });
+        ensureLinkedDecoded(ls, window.api.readFileBase64, () => {
+          if (!map.get(ls.id)) return;
+          const err = tryGetLinkedSourceError(ls);
+          if (err) notificationStore.error(err.errorMessage);
+          if (!tryGetDecodedLinkedSource(ls)) return;
+          void rasterizeLinkedToLayer(
+            ls,
+            gl,
+            pixelFormat,
+            swatches as RGBAColor[],
+            cw,
+            ch,
+          ).then(() => {
+            if (!map.get(ls.id)) return;
+            gl.offsetX = 0;
+            gl.offsetY = 0;
+            renderer.flushLayer(gl);
+            doRender();
+          });
+        });
       } else if ("type" in ls && ls.type === "frame") {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;

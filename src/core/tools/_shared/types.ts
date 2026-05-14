@@ -9,6 +9,7 @@ import type {
   ShapeLayerState,
   PathLayerState,
   FrameLayerState,
+  LinkedLayerState,
   LayerState,
   PixelFormat,
   Guide,
@@ -112,6 +113,11 @@ export interface ToolContext {
   frameLayers: FrameLayerState[];
   /** The active frame layer, if the currently active layer is a frame type. */
   activeFrameLayer: FrameLayerState | null;
+  /** Dispatch UPDATE_LINKED_LAYER (used by the Move tool to bake a new offset
+   *  into state for linked layers — the sync hook mirrors `offsetX/Y` from
+   *  state back onto the GpuLayer, so an interactive drag must commit there
+   *  rather than only mutating the GpuLayer in place). */
+  updateLinkedLayer: (layer: LinkedLayerState) => void;
   /** Current canvas zoom level — used to compute screen-space handle sizes in overlay drawings. */
   zoom: number;
   /** Whether tiled mode is active — used by wrap-capable tools to enable coordinate wrapping. */

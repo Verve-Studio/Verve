@@ -40,7 +40,8 @@ function isEffectEligibleLayer(layer: LayerState): boolean {
     layer.type === "text" ||
     layer.type === "shape" ||
     layer.type === "frame" ||
-    layer.type === "composite"
+    layer.type === "composite" ||
+    layer.type === "linked"
   );
 }
 

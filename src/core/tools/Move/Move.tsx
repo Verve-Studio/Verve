@@ -6,6 +6,7 @@ import type {
   ShapeLayerState,
   PathLayerState,
   FrameLayerState,
+  LinkedLayerState,
   LayerState,
 } from "@/types";
 import {
@@ -778,6 +779,19 @@ function createMoveHandler(): ToolHandler {
               ctx.previewPathLayer(moved);
               ctx.updatePathLayer(moved);
             }
+          } else if ("type" in f.ls && f.ls.type === "linked") {
+            // Linked layers are canvas-sized; centerX/Y is baked into the
+            // buffer at rasterise time. The drag preview leaves the old
+            // buffer in place and just shifts the GpuLayer offset — keep it
+            // shifted here. `useGpuLayerSync` resets the offset to 0 only
+            // AFTER the new buffer (rasterised at the updated centre) is
+            // ready, which avoids the one-frame snap-back to the old centre.
+            const moved: LinkedLayerState = {
+              ...f.ls,
+              centerX: f.ls.centerX + sdx,
+              centerY: f.ls.centerY + sdy,
+            };
+            ctx.updateLinkedLayer(moved);
           }
         }
         offsetFollowers = [];

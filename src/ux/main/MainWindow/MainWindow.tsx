@@ -218,6 +218,7 @@ export interface MainWindowProps {
   handleGroupLayers: (ids: string[]) => void;
   handleUngroupLayers: (id: string) => void;
   handleCreateCompositeLayer: () => void;
+  handleRefreshLinkedLayer: () => void;
 
   // Canvas transform handlers (used by dialogs)
   handleResizeImage: (s: ResizeImageSettings) => Promise<void>;
@@ -373,6 +374,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     handleGroupLayers,
     handleUngroupLayers,
     handleCreateCompositeLayer,
+    handleRefreshLinkedLayer,
     handleResizeImage,
     handleRescaleImage,
     handleRestoreImage,
@@ -493,6 +495,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           onGroupSelected={handleGroupLayers}
           onUngroup={handleUngroupLayers}
           onCreateCompositeLayer={handleCreateCompositeLayer}
+          onRefreshLinkedLayer={handleRefreshLinkedLayer}
           findLayersTrigger={findLayersCounter}
         />
       </div>

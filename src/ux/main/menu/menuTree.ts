@@ -231,6 +231,11 @@ export interface MenuDeps {
   onNewLayer?: () => void;
   onNewLayerGroup?: () => void;
   onNewCompositeLayer?: () => void;
+  onNewLinkedLayer?: () => void;
+  onRefreshLinkedLayer?: () => void;
+  /** True when the active layer is a linked layer (drives enabled-state on
+   *  Refresh Linked Layer). */
+  isLinkedLayerActive?: boolean;
   onAddLayerMask?: () => void;
   onDuplicateLayer?: () => void;
   onDeleteLayer?: () => void;
@@ -749,6 +754,13 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
         { label: "New Layer", actionId: "newLayer", action: deps.onNewLayer, shortcut: "CmdOrCtrl+Shift+N" },
         { label: "New Layer Group", actionId: "newLayerGroup", action: deps.onNewLayerGroup },
         { label: "New Composite Layer", actionId: "newCompositeLayer", action: deps.onNewCompositeLayer },
+        { label: "New Linked Layer…", actionId: "newLinkedLayer", action: deps.onNewLinkedLayer },
+        {
+          label: "Refresh Linked Layer",
+          actionId: "refreshLinkedLayer",
+          action: deps.onRefreshLinkedLayer,
+          disabled: !deps.isLinkedLayerActive,
+        },
         {
           label: "Add Layer Mask",
           actionId: "addLayerMask",

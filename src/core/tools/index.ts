@@ -34,6 +34,7 @@ import { healingBrushTool } from "./HealingBrush/HealingBrush";
 import { objectRemovalTool } from "./ObjectRemoval/ObjectRemoval";
 import { measureTool } from "./Measure/Measure";
 import { quickSelectTool } from "./QuickSelect/QuickSelect";
+import { linkedTool } from "./Linked/Linked";
 
 const ALL_TOOLS: readonly ITool[] = [
   moveTool,
@@ -69,6 +70,7 @@ const ALL_TOOLS: readonly ITool[] = [
   handTool,
   zoomTool,
   transformTool,
+  linkedTool,
 ];
 
 for (const tool of ALL_TOOLS) {

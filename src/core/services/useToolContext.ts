@@ -308,6 +308,9 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         const l = state.layers.find((l) => l.id === activeId);
         return l && "type" in l && l.type === "frame" ? l : null;
       })(),
+      updateLinkedLayer: (ls) => {
+        dispatch({ type: "UPDATE_LINKED_LAYER", payload: ls });
+      },
       zoom: state.canvas.zoom,
       tiledMode: state.canvas.tiledMode,
       pixelFormat: state.pixelFormat as PixelFormat,

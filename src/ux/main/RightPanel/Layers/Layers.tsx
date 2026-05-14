@@ -145,6 +145,22 @@ const AddGroupIcon = (): React.JSX.Element => (
   </svg>
 );
 
+const LinkedIcon = (): React.JSX.Element => (
+  <svg
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    width="11"
+    height="11"
+  >
+    <path d="M5.5 8.5l3-3" />
+    <path d="M4 10a2 2 0 010-2.8l1.5-1.5" />
+    <path d="M10 4a2 2 0 010 2.8L8.5 8.3" />
+  </svg>
+);
+
 const MaskIcon = ({ active }: { active: boolean }): React.JSX.Element => (
   <svg
     viewBox="0 0 14 14"
@@ -290,6 +306,7 @@ interface LayerPanelProps {
   onGroupSelected: (layerIds: string[]) => void;
   onUngroup: (groupId: string) => void;
   onCreateCompositeLayer: () => void;
+  onRefreshLinkedLayer: () => void;
   activeTabId?: string;
   findLayersTrigger?: number;
 }
@@ -308,6 +325,7 @@ export function Layers({
   onGroupSelected,
   onUngroup,
   onCreateCompositeLayer,
+  onRefreshLinkedLayer,
   activeTabId,
   findLayersTrigger,
 }: LayerPanelProps): React.JSX.Element {
@@ -1457,6 +1475,16 @@ export function Layers({
                   </span>
                 )}
 
+                {"type" in layer && layer.type === "linked" && (
+                  <span
+                    className={styles.linkedBadge}
+                    title={`Linked to ${(layer as { source: { absolutePath: string } }).source.absolutePath}`}
+                    aria-label="Linked layer"
+                  >
+                    <LinkedIcon />
+                  </span>
+                )}
+
                 {!isChild && (layer as { locked?: boolean }).locked && (
                   <span className={styles.lockIcon}>
                     <LockIcon locked />
@@ -1573,6 +1601,20 @@ export function Layers({
               }}
             >
               Rasterize Layer
+            </button>
+            <button
+              className={styles.menuItem}
+              disabled={
+                !activeLayer ||
+                !("type" in activeLayer) ||
+                activeLayer.type !== "linked"
+              }
+              onMouseDown={() => {
+                closeContextMenu();
+                onRefreshLinkedLayer();
+              }}
+            >
+              Refresh Linked Layer
             </button>
             <button
               className={styles.menuItem}

@@ -40,8 +40,14 @@ import {
 } from "@/core/store/layerDataTransfer";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
 import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
+import {
+  ensureLinkedDecoded,
+  rasterizeLinkedToLayer,
+  tryGetLinkedSourceError,
+} from "@/ux/main/Canvas/linkedLayerRasterizer";
 import { decodePng } from "@/ux/main/Canvas/pngHelpers";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
+import { notificationStore } from "@/core/store/notificationStore";
 
 export interface GpuLayerInitParams {
   rendererRef: React.RefObject<WebGPURenderer | null>;
@@ -337,6 +343,38 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
           // Path layers are full-canvas-sized parametric vector data.
           layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
           rasterizePathToLayer(ls, layer, cw, ch, initialPixelFormat);
+        } else if ("type" in ls && ls.type === "linked") {
+          // Linked layers are canvas-sized — the source is painted into the
+          // buffer via Canvas2D with the layer's transform applied. Decode
+          // the source file synchronously here so the layer renders correctly
+          // on the very first frame.
+          layer = renderer.createLayer(
+            ls.id,
+            ls.name,
+            cw,
+            ch,
+            0,
+            0,
+            initialPixelFormat,
+          );
+          const linkedLayer = layer;
+          const linkedLs = ls;
+          await new Promise<void>((resolve) =>
+            ensureLinkedDecoded(linkedLs, window.api.readFileBase64, () =>
+              resolve(),
+            ),
+          );
+          if (isStale()) return;
+          await rasterizeLinkedToLayer(
+            linkedLs,
+            linkedLayer,
+            initialPixelFormat,
+            swatchesRef.current as RGBAColor[],
+            cw,
+            ch,
+          );
+          const err = tryGetLinkedSourceError(linkedLs);
+          if (err) notificationStore.error(err.errorMessage);
         } else if ("type" in ls && ls.type === "mask") {
           // Mask layers full-canvas; init all-white (fully reveal parent).
           layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);

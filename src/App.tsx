@@ -40,8 +40,11 @@ import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { toolRegistry } from "@/core/tools/toolRegistry";
-import { isGroupLayer } from "@/types";
-import type { LayerState, Tool } from "@/types";
+import { isGroupLayer, isLinkedLayer } from "@/types";
+import type { LayerState, LinkedLayerState, Tool } from "@/types";
+import { loadImagePixels, EXT_TO_MIME } from "@/core/io/imageLoader";
+import { notificationStore } from "@/core/store/notificationStore";
+import { fileTitle } from "@/core/store/tabTypes";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
@@ -244,6 +247,73 @@ function AppContent(): React.JSX.Element {
     handleUngroupLayers,
     handleCreateCompositeLayer,
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch });
+
+  // ── Linked Layer ──────────────────────────────────────────────────
+  // "Place Linked"-style raster layer: pixels are pulled from an external
+  // image file and refreshed on document open / manual refresh. The layer
+  // is treated as parametric by `useToolContext` so paint tools are blocked.
+  const handleNewLinkedLayer = useCallback(async (): Promise<void> => {
+    const path = await window.api.openFile();
+    if (!path) return;
+    try {
+      // Decode just enough to know the source dimensions for the state.
+      // The actual rasterise (via `linkedLayerRasterizer`) runs in the sync
+      // hook and decodes through its `path:refreshNonce` cache, so this
+      // initial decode is the only file read on creation.
+      const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+      const mime = EXT_TO_MIME[ext] ?? "image/png";
+      const base64 = await window.api.readFileBase64(path);
+      const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
+      const { width, height } = loaded;
+      const cw = stateRef.current.canvas.width;
+      const ch = stateRef.current.canvas.height;
+
+      const ls: LinkedLayerState = {
+        id: `linked-${Date.now()}`,
+        name: fileTitle(path),
+        visible: true,
+        opacity: 1,
+        locked: false,
+        blendMode: "normal",
+        type: "linked",
+        source: {
+          absolutePath: path,
+          relativePath: null,
+          sourceWidth: width,
+          sourceHeight: height,
+        },
+        // Default centre = canvas centre, no scale/rotation.
+        centerX: cw / 2,
+        centerY: ch / 2,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        refreshNonce: 0,
+      };
+      pendingLayerLabelRef.current = "New Linked Layer";
+      dispatch({ type: "ADD_LINKED_LAYER", payload: ls });
+      // Land in the Linked tool so transform handles appear immediately.
+      dispatch({ type: "SET_TOOL", payload: "linked" });
+    } catch (err) {
+      notificationStore.error(
+        `Failed to load linked source: ${(err as Error).message}`,
+      );
+    }
+  }, [dispatch, stateRef, pendingLayerLabelRef]);
+
+  const handleRefreshLinkedLayer = useCallback((): void => {
+    const id = stateRef.current.activeLayerId;
+    if (!id) return;
+    const layer = stateRef.current.layers.find((l) => l.id === id);
+    if (!layer || !isLinkedLayer(layer)) return;
+    dispatch({ type: "REFRESH_LINKED_LAYER", payload: id });
+  }, [dispatch, stateRef]);
+
+  const isLinkedLayerActive =
+    !!state.activeLayerId &&
+    !!state.layers.find(
+      (l) => l.id === state.activeLayerId && isLinkedLayer(l),
+    );
 
   // ── Canvas transforms ─────────────────────────────────────────────
   const [isRescaling, setIsRescaling] = useState(false);
@@ -697,6 +767,9 @@ function AppContent(): React.JSX.Element {
       onNewLayer: handleNewLayer,
       onNewLayerGroup: () => handleGroupLayers([]),
       onNewCompositeLayer: handleCreateCompositeLayer,
+      onNewLinkedLayer: () => void handleNewLinkedLayer(),
+      onRefreshLinkedLayer: handleRefreshLinkedLayer,
+      isLinkedLayerActive,
       onAddLayerMask: handleAddMaskLayer,
       onDuplicateLayer: handleDuplicateLayer,
       onDeleteLayer: handleDeleteActiveLayer,
@@ -1083,6 +1156,7 @@ function AppContent(): React.JSX.Element {
         handleGroupLayers={handleGroupLayers}
         handleUngroupLayers={handleUngroupLayers}
         handleCreateCompositeLayer={handleCreateCompositeLayer}
+        handleRefreshLinkedLayer={handleRefreshLinkedLayer}
         handleResizeImage={handleResizeImage}
         handleRescaleImage={handleRescaleImage}
         handleRestoreImage={handleRestoreImage}
