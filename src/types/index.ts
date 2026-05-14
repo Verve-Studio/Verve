@@ -51,7 +51,8 @@ export type Tool =
   | "measure"
   | "hand"
   | "zoom"
-  | "transform";
+  | "transform"
+  | "pen";
 
 // ─── Free Transform ───────────────────────────────────────────────────────────
 
@@ -336,6 +337,9 @@ export interface ShapeLayerState {
   strokeColor: RGBAColor | null;
   /** null = no fill */
   fillColor: RGBAColor | null;
+  /** When set, the fill is painted as a vector gradient instead of a solid
+   *  colour. Takes precedence over `fillColor` at rasterisation time. */
+  fillGradient?: Gradient | null;
   /** Optional palette index reference (indexed8 docs). When set, the
    *  shape rasterises using the *current* `state.swatches[strokeIndex]`
    *  colour instead of the cached `strokeColor`, so palette edits and
@@ -346,6 +350,97 @@ export interface ShapeLayerState {
   strokeWidth: number;
   /** Corner radius in canvas pixels. Applies to rectangle. */
   cornerRadius: number;
+  antiAlias: boolean;
+}
+
+/**
+ * Vector gradient definition shared by shape/path fill (and, in the future,
+ * stroke). Stored as parametric data — the rasteriser computes pixels via
+ * Canvas2D `createLinearGradient` / `createRadialGradient` at draw time,
+ * and exporters that support vector shading (PDF) emit it natively.
+ */
+export type GradientType = "linear" | "radial";
+
+export interface GradientStop {
+  /** 0..1 position along the gradient axis. */
+  offset: number;
+  /** Stop colour. Same semantics as other shape/path colours (0–255 RGBA
+   *  for LDR docs, 0–1 floats for HDR). */
+  color: RGBAColor;
+}
+
+export interface Gradient {
+  type: GradientType;
+  /** Canvas-space start point. Linear: the 0-offset end of the gradient axis.
+   *  Radial: the centre of the inner focal circle. */
+  startX: number;
+  startY: number;
+  /** Canvas-space end point. Linear: the 1-offset end of the axis.
+   *  Radial: a point on the outer circle (radius = |end − start|). */
+  endX: number;
+  endY: number;
+  /** At least two stops, ordered by offset. */
+  stops: GradientStop[];
+}
+
+/**
+ * A single anchor point on a parametric path layer.
+ *
+ * Each node has an on-curve position `(x, y)` plus an incoming and outgoing
+ * Bezier handle expressed as an OFFSET from the anchor — i.e. the absolute
+ * handle position is `(x + inX, y + inY)` and `(x + outX, y + outY)`.
+ *
+ * `kind`:
+ *   - `"corner"`    — handles independent; a sharp corner. Either handle may
+ *                     be zero (straight segment on that side).
+ *   - `"smooth"`    — handles forced collinear and equal length (mirrored).
+ *                     Dragging one handle moves the other symmetrically.
+ *   - `"asymmetric"` — handles forced collinear but lengths independent
+ *                      (tangent-locked but asymmetric — Illustrator's
+ *                      "Convert Anchor with Alt-drag" result).
+ */
+export type PathNodeKind = "corner" | "smooth" | "asymmetric";
+
+export interface PathNode {
+  x: number;
+  y: number;
+  inX: number;
+  inY: number;
+  outX: number;
+  outY: number;
+  kind: PathNodeKind;
+}
+
+/**
+ * Vector path layer drawn by the Pen tool. The geometry is a single open or
+ * closed cubic Bezier path; pixels are rasterised on demand via Canvas2D.
+ */
+export interface PathLayerState {
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  locked: boolean;
+  blendMode: BlendMode;
+  type: "path";
+  nodes: PathNode[];
+  /** Closes the path (last segment connects nodes[N-1] → nodes[0]). */
+  closed: boolean;
+  /** null = no fill. */
+  fillColor: RGBAColor | null;
+  /** When set, the fill is painted as a vector gradient instead of a solid
+   *  colour. Takes precedence over `fillColor` at rasterisation time. */
+  fillGradient?: Gradient | null;
+  /** null = no stroke. */
+  strokeColor: RGBAColor | null;
+  strokeWidth: number;
+  strokeJoin: "miter" | "round" | "bevel";
+  strokeCap: "butt" | "round" | "square";
+  /** Empty array = solid line. Otherwise alternating on/off lengths in canvas pixels. */
+  strokeDash: number[];
+  /** Miter limit (multiples of stroke width). Only meaningful when join = "miter". */
+  miterLimit: number;
+  fillRule: "nonzero" | "evenodd";
   antiAlias: boolean;
 }
 
@@ -561,11 +656,16 @@ export type LayerState =
   | PixelLayerState
   | TextLayerState
   | ShapeLayerState
+  | PathLayerState
   | FrameLayerState
   | MaskLayerState
   | EffectLayerState
   | GroupLayerState
   | CompositeLayerState;
+
+export function isPathLayer(l: LayerState): l is PathLayerState {
+  return "type" in l && l.type === "path";
+}
 
 export function isFrameLayer(l: LayerState): l is FrameLayerState {
   return "type" in l && l.type === "frame";

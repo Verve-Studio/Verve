@@ -11,7 +11,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import gradientIconSvg from "./gradient.svg?raw";
-import type { RGBAColor } from "@/types";
+import type { RGBAColor, Gradient } from "@/types";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -45,6 +45,18 @@ const BAYER8: ReadonlyArray<ReadonlyArray<number>> = [
   [15, 47, 7, 39, 13, 45, 5, 37],
   [63, 31, 55, 23, 61, 29, 53, 21],
 ];
+
+/** Convert Verve's float-RGBA primary/secondary colour (channels in [0,∞),
+ *  alpha in [0,1]) into the 0–255 byte RGBA expected by shape/path
+ *  fillGradient stops. */
+function floatColorToBytes(c: RGBAColor): RGBAColor {
+  return {
+    r: Math.round(Math.max(0, Math.min(1, c.r)) * 255),
+    g: Math.round(Math.max(0, Math.min(1, c.g)) * 255),
+    b: Math.round(Math.max(0, Math.min(1, c.b)) * 255),
+    a: Math.round(Math.max(0, Math.min(1, c.a)) * 255),
+  };
+}
 
 // ─── Colour interpolation ─────────────────────────────────────────────────────
 
@@ -460,6 +472,33 @@ function createGradientHandler(): ToolHandler {
 
       if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
 
+      // Vector-fill path: when the active layer is a shape or pen-path
+      // layer, write the gradient onto its parametric `fillGradient` field
+      // instead of rasterising pixels. Rendering picks it up on the next
+      // re-rasterise via Canvas2D's createLinearGradient/createRadialGradient.
+      const shape = ctx.activeShapeLayer;
+      const pth = ctx.activePathLayer;
+      if (shape || pth) {
+        const grad: Gradient = {
+          type: gradientOptions.type,
+          startX: s.x,
+          startY: s.y,
+          endX: x,
+          endY: y,
+          stops: [
+            { offset: 0, color: floatColorToBytes(ctx.primaryColor) },
+            { offset: 1, color: floatColorToBytes(ctx.secondaryColor) },
+          ],
+        };
+        if (shape) {
+          ctx.updateShapeLayer({ ...shape, fillGradient: grad });
+        } else if (pth) {
+          ctx.updatePathLayer({ ...pth, fillGradient: grad });
+        }
+        ctx.commitStroke("Set gradient fill");
+        return;
+      }
+
       renderGradient(ctx, s.x, s.y, x, y);
     },
   };
@@ -474,6 +513,16 @@ function GradientOptions({
 }): React.JSX.Element {
   const { state } = useAppContext();
   const isIndexed = state.pixelFormat === "indexed8";
+  // When the active layer is a shape or path, the tool writes a vector
+  // `fillGradient` — Repeat / Opacity / indexed-palette controls don't
+  // apply to that path (Canvas2D gradients clamp at 0/1 and stop alphas
+  // already carry per-stop opacity), so we hide them.
+  const activeLayer =
+    state.layers.find((l) => l.id === state.activeLayerId) ?? null;
+  const isVectorTarget =
+    activeLayer != null &&
+    "type" in activeLayer &&
+    (activeLayer.type === "shape" || activeLayer.type === "path");
 
   const [type, setType] = useState(gradientOptions.type);
   const [repeat, setRepeat] = useState(gradientOptions.repeat);
@@ -516,7 +565,9 @@ function GradientOptions({
   };
 
   // ── Indexed8 palette-group gradient ─────────────────────────────────────
-  if (isIndexed) {
+  // Skipped when the target is a vector shape/path — those store float-RGBA
+  // gradients via their parametric `fillGradient`, not palette ramps.
+  if (isIndexed && !isVectorTarget) {
     const eligibleGroups = state.swatchGroups.filter(
       (g) => g.swatchIndices.length >= 2,
     );
@@ -596,29 +647,33 @@ function GradientOptions({
         <option value="linear">Linear</option>
         <option value="radial">Radial</option>
       </select>
-      <span className={styles.optSep} />
-      <label className={styles.optLabel}>Repeat:</label>
-      <select
-        className={styles.optSelect}
-        value={repeat}
-        onChange={(e) =>
-          handleRepeat(e.target.value as typeof gradientOptions.repeat)
-        }
-      >
-        <option value="none">None</option>
-        <option value="repeat">Repeat</option>
-        <option value="reflect">Reflect</option>
-      </select>
-      <span className={styles.optSep} />
-      <label className={styles.optLabel}>Opacity:</label>
-      <SliderInput
-        value={opacity}
-        min={1}
-        max={100}
-        suffix="%"
-        inputWidth={42}
-        onChange={handleOpacity}
-      />
+      {!isVectorTarget && (
+        <>
+          <span className={styles.optSep} />
+          <label className={styles.optLabel}>Repeat:</label>
+          <select
+            className={styles.optSelect}
+            value={repeat}
+            onChange={(e) =>
+              handleRepeat(e.target.value as typeof gradientOptions.repeat)
+            }
+          >
+            <option value="none">None</option>
+            <option value="repeat">Repeat</option>
+            <option value="reflect">Reflect</option>
+          </select>
+          <span className={styles.optSep} />
+          <label className={styles.optLabel}>Opacity:</label>
+          <SliderInput
+            value={opacity}
+            min={1}
+            max={100}
+            suffix="%"
+            inputWidth={42}
+            onChange={handleOpacity}
+          />
+        </>
+      )}
     </>
   );
 }
@@ -631,7 +686,11 @@ class GradientTool implements ITool {
   readonly placement = { group: ToolGroup.Fill, row: 0, column: 1 } as const;
   readonly modifiesPixels = true;
   readonly paintsOntoPixelLayer = true;
-  readonly pixelOnly = true;
+  // The gradient tool also targets shape/path layers — on those it writes a
+  // vector `fillGradient` to the layer's parametric data instead of painting
+  // pixels — so it must NOT be blocked by the parametric-layer guard and
+  // must remain clickable in the toolbar regardless of the active layer.
+  readonly worksOnAllLayers = true;
   createHandler(): ToolHandler {
     return createGradientHandler();
   }

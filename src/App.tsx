@@ -627,6 +627,7 @@ function AppContent(): React.JSX.Element {
     !("type" in l) ||
     l.type === "text" ||
     l.type === "shape" ||
+    l.type === "path" ||
     l.type === "frame";
   const isMergeSelectedEnabled =
     [...effectiveSelectedIds].filter((id) => {
@@ -964,6 +965,7 @@ function AppContent(): React.JSX.Element {
             return (
               t === "text" ||
               t === "shape" ||
+              t === "path" ||
               t === "frame" ||
               t === "composite"
             );

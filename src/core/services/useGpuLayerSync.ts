@@ -27,6 +27,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { rasterizeTextToLayer } from "@/ux/main/Canvas/textRasterizer";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
+import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import {
   rasterizeFrameToLayer,
   ensureContentDecoded,
@@ -90,6 +91,11 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
       } else if ("type" in ls && ls.type === "shape") {
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
         rasterizeShapeToLayer(ls, gl, cw, ch, pixelFormat, swatches as RGBAColor[]);
+        renderer.flushLayer(gl);
+        map.set(ls.id, gl);
+      } else if ("type" in ls && ls.type === "path") {
+        const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
+        rasterizePathToLayer(ls, gl, cw, ch, pixelFormat);
         renderer.flushLayer(gl);
         map.set(ls.id, gl);
       } else if ("type" in ls && ls.type === "frame") {
@@ -187,6 +193,13 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         rasterizeShapeToLayer(ls, gl, cw, ch, pixelFormat, swatches as RGBAColor[]);
+        renderer.flushLayer(gl);
+      } else if ("type" in ls && ls.type === "path") {
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        gl.offsetX = 0;
+        gl.offsetY = 0;
+        rasterizePathToLayer(ls, gl, cw, ch, pixelFormat);
         renderer.flushLayer(gl);
       } else if ("type" in ls && ls.type === "frame") {
         const cw = renderer.pixelWidth;

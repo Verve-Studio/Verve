@@ -83,10 +83,21 @@ export function useCanvasPointerInput(
   // layer changes — gives tools like shape/frame a chance to draw their
   // edit overlay immediately (e.g. double-clicking a shape via the pick
   // tool drops straight into edit mode without an extra click).
+  //
+  // Always clear the tool-overlay canvas first so leftover handles / dashed
+  // bounds / rubber-bands from the previous tool don't linger after a tool
+  // switch. Tools that want overlay UI redraw it inside onActivate.
   useEffect(() => {
     if (!isActive) return;
     const ctx = buildCtx();
-    if (ctx) toolHandlerRef.current.onActivate?.(ctx);
+    if (ctx) {
+      const overlay = ctx.overlayCanvas;
+      if (overlay) {
+        const o2d = overlay.getContext("2d");
+        o2d?.clearRect(0, 0, overlay.width, overlay.height);
+      }
+      toolHandlerRef.current.onActivate?.(ctx);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, activeLayerId, isActive]);
 

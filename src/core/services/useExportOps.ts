@@ -423,14 +423,32 @@ export function useExportOps({
               continue;
             }
             if (t === "shape" && !hasAttachedChildren(ls.id)) {
-              pdfNodes.push({
-                kind: "shape",
-                layer: ls as import("@/types").ShapeLayerState,
-                layerOpacity: (ls as { opacity: number }).opacity,
-                blendMode: (ls as { blendMode: import("@/types").BlendMode })
-                  .blendMode,
-              });
-              continue;
+              const sl = ls as import("@/types").ShapeLayerState;
+              // A gradient fill can't yet round-trip as a PDF vector shading
+              // dict — rasterise instead so the export still shows it.
+              if (!sl.fillGradient) {
+                pdfNodes.push({
+                  kind: "shape",
+                  layer: sl,
+                  layerOpacity: (ls as { opacity: number }).opacity,
+                  blendMode: (ls as { blendMode: import("@/types").BlendMode })
+                    .blendMode,
+                });
+                continue;
+              }
+            }
+            if (t === "path" && !hasAttachedChildren(ls.id)) {
+              const pl = ls as import("@/types").PathLayerState;
+              if (!pl.fillGradient) {
+                pdfNodes.push({
+                  kind: "path",
+                  layer: pl,
+                  layerOpacity: (ls as { opacity: number }).opacity,
+                  blendMode: (ls as { blendMode: import("@/types").BlendMode })
+                    .blendMode,
+                });
+                continue;
+              }
             }
           }
           // Anything else — rasterize and embed.
@@ -777,6 +795,7 @@ export function useExportOps({
             t === "pixel" ||
             t === "text" ||
             t === "shape" ||
+            t === "path" ||
             t === "frame" ||
             t === "composite"
           );

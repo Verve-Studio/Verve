@@ -650,6 +650,17 @@ function createShapeHandler(): ToolHandler {
           y1: mode.oy1 + dy,
           x2: mode.ox2 + dx,
           y2: mode.oy2 + dy,
+          // The fillGradient lives in canvas-space, so it must ride along
+          // with the shape's translation just like the geometry does.
+          fillGradient: shape.fillGradient
+            ? {
+                ...shape.fillGradient,
+                startX: shape.fillGradient.startX + dx,
+                startY: shape.fillGradient.startY + dy,
+                endX: shape.fillGradient.endX + dx,
+                endY: shape.fillGradient.endY + dy,
+              }
+            : shape.fillGradient,
         };
         mode = { ...mode, last: updated };
       } else if (mode.t === "resize") {

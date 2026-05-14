@@ -20,6 +20,7 @@ import { gradientTool } from "./Gradient/Gradient";
 import { dodgeTool, burnTool } from "./Dodge/Dodge";
 import { textTool } from "./Text/Text";
 import { shapeTool } from "./Shape/Shape";
+import { penTool } from "./Pen/Pen";
 import { transformTool } from "./Transform/Transform";
 import { cloneStampTool } from "./CloneStamp/CloneStamp";
 import { frameTool } from "./Frame/Frame";
@@ -50,6 +51,7 @@ const ALL_TOOLS: readonly ITool[] = [
   gradientTool,
   textTool,
   shapeTool,
+  penTool,
   cropTool,
   frameTool,
   eyedropperTool,

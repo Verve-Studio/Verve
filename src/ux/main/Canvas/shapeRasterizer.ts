@@ -1,4 +1,9 @@
-import type { ShapeLayerState, PixelFormat, RGBAColor } from "@/types";
+import type {
+  ShapeLayerState,
+  PixelFormat,
+  RGBAColor,
+  Gradient,
+} from "@/types";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 
 // ─── Shared offscreen canvas ──────────────────────────────────────────────────
@@ -25,6 +30,49 @@ export function rgbaToStr(c: {
   a: number;
 }): string {
   return `rgba(${c.r},${c.g},${c.b},${c.a / 255})`;
+}
+
+/**
+ * Build a Canvas2D gradient from a parametric `Gradient`. Coordinates are in
+ * canvas pixels — callers must NOT have an active transform when calling this
+ * (call `ctx2d.save()` / reset before; restore after) because Canvas2D bakes
+ * the gradient into its own coordinate space at creation time.
+ */
+export function buildCanvasGradient(
+  ctx2d: CanvasRenderingContext2D,
+  g: Gradient,
+): CanvasGradient {
+  let grad: CanvasGradient;
+  if (g.type === "radial") {
+    const r = Math.max(
+      0.5,
+      Math.hypot(g.endX - g.startX, g.endY - g.startY),
+    );
+    grad = ctx2d.createRadialGradient(
+      g.startX,
+      g.startY,
+      0,
+      g.startX,
+      g.startY,
+      r,
+    );
+  } else {
+    grad = ctx2d.createLinearGradient(g.startX, g.startY, g.endX, g.endY);
+  }
+  const stops =
+    g.stops.length >= 2
+      ? g.stops
+      : g.stops.length === 1
+        ? [{ offset: 0, color: g.stops[0].color }, { offset: 1, color: g.stops[0].color }]
+        : [
+            { offset: 0, color: { r: 0, g: 0, b: 0, a: 255 } },
+            { offset: 1, color: { r: 255, g: 255, b: 255, a: 255 } },
+          ];
+  for (const s of stops) {
+    const t = Math.max(0, Math.min(1, s.offset));
+    grad.addColorStop(t, rgbaToStr(s.color));
+  }
+  return grad;
 }
 
 // ─── Shared path builder ──────────────────────────────────────────────────────
@@ -159,7 +207,17 @@ export function rasterizeShapeToLayer(
     ctx2d.rotate((ls.rotation * Math.PI) / 180);
     buildShapePath(ctx2d, ls);
 
-    if (resolvedFill) {
+    // Reset to identity before fill/stroke. The path is already baked into
+    // canvas coordinates (Canvas2D transforms points at moveTo/lineTo time),
+    // so this keeps gradients — which are stored in canvas-space coords —
+    // sampling in the right place regardless of the shape's rotation.
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+
+    const grad = ls.fillGradient;
+    if (grad && grad.stops.length >= 1) {
+      ctx2d.fillStyle = buildCanvasGradient(ctx2d, grad);
+      ctx2d.fill();
+    } else if (resolvedFill) {
       ctx2d.fillStyle = rgbaToStr(resolvedFill);
       ctx2d.fill();
     }

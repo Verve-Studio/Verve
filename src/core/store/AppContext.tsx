@@ -40,6 +40,8 @@ export type AppAction =
   | { type: "UPDATE_TEXT_LAYER"; payload: TextLayerState }
   | { type: "ADD_SHAPE_LAYER"; payload: ShapeLayerState }
   | { type: "UPDATE_SHAPE_LAYER"; payload: ShapeLayerState }
+  | { type: "ADD_PATH_LAYER"; payload: import("@/types").PathLayerState }
+  | { type: "UPDATE_PATH_LAYER"; payload: import("@/types").PathLayerState }
   | { type: "ADD_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "UPDATE_FRAME_LAYER"; payload: FrameLayerState }
   | { type: "ADD_MASK_LAYER"; payload: MaskLayerState }
@@ -709,6 +711,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case "UPDATE_SHAPE_LAYER":
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.payload.id ? action.payload : l,
+        ),
+      };
+
+    case "ADD_PATH_LAYER":
+      return {
+        ...state,
+        layers: [...state.layers, action.payload],
+        activeLayerId: action.payload.id,
+      };
+
+    case "UPDATE_PATH_LAYER":
       return {
         ...state,
         layers: state.layers.map((l) =>

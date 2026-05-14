@@ -6,9 +6,11 @@
 import type {
   TextLayerState,
   ShapeLayerState,
+  PathLayerState,
   RGBAColor,
   TextAlign,
   BlendMode,
+  Gradient,
 } from "@/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -25,7 +27,11 @@ export interface PdfExportInput {
   iccProfile?: Uint8Array;
 }
 
-export type PdfExportNode = PdfTextNode | PdfShapeNode | PdfImageNode;
+export type PdfExportNode =
+  | PdfTextNode
+  | PdfShapeNode
+  | PdfPathNode
+  | PdfImageNode;
 
 export interface PdfTextNode {
   kind: "text";
@@ -38,6 +44,13 @@ export interface PdfTextNode {
 export interface PdfShapeNode {
   kind: "shape";
   layer: ShapeLayerState;
+  layerOpacity: number;
+  blendMode: BlendMode;
+}
+
+export interface PdfPathNode {
+  kind: "path";
+  layer: PathLayerState;
   layerOpacity: number;
   blendMode: BlendMode;
 }
@@ -236,6 +249,226 @@ interface BuildContext {
   gStateIds: Map<string, string>;
   /** Image XObject names in resource order, e.g. ["Im1", "Im2"]. */
   imageNames: string[];
+  /** Shadings collected for vector gradient fills. Emitted as resource
+   *  `/Sh<n>` and serialized into PDF Shading + Function objects later. */
+  shadings: { name: string; gradient: Gradient }[];
+}
+
+function ensureShading(ctx: BuildContext, g: Gradient): string {
+  const name = `Sh${ctx.shadings.length + 1}`;
+  ctx.shadings.push({ name, gradient: g });
+  return name;
+}
+
+/**
+ * Emit the path of a closed shape/path layer in canvas-space (post-Y-flip)
+ * straight onto the content stream, without painting it. Used as the inner
+ * helper for gradient fills, which clip to the path and then paint a
+ * shading inside it. Coordinate space is the PDF page (Y-up).
+ */
+function buildPathInPageSpace_shape(
+  ctx: BuildContext,
+  s: ShapeLayerState,
+): string {
+  // Mirrors emitShapeNode's path geometry but emits in page-space coords
+  // directly (no translate/rotate cm), so the resulting path can sit under
+  // a `W n` clip while we paint the shading in canvas space.
+  const pageH = ctx.pageHeight;
+  const flip = (y: number): number => pageH - y;
+  if (s.shapeType === "line") {
+    // Lines don't fill — gradient fills only apply to closed shapes.
+    return "";
+  }
+  // Rotate the bounding-box corners around the centre, then emit them.
+  const θ = (s.rotation * Math.PI) / 180;
+  const c = Math.cos(θ);
+  const si = Math.sin(θ);
+  const hw = s.w / 2;
+  const hh = s.h / 2;
+  const rotate = (lx: number, ly: number): [number, number] => {
+    // Canvas-CW rotation. (lx, ly) is in local frame (Y-down).
+    const wx = s.cx + (c * lx - si * ly);
+    const wy = s.cy + (si * lx + c * ly);
+    return [wx, flip(wy)];
+  };
+  const cubic = (
+    p0: [number, number],
+    p1: [number, number],
+    p2: [number, number],
+    p3: [number, number],
+  ): string =>
+    `${fmt(p0[0])} ${fmt(p0[1])} m\n` +
+    `${fmt(p1[0])} ${fmt(p1[1])} ${fmt(p2[0])} ${fmt(p2[1])} ` +
+    `${fmt(p3[0])} ${fmt(p3[1])} c\n`;
+  const k = 0.5522847498307936;
+  let out = "";
+  if (s.shapeType === "rectangle") {
+    const r = Math.max(0, Math.min(s.cornerRadius, Math.min(hw, hh)));
+    if (r <= 0) {
+      const p0 = rotate(-hw, -hh);
+      const p1 = rotate(hw, -hh);
+      const p2 = rotate(hw, hh);
+      const p3 = rotate(-hw, hh);
+      out += `${fmt(p0[0])} ${fmt(p0[1])} m\n`;
+      out += `${fmt(p1[0])} ${fmt(p1[1])} l\n`;
+      out += `${fmt(p2[0])} ${fmt(p2[1])} l\n`;
+      out += `${fmt(p3[0])} ${fmt(p3[1])} l\n`;
+      out += "h\n";
+    } else {
+      // Rounded rect — 4 cubic-Bezier corners.
+      const kr = k * r;
+      const segs: [number, number][][] = [
+        // top edge then top-right corner
+        [
+          [-hw + r, -hh],
+          [hw - r, -hh],
+        ],
+        [
+          [hw - r + kr, -hh],
+          [hw, -hh + r - kr],
+          [hw, -hh + r],
+        ],
+        // right edge then bottom-right corner
+        [
+          [hw, hh - r],
+        ],
+        [
+          [hw, hh - r + kr],
+          [hw - r + kr, hh],
+          [hw - r, hh],
+        ],
+        // bottom edge then bottom-left corner
+        [
+          [-hw + r, hh],
+        ],
+        [
+          [-hw + r - kr, hh],
+          [-hw, hh - r + kr],
+          [-hw, hh - r],
+        ],
+        // left edge then top-left corner
+        [
+          [-hw, -hh + r],
+        ],
+        [
+          [-hw, -hh + r - kr],
+          [-hw + r - kr, -hh],
+          [-hw + r, -hh],
+        ],
+      ];
+      let started = false;
+      for (const seg of segs) {
+        if (!started) {
+          const p0 = rotate(seg[0][0], seg[0][1]);
+          out += `${fmt(p0[0])} ${fmt(p0[1])} m\n`;
+          started = true;
+          if (seg.length === 1) continue;
+          if (seg.length === 2) {
+            const p1 = rotate(seg[1][0], seg[1][1]);
+            out += `${fmt(p1[0])} ${fmt(p1[1])} l\n`;
+            continue;
+          }
+        }
+        if (seg.length === 1) {
+          const p = rotate(seg[0][0], seg[0][1]);
+          out += `${fmt(p[0])} ${fmt(p[1])} l\n`;
+        } else if (seg.length === 2) {
+          const p = rotate(seg[1][0], seg[1][1]);
+          out += `${fmt(p[0])} ${fmt(p[1])} l\n`;
+        } else if (seg.length === 3) {
+          const a = rotate(seg[0][0], seg[0][1]);
+          const b = rotate(seg[1][0], seg[1][1]);
+          const c2 = rotate(seg[2][0], seg[2][1]);
+          out += `${fmt(a[0])} ${fmt(a[1])} ${fmt(b[0])} ${fmt(b[1])} ${fmt(c2[0])} ${fmt(c2[1])} c\n`;
+        }
+      }
+      out += "h\n";
+    }
+  } else if (s.shapeType === "ellipse") {
+    const kx = k * hw;
+    const ky = k * hh;
+    // Four cubic arcs around the ellipse, starting at local (hw, 0).
+    const start = rotate(hw, 0);
+    out += `${fmt(start[0])} ${fmt(start[1])} m\n`;
+    out += cubic(
+      rotate(hw, 0),
+      rotate(hw, ky),
+      rotate(kx, hh),
+      rotate(0, hh),
+    ).split("\n").slice(1).join("\n");
+    out += cubic(
+      rotate(0, hh),
+      rotate(-kx, hh),
+      rotate(-hw, ky),
+      rotate(-hw, 0),
+    ).split("\n").slice(1).join("\n");
+    out += cubic(
+      rotate(-hw, 0),
+      rotate(-hw, -ky),
+      rotate(-kx, -hh),
+      rotate(0, -hh),
+    ).split("\n").slice(1).join("\n");
+    out += cubic(
+      rotate(0, -hh),
+      rotate(kx, -hh),
+      rotate(hw, -ky),
+      rotate(hw, 0),
+    ).split("\n").slice(1).join("\n");
+    out += "h\n";
+  } else if (s.shapeType === "triangle") {
+    const p0 = rotate(0, -hh);
+    const p1 = rotate(hw, hh);
+    const p2 = rotate(-hw, hh);
+    out += `${fmt(p0[0])} ${fmt(p0[1])} m\n`;
+    out += `${fmt(p1[0])} ${fmt(p1[1])} l\n`;
+    out += `${fmt(p2[0])} ${fmt(p2[1])} l\n`;
+    out += "h\n";
+  } else if (s.shapeType === "diamond") {
+    const p0 = rotate(0, -hh);
+    const p1 = rotate(hw, 0);
+    const p2 = rotate(0, hh);
+    const p3 = rotate(-hw, 0);
+    out += `${fmt(p0[0])} ${fmt(p0[1])} m\n`;
+    out += `${fmt(p1[0])} ${fmt(p1[1])} l\n`;
+    out += `${fmt(p2[0])} ${fmt(p2[1])} l\n`;
+    out += `${fmt(p3[0])} ${fmt(p3[1])} l\n`;
+    out += "h\n";
+  } else if (s.shapeType === "star") {
+    const points = 5;
+    const innerRatio = 0.5;
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? 1 : innerRatio;
+      // In canvas-space (Y-down), first point is at top = (0, -hh*r).
+      const angle = -Math.PI / 2 + (i * Math.PI) / points;
+      const lx = Math.cos(angle) * r * hw;
+      const ly = Math.sin(angle) * r * hh;
+      const p = rotate(lx, ly);
+      out += `${fmt(p[0])} ${fmt(p[1])} ${i === 0 ? "m" : "l"}\n`;
+    }
+    out += "h\n";
+  }
+  return out;
+}
+
+function buildPathInPageSpace_path(
+  ctx: BuildContext,
+  p: PathLayerState,
+): string {
+  if (p.nodes.length < 2) return "";
+  const flipY = (y: number): number => ctx.pageHeight - y;
+  let out = "";
+  const first = p.nodes[0];
+  out += `${fmt(first.x)} ${fmt(flipY(first.y))} m\n`;
+  const last = p.closed ? p.nodes.length : p.nodes.length - 1;
+  for (let i = 0; i < last; i++) {
+    const a = p.nodes[i];
+    const b = p.nodes[(i + 1) % p.nodes.length];
+    out += `${fmt(a.x + a.outX)} ${fmt(flipY(a.y + a.outY))} `;
+    out += `${fmt(b.x + b.inX)} ${fmt(flipY(b.y + b.inY))} `;
+    out += `${fmt(b.x)} ${fmt(flipY(b.y))} c\n`;
+  }
+  if (p.closed) out += "h\n";
+  return out;
 }
 
 function ensureFont(ctx: BuildContext, name: string): string {
@@ -379,7 +612,19 @@ void _alignSentinel;
 
 function emitShapeNode(ctx: BuildContext, node: PdfShapeNode): string {
   const s = node.layer;
-  const fillA = s.fillColor ? alphaForPdf(s.fillColor) * node.layerOpacity : 0;
+  const hasGradFill = !!s.fillGradient && s.shapeType !== "line";
+  const gradAlpha01 = hasGradFill
+    ? (() => {
+        const a = s.fillGradient!.stops[0]?.color.a ?? 1;
+        return a > 1.0001 ? a / 255 : a;
+      })()
+    : 1;
+  const solidFillA = s.fillColor
+    ? alphaForPdf(s.fillColor) * node.layerOpacity
+    : 0;
+  const fillA = hasGradFill
+    ? Math.max(0, Math.min(1, gradAlpha01)) * node.layerOpacity
+    : solidFillA;
   const strokeA =
     s.strokeColor && s.strokeWidth > 0
       ? alphaForPdf(s.strokeColor) * node.layerOpacity
@@ -387,13 +632,41 @@ function emitShapeNode(ctx: BuildContext, node: PdfShapeNode): string {
   if (fillA === 0 && strokeA === 0) return "";
 
   const gState = ensureGState(ctx, fillA, strokeA, node.blendMode);
-  const hasFill = !!s.fillColor && fillA > 0;
+  const hasSolidFill = !!s.fillColor && solidFillA > 0;
   const hasStroke = !!s.strokeColor && s.strokeWidth > 0 && strokeA > 0;
-  const paintOp = hasFill && hasStroke ? "B" : hasFill ? "f" : "S";
 
   let out = "q\n";
   out += `/${gState} gs\n`;
-  if (hasFill && s.fillColor) {
+
+  // ── Gradient fill via clip + sh ─────────────────────────────────────────
+  // Emit the shape's path in page space, clip to it (W n), then paint the
+  // shading. The clipping path holds because Canvas2D-style coords are baked
+  // at issuance time, so resetting the CTM doesn't move the clip region.
+  if (hasGradFill) {
+    out += "q\n";
+    out += buildPathInPageSpace_shape(ctx, s);
+    out += "W n\n";
+    const shadingName = ensureShading(ctx, s.fillGradient!);
+    out += `/${shadingName} sh\n`;
+    out += "Q\n";
+
+    // Stroke is emitted afterward in canvas-space too so the stroke aligns
+    // with the gradient-clipped fill, not the local rotated frame.
+    if (hasStroke && s.strokeColor) {
+      const [r, g, b] = rgbForPdf(s.strokeColor);
+      out += `${fmt(r)} ${fmt(g)} ${fmt(b)} RG\n`;
+      out += `${fmt(s.strokeWidth)} w\n`;
+      out += "1 j\n"; // round join (the local-frame path uses Canvas2D round)
+      out += buildPathInPageSpace_shape(ctx, s);
+      out += "S\n";
+    }
+    out += "Q\n";
+    return out;
+  }
+
+  const paintOp = hasSolidFill && hasStroke ? "B" : hasSolidFill ? "f" : "S";
+
+  if (hasSolidFill && s.fillColor) {
     const [r, g, b] = rgbForPdf(s.fillColor);
     out += `${fmt(r)} ${fmt(g)} ${fmt(b)} rg\n`;
   }
@@ -488,6 +761,92 @@ function emitShapeNode(ctx: BuildContext, node: PdfShapeNode): string {
   return out;
 }
 
+function emitPathNode(ctx: BuildContext, node: PdfPathNode): string {
+  const p = node.layer;
+  if (p.nodes.length < 2) return "";
+  const hasGradFill = !!p.fillGradient && p.closed;
+  const gradAlpha01 = hasGradFill
+    ? (() => {
+        const a = p.fillGradient!.stops[0]?.color.a ?? 1;
+        return a > 1.0001 ? a / 255 : a;
+      })()
+    : 1;
+  const solidFillA = p.fillColor
+    ? alphaForPdf(p.fillColor) * node.layerOpacity
+    : 0;
+  const fillA = hasGradFill
+    ? Math.max(0, Math.min(1, gradAlpha01)) * node.layerOpacity
+    : solidFillA;
+  const strokeA =
+    p.strokeColor && p.strokeWidth > 0
+      ? alphaForPdf(p.strokeColor) * node.layerOpacity
+      : 0;
+  if (fillA === 0 && strokeA === 0) return "";
+
+  const hasFill = !hasGradFill && !!p.fillColor && solidFillA > 0 && p.closed;
+  const hasStroke = !!p.strokeColor && p.strokeWidth > 0 && strokeA > 0;
+  // PDF paint operators:
+  //   B   = fill (nonzero) + stroke,  B* = fill (evenodd) + stroke
+  //   f   = fill (nonzero),           f* = fill (evenodd)
+  //   S   = stroke only
+  //   n   = no-op (closes the path without painting)
+  const evenOdd = p.fillRule === "evenodd";
+  const paintOp = hasFill && hasStroke
+    ? evenOdd ? "B*" : "B"
+    : hasFill
+      ? evenOdd ? "f*" : "f"
+      : hasStroke
+        ? "S"
+        : "n";
+
+  const gState = ensureGState(ctx, fillA, strokeA, node.blendMode);
+
+  // PDF line-join: 0=miter, 1=round, 2=bevel.  Line-cap: 0=butt, 1=round, 2=square.
+  const joinCode =
+    p.strokeJoin === "miter" ? 0 : p.strokeJoin === "round" ? 1 : 2;
+  const capCode =
+    p.strokeCap === "butt" ? 0 : p.strokeCap === "round" ? 1 : 2;
+
+  let out = "q\n";
+  out += `/${gState} gs\n`;
+  if (hasFill && p.fillColor) {
+    const [r, g, b] = rgbForPdf(p.fillColor);
+    out += `${fmt(r)} ${fmt(g)} ${fmt(b)} rg\n`;
+  }
+  if (hasStroke && p.strokeColor) {
+    const [r, g, b] = rgbForPdf(p.strokeColor);
+    out += `${fmt(r)} ${fmt(g)} ${fmt(b)} RG\n`;
+    out += `${fmt(p.strokeWidth)} w\n`;
+    out += `${joinCode} j\n`;
+    out += `${capCode} J\n`;
+    if (p.strokeJoin === "miter") {
+      out += `${fmt(Math.max(1, p.miterLimit))} M\n`;
+    }
+    if (p.strokeDash.length > 0) {
+      const dashArr = p.strokeDash.map(fmt).join(" ");
+      out += `[${dashArr}] 0 d\n`;
+    }
+  }
+
+  // Emit the path. Each canvas-space point is flipped to PDF Y-up by
+  // y_pdf = pageHeight - y_canvas.
+  const flipY = (y: number): number => ctx.pageHeight - y;
+  const first = p.nodes[0];
+  out += `${fmt(first.x)} ${fmt(flipY(first.y))} m\n`;
+  const last = p.closed ? p.nodes.length : p.nodes.length - 1;
+  for (let i = 0; i < last; i++) {
+    const a = p.nodes[i];
+    const b = p.nodes[(i + 1) % p.nodes.length];
+    out += `${fmt(a.x + a.outX)} ${fmt(flipY(a.y + a.outY))} `;
+    out += `${fmt(b.x + b.inX)} ${fmt(flipY(b.y + b.inY))} `;
+    out += `${fmt(b.x)} ${fmt(flipY(b.y))} c\n`;
+  }
+  if (p.closed) out += "h ";
+  out += `${paintOp}\n`;
+  out += "Q\n";
+  return out;
+}
+
 function emitImageRef(
   ctx: BuildContext,
   node: PdfImageNode,
@@ -524,6 +883,7 @@ export async function exportPdf(input: PdfExportInput): Promise<Uint8Array> {
     fontIds: new Map(),
     gStateIds: new Map(),
     imageNames: [],
+    shadings: [],
   };
 
   // First pass: build the content stream and collect referenced resources.
@@ -534,6 +894,8 @@ export async function exportPdf(input: PdfExportInput): Promise<Uint8Array> {
       content += emitTextNode(ctx, n);
     } else if (n.kind === "shape") {
       content += emitShapeNode(ctx, n);
+    } else if (n.kind === "path") {
+      content += emitPathNode(ctx, n);
     } else {
       const idx = imageNodes.length;
       imageNodes.push(n);

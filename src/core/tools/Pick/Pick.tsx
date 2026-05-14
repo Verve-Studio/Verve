@@ -132,6 +132,7 @@ function pickAt(ctx: ToolContext, x: number, y: number): string | null {
 function editToolFor(ctx: ToolContext, id: string): Tool {
   if (ctx.textLayers.some((t) => t.id === id)) return "text";
   if (ctx.shapeLayers.some((s) => s.id === id)) return "shape";
+  if (ctx.pathLayers.some((p) => p.id === id)) return "pen";
   if (ctx.frameLayers.some((f) => f.id === id)) return "frame";
   return "move";
 }

@@ -7,6 +7,7 @@ import type {
   RGBAColor,
   TextLayerState,
   ShapeLayerState,
+  PathLayerState,
   FrameLayerState,
   LayerState,
   PixelFormat,
@@ -85,6 +86,19 @@ export interface ToolContext {
   shapeLayers: ShapeLayerState[];
   /** The active shape layer, if the currently active layer is a shape type. */
   activeShapeLayer: ShapeLayerState | null;
+  /** Create a new path (Pen-tool) layer, rasterize it, add to state and set as active. */
+  addPathLayer: (layer: PathLayerState) => void;
+  /** Dispatch UPDATE_PATH_LAYER — sync effect re-rasterizes from the new state. */
+  updatePathLayer: (layer: PathLayerState) => void;
+  /**
+   * Rasterize a path layer directly into its GL buffer and render WITHOUT
+   * dispatching to state. Used for live edit previews during pointer drag.
+   */
+  previewPathLayer: (layer: PathLayerState) => void;
+  /** All current path layers. */
+  pathLayers: PathLayerState[];
+  /** The active path layer, if the currently active layer is a path type. */
+  activePathLayer: PathLayerState | null;
   /** Create a new frame layer, rasterize it (placeholder), add to state and set as active. */
   addFrameLayer: (layer: FrameLayerState) => void;
   /** Dispatch UPDATE_FRAME_LAYER — sync effect re-rasterizes from the new state. */

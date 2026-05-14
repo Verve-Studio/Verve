@@ -4,9 +4,14 @@ import type {
   Guide,
   TextLayerState,
   ShapeLayerState,
+  PathLayerState,
   FrameLayerState,
   LayerState,
 } from "@/types";
+import {
+  translatePathNodes,
+  translateGradient,
+} from "@/ux/main/Canvas/pathRasterizer";
 import { isContainerLayer } from "@/types";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
@@ -287,6 +292,9 @@ function translateShapeLayer(
   dx: number,
   dy: number,
 ): ShapeLayerState {
+  const fillGradient = ls.fillGradient
+    ? translateGradient(ls.fillGradient, dx, dy)
+    : ls.fillGradient;
   if (ls.shapeType === "line") {
     return {
       ...ls,
@@ -294,9 +302,10 @@ function translateShapeLayer(
       y1: ls.y1 + dy,
       x2: ls.x2 + dx,
       y2: ls.y2 + dy,
+      fillGradient,
     };
   }
-  return { ...ls, cx: ls.cx + dx, cy: ls.cy + dy };
+  return { ...ls, cx: ls.cx + dx, cy: ls.cy + dy, fillGradient };
 }
 
 function createMoveHandler(): ToolHandler {
@@ -322,6 +331,8 @@ function createMoveHandler(): ToolHandler {
   let shapeLayerSnapshot: ShapeLayerState | null = null;
   // For frame layer move: track original parametric center
   let frameLayerSnapshot: FrameLayerState | null = null;
+  // For path layer move: track original node geometry
+  let pathLayerSnapshot: PathLayerState | null = null;
   let isDown = false;
   // Cached visible-pixel bounding box for snap-to-guide (computed at pointer-down)
   let cachedVisibleBounds: VisibleBounds | null = null;
@@ -414,6 +425,8 @@ function createMoveHandler(): ToolHandler {
         ctx.shapeLayers.find((s) => s.id === ctx.layer.id) ?? null;
       frameLayerSnapshot =
         ctx.frameLayers.find((f) => f.id === ctx.layer.id) ?? null;
+      pathLayerSnapshot =
+        ctx.pathLayers.find((p) => p.id === ctx.layer.id) ?? null;
 
       // Set up the overlay-canvas drag preview for text layers (skipped when
       // a selection mask is active — that goes through the pixel-copy path).
@@ -458,7 +471,8 @@ function createMoveHandler(): ToolHandler {
         const isActiveParametric =
           textLayerSnapshot !== null ||
           shapeLayerSnapshot !== null ||
-          frameLayerSnapshot !== null;
+          frameLayerSnapshot !== null ||
+          pathLayerSnapshot !== null;
         const exclude = isActiveParametric ? [ctx.layer.id] : [];
         const followers = collectFollowers(rootIds, ctx, exclude);
         offsetFollowers = followers.offsetFollowers;
@@ -574,8 +588,8 @@ function createMoveHandler(): ToolHandler {
             x: textLayerOrigX + sdx,
             y: textLayerOrigY + sdy,
           });
-        } else if (textLayerSnapshot || shapeLayerSnapshot) {
-          // Active shape: shift via GpuLayer offset; final rasterise
+        } else if (textLayerSnapshot || shapeLayerSnapshot || pathLayerSnapshot) {
+          // Active shape / path: shift via GpuLayer offset; final rasterise
           // happens on pointer-up.
           ctx.layer.offsetX = sdx;
           ctx.layer.offsetY = sdy;
@@ -693,6 +707,19 @@ function createMoveHandler(): ToolHandler {
           ctx.previewFrameLayer(moved);
           ctx.updateFrameLayer(moved);
           frameLayerSnapshot = null;
+        } else if (pathLayerSnapshot) {
+          const moved: PathLayerState = {
+            ...pathLayerSnapshot,
+            nodes: translatePathNodes(pathLayerSnapshot.nodes, sdx, sdy),
+            fillGradient: pathLayerSnapshot.fillGradient
+              ? translateGradient(pathLayerSnapshot.fillGradient, sdx, sdy)
+              : pathLayerSnapshot.fillGradient,
+          };
+          ctx.layer.offsetX = 0;
+          ctx.layer.offsetY = 0;
+          ctx.previewPathLayer(moved);
+          ctx.updatePathLayer(moved);
+          pathLayerSnapshot = null;
         }
 
         // Followers — every descendant + extra-selected layer (and the
@@ -735,6 +762,21 @@ function createMoveHandler(): ToolHandler {
               };
               ctx.previewFrameLayer(moved);
               ctx.updateFrameLayer(moved);
+            }
+          } else if ("type" in f.ls && f.ls.type === "path") {
+            const path = ctx.pathLayers.find((p) => p.id === f.ls.id);
+            if (path) {
+              const moved: PathLayerState = {
+                ...path,
+                nodes: translatePathNodes(path.nodes, sdx, sdy),
+                fillGradient: path.fillGradient
+                  ? translateGradient(path.fillGradient, sdx, sdy)
+                  : path.fillGradient,
+              };
+              f.gl.offsetX = 0;
+              f.gl.offsetY = 0;
+              ctx.previewPathLayer(moved);
+              ctx.updatePathLayer(moved);
             }
           }
         }

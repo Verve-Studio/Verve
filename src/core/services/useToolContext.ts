@@ -30,6 +30,7 @@ import type {
   RGBAColor,
   TextLayerState,
   ShapeLayerState,
+  PathLayerState,
   FrameLayerState,
 } from "@/types";
 import type { AppAction } from "@/core/store/AppContext";
@@ -39,6 +40,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { rasterizeTextToLayer } from "@/ux/main/Canvas/textRasterizer";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
+import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import { rasterizeFrameToLayer } from "@/ux/main/Canvas/frameRasterizer";
 
 /** Whitelist of tools that may run with no active pixel layer. Pick / hand /
@@ -48,6 +50,7 @@ import { rasterizeFrameToLayer } from "@/ux/main/Canvas/frameRasterizer";
 const NO_LAYER_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   "text",
   "shape",
+  "pen",
   "frame",
   "pick",
   "hand",
@@ -246,6 +249,35 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
       activeShapeLayer: (() => {
         const l = state.layers.find((l) => l.id === activeId);
         return l && "type" in l && l.type === "shape" ? l : null;
+      })(),
+      addPathLayer: (ls) => {
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
+        rasterizePathToLayer(ls, gl, cw, ch, state.pixelFormat);
+        renderer.flushLayer(gl);
+        d.glLayersRef.current.set(ls.id, gl);
+        d.doRender();
+        dispatch({ type: "ADD_PATH_LAYER", payload: ls });
+      },
+      updatePathLayer: (ls) => {
+        dispatch({ type: "UPDATE_PATH_LAYER", payload: ls });
+      },
+      previewPathLayer: (ls) => {
+        const gl = d.glLayersRef.current.get(ls.id);
+        if (!gl) return;
+        const cw = renderer.pixelWidth;
+        const ch = renderer.pixelHeight;
+        rasterizePathToLayer(ls, gl, cw, ch, state.pixelFormat);
+        renderer.flushLayer(gl);
+        d.doRender();
+      },
+      pathLayers: state.layers.filter(
+        (l): l is PathLayerState => "type" in l && l.type === "path",
+      ),
+      activePathLayer: (() => {
+        const l = state.layers.find((l) => l.id === activeId);
+        return l && "type" in l && l.type === "path" ? l : null;
       })(),
       addFrameLayer: (ls) => {
         const cw = renderer.pixelWidth;

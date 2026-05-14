@@ -39,6 +39,7 @@ import {
   u8TransferStore,
 } from "@/core/store/layerDataTransfer";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
+import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import { decodePng } from "@/ux/main/Canvas/pngHelpers";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 
@@ -332,6 +333,10 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
             initialPixelFormat,
             swatchesRef.current as RGBAColor[],
           );
+        } else if ("type" in ls && ls.type === "path") {
+          // Path layers are full-canvas-sized parametric vector data.
+          layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
+          rasterizePathToLayer(ls, layer, cw, ch, initialPixelFormat);
         } else if ("type" in ls && ls.type === "mask") {
           // Mask layers full-canvas; init all-white (fully reveal parent).
           layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
