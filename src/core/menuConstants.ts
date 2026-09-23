@@ -54,7 +54,7 @@ for (const effect of effectRegistry.all()) {
  */
 const ADJUSTMENT_GROUP_ORDER = [
   "adj-tone",     // Brightness/Contrast, Curves, Auto Match
-  "adj-color",    // Hue/Saturation, Color Balance, Temperature, Vibrance, Selective Color
+  "adj-color",    // Hue/Saturation, Color Balance, Temperature, Vibrance, Selective Color, Time of Day
   "adj-style",    // Black & White, Channel Mixer, Color Bias, Color Grading, Invert
   "adj-indexed",  // Reduce Colors, Color Dithering
 ];

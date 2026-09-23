@@ -4,6 +4,7 @@ import type { BrightnessContrastParams } from "./BrightnessContrast/BrightnessCo
 import type { HueSaturationParams } from "./HueSaturation/HueSaturationEffect";
 import type { ColorVibranceParams } from "./ColorVibrance/ColorVibranceEffect";
 import type { ColorBalanceParams } from "./ColorBalance/ColorBalanceEffect";
+import type { TimeOfDayParams } from "./TimeOfDay/TimeOfDayEffect";
 import type { BlackAndWhiteParams } from "./BlackAndWhite/BlackAndWhiteEffect";
 import type { ColorTemperatureParams } from "./ColorTemperature/ColorTemperatureEffect";
 import type { ColorInvertParams } from "./ColorInvert/ColorInvertEffect";
@@ -132,6 +133,7 @@ export interface EffectParamsMap {
   "displace": DisplaceParams;
   "lut": LutAdjustmentParams;
   "replace-color": ReplaceColorParams;
+  "time-of-day": TimeOfDayParams;
 }
 
 /** Union of every registered effect's id literal. */

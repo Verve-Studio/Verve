@@ -209,7 +209,7 @@ Runtime rules effects must follow:
 - **Match the document format.** Intermediates must use `runtime.makeScratchTex(w, h, dstTex)` and pipelines `runtime.selectPipeline(pair, dstTex)`. Hardcoded `rgba8unorm` scratch or `.s8` pipelines quantize and clip float documents.
 - **Colour space.** On `rgba16float`/`rgba32float` targets the pixels are scene-linear. User colours (sRGB 0–255) must go through `colorForTarget(color, dstTex.format)` (`effects/_shared/effectColor.ts`). Shaders tuned for perceptual input read `MaskFlags.inputIsLinear` (declare `struct MaskFlags { hasMask: u32, inputIsLinear: u32, _pad: vec2u }`) and encode/decode around their math. Values > 1 are valid HDR: don't clamp them or index fixed-size tables with them unless the effect defines HDR behaviour explicitly.
 - **Stable plan entries.** Render-op cache keys (`rendering/cacheKeys.ts`) are memoized by object identity. Treat everything in a plan entry as immutable, and derive expensive fields (palettes, LUTs) through a `WeakMap` keyed on the immutable source so identity is stable across frames.
-- Validate edited WGSL with naga (or run it) before shipping.
+- Edited WGSL must compile in the app (open the effect on a document and check the console for pipeline errors) before shipping.
 
 ### Adding a new effect
 

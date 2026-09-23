@@ -98,6 +98,8 @@ export interface TimeOfDaySettings {
   highlightStrength: number;
   /** Key light hue (moon / sun), HSL degrees. */
   lightHue: number;
+  /** Ambient shadow hue (sky fill), HSL degrees. */
+  shadowHue: number;
   /** Keep the day colours in the generated palette. */
   includeSource: boolean;
 }
@@ -118,7 +120,7 @@ export interface TimeOfDayRamp {
 
 export type TimeOfDayPreset = Pick<
   TimeOfDaySettings,
-  "tintHue" | "tintStrength" | "darkness" | "colorRetention" | "lightHue"
+  "tintHue" | "tintStrength" | "darkness" | "colorRetention" | "lightHue" | "shadowHue"
 > & { label: string };
 
 /** Per-mode behaviour: the physics constants behind the shared options,
@@ -129,8 +131,6 @@ export interface TimeOfDayProfile {
   purkinje: number;
   /** Tint chroma at full strength (OKLab units). */
   tintChroma: number;
-  /** Degrees from the tint hue to the shadow hue. */
-  shadowHueOffset: number;
   shadowChroma: number;
   /** Chroma of the key light in lit highlights. */
   lightChroma: number;
@@ -169,7 +169,6 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       label: "Dawn",
       purkinje: 0.15,
       tintChroma: 0.09,
-      shadowHueOffset: -20, // cool lavender-blue shadows
       shadowChroma: 0.06,
       lightChroma: 0.08, // soft pink-gold light
       darknessScale: 0.6,
@@ -179,9 +178,9 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       highlightTitle: "Sunlit highlights",
       lightHueLabel: "Sun hue",
       presets: [
-        { label: "Rosy Dawn", tintHue: 340, tintStrength: 0.45, darkness: 0.25, colorRetention: 0.55, lightHue: 30 },
-        { label: "Misty Dawn", tintHue: 210, tintStrength: 0.4, darkness: 0.3, colorRetention: 0.5, lightHue: 45 },
-        { label: "Golden Dawn", tintHue: 40, tintStrength: 0.45, darkness: 0.2, colorRetention: 0.6, lightHue: 42 },
+        { label: "Rosy Dawn", tintHue: 340, tintStrength: 0.45, darkness: 0.25, colorRetention: 0.55, lightHue: 30, shadowHue: 250 },
+        { label: "Misty Dawn", tintHue: 210, tintStrength: 0.4, darkness: 0.3, colorRetention: 0.5, lightHue: 45, shadowHue: 220 },
+        { label: "Golden Dawn", tintHue: 40, tintStrength: 0.45, darkness: 0.2, colorRetention: 0.6, lightHue: 42, shadowHue: 240 },
       ],
     },
   ),
@@ -190,7 +189,6 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       label: "Day",
       purkinje: 0,
       tintChroma: 0.06,
-      shadowHueOffset: 180, // skylight: shadows go cool opposite a warm sun
       shadowChroma: 0.05,
       lightChroma: 0.06,
       darknessScale: 0.5,
@@ -200,9 +198,9 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       highlightTitle: "Sunlit highlights",
       lightHueLabel: "Sun hue",
       presets: [
-        { label: "Noon", tintHue: 50, tintStrength: 0.15, darkness: -0.05, colorRetention: 0.95, lightHue: 52 },
-        { label: "Afternoon", tintHue: 35, tintStrength: 0.35, darkness: 0, colorRetention: 0.85, lightHue: 38 },
-        { label: "Overcast", tintHue: 210, tintStrength: 0.3, darkness: 0.15, colorRetention: 0.6, lightHue: 210 },
+        { label: "Noon", tintHue: 50, tintStrength: 0.15, darkness: -0.05, colorRetention: 0.95, lightHue: 52, shadowHue: 230 },
+        { label: "Afternoon", tintHue: 35, tintStrength: 0.35, darkness: 0, colorRetention: 0.85, lightHue: 38, shadowHue: 215 },
+        { label: "Overcast", tintHue: 210, tintStrength: 0.3, darkness: 0.15, colorRetention: 0.6, lightHue: 210, shadowHue: 220 },
       ],
     },
   ),
@@ -211,7 +209,6 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       label: "Dusk",
       purkinje: 0.25,
       tintChroma: 0.12,
-      shadowHueOffset: 20, // purple shadows
       shadowChroma: 0.07,
       lightChroma: 0.09, // warm orange rim light
       darknessScale: 0.65,
@@ -221,9 +218,9 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       highlightTitle: "Sunlit highlights",
       lightHueLabel: "Sun hue",
       presets: [
-        { label: "Golden Hour", tintHue: 28, tintStrength: 0.55, darkness: 0.3, colorRetention: 0.45, lightHue: 28 },
-        { label: "Purple Dusk", tintHue: 280, tintStrength: 0.6, darkness: 0.4, colorRetention: 0.35, lightHue: 20 },
-        { label: "Blue Hour", tintHue: 225, tintStrength: 0.55, darkness: 0.45, colorRetention: 0.35, lightHue: 35 },
+        { label: "Golden Hour", tintHue: 28, tintStrength: 0.55, darkness: 0.3, colorRetention: 0.45, lightHue: 28, shadowHue: 265 },
+        { label: "Purple Dusk", tintHue: 280, tintStrength: 0.6, darkness: 0.4, colorRetention: 0.35, lightHue: 20, shadowHue: 290 },
+        { label: "Blue Hour", tintHue: 225, tintStrength: 0.55, darkness: 0.45, colorRetention: 0.35, lightHue: 35, shadowHue: 245 },
       ],
     },
   ),
@@ -232,7 +229,6 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       label: "Night",
       purkinje: 0.6,
       tintChroma: 0.11,
-      shadowHueOffset: 25, // towards violet black
       shadowChroma: 0.07,
       lightChroma: 0.045, // bleached moonlight
       darknessScale: 0.75,
@@ -242,10 +238,10 @@ export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayProfile> = {
       highlightTitle: "Moonlit highlights",
       lightHueLabel: "Moon hue",
       presets: [
-        { label: "Moonlight", tintHue: 225, tintStrength: 0.75, darkness: 0.55, colorRetention: 0.2, lightHue: 205 },
-        { label: "Violet Dusk", tintHue: 265, tintStrength: 0.7, darkness: 0.45, colorRetention: 0.3, lightHue: 220 },
-        { label: "Teal Night", tintHue: 195, tintStrength: 0.7, darkness: 0.55, colorRetention: 0.2, lightHue: 180 },
-        { label: "Midnight", tintHue: 238, tintStrength: 0.85, darkness: 0.75, colorRetention: 0.08, lightHue: 210 },
+        { label: "Moonlight", tintHue: 225, tintStrength: 0.75, darkness: 0.55, colorRetention: 0.2, lightHue: 205, shadowHue: 250 },
+        { label: "Violet Dusk", tintHue: 265, tintStrength: 0.7, darkness: 0.45, colorRetention: 0.3, lightHue: 220, shadowHue: 290 },
+        { label: "Teal Night", tintHue: 195, tintStrength: 0.7, darkness: 0.55, colorRetention: 0.2, lightHue: 180, shadowHue: 220 },
+        { label: "Midnight", tintHue: 238, tintStrength: 0.85, darkness: 0.75, colorRetention: 0.08, lightHue: 210, shadowHue: 263 },
       ],
     },
   ),
@@ -301,8 +297,9 @@ function oklabToRgba(lab: Lab): RGBAColor {
   return { r: enc(r), g: enc(g), b: enc(b), a: 255 };
 }
 
-/** Unit OKLab (a, b) direction of an HSL hue. */
-function hueDirection(hue: number): [number, number] {
+/** Unit OKLab (a, b) direction of an HSL hue. Shared with the Time of Day
+ *  adjustment so the palette and the image relight agree. */
+export function hueDirection(hue: number): [number, number] {
   const c = hslToRgba(hue, 0.85, 0.5);
   const lab = linToOklab(toLin(c.r), toLin(c.g), toLin(c.b));
   const len = Math.hypot(lab.a, lab.b) || 1;
@@ -313,12 +310,12 @@ const lerp = (x: number, y: number, t: number): number => x + (y - x) * t;
 
 /** Night uses the full rod weighting (0.6); lighter modes blend towards the
  *  colour's own OKLab lightness. */
-const PURKINJE_FULL = 0.6;
+export const PURKINJE_FULL = 0.6;
 
 export function generateTimeOfDayRamps(opts: TimeOfDayOptions): TimeOfDayRamp[] {
   const prof = TIME_OF_DAY_PROFILES[opts.mode];
   const [tintA, tintB] = hueDirection(opts.tintHue);
-  const [shadA, shadB] = hueDirection(opts.tintHue + prof.shadowHueOffset);
+  const [shadA, shadB] = hueDirection(opts.shadowHue);
   const [lightA, lightB] = hueDirection(opts.lightHue);
   const exposure = 1 - opts.darkness * prof.darknessScale;
 
