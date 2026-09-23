@@ -1,4 +1,5 @@
 import type { EffectLayerOf } from "@/types";
+import { isLinearTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MedianFilterPanel } from "./MedianFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -35,7 +36,12 @@ export const MedianFilterEffect: IPipelineEffect<
     const rt = engine.runtime;
     const pair = rt.getRenderPipelinePair("filter-median", "fs_median");
     const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.params.radius, 0, 0, 0]),
+      new Uint32Array([
+        entry.params.radius,
+        isLinearTarget(dstTex.format) ? 1 : 0,
+        0,
+        0,
+      ]),
     );
     rt.encodeRenderPass(
       encoder,

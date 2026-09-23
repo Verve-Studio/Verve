@@ -1,5 +1,6 @@
-import { execSync, spawnSync } from 'node:child_process'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { promisify } from 'node:util'
 import { join } from 'node:path'
 import os from 'node:os'
 import { app } from 'electron'
@@ -43,6 +44,31 @@ const MIME_MAP: Record<string, string> = {
   hdr:   'image/vnd.radiance',
 }
 
+// Everything below runs child processes asynchronously. The previous
+// execSync/spawnSync version ran ~16 sequential `reg query` calls on open
+// and ~64 `reg add/delete` calls plus a PowerShell cold start on apply, all
+// on the main thread: the whole app froze for 1–10 s whenever Preferences
+// opened or was applied.
+
+const execFileAsync = promisify(execFile)
+
+async function run(
+  file: string,
+  args: string[],
+  timeout: number
+): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(file, args, {
+      encoding: 'utf-8',
+      timeout,
+      windowsHide: true
+    })
+    return stdout
+  } catch {
+    return null
+  }
+}
+
 // ── Windows ───────────────────────────────────────────────────────────────────
 
 const WIN_PROG_PREFIX = 'VerveApp'
@@ -51,65 +77,66 @@ function winProgId(ext: string): string {
   return `${WIN_PROG_PREFIX}.${ext.toUpperCase()}`
 }
 
-function runReg(cmd: string): boolean {
-  try {
-    execSync(cmd, { encoding: 'utf-8', timeout: 3000, windowsHide: true })
-    return true
-  } catch {
-    return false
-  }
+/** `reg` with an argument array (no shell parsing / quoting). */
+function reg(args: string[]): Promise<string | null> {
+  return run('reg', args, 5000)
 }
 
-function getRegisteredWindows(): string[] {
-  const registered: string[] = []
-  for (const { ext } of SUPPORTED_FILE_TYPES) {
-    try {
-      const result = execSync(
-        `reg query "HKCU\\Software\\Classes\\.${ext}" /ve`,
-        { encoding: 'utf-8', timeout: 2000, windowsHide: true }
-      )
-      if (result.includes(winProgId(ext))) registered.push(ext)
-    } catch { /* not registered */ }
-  }
-  return registered
+async function getRegisteredWindows(): Promise<string[]> {
+  const results = await Promise.all(
+    SUPPORTED_FILE_TYPES.map(async ({ ext }) => {
+      const out = await reg(['query', `HKCU\\Software\\Classes\\.${ext}`, '/ve'])
+      return out !== null && out.includes(winProgId(ext)) ? ext : null
+    })
+  )
+  return results.filter((e): e is string => e !== null)
 }
 
-function applyWindows(exts: string[], exePath: string): void {
+async function applyWindows(exts: string[], exePath: string): Promise<void> {
   const toRegister = new Set(exts)
-  const current = new Set(getRegisteredWindows())
+  const current = await getRegisteredWindows()
 
   // Remove types no longer wanted
-  for (const ext of current) {
-    if (!toRegister.has(ext)) {
-      runReg(`reg delete "HKCU\\Software\\Classes\\.${ext}" /f`)
-    }
-  }
+  await Promise.all(
+    current
+      .filter((ext) => !toRegister.has(ext))
+      .map((ext) => reg(['delete', `HKCU\\Software\\Classes\\.${ext}`, '/f']))
+  )
 
-  // Register/update wanted types
-  const exe = exePath.replace(/\\/g, '\\\\')
-  for (const ext of exts) {
-    const progId = winProgId(ext)
-    const label = SUPPORTED_FILE_TYPES.find(t => t.ext === ext)?.label ?? `${ext.toUpperCase()} File`
-    runReg(`reg add "HKCU\\Software\\Classes\\${progId}" /ve /d "${label}" /f`)
-    runReg(`reg add "HKCU\\Software\\Classes\\${progId}\\DefaultIcon" /ve /d "${exe},0" /f`)
-    runReg(`reg add "HKCU\\Software\\Classes\\${progId}\\shell\\open\\command" /ve /d "\\"${exe}\\" \\"%1\\"" /f`)
-    runReg(`reg add "HKCU\\Software\\Classes\\.${ext}" /ve /d "${progId}" /f`)
-  }
+  // Register/update wanted types (extensions in parallel; each extension's
+  // keys in order so the ProgID exists before the extension points at it).
+  await Promise.all(
+    exts.map(async (ext) => {
+      const progId = winProgId(ext)
+      const label =
+        SUPPORTED_FILE_TYPES.find((t) => t.ext === ext)?.label ?? `${ext.toUpperCase()} File`
+      const base = `HKCU\\Software\\Classes\\${progId}`
+      await reg(['add', base, '/ve', '/d', label, '/f'])
+      await reg(['add', `${base}\\DefaultIcon`, '/ve', '/d', `${exePath},0`, '/f'])
+      await reg(['add', `${base}\\shell\\open\\command`, '/ve', '/d', `"${exePath}" "%1"`, '/f'])
+      await reg(['add', `HKCU\\Software\\Classes\\.${ext}`, '/ve', '/d', progId, '/f'])
+    })
+  )
 
   // Notify the shell of association changes via the proper Win32 SHChangeNotify API.
   // Uses PowerShell P/Invoke — no dependency on legacy IE executables.
   const sysRoot = process.env['SystemRoot'] ?? 'C:\\Windows'
   const ps = `${sysRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
-  try {
-    spawnSync(ps, [
-      '-NoProfile', '-NonInteractive', '-Command',
-      'Add-Type -TypeDefinition \'using System.Runtime.InteropServices;' +
-      ' public class ShellNotify {' +
-      ' [DllImport("shell32.dll")] public static extern void SHChangeNotify(int e, int f, System.IntPtr a, System.IntPtr b);' +
-      ' }\';' +
-      ' [ShellNotify]::SHChangeNotify(0x8000000, 0, [System.IntPtr]::Zero, [System.IntPtr]::Zero)',
-    ], { timeout: 6000 })
-  } catch { /* not critical — registry changes take effect regardless */ }
+  // Not critical — registry changes take effect regardless.
+  await run(
+    ps,
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "Add-Type -TypeDefinition 'using System.Runtime.InteropServices;" +
+        ' public class ShellNotify {' +
+        ' [DllImport("shell32.dll")] public static extern void SHChangeNotify(int e, int f, System.IntPtr a, System.IntPtr b);' +
+        " }';" +
+        ' [ShellNotify]::SHChangeNotify(0x8000000, 0, [System.IntPtr]::Zero, [System.IntPtr]::Zero)'
+    ],
+    10000
+  )
 }
 
 // ── macOS ─────────────────────────────────────────────────────────────────────
@@ -135,60 +162,77 @@ function getAppBundlePath(): string {
   // process.execPath is e.g. /Applications/Verve.app/Contents/MacOS/Verve
   // Walk up to find the .app bundle root.
   const parts = process.execPath.split('/')
-  const appIdx = parts.findIndex(p => p.endsWith('.app'))
-  return appIdx !== -1
-    ? parts.slice(0, appIdx + 1).join('/')
-    : app.getPath('exe')
+  const appIdx = parts.findIndex((p) => p.endsWith('.app'))
+  return appIdx !== -1 ? parts.slice(0, appIdx + 1).join('/') : app.getPath('exe')
 }
 
-function getRegisteredMacOS(): string[] {
-  // Check whether our bundle is known to Launch Services at all.
-  // If lsregister -dump mentions our bundle path, report all declared types
-  // as registered (we can't query per-extension without duti or Swift code).
-  try {
-    const bundlePath = getAppBundlePath()
-    const result = spawnSync(LSREGISTER, ['-dump'], { timeout: 5000, encoding: 'utf-8' })
-    if (result.stdout && result.stdout.includes(bundlePath)) {
-      return SUPPORTED_FILE_TYPES.map(t => t.ext)
+/**
+ * Whether `lsregister -dump` mentions our bundle. The dump is many MB —
+ * far beyond spawnSync's default 1 MB maxBuffer, so the old check always
+ * failed. Stream it and stop as soon as the path shows up.
+ */
+function lsregisterKnowsBundle(bundlePath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(LSREGISTER, ['-dump'])
+    let tail = ''
+    let done = false
+    const finish = (found: boolean): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      child.kill()
+      resolve(found)
     }
-  } catch { /* lsregister unavailable (shouldn't happen on macOS) */ }
-  return []
+    const timer = setTimeout(() => finish(false), 15000)
+    child.stdout.setEncoding('utf-8')
+    child.stdout.on('data', (chunk: string) => {
+      const text = tail + chunk
+      if (text.includes(bundlePath)) finish(true)
+      // Keep enough overlap to match a path split across chunks.
+      tail = text.slice(-bundlePath.length)
+    })
+    child.on('error', () => finish(false))
+    child.on('close', () => finish(false))
+  })
 }
 
-function applyMacOS(): void {
+async function getRegisteredMacOS(): Promise<string[]> {
+  // If Launch Services knows our bundle, report all declared types as
+  // registered (we can't query per-extension without duti or Swift code).
+  return (await lsregisterKnowsBundle(getAppBundlePath()))
+    ? SUPPORTED_FILE_TYPES.map((t) => t.ext)
+    : []
+}
+
+async function applyMacOS(): Promise<void> {
   // Re-register the app bundle with Launch Services so Verve appears in every
   // "Open With" menu for all types declared in its Info.plist. No third-party
   // tools required.
-  const bundlePath = getAppBundlePath()
-  const result = spawnSync(LSREGISTER, ['-f', bundlePath], { timeout: 5000 })
-  if (result.error) throw result.error
+  await execFileAsync(LSREGISTER, ['-f', getAppBundlePath()], { timeout: 10000 })
 }
 
 // ── Linux ─────────────────────────────────────────────────────────────────────
 
-function getRegisteredLinux(): string[] {
-  const registered: string[] = []
-  for (const { ext } of SUPPORTED_FILE_TYPES) {
-    const mime = MIME_MAP[ext]
-    if (!mime) continue
-    try {
-      const result = execSync(`xdg-mime query default ${mime}`, {
-        timeout: 2000, encoding: 'utf-8',
-      }).trim().toLowerCase()
-      if (result.includes('verve')) registered.push(ext)
-    } catch { /* not registered */ }
-  }
-  return registered
+async function getRegisteredLinux(): Promise<string[]> {
+  const results = await Promise.all(
+    SUPPORTED_FILE_TYPES.map(async ({ ext }) => {
+      const mime = MIME_MAP[ext]
+      if (!mime) return null
+      const out = await run('xdg-mime', ['query', 'default', mime], 5000)
+      return out !== null && out.trim().toLowerCase().includes('verve') ? ext : null
+    })
+  )
+  return results.filter((e): e is string => e !== null)
 }
 
-function applyLinux(exts: string[], exePath: string): void {
-  const mimeTypes = [...new Set(
-    exts.map(ext => MIME_MAP[ext]).filter((m): m is string => !!m)
-  )]
+async function applyLinux(exts: string[], exePath: string): Promise<void> {
+  const mimeTypes = [
+    ...new Set(exts.map((ext) => MIME_MAP[ext]).filter((m): m is string => !!m))
+  ]
 
   const desktopDir = join(os.homedir(), '.local', 'share', 'applications')
   const desktopPath = join(desktopDir, 'verve.desktop')
-  mkdirSync(desktopDir, { recursive: true })
+  await mkdir(desktopDir, { recursive: true })
 
   const content = [
     '[Desktop Entry]',
@@ -198,28 +242,29 @@ function applyLinux(exts: string[], exePath: string): void {
     `Exec=${exePath} %f`,
     'Icon=verve',
     `MimeType=${mimeTypes.join(';')};`,
-    'Categories=Graphics;2DGraphics;RasterGraphics;',
+    'Categories=Graphics;2DGraphics;RasterGraphics;'
   ].join('\n')
 
-  writeFileSync(desktopPath, content, 'utf-8')
+  await writeFile(desktopPath, content, 'utf-8')
 
-  try {
-    execSync(`xdg-mime default verve.desktop ${mimeTypes.join(' ')}`, { timeout: 5000, encoding: 'utf-8' })
-    execSync('update-desktop-database ~/.local/share/applications 2>/dev/null || true', { timeout: 3000, encoding: 'utf-8' })
-  } catch { /* best-effort */ }
+  // Best-effort.
+  if (mimeTypes.length > 0) {
+    await run('xdg-mime', ['default', 'verve.desktop', ...mimeTypes], 10000)
+  }
+  await run('update-desktop-database', [desktopDir], 10000)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function getRegisteredExtensions(): string[] {
+export function getRegisteredExtensions(): Promise<string[]> {
   if (process.platform === 'win32') return getRegisteredWindows()
   if (process.platform === 'darwin') return getRegisteredMacOS()
   return getRegisteredLinux()
 }
 
-export function applyExtensions(exts: string[]): void {
+export async function applyExtensions(exts: string[]): Promise<void> {
   const exePath = process.execPath
-  if (process.platform === 'win32') applyWindows(exts, exePath)
-  else if (process.platform === 'darwin') applyMacOS()
-  else applyLinux(exts, exePath)
+  if (process.platform === 'win32') await applyWindows(exts, exePath)
+  else if (process.platform === 'darwin') await applyMacOS()
+  else await applyLinux(exts, exePath)
 }

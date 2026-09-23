@@ -56,7 +56,13 @@ export interface PixelFormatStrategy {
     texture: GPUTexture,
     layer: GpuLayer,
     rect: LayerDirtyRect,
+    palette?: readonly RGBAColor[],
   ): void;
+
+  /** Whether a patch upload is valid for this flush. Omitted = always.
+   *  Indexed8 can only patch while the palette is unchanged since the last
+   *  full upload; otherwise every pixel's colour may have changed. */
+  canPatch?(layer: GpuLayer, palette: readonly RGBAColor[] | undefined): boolean;
 
   /** Re-blit existing pixel data into a new (larger) buffer at the given
    *  offset. Used by `growLayerToFit`. The destination buffer matches this

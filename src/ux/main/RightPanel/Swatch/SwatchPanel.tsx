@@ -6,7 +6,11 @@ import React, {
   useCallback,
 } from "react";
 import ReactDOM from "react-dom";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { usePaletteFileOps } from "@/core/services/usePaletteFileOps";
 import { sortSwatchesByHue } from "@/utils/swatchSort";
 import { ModalDialog } from "@/ux/modals/ModalDialog/ModalDialog";
@@ -23,7 +27,16 @@ export function SwatchPanel({
   activeTabId,
   onGeneratePalette,
 }: SwatchPanelProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      pixelFormat: s.pixelFormat,
+      primaryColor: s.primaryColor,
+      swatchGroups: s.swatchGroups,
+      swatches: s.swatches,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const {
     handleSavePalette,
     handleSavePaletteAs,

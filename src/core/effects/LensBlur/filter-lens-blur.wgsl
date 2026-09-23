@@ -17,7 +17,8 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
 
 struct LensBlurParams {
   kernelCount : u32,
-  _pad0       : u32,
+  // Downsample factor used by fs_lens_down / fs_lens_up (1 = full res).
+  factor      : u32,
   _pad1       : u32,
   _pad2       : u32,
 }
@@ -34,31 +35,50 @@ struct KernelEntry {
 @group(0) @binding(2) var<uniform> params             : LensBlurParams;
 @group(0) @binding(3) var<storage, read> kernelEntries : array<KernelEntry>;
 
-fn sampleBilinear(coord: vec2f, dims: vec2u) -> vec4f {
-  let clamped = clamp(coord, vec2f(0.0), vec2f(f32(dims.x) - 1.0, f32(dims.y) - 1.0));
-  let x0 = i32(clamped.x); let y0 = i32(clamped.y);
-  let x1 = min(x0 + 1, i32(dims.x) - 1);
-  let y1 = min(y0 + 1, i32(dims.y) - 1);
-  let fx = clamped.x - f32(x0); let fy = clamped.y - f32(y0);
-  let p00 = textureLoad(srcTex, vec2i(x0, y0), 0);
-  let p10 = textureLoad(srcTex, vec2i(x1, y0), 0);
-  let p01 = textureLoad(srcTex, vec2i(x0, y1), 0);
-  let p11 = textureLoad(srcTex, vec2i(x1, y1), 0);
-  return mix(mix(p00, p10, fx), mix(p01, p11, fx), fy);
+fn loadClamped(c: vec2i, dims: vec2u) -> vec4f {
+  return textureLoad(srcTex, clamp(c, vec2i(0), vec2i(dims) - vec2i(1)), 0);
 }
 
+// Kernel offsets are whole pixels, so one load per tap is exact — the old
+// 4-load bilinear fetch here did 4× the work for the same result.
 @fragment
 fn fs_lens_blur(in: AdjVertOut) -> @location(0) vec4<f32> {
   let dims  = textureDimensions(srcTex);
   let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
-  let px    = f32(coord.x);
-  let py    = f32(coord.y);
   var colorSum = vec4f(0.0);
-
   for (var i = 0u; i < params.kernelCount; i++) {
     let e = kernelEntries[i];
-    colorSum += sampleBilinear(vec2f(px + e.kx, py + e.ky), dims) * e.weight;
+    colorSum += loadClamped(coord + vec2i(i32(e.kx), i32(e.ky)), dims) * e.weight;
   }
-
   return colorSum;
+}
+
+// Box-downsample by params.factor (large radii run at reduced resolution so
+// the kernel stays small enough not to trip the OS GPU watchdog).
+@fragment
+fn fs_lens_down(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims = textureDimensions(srcTex);
+  let f    = i32(params.factor);
+  let base = vec2i(i32(in.pos.x), i32(in.pos.y)) * f;
+  var sum  = vec4f(0.0);
+  for (var y = 0; y < f; y++) {
+    for (var x = 0; x < f; x++) {
+      sum += loadClamped(base + vec2i(x, y), dims);
+    }
+  }
+  return sum / f32(f * f);
+}
+
+// Bilinear upsample by params.factor back to full resolution.
+@fragment
+fn fs_lens_up(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims = textureDimensions(srcTex);
+  let p    = in.pos.xy / f32(params.factor) - vec2f(0.5);
+  let p0   = vec2i(floor(p));
+  let t    = p - floor(p);
+  let a = loadClamped(p0, dims);
+  let b = loadClamped(p0 + vec2i(1, 0), dims);
+  let d = loadClamped(p0 + vec2i(0, 1), dims);
+  let e = loadClamped(p0 + vec2i(1, 1), dims);
+  return mix(mix(a, b, t.x), mix(d, e, t.x), t.y);
 }

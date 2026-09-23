@@ -64,10 +64,49 @@ function buildKernelEntries(
   return result;
 }
 
-// Module-level kernel cache (persists across frames).
-let cachedKernelKey: string | null = null;
-let cachedKernelBuf: GPUBuffer | null = null;
-let cachedKernelCount = 0;
+/** Radius (in pixels at the resolution the kernel runs at) above which the
+ *  blur runs on a downsampled copy. π·24² ≈ 1.8k taps per pixel. */
+const MAX_KERNEL_RADIUS = 24;
+
+/** Kernel buffers per parameter set, so two Lens Blur layers with different
+ *  settings don't rebuild the O(r²) kernel on every frame. */
+const kernelCache = new Map<string, { buf: GPUBuffer; count: number }>();
+const MAX_CACHED_KERNELS = 8;
+
+function getKernel(
+  device: GPUDevice,
+  pendingDestroyBuffers: GPUBuffer[],
+  radius: number,
+  bladeCount: number,
+  bladeCurvature: number,
+  rotation: number,
+): { buf: GPUBuffer; count: number } {
+  const key = `${radius}|${bladeCount}|${bladeCurvature}|${rotation}`;
+  const hit = kernelCache.get(key);
+  if (hit) {
+    kernelCache.delete(key);
+    kernelCache.set(key, hit);
+    return hit;
+  }
+  const entries = buildKernelEntries(radius, bladeCount, bladeCurvature, rotation);
+  const buf = device.createBuffer({
+    size: Math.max(entries.byteLength, 16),
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(buf, 0, entries.buffer as ArrayBuffer, 0, entries.byteLength);
+  const kernel = { buf, count: entries.length / 4 };
+  kernelCache.set(key, kernel);
+  if (kernelCache.size > MAX_CACHED_KERNELS) {
+    const [oldestKey, oldest] = kernelCache.entries().next().value as [
+      string,
+      { buf: GPUBuffer; count: number },
+    ];
+    kernelCache.delete(oldestKey);
+    // May still be referenced by this frame's encoder — destroy after submit.
+    pendingDestroyBuffers.push(oldest.buf);
+  }
+  return kernel;
+}
 
 export const LensBlurEffect: IPipelineEffect<
   LensBlurEffectLayer,
@@ -96,55 +135,63 @@ export const LensBlurEffect: IPipelineEffect<
   encode({ encoder, srcTex, dstTex, engine }, entry) {
     const rt = engine.runtime;
     const { radius, bladeCount, bladeCurvature, rotation } = entry.params;
-    const pair = rt.getRenderPipelinePair("filter-lens-blur", "fs_lens_blur");
-    const key = `${radius}|${bladeCount}|${bladeCurvature}|${rotation}`;
-    if (cachedKernelKey !== key) {
-      if (cachedKernelBuf) {
-        rt.pendingDestroyBuffers.push(cachedKernelBuf);
-      }
-      const entries = buildKernelEntries(
-        radius,
-        bladeCount,
-        bladeCurvature,
-        rotation,
-      );
-      const buf = rt.device.createBuffer({
-        size: Math.max(entries.byteLength, 16),
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      rt.device.queue.writeBuffer(
-        buf,
-        0,
-        entries.buffer as ArrayBuffer,
-        0,
-        entries.byteLength,
-      );
-      cachedKernelBuf = buf;
-      cachedKernelKey = key;
-      cachedKernelCount = entries.length / 4;
-    }
-    const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([cachedKernelCount, 0, 0, 0]),
+    const blur = rt.getRenderPipelinePair("filter-lens-blur", "fs_lens_blur");
+    const factor =
+      radius > MAX_KERNEL_RADIUS ? Math.ceil(radius / MAX_KERNEL_RADIUS) : 1;
+    const kernelRadius =
+      factor === 1 ? radius : Math.max(1, Math.round(radius / factor));
+    const kernel = getKernel(
+      rt.device,
+      rt.pendingDestroyBuffers,
+      kernelRadius,
+      bladeCount,
+      bladeCurvature,
+      rotation,
     );
-    rt.encodeRenderPass(
-      encoder,
-      rt.selectPipeline(pair, dstTex),
-      dstTex,
-      [
+    const paramsBuf = rt.makeParamsBuf(
+      new Uint32Array([kernel.count, factor, 0, 0]),
+    );
+
+    if (factor === 1) {
+      rt.encodeRenderPass(encoder, rt.selectPipeline(blur, dstTex), dstTex, [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: paramsBuf } },
-        { binding: 3, resource: { buffer: cachedKernelBuf! } },
+        { binding: 3, resource: { buffer: kernel.buf } },
+      ]);
+      return;
+    }
+
+    // Large radius: downsample → blur with a proportionally smaller kernel →
+    // bilinear upsample. Intermediates stay in the doc format.
+    const down = rt.getRenderPipelinePair("filter-lens-blur", "fs_lens_down");
+    const up = rt.getRenderPipelinePair("filter-lens-blur", "fs_lens_up");
+    const sw = Math.ceil(srcTex.width / factor);
+    const sh = Math.ceil(srcTex.height / factor);
+    const small = rt.makeScratchTex(sw, sh, dstTex);
+    const smallBlurred = rt.makeScratchTex(sw, sh, dstTex);
+    rt.encodeRenderPass(encoder, rt.selectPipeline(down, small), small, [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 2, resource: { buffer: paramsBuf } },
+    ]);
+    rt.encodeRenderPass(
+      encoder,
+      rt.selectPipeline(blur, smallBlurred),
+      smallBlurred,
+      [
+        { binding: 0, resource: small.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+        { binding: 3, resource: { buffer: kernel.buf } },
       ],
     );
+    rt.encodeRenderPass(encoder, rt.selectPipeline(up, dstTex), dstTex, [
+      { binding: 0, resource: smallBlurred.createView() },
+      { binding: 2, resource: { buffer: paramsBuf } },
+    ]);
   },
 
   onDestroy() {
-    if (cachedKernelBuf) {
-      cachedKernelBuf.destroy();
-      cachedKernelBuf = null;
-      cachedKernelKey = null;
-      cachedKernelCount = 0;
-    }
+    for (const kernel of kernelCache.values()) kernel.buf.destroy();
+    kernelCache.clear();
   },
 
   Panel: LensBlurPanel,

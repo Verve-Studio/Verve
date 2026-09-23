@@ -2,7 +2,8 @@ import { useCallback, useState } from "react";
 import { activeScope } from "@/core/store/scope";
 
 interface TransformGuardParams {
-  handleTransformApply: () => void;
+  /** Resolves true when committed; false leaves the transform open. */
+  handleTransformApply: () => Promise<boolean>;
   handleTransformCancel: () => void;
 }
 
@@ -26,15 +27,12 @@ export function useTransformGuard({
     const pending = pendingGuardedAction;
     setPendingGuardedAction(null);
     if (!pending) return;
-    // Subscribe to the store so we run the pending action after the async WASM apply finishes.
-    const onComplete = (): void => {
-      if (!activeScope().transform.isActive) {
-        activeScope().transform.unsubscribe(onComplete);
-        pending();
-      }
-    };
-    activeScope().transform.subscribe(onComplete);
-    handleTransformApply();
+    // Commit, then run the guarded action (tool switch, tab switch, …). If
+    // the commit fails the transform stays open and the action is dropped;
+    // the error is already shown to the user.
+    void handleTransformApply().then((ok) => {
+      if (ok) pending();
+    });
   }, [pendingGuardedAction, handleTransformApply]);
 
   const handleTransformGuardDiscard = useCallback((): void => {

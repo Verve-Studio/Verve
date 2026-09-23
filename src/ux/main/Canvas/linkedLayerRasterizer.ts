@@ -20,7 +20,7 @@
  */
 import type { LinkedLayerState, PixelFormat, RGBAColor } from "@/types";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { loadImagePixels, EXT_TO_MIME } from "@/core/io/imageLoader";
+import { loadImageBytes, EXT_TO_MIME } from "@/core/io/imageLoader";
 import {
   convertRgba8ToF32,
   convertF32ToRgba8,
@@ -107,7 +107,7 @@ export function tryGetLinkedSourceError(
  *  then expected to re-invoke `rasterizeLinkedToLayer`. Idempotent. */
 export function ensureLinkedDecoded(
   ls: LinkedLayerState,
-  readFileBase64: (path: string) => Promise<string>,
+  readFile: (path: string) => Promise<Uint8Array>,
   onReady: () => void,
 ): void {
   const key = cacheKey(ls);
@@ -122,10 +122,7 @@ export function ensureLinkedDecoded(
     try {
       const ext = fileExtFromPath(path);
       const mime = EXT_TO_MIME[ext] ?? "image/png";
-      const base64 = await readFileBase64(path);
-      const loaded = await loadImagePixels(
-        `data:${mime};base64,${base64}`,
-      );
+      const loaded = await loadImageBytes(await readFile(path), mime);
       const u8 =
         loaded.isHdr
           ? convertF32ToRgba8(loaded.data as Float32Array)

@@ -8,10 +8,8 @@ set(CMAKE_C_STANDARD 11)
 add_executable(pixelops
   src/pixelops.cpp
   src/fill.cpp
-  src/filters.cpp
   src/quantize.cpp
   src/resize.cpp
-  src/dither.cpp
   src/curves_histogram.cpp
   src/transform.cpp
   src/inpaint.cpp
@@ -54,7 +52,7 @@ if(EMSCRIPTEN)
   # Base export list — pixelops + I/O. CMS exports are appended below when
   # lcms2 is vendored so the linker doesn't fail on undefined symbols.
   set(VERVE_EXPORTED_FUNCTIONS
-    "_malloc,_free,_pixelops_flood_fill,_pixelops_flood_fill_f32,_pixelops_convolve,_pixelops_resize_bilinear,_pixelops_resize_nearest,_pixelops_dither_bayer,_pixelops_quantize,_pixelops_curves_histogram,_pixelops_affine_transform,_pixelops_perspective_transform,_pixelops_rotate_rgba,_pixelops_flip_rgba,_pixelops_rotate_indexed,_pixelops_flip_indexed,_pixelops_inpaint,_pixelops_grabcut,_pixelops_grabcut_compute_beta,_pixelops_grabcut_kmeans_init,_pixelops_grabcut_update_gmms,_pixelops_grabcut_mincut,_matchPaletteIndices,_floodFillIndexed,_loadExr,_freeExrResult,_saveExr,_freeExrBytes,_loadExrLayers,_freeExrLayersResult,_saveExrLayers,_pixelops_dds_get_info,_pixelops_dds_decode,_pixelops_dds_decode_f32,_pixelops_dds_get_encoded_size,_pixelops_dds_max_mip_levels,_pixelops_dds_encode,_pixelops_dds_encode_f32,_pixelops_brush_stamp,_pixelops_brush_stamp_batch,_pixelops_brush_bake_coverage,_pixelops_brush_stamp_bitmap,_pixelops_brush_stamp_bitmap_batch"
+    "_malloc,_free,_pixelops_flood_fill,_pixelops_flood_fill_f32,_pixelops_resize_bilinear,_pixelops_resize_nearest,_pixelops_quantize,_pixelops_curves_histogram,_pixelops_affine_transform,_pixelops_perspective_transform,_pixelops_rotate_rgba,_pixelops_flip_rgba,_pixelops_rotate_indexed,_pixelops_flip_indexed,_pixelops_inpaint,_pixelops_grabcut,_pixelops_grabcut_compute_beta,_pixelops_grabcut_kmeans_init,_pixelops_grabcut_update_gmms,_pixelops_grabcut_mincut,_matchPaletteIndices,_loadExr,_freeExrResult,_saveExr,_freeExrBytes,_loadExrLayers,_freeExrLayersResult,_saveExrLayers,_pixelops_dds_get_info,_pixelops_dds_decode,_pixelops_dds_decode_f32,_pixelops_dds_get_encoded_size,_pixelops_dds_max_mip_levels,_pixelops_dds_encode,_pixelops_dds_encode_f32,_pixelops_brush_stamp,_pixelops_brush_stamp_batch,_pixelops_brush_bake_coverage,_pixelops_brush_stamp_bitmap,_pixelops_brush_stamp_bitmap_batch"
   )
   if(VERVE_HAS_LCMS2)
     set(VERVE_EXPORTED_FUNCTIONS
@@ -107,6 +105,9 @@ if(EMSCRIPTEN)
     # 512 MB starting heap so small/medium docs don't pay any growth cost;
     # growth to 16 GB still works thanks to ALLOW_MEMORY_GROWTH.
     "-sINITIAL_MEMORY=512MB"
+    # Emscripten's default stack is 64 KB; overflowing it corrupts memory
+    # silently in release builds. Give deep-ish C++ call chains headroom.
+    "-sSTACK_SIZE=1MB"
     "-O3"
   )
 

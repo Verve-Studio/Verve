@@ -1,11 +1,16 @@
 import type { CurvesChannel, CurvesChannelCurve, CurvesControlPoint, CurvesPresetRef } from "@/types";
 import type { EffectParamsMap } from "@/core/effects/effectTypes";
 
+/**
+ * GPU curve tables: 256 unrounded samples in [0, 1] (entry i is the output
+ * for input i/255). Floats rather than bytes so float documents aren't
+ * quantized to 8 bits by the curve.
+ */
 export interface CurvesLuts {
-  rgb: Uint8Array;
-  red: Uint8Array;
-  green: Uint8Array;
-  blue: Uint8Array;
+  rgb: Float32Array;
+  red: Float32Array;
+  green: Float32Array;
+  blue: Float32Array;
 }
 
 const CHANNELS: CurvesChannel[] = ["rgb", "red", "green", "blue"];
@@ -123,8 +128,18 @@ export function isValidCurve(
   return true;
 }
 
+/** 8-bit curve table (0–255 per entry) for the curve graph UI. */
 export function buildCurveLut(points: CurvesControlPoint[]): Uint8Array {
+  const f = evalCurve(points);
   const lut = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) lut[i] = clampByte(f[i]);
+  return lut;
+}
+
+/** Curve evaluated at x = 0..255, on the 0–255 scale, unrounded and
+ *  clamped to [0, 255]. */
+function evalCurve(points: CurvesControlPoint[]): Float64Array {
+  const lut = new Float64Array(256);
   if (points.length < 2) {
     for (let i = 0; i < 256; i++) lut[i] = i;
     return lut;
@@ -190,21 +205,36 @@ export function buildCurveLut(points: CurvesControlPoint[]): Uint8Array {
     const h11 = t3 - t2;
     const yi =
       h00 * y0 + h10 * dx * m[segment] + h01 * y1 + h11 * dx * m[segment + 1];
-    lut[xi] = clampByte(yi);
+    lut[xi] = Math.max(0, Math.min(255, yi));
   }
 
   return lut;
 }
 
+function buildCurveLutFloat(points: CurvesControlPoint[]): Float32Array {
+  const f = evalCurve(points);
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) lut[i] = f[i] / 255;
+  return lut;
+}
+
+// Plans are rebuilt far more often than curves change; the params object is
+// replaced on every edit, so it identifies the LUT set.
+const lutCache = new WeakMap<object, CurvesLuts>();
+
 export function buildCurvesLuts(
   params: EffectParamsMap["curves"],
 ): CurvesLuts {
-  return {
-    rgb: buildCurveLut(params.channels.rgb.points),
-    red: buildCurveLut(params.channels.red.points),
-    green: buildCurveLut(params.channels.green.points),
-    blue: buildCurveLut(params.channels.blue.points),
+  const cached = lutCache.get(params);
+  if (cached) return cached;
+  const luts: CurvesLuts = {
+    rgb: buildCurveLutFloat(params.channels.rgb.points),
+    red: buildCurveLutFloat(params.channels.red.points),
+    green: buildCurveLutFloat(params.channels.green.points),
+    blue: buildCurveLutFloat(params.channels.blue.points),
   };
+  lutCache.set(params, luts);
+  return luts;
 }
 
 export function detectLutClipping(lut: Uint8Array): {

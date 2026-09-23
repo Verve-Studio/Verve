@@ -8,6 +8,8 @@ import {
   useStartupFile,
 } from "@/core/services/useAppLifecycle";
 import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
+import { useGpuDeviceRecovery } from "@/core/services/useGpuDeviceRecovery";
+import { useUnsavedDocumentsReporter } from "@/core/services/useUnsavedDocumentsReporter";
 import { useClipboard } from "@/core/services/useClipboard";
 import { useColorMode } from "@/core/services/useColorMode";
 import { useColorProfile } from "@/core/services/useColorProfile";
@@ -32,7 +34,13 @@ import { useTabs } from "@/core/services/useTabs";
 import { useTransform } from "@/core/services/useTransform";
 import { useTransformGuard } from "@/core/services/useTransformGuard";
 import { useViewActions } from "@/core/services/useViewActions";
-import { AppProvider, useAppContext } from "@/core/store/AppContext";
+import {
+  AppProvider,
+  appShellEqual,
+  selectAppShell,
+  useAppStore,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { CanvasProvider } from "@/core/store/CanvasContext";
 
 import { useNotification } from "@/core/store/notificationStore";
@@ -41,8 +49,8 @@ import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { toolRegistry } from "@/core/tools/toolRegistry";
 import { isGroupLayer, isLinkedLayer } from "@/types";
-import type { LayerState, LinkedLayerState, Tool } from "@/types";
-import { loadImagePixels, EXT_TO_MIME } from "@/core/io/imageLoader";
+import type { AppState, LayerState, LinkedLayerState, Tool } from "@/types";
+import { loadImageBytes, EXT_TO_MIME } from "@/core/io/imageLoader";
 import {
   convertRgba8ToF32,
   convertF32ToRgba8,
@@ -55,6 +63,7 @@ import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import { PrintPreviewDialog } from "@/ux/modals/PrintPreviewDialog/PrintPreviewDialog";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import type { MenuDeps } from "@/ux/main/menu/menuTree";
 import {
   ADJUSTMENT_MENU_ITEMS,
@@ -65,10 +74,54 @@ import { activeScope } from "@/core/store/scope";
 
 // ─── AppContent ───────────────────────────────────────────────────────────────
 
+/** The function-valued `MenuDeps` entries (always present), plus the two
+ *  active-layer actions that `menuDeps` exposes conditionally. */
+type MenuHandlerKey = {
+  [K in keyof MenuDeps]-?: NonNullable<MenuDeps[K]> extends (
+    ...args: never[]
+  ) => unknown
+    ? K
+    : never;
+}[keyof MenuDeps];
+type MenuHandlerImpls = Required<
+  Omit<Pick<MenuDeps, MenuHandlerKey>, "onRasterizeLayer" | "onUngroupLayers">
+> & {
+  onRasterizeActiveLayer: () => void;
+  onUngroupActiveLayer: () => void;
+};
+
+/** Stable proxies over a ref of handler functions (see `menuDeps`). */
+function stableHandlers<T extends Record<string, (...args: never[]) => unknown>>(
+  ref: { readonly current: T },
+): T {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(ref.current)) {
+    out[key] = (...args: never[]) =>
+      (ref.current[key] as (...a: never[]) => unknown)(...args);
+  }
+  return out as T;
+}
+
 function AppContent(): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  // The shell subscribes to everything except colours and zoom (see
+  // AppShellState): a colour-picker / eyedropper drag or a zoom gesture
+  // must not re-render the whole app. Code that needs the current value of
+  // anything reads `stateRef.current`, which is always the live store state.
+  const store = useAppStore();
+  const dispatch = store.dispatch;
+  const state = useAppSelector(selectAppShell, appShellEqual);
+  const stateRef = useMemo(
+    () =>
+      ({
+        get current(): AppState {
+          return store.getState();
+        },
+        set current(_v: AppState) {
+          /* read-only view of the store */
+        },
+      }) as MutableRefObject<AppState>,
+    [store],
+  );
 
   // ── Dialog state ──────────────────────────────────────────────────
   const {
@@ -160,7 +213,8 @@ function AppContent(): React.JSX.Element {
     serializeActiveTabPixels,
     handleSwitchTab,
     handleCloseTab,
-  } = useTabs(state, dispatch);
+    closeTabs,
+  } = useTabs(store.getState, dispatch);
 
   // ── History ───────────────────────────────────────────────────────
   const { captureHistory, pendingLayerLabelRef, suppressReadyCaptureRef } =
@@ -173,6 +227,18 @@ function AppContent(): React.JSX.Element {
       setPendingLayerData,
       layers: state.layers,
     });
+
+  // ── Unsaved-changes guard (main asks before closing) ──────────────
+  useUnsavedDocumentsReporter(tabs);
+
+  // ── GPU device loss recovery ──────────────────────────────────────
+  useGpuDeviceRecovery({
+    activeTabIdRef,
+    serializeActiveTabPixels,
+    setTabs,
+    setPendingLayerData,
+    suppressReadyCaptureRef,
+  });
 
   // ── File operations ───────────────────────────────────────────────
   const {
@@ -189,6 +255,7 @@ function AppContent(): React.JSX.Element {
     setTabs,
     setActiveTabId,
     setPendingLayerData,
+    activeTabIdRef,
     captureActiveSnapshot,
     serializeActiveTabPixels,
     handleSwitchTab: useCallback(
@@ -270,8 +337,7 @@ function AppContent(): React.JSX.Element {
       // initial decode is the only file read on creation.
       const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
       const mime = EXT_TO_MIME[ext] ?? "image/png";
-      const base64 = await window.api.readFileBase64(path);
-      const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
+      const loaded = await loadImageBytes(await window.api.readFile(path), mime);
       const { width, height } = loaded;
       const cw = stateRef.current.canvas.width;
       const ch = stateRef.current.canvas.height;
@@ -330,8 +396,7 @@ function AppContent(): React.JSX.Element {
     try {
       const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
       const mime = EXT_TO_MIME[ext] ?? "image/png";
-      const base64 = await window.api.readFileBase64(path);
-      const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
+      const loaded = await loadImageBytes(await window.api.readFile(path), mime);
       const { width, height } = loaded;
       const fmt = stateRef.current.pixelFormat;
 
@@ -441,6 +506,7 @@ function AppContent(): React.JSX.Element {
     captureHistory,
     dispatch,
     activeTabId,
+    activeTabIdRef,
     setTabs,
     setPendingLayerData,
     pendingLayerLabelRef,
@@ -505,8 +571,7 @@ function AppContent(): React.JSX.Element {
   // ── Filters ───────────────────────────────────────────────────────
   const filters = useFilters({
     adjustments,
-    primaryColor: state.primaryColor,
-    secondaryColor: state.secondaryColor,
+    getState: store.getState,
     requireTransformDecision,
   });
   const { handleOpenFilterDialog } = filters;
@@ -699,13 +764,13 @@ function AppContent(): React.JSX.Element {
 
   const handleCloseAll = useCallback((): void => {
     const ids = tabs.map((t) => t.id);
-    for (const id of ids) handleCloseTab(id);
-  }, [tabs, handleCloseTab]);
+    requireTransformDecision(() => closeTabs(ids));
+  }, [tabs, requireTransformDecision, closeTabs]);
 
   const handleCloseOthers = useCallback((): void => {
     const ids = tabs.filter((t) => t.id !== activeTabId).map((t) => t.id);
-    for (const id of ids) handleCloseTab(id);
-  }, [tabs, activeTabId, handleCloseTab]);
+    closeTabs(ids);
+  }, [tabs, activeTabId, closeTabs]);
 
   const handleClearRecentFiles = clearRecentFiles;
 
@@ -795,8 +860,13 @@ function AppContent(): React.JSX.Element {
       "type" in activeLayer &&
       (activeLayer.type === "mask" || activeLayer.type === "adjustment")
     );
-  const effectiveSelectedIds = new Set(state.selectedLayerIds);
-  if (state.activeLayerId) effectiveSelectedIds.add(state.activeLayerId);
+  // Memoised: it's a `menuDeps` dependency, and a fresh Set every render
+  // meant the menu tree was rebuilt on every state change.
+  const effectiveSelectedIds = useMemo(() => {
+    const ids = new Set(state.selectedLayerIds);
+    if (state.activeLayerId) ids.add(state.activeLayerId);
+    return ids;
+  }, [state.selectedLayerIds, state.activeLayerId]);
   const isPixelRootLayer = (l: LayerState): boolean =>
     !("type" in l) ||
     l.type === "text" ||
@@ -825,15 +895,17 @@ function AppContent(): React.JSX.Element {
   const isMac = window.api.platform === "darwin";
   const lutOps = useLutOps();
 
-  const menuDeps: MenuDeps = useMemo(
-    () => ({
+  // Handlers are rebuilt every render (cheap closures) into a ref and exposed
+  // through permanently stable proxies: they always call the latest closure
+  // (no stale-closure bugs from a missed dependency) and never change
+  // identity. `menuDeps` therefore changes only when a displayed value does,
+  // so the menu tree (in-app and macOS native) is rebuilt only then.
+  const menuHandlersNow: MenuHandlerImpls = {
       // ── File ────────────────────────────────────────────────────
       onNew: () => setShowNewImageDialog(true),
       onOpen: () => void handleOpen(),
       onOpenAsLayer: () => void handleOpenAsLayer(),
-      isOpenAsLayerEnabled: hasActiveDocument,
       onPrint: () => setShowPrintPreviewDialog(true),
-      isPrintEnabled: hasActiveDocument,
       onSave: () => void handleSave(false),
       onSaveAs: () => void handleSave(true),
       onSaveACopy: () => void handleSaveACopy(),
@@ -841,12 +913,10 @@ function AppContent(): React.JSX.Element {
       onClose: handleClose,
       onCloseOthers: handleCloseOthers,
       onCloseAll: handleCloseAll,
-      recentFiles,
       onOpenRecent: (path) => void handleOpenPath(path),
       onClearRecentFiles: () => void handleClearRecentFiles(),
       onPreferences: () => setShowPreferencesDialog(true),
       onExit: () => void window.api.exitApp(),
-
       // ── Edit ────────────────────────────────────────────────────
       onUndo: handleUndo,
       onRedo: handleRedo,
@@ -862,8 +932,6 @@ function AppContent(): React.JSX.Element {
       // we don't blindly stack a new transform on top of an unfinished
       // one. Both menus go through this same wrapper now.
       onFreeTransform: () => requireTransformDecision(handleEnterTransform),
-      isFreeTransformEnabled,
-
       // ── Select ──────────────────────────────────────────────────
       onSelectAll: handleSelectAll,
       onDeselect: handleDeselect,
@@ -871,30 +939,18 @@ function AppContent(): React.JSX.Element {
       onDeselectLayers: handleDeselectLayers,
       onFindLayers: handleFindLayers,
       onInvertSelection: () => activeScope().selection.invert(),
-
       // ── Layer ───────────────────────────────────────────────────
       onNewLayer: handleNewLayer,
       onNewLayerGroup: () => handleGroupLayers([]),
       onNewCompositeLayer: handleCreateCompositeLayer,
       onNewLinkedLayer: () => void handleNewLinkedLayer(),
       onRefreshLinkedLayer: handleRefreshLinkedLayer,
-      isLinkedLayerActive,
       onAddLayerMask: handleAddMaskLayer,
       onDuplicateLayer: handleDuplicateLayer,
       onDeleteLayer: handleDeleteActiveLayer,
-      onRasterizeLayer: state.activeLayerId
-        ? () => handleRasterizeLayer(state.activeLayerId!)
-        : undefined,
-      isRasterizeEnabled: isRasterizeLayerEnabled,
       onGroupLayers: () => handleGroupLayers([...effectiveSelectedIds]),
-      isGroupLayersEnabled,
-      onUngroupLayers: state.activeLayerId
-        ? () => handleUngroupLayers(state.activeLayerId!)
-        : undefined,
-      isUngroupLayersEnabled,
       onMergeSelected: () =>
         handleMergeSelected([...effectiveSelectedIds]),
-      isMergeSelectedEnabled,
       onMergeDown: handleMergeDown,
       onMergeVisible: handleMergeVisible,
       onFlattenImage: handleFlattenImage,
@@ -903,11 +959,7 @@ function AppContent(): React.JSX.Element {
       onLayerAlign: (edge) => layerArrange.handleAlign(edge),
       onLayerDistribute: (axis) => layerArrange.handleDistribute(axis),
       onLayerOrder: (op) => layerArrange.handleOrder(op),
-
-      // ── Image ───────────────────────────────────────────────────
-      pixelFormat: state.pixelFormat,
       onSetColorMode: (fmt) => colorMode.handleConvertColorMode(fmt),
-      hasIccProfile: !!state.iccProfile,
       onAssignProfile: () => void colorProfile.assignProfile(),
       onConvertToProfile: () => void colorProfile.convertToProfile(),
       onRemoveProfile: () => colorProfile.removeProfile(),
@@ -920,14 +972,7 @@ function AppContent(): React.JSX.Element {
       onResizeImage: () => setShowResizeDialog(true),
       onResizeCanvas: () => setShowResizeCanvasDialog(true),
       onRescaleImage: () => setShowRescaleDialog(true),
-      // AI rescale runs RGB pixels through Real-ESRGAN. Indexed8/float32
-      // documents need a different path; gate them out of the menu rather
-      // than silently failing.
-      isRescaleEnabled: state.pixelFormat === "rgba8",
       onRestoreImage: () => setShowRestoreDialog(true),
-      // Restore uses the same model pipeline, so the same format gate
-      // applies.
-      isRestoreEnabled: state.pixelFormat === "rgba8",
       onRotate90CW: () => void handleRotate("90cw"),
       onRotate180: () => void handleRotate("180"),
       onRotate270CW: () => void handleRotate("270cw"),
@@ -936,7 +981,6 @@ function AppContent(): React.JSX.Element {
       onLoadLut: () => void lutOps.loadCubeLut(),
       onManageLuts: () => setShowLutManager(true),
       onSetViewTransform: lutOps.setViewTransform,
-
       // ── Adjustments / Effects / Filters ─────────────────────────
       onCreateAdjustmentLayer: (type) =>
         requireTransformDecision(() => {
@@ -946,19 +990,9 @@ function AppContent(): React.JSX.Element {
             adjustments.handleCreateAdjustmentLayer(type);
           }
         }),
-      isAdjustmentMenuEnabled: adjustments.isAdjustmentMenuEnabled,
-      adjustmentMenuItems: ADJUSTMENT_MENU_ITEMS,
-      effectsMenuItems: EFFECTS_MENU_ITEMS,
       onOpenFilterDialog: handleOpenFilterDialog,
       onInstantFilter: (key) =>
         requireTransformDecision(() => filters.handleInstantFilter(key)),
-      isFiltersMenuEnabled: adjustments.isAdjustmentMenuEnabled,
-      filterMenuItems: FILTER_MENU_ITEMS,
-
-      // ── Animation ───────────────────────────────────────────────
-      animationMode: state.animationMode,
-      isPlaying: playback.isPlaying,
-      paletteAnimationActive: state.paletteAnimation.enabled,
       onPlayPause: playback.onPlayPause,
       onPrevFrame: playback.onPrevFrame,
       onNextFrame: playback.onNextFrame,
@@ -971,24 +1005,18 @@ function AppContent(): React.JSX.Element {
         void handleExportPaletteAnimationJson(),
       onExportAnimationFrames: () =>
         setShowExportAnimationFramesDialog(true),
-
       // ── View ────────────────────────────────────────────────────
       onZoomIn: handleZoomIn,
       onZoomOut: handleZoomOut,
       onZoom100: handleZoom100,
       onFitToWindow: handleFitToWindow,
       onToggleGrid: handleToggleGrid,
-      showGrid: state.canvas.showGrid,
       onToggleRulers: handleToggleRulers,
-      showRulers: state.canvas.showRulers,
       onToggleGuides: handleToggleGuides,
-      showGuides: state.canvas.showGuides,
       onApplyGuidePreset: handleApplyGuidePreset,
       onSetNormalMode: handleSetNormalMode,
       onSetTiledMode: handleSetTiledMode,
-      tiledMode: state.canvas.tiledMode,
       onToggleTileGrid: handleToggleTileGrid,
-      showTileGrid: state.canvas.showTileGrid,
       onSetAnimationMode: handleSetAnimationMode,
       // hasProofProfile / proofColorsActive / gamutWarningActive are
       // filled in by TopBar/useMacNativeMenu from a displayStore
@@ -996,95 +1024,93 @@ function AppContent(): React.JSX.Element {
       onOpenProofSetup: () => setShowProofSetup(true),
       onToggleProofColors: () => colorProfile.toggleProofColors(),
       onToggleGamutWarning: () => void colorProfile.toggleGamutWarning(),
-
       // ── Help ────────────────────────────────────────────────────
       onAbout: () => setShowAboutDialog(true),
       onKeyboardShortcuts: () => setShowShortcutsDialog(true),
       onSystemInfo: () => setShowSystemInfoDialog(true),
       onDebug: () => void window.api.openDevTools(),
+    onRasterizeActiveLayer: () => {
+      const id = stateRef.current.activeLayerId;
+      if (id) handleRasterizeLayer(id);
+    },
+    onUngroupActiveLayer: () => {
+      const id = stateRef.current.activeLayerId;
+      if (id) handleUngroupLayers(id);
+    },
+  };
+  const menuHandlersRef = useRef(menuHandlersNow);
+  menuHandlersRef.current = menuHandlersNow;
+  const menuHandlers = useMemo(
+    () => stableHandlers(menuHandlersRef),
+    [],
+  );
+  const { onRasterizeActiveLayer, onUngroupActiveLayer, ...menuHandlerFns } =
+    menuHandlers;
+
+  const hasActiveLayer = state.activeLayerId !== null;
+  const menuDeps: MenuDeps = useMemo(
+    () => ({
+      ...menuHandlerFns,
+      onRasterizeLayer: hasActiveLayer ? onRasterizeActiveLayer : undefined,
+      onUngroupLayers: hasActiveLayer ? onUngroupActiveLayer : undefined,
+      isOpenAsLayerEnabled: hasActiveDocument,
+      isPrintEnabled: hasActiveDocument,
+      recentFiles,
+      isFreeTransformEnabled,
+      isLinkedLayerActive,
+      isRasterizeEnabled: isRasterizeLayerEnabled,
+      isGroupLayersEnabled,
+      isUngroupLayersEnabled,
+      isMergeSelectedEnabled,
+      // ── Image ───────────────────────────────────────────────────
+      pixelFormat: state.pixelFormat,
+      hasIccProfile: !!state.iccProfile,
+      // AI rescale runs RGB pixels through Real-ESRGAN. Indexed8/float32
+      // documents need a different path; gate them out of the menu rather
+      // than silently failing.
+      isRescaleEnabled: state.pixelFormat === "rgba8",
+      // Restore uses the same model pipeline, so the same format gate
+      // applies.
+      isRestoreEnabled: state.pixelFormat === "rgba8",
+      isAdjustmentMenuEnabled: adjustments.isAdjustmentMenuEnabled,
+      adjustmentMenuItems: ADJUSTMENT_MENU_ITEMS,
+      effectsMenuItems: EFFECTS_MENU_ITEMS,
+      isFiltersMenuEnabled: adjustments.isAdjustmentMenuEnabled,
+      filterMenuItems: FILTER_MENU_ITEMS,
+      // ── Animation ───────────────────────────────────────────────
+      animationMode: state.animationMode,
+      isPlaying: playback.isPlaying,
+      paletteAnimationActive: state.paletteAnimation.enabled,
+      showGrid: state.canvas.showGrid,
+      showRulers: state.canvas.showRulers,
+      showGuides: state.canvas.showGuides,
+      tiledMode: state.canvas.tiledMode,
+      showTileGrid: state.canvas.showTileGrid,
     }),
-    // Every input that any handler closes over. The list is long but
-    // necessary — drop one and a menu action gets stuck on a stale
-    // closure.
+    // Handlers are stable; only displayed values are dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
+      menuHandlers,
+      hasActiveLayer,
+      hasActiveDocument,
       recentFiles,
-      handleOpen,
-      handleSave,
-      handleSaveACopy,
-      handleClose,
-      handleCloseAll,
-      handleOpenPath,
-      handleClearRecentFiles,
-      handleUndo,
-      handleRedo,
-      handleCut,
-      handleCopy,
-      handleCopyMerged,
-      handlePaste,
-      handlePasteInto,
-      handleDelete,
-      handleOpenCafDialog,
-      handleEnterTransform,
-      requireTransformDecision,
       isFreeTransformEnabled,
-      handleSelectAll,
-      handleDeselect,
-      handleSelectAllLayers,
-      handleDeselectLayers,
-      handleFindLayers,
-      handleNewLayer,
-      handleGroupLayers,
-      handleCreateCompositeLayer,
-      handleAddMaskLayer,
-      handleDuplicateLayer,
-      handleDeleteActiveLayer,
-      handleRasterizeLayer,
-      state.activeLayerId,
+      isLinkedLayerActive,
       isRasterizeLayerEnabled,
-      effectiveSelectedIds,
       isGroupLayersEnabled,
-      handleUngroupLayers,
       isUngroupLayersEnabled,
-      handleMergeSelected,
       isMergeSelectedEnabled,
-      handleMergeDown,
-      handleMergeVisible,
-      handleFlattenImage,
-      handleRotateSelectedLayers,
-      handleFlipSelectedLayers,
-      layerArrange,
       state.pixelFormat,
-      colorMode,
-      handleRotate,
-      handleFlip,
-      lutOps,
-      adjustments,
-      handleOpenFilterDialog,
-      filters,
+      state.iccProfile,
+      adjustments.isAdjustmentMenuEnabled,
       state.animationMode,
       playback.isPlaying,
       state.paletteAnimation.enabled,
-      playback,
-      handleExportSpritesheetJson,
-      handleExportPaletteAnimationJson,
-      handleZoomIn,
-      handleZoomOut,
-      handleZoom100,
-      handleFitToWindow,
-      handleToggleGrid,
       state.canvas.showGrid,
-      handleToggleRulers,
       state.canvas.showRulers,
-      handleToggleGuides,
       state.canvas.showGuides,
-      handleApplyGuidePreset,
-      handleSetNormalMode,
-      handleSetTiledMode,
       state.canvas.tiledMode,
-      handleToggleTileGrid,
       state.canvas.showTileGrid,
-      handleSetAnimationMode,
     ],
   );
 
@@ -1135,7 +1161,6 @@ function AppContent(): React.JSX.Element {
         swatches={state.swatches}
         canvasWidth={state.canvas.width}
         canvasHeight={state.canvas.height}
-        zoom={state.canvas.zoom}
         tiledMode={state.canvas.tiledMode}
         animationMode={state.animationMode}
         tabs={tabs}

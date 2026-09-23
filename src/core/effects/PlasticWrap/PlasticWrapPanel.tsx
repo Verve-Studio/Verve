@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { PlasticWrapEffectLayer } from "./PlasticWrapEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -13,7 +13,7 @@ export function PlasticWrapPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<PlasticWrapEffectLayer["params"]>): void => {
@@ -41,7 +41,9 @@ export function PlasticWrapPanel({
           step={1}
           value={Math.max(min, Math.min(max, value))}
           style={
-            { "--pct": String((value - min) / (max - min)) } as React.CSSProperties
+            {
+              "--pct": String((value - min) / (max - min)),
+            } as React.CSSProperties
           }
           onChange={(e) => onChange(Number(e.target.value))}
         />

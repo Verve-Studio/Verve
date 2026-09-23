@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
@@ -18,8 +22,12 @@ const FORMAT_LABELS: Record<PixelFormat, string> = {
   indexed8: "Indexed/8",
 };
 
-export function StatusBar(): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+function StatusBarImpl(): React.JSX.Element {
+  const state = useAppSelector(
+    (s) => ({ canvas: s.canvas, pixelFormat: s.pixelFormat }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const zoom = Math.round(state.canvas.zoom * 100);
   const { width, height, showGrid, gridSize, gridColor, gridType } =
     state.canvas;
@@ -172,3 +180,7 @@ export function StatusBar(): React.JSX.Element {
     </div>
   );
 }
+
+// Memoized: subscribes to its own store slice, so it only needs to re-render
+// when that slice or its props change — not whenever the app shell does.
+export const StatusBar = React.memo(StatusBarImpl);

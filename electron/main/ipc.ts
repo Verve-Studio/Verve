@@ -1,16 +1,25 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises'
+import { is } from '@electron-toolkit/utils'
+import { writeFileAtomic } from './atomicWrite'
+import {
+  EXPORT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+  assertReadable,
+  assertWritable,
+  grantPicked
+} from './fileAccess'
 import { join, basename } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
-import { registerMattingHandlers } from './matting'
-import { registerUpscaleHandlers } from './upscale'
-import { registerIsnetHandlers } from './isnet'
-import { registerInpaintHandlers } from './inpaint'
+import { registerMlHandlers } from './ml/mlIpc'
 import { SUPPORTED_FILE_TYPES, getRegisteredExtensions, applyExtensions } from './fileAssociations'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('debug:openDevTools', (event) => {
+    // Development builds only: in a shipped app any renderer code could
+    // otherwise open DevTools.
+    if (!is.dev) return
     BrowserWindow.fromWebContents(event.sender)?.webContents.openDevTools()
   })
 
@@ -22,6 +31,7 @@ export function registerIpcHandlers(): void {
         { name: 'All Files', extensions: ['*'] }
       ]
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths[0]
   })
 
@@ -81,7 +91,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('file:writeJson', async (_event, path: string, data: string) => {
-    await writeFile(path, data, 'utf-8')
+    await writeFileAtomic(assertWritable(path, ['json']), data, 'utf-8')
   })
 
   ipcMain.handle('dialog:openImagesMulti', async () => {
@@ -92,6 +102,7 @@ export function registerIpcHandlers(): void {
         { name: 'All Files', extensions: ['*'] }
       ]
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths
   })
 
@@ -106,6 +117,7 @@ export function registerIpcHandlers(): void {
         { name: 'All Files',           extensions: ['*'] },
       ]
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths[0]
   })
 
@@ -117,12 +129,14 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
+  // .verve documents travel as raw bytes (binary container, or legacy JSON
+  // text that the renderer decodes itself) — never as one giant string.
   ipcMain.handle('file:openverve', async (_event, path: string) => {
-    return readFile(path, 'utf-8')
+    return readFile(assertReadable(path, ['verve']))
   })
 
-  ipcMain.handle('file:saveverve', async (_event, path: string, data: string) => {
-    await writeFile(path, data, 'utf-8')
+  ipcMain.handle('file:saveverve', async (_event, path: string, data: Uint8Array) => {
+    await writeFileAtomic(assertWritable(path, ['verve']), data)
   })
 
   ipcMain.handle('dialog:exportBrowse', async (_event, ext: string) => {
@@ -142,14 +156,19 @@ export function registerIpcHandlers(): void {
     return canceled ? null : filePath
   })
 
-  ipcMain.handle('file:readFileBase64', async (_event, path: string) => {
-    const buffer = await readFile(path)
-    return buffer.toString('base64')
+  // Raw bytes (arrives in the renderer as a Uint8Array). Base64 strings
+  // made 4–5 full copies of every image on the JS heap and could hit V8's
+  // maximum string length on large EXR / PSD / TIFF files.
+  ipcMain.handle('file:read', async (_event, path: string) => {
+    return readFile(assertReadable(path, [...IMAGE_EXTENSIONS, 'icc', 'icm']))
   })
 
-  ipcMain.handle('file:exportImage', async (_event, path: string, base64: string) => {
-    const buffer = Buffer.from(base64, 'base64')
-    await writeFile(path, buffer)
+  // `data` is raw bytes, or base64 for encoders that only produce data URLs
+  // (canvas-encoded PNG / JPEG).
+  ipcMain.handle('file:exportImage', async (_event, path: string, data: Uint8Array | string) => {
+    const target = assertWritable(path, EXPORT_EXTENSIONS)
+    const bytes = typeof data === 'string' ? Buffer.from(data, 'base64') : data
+    await writeFileAtomic(target, bytes)
   })
 
   ipcMain.handle('presets:loadCurvesPresets', async () => {
@@ -166,7 +185,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('presets:saveCurvesPresets', async (_event, presets: unknown) => {
     const presetsPath = join(app.getPath('userData'), 'curves-presets.json')
     const json = JSON.stringify(presets, null, 2)
-    await writeFile(presetsPath, json, 'utf-8')
+    await writeFileAtomic(presetsPath, json, 'utf-8')
   })
 
   ipcMain.handle('dialog:openPalette', async () => {
@@ -174,6 +193,7 @@ export function registerIpcHandlers(): void {
       properties: ['openFile'],
       filters: [{ name: 'Palette', extensions: ['palette'] }],
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths[0]
   })
 
@@ -185,6 +205,7 @@ export function registerIpcHandlers(): void {
         { name: 'All Files', extensions: ['*'] },
       ],
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths[0]
   })
 
@@ -197,23 +218,45 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('file:readPalette', async (_event, path: string) => {
-    return readFile(path, 'utf-8')
+    return readFile(assertReadable(path, ['palette', 'json']), 'utf-8')
   })
 
   ipcMain.handle('file:writePalette', async (_event, path: string, data: string) => {
-    await writeFile(path, data, 'utf-8')
+    await writeFileAtomic(assertWritable(path, ['palette']), data, 'utf-8')
   })
 
-  ipcMain.handle('clipboard:write-image', (_event, pngBase64: string) => {
-    const buf = Buffer.from(pngBase64, 'base64')
-    const img = nativeImage.createFromBuffer(buf)
-    clipboard.writeImage(img)
-  })
+  // Raw nativeImage bitmaps both ways (premultiplied BGRA, Skia N32): no
+  // synchronous PNG encode/decode of a multi-megapixel image on the main
+  // process. The renderer swizzles / (un)premultiplies (core/io/clipboardBitmap).
+  ipcMain.handle(
+    'clipboard:write-image',
+    (_event, bitmap: Uint8Array, width: number, height: number) => {
+      if (
+        !Number.isInteger(width) || !Number.isInteger(height) ||
+        width <= 0 || height <= 0 ||
+        bitmap.byteLength !== width * height * 4
+      ) {
+        throw new Error('Invalid clipboard bitmap')
+      }
+      const img = nativeImage.createFromBitmap(
+        Buffer.from(bitmap.buffer, bitmap.byteOffset, bitmap.byteLength),
+        { width, height }
+      )
+      clipboard.writeImage(img)
+    }
+  )
 
   ipcMain.handle('clipboard:read-image', () => {
     const img = clipboard.readImage()
     if (img.isEmpty()) return null
-    return img.toPNG().toString('base64')
+    const { width, height } = img.getSize()
+    const bmp = img.toBitmap()
+    return { width, height, data: new Uint8Array(bmp.buffer, bmp.byteOffset, bmp.byteLength) }
+  })
+
+  ipcMain.handle('clipboard:image-size', () => {
+    const img = clipboard.readImage()
+    return img.isEmpty() ? null : img.getSize()
   })
 
   // ── Recent files ─────────────────────────────────────────────────────────────
@@ -233,7 +276,7 @@ export function registerIpcHandlers(): void {
   }
 
   const saveRecentFiles = async (files: string[]): Promise<void> => {
-    await writeFile(recentFilesPath(), JSON.stringify(files), 'utf-8')
+    await writeFileAtomic(recentFilesPath(), JSON.stringify(files), 'utf-8')
   }
 
   ipcMain.handle('recentFiles:get', async () => {
@@ -264,7 +307,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('pixelBrushes:save', async (_event, data: string) => {
-    await writeFile(userBrushesPath(), data, 'utf-8')
+    await writeFileAtomic(userBrushesPath(), data, 'utf-8')
   })
 
   // ── Paint Brushes (user-profile storage) ─────────────────────────────────────
@@ -280,7 +323,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('paintBrushes:save', async (_event, data: string) => {
-    await writeFile(userPaintBrushesPath(), data, 'utf-8')
+    await writeFileAtomic(userPaintBrushesPath(), data, 'utf-8')
   })
 
   // ── Paint Brush import/export (.vbrush) ─────────────────────────────────────
@@ -290,6 +333,7 @@ export function registerIpcHandlers(): void {
       properties: ['openFile'],
       filters: [{ name: 'Verve Paint Brushes', extensions: ['vbrush'] }],
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths[0]
   })
 
@@ -302,11 +346,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('file:readPaintBrushFile', async (_event, filePath: string) => {
-    return readFile(filePath, 'utf-8')
+    return readFile(assertReadable(filePath, ['vbrush']), 'utf-8')
   })
 
   ipcMain.handle('file:writePaintBrushFile', async (_event, filePath: string, data: string) => {
-    await writeFile(filePath, data, 'utf-8')
+    await writeFileAtomic(assertWritable(filePath, ['vbrush']), data, 'utf-8')
   })
 
   // ── Dock layout ───────────────────────────────────────────────────────────
@@ -322,7 +366,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('dockLayout:save', async (_event, layout: unknown) => {
-    await writeFile(dockLayoutPath(), JSON.stringify(layout, null, 2), 'utf-8')
+    await writeFileAtomic(dockLayoutPath(), JSON.stringify(layout, null, 2), 'utf-8')
   })
 
   ipcMain.handle('dialog:openBrushFile', async () => {
@@ -330,6 +374,7 @@ export function registerIpcHandlers(): void {
       properties: ['openFile'],
       filters: [{ name: 'Verve Brushes', extensions: ['pxbrush'] }],
     })
+    if (!canceled) grantPicked(filePaths)
     return canceled ? null : filePaths[0]
   })
 
@@ -342,11 +387,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('file:readBrushFile', async (_event, filePath: string) => {
-    return readFile(filePath, 'utf-8')
+    return readFile(assertReadable(filePath, ['pxbrush']), 'utf-8')
   })
 
   ipcMain.handle('file:writeBrushFile', async (_event, filePath: string, data: string) => {
-    await writeFile(filePath, data, 'utf-8')
+    await writeFileAtomic(assertWritable(filePath, ['pxbrush']), data, 'utf-8')
   })
 
   // ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -395,18 +440,15 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  registerMattingHandlers()
-  registerUpscaleHandlers()
-  registerIsnetHandlers()
-  registerInpaintHandlers()
+  registerMlHandlers()
 
   // ── File Associations ─────────────────────────────────────────────────────────
 
-  ipcMain.handle('fileAssoc:getState', () => {
+  ipcMain.handle('fileAssoc:getState', async () => {
     try {
       return {
         supported: SUPPORTED_FILE_TYPES,
-        registered: getRegisteredExtensions(),
+        registered: await getRegisteredExtensions(),
         platform: process.platform,
       }
     } catch (e) {
@@ -419,12 +461,12 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('fileAssoc:apply', (_event, exts: string[]) => {
+  ipcMain.handle('fileAssoc:apply', async (_event, exts: string[]) => {
     // Validate: only allow known extensions
     const valid = new Set(SUPPORTED_FILE_TYPES.map(t => t.ext))
     const sanitized = exts.filter((e): e is string => typeof e === 'string' && valid.has(e))
     try {
-      applyExtensions(sanitized)
+      await applyExtensions(sanitized)
       return { success: true }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
@@ -488,6 +530,9 @@ export function registerIpcHandlers(): void {
      *  pass it through to Electron so the driver honours its preferred DPI. */
     dpi: number
   }
+
+  /** Upper bound for the OS print callback; see the handler below. */
+  const PRINT_TIMEOUT_MS = 120_000
 
   ipcMain.handle('printer:print', async (_event, opts: PrintOptions) => {
     // Build an off-screen window sized to the page (1in = 96 CSS px;
@@ -600,14 +645,28 @@ export function registerIpcHandlers(): void {
 
       return await new Promise<{ success: boolean; reason?: string; error?: string }>(
         resolve => {
+          let settled = false
+          // Some drivers / cancelled spoolers never invoke the print
+          // callback: without a deadline the hidden window and temp dir
+          // leaked and the renderer's print dialog hung forever.
+          const timeout = setTimeout(() => {
+            if (settled) return
+            settled = true
+            if (!win.isDestroyed()) win.destroy()
+            void cleanupTemp()
+            resolve({ success: false, error: 'The print job did not respond (timed out).' })
+          }, PRINT_TIMEOUT_MS)
           win.webContents.print(printOptions, (success, reason) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timeout)
             // Defer close + temp-dir cleanup — webContents.print resolves
             // before the OS spool queue has accepted the job on some
             // drivers, and destroying the BrowserWindow too eagerly can
             // cancel the in-flight job. 500ms is enough headroom in
             // practice without making the dialog feel sluggish.
             setTimeout(() => {
-              win.destroy()
+              if (!win.isDestroyed()) win.destroy()
               void cleanupTemp()
             }, 500)
             if (success) resolve({ success: true })

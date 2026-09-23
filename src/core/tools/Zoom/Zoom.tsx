@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
@@ -49,7 +53,11 @@ function ZoomOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ canvas: { zoom: s.canvas.zoom } }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const [pct, setPct] = useState(Math.round(state.canvas.zoom * 100));
   useEffect(() => {
     setPct(Math.round(state.canvas.zoom * 100));
@@ -106,7 +114,7 @@ class ZoomTool implements ITool {
   readonly id = "zoom";
   readonly label = "Zoom";
   readonly shortcut = "Z";
-  readonly icon = <SvgIcon src={zoomIconSvg} />;
+  readonly icon = (<SvgIcon src={zoomIconSvg} />);
   readonly placement = {
     group: ToolGroup.Navigation,
     row: 0,

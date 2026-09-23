@@ -1,4 +1,4 @@
-import type { EffectLayerOf } from "@/types";
+import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorDitheringPanel } from "./ColorDitheringPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -51,6 +51,27 @@ function srgbByteToLinear(
   return { r: toLinear(r), g: toLinear(g), b: toLinear(b) };
 }
 
+const paletteCache = new WeakMap<readonly RGBAColor[], Float32Array>();
+
+/** Linear-RGB palette buffer, cached per (immutable) swatch array so the
+ *  plan entry — and its cache key — is stable across frames. */
+function linearPaletteFor(swatches: readonly RGBAColor[]): Float32Array {
+  const cached = paletteCache.get(swatches);
+  if (cached) return cached;
+  const count = Math.min(swatches.length, 256);
+  const palette = new Float32Array(256 * 4);
+  for (let i = 0; i < count; i++) {
+    const { r, g, b } = swatches[i];
+    const lin = srgbByteToLinear(r, g, b);
+    palette[i * 4 + 0] = lin.r;
+    palette[i * 4 + 1] = lin.g;
+    palette[i * 4 + 2] = lin.b;
+    palette[i * 4 + 3] = 0;
+  }
+  paletteCache.set(swatches, palette);
+  return palette;
+}
+
 export const ColorDitheringEffect: IPipelineEffect<
   ColorDitheringEffectLayer,
   ColorDitheringOp
@@ -62,15 +83,7 @@ export const ColorDitheringEffect: IPipelineEffect<
 
   buildPlanEntry(layer, { mask, swatches }) {
     const paletteCount = Math.min(swatches.length, 256);
-    const palette = new Float32Array(256 * 4);
-    for (let i = 0; i < paletteCount; i++) {
-      const { r, g, b } = swatches[i];
-      const lin = srgbByteToLinear(r, g, b);
-      palette[i * 4 + 0] = lin.r;
-      palette[i * 4 + 1] = lin.g;
-      palette[i * 4 + 2] = lin.b;
-      palette[i * 4 + 3] = 0;
-    }
+    const palette = linearPaletteFor(swatches);
     return {
       kind: "color-dithering",
       layerId: layer.id,

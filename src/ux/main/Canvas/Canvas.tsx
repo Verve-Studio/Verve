@@ -1,12 +1,18 @@
 import React, {
   forwardRef,
+  memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useWebGPU } from "@/core/services/useWebGPU";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual,
+  useAppStore,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { useCanvasContext } from "@/core/store/CanvasContext";
 import type {
   GpuLayer,
@@ -35,6 +41,7 @@ import { useGpuLayerInit } from "@/core/services/useGpuLayerInit";
 import { useGpuLayerSync } from "@/core/services/useGpuLayerSync";
 import { measureStore } from "@/core/tools/Measure/measureStore";
 import { activeScope } from "@/core/store/scope";
+import { rasterizeTextToLayer } from "./textRasterizer";
 import styles from "./Canvas.module.scss";
 
 // Re-export so external importers (App.tsx etc.) don't need to change their paths.
@@ -58,11 +65,34 @@ interface CanvasProps {
 /** Cap on the thumbnail mirror canvas's longest side. */
 const MIRROR_MAX_DIM = 512;
 
-export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
+export const Canvas = memo(
+  forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   { width, height, initialLayerData, onStrokeEnd, onReady, isActive = true },
   ref,
 ) {
-  const { state, dispatch } = useAppContext();
+  // Everything the canvas view renders from — but not the colours: a
+  // colour-picker / eyedropper drag must not re-render the canvas. Tools
+  // read live state (colours included) per pointer event via getState.
+  const store = useAppStore();
+  const dispatch = store.dispatch;
+  const state = useAppSelector(
+    (s) => ({
+      activeLayerId: s.activeLayerId,
+      activeTool: s.activeTool,
+      animationMode: s.animationMode,
+      canvas: s.canvas,
+      lastRemovedSwatchIndex: s.lastRemovedSwatchIndex,
+      layers: s.layers,
+      pixelFormat: s.pixelFormat,
+      spritesheet: s.spritesheet,
+      swatches: s.swatches,
+    }),
+    shallowEqual,
+  );
+  const getPrimaryColor = useCallback(
+    () => store.getState().primaryColor,
+    [store],
+  );
   const { canvasElRef, thumbnailCanvasRef } = useCanvasContext();
   const { canvasRef, rendererRef, rendererVersion } = useWebGPU({
     pixelWidth: width,
@@ -97,6 +127,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   layersStateRef.current = state.layers;
   const swatchesRef = useRef(state.swatches);
   swatchesRef.current = state.swatches;
+  const pixelFormatRef = useRef(state.pixelFormat);
+  pixelFormatRef.current = state.pixelFormat;
   const onStrokeEndRef = useRef(onStrokeEnd);
   onStrokeEndRef.current = onStrokeEnd;
   const onReadyRef = useRef(onReady);
@@ -251,13 +283,15 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     return layers;
   }
 
-  function buildRenderPlan(): RenderPlanEntry[] {
+  function buildRenderPlan(
+    bypassedAdjustmentIds: ReadonlySet<string> = activeScope().adjustmentPreview.snapshot(),
+  ): RenderPlanEntry[] {
     const plan = buildCanvasRenderPlan(
       layersStateRef.current,
       glLayersRef.current,
       buildMaskMap(),
       adjustmentMaskMap.current,
-      activeScope().adjustmentPreview.snapshot(),
+      bypassedAdjustmentIds,
       state.swatches,
       state.pixelFormat,
     );
@@ -269,6 +303,25 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       plan.push({ kind: "layer", layer: pending });
     }
     return plan;
+  }
+
+  /**
+   * Plan for flatten / export / merge output. Unlike the screen plan it
+   * ignores adjustment preview-bypass toggles, and it brings a text layer
+   * that is mid-edit up to date first (its raster is not refreshed per
+   * keystroke while the inline editor is open).
+   */
+  function buildOutputPlan(): RenderPlanEntry[] {
+    const renderer = rendererRef.current;
+    if (editingLayerId && renderer) {
+      const ls = layersStateRef.current.find((l) => l.id === editingLayerId);
+      const gl = glLayersRef.current.get(editingLayerId);
+      if (ls && gl && "type" in ls && ls.type === "text") {
+        rasterizeTextToLayer(ls, gl);
+        renderer.flushLayer(gl);
+      }
+    }
+    return buildRenderPlan(new Set());
   }
 
   // useCanvasRenderLoop captures the plan builder via a ref so its doRender
@@ -304,11 +357,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     adjustmentMaskMap,
     layersStateRef,
     swatchesRef,
+    pixelFormatRef,
     buildRenderArgs: () => ({
       layers: buildOrderedGLLayers(),
       maskMap: buildMaskMap(),
       plan: buildRenderPlan(),
     }),
+    buildOutputPlan,
     width,
     height,
     viewportRef,
@@ -431,16 +486,21 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     const gl = glLayersRef.current.get(editingLayerId);
     const renderer = rendererRef.current;
     if (!gl || !renderer) return;
-    const wasVisible = gl.visible;
-    gl.visible = false;
+    // Hidden from the screen only (not via `gl.visible`), so a save or
+    // export while editing still includes the text layer.
+    renderer.setScreenHidden(editingLayerId, true);
     renderer.setPreviewMode(true);
-    doRender();
+    doRenderRef.current();
     return () => {
-      gl.visible = wasVisible;
+      renderer.setScreenHidden(editingLayerId, false);
       renderer.setPreviewMode(false);
-      doRender();
+      doRenderRef.current();
     };
-  }, [editingLayerId, doRender, glLayersRef, rendererRef]);
+    // Only re-run when the edited layer changes. `doRender` is a new closure
+    // on every Canvas render, so listing it re-ran this effect on every
+    // keystroke — toggling preview mode off/on (each toggle invalidates the
+    // frame cache) and forcing two full re-composites per key press.
+  }, [editingLayerId, doRenderRef, glLayersRef, rendererRef]);
 
   // ── Indexed8 palette housekeeping ─────────────────────────────────────────
   useIndexedSwatchSync({
@@ -478,7 +538,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
     canvasRef,
     zoomRef,
     activeTool: state.activeTool,
-    primaryColor: state.primaryColor,
+    getPrimaryColor,
     width,
     height,
     baseClass: styles.brushCursor,
@@ -494,7 +554,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
   });
 
   const buildCtx = useToolContext({
-    state,
+    getState: store.getState,
     dispatch,
     rendererRef,
     glLayersRef,
@@ -883,4 +943,5 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(
       />
     </>
   );
-});
+}),
+);

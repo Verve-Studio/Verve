@@ -10,6 +10,7 @@ import {
 import { useTrackedMemory } from "@/core/store/memoryStore";
 import styles from "./PreferencesDialog.module.scss";
 import { activeScope } from "@/core/store/scope";
+import { HistoryStore } from "@/core/store/historyStore";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -129,11 +130,10 @@ function MemorySection(): React.JSX.Element {
   const prefs = usePreferences();
   // Subscribe to activeScope().history so the "currently used" readout updates live as
   // the user paints / undoes / redoes while the dialog is open.
-  const [bytesUsed, setBytesUsed] = useState(() =>
-    activeScope().history.getCurrentBytes(),
-  );
+  // The cap is shared by every open document, so show their combined usage.
+  const [bytesUsed, setBytesUsed] = useState(() => HistoryStore.totalBytes());
   useEffect(() => {
-    const update = (): void => setBytesUsed(activeScope().history.getCurrentBytes());
+    const update = (): void => setBytesUsed(HistoryStore.totalBytes());
     update();
     return activeScope().history.subscribe(update);
   }, []);

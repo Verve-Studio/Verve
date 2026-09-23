@@ -2,14 +2,15 @@ import {
   gpuComputeNLinks,
   gpuComputeDataTerms,
   isGrabCutComputeReady,
+  grabCutMaxStorageBytes,
 } from "@/graphics/webgpu/compute/grabcutCompute";
 import {
   grabCutComputeBeta,
   grabCutKmeansInit,
   grabCutUpdateGmms,
   grabCutMincut,
-  grabCut,
 } from "./index";
+import { grabCutOffThread } from "./pixelopsWorkerClient";
 
 const K = 5;
 const TARGET_MAX_DIM = 1200; // downsample so longest side is ≤ this
@@ -140,11 +141,33 @@ export async function grabCutHybrid(
   iterations: number = 3,
 ): Promise<Uint8Array> {
   if (!isGrabCutComputeReady()) {
-    return grabCut(pixels, w, h, trimap, iterations, K);
+    return grabCutOffThread(pixels, w, h, trimap, iterations, K);
   }
+  try {
+    return await grabCutHybridGpu(pixels, w, h, trimap, iterations);
+  } catch (err) {
+    // A GPU pass failed (device limits, lost device, OOM): fall back to the
+    // all-WASM path rather than returning an empty selection.
+    console.warn("[GrabCut] GPU path failed; falling back to WASM:", err);
+    return grabCutOffThread(pixels, w, h, trimap, iterations, K);
+  }
+}
+
+async function grabCutHybridGpu(
+  pixels: Uint8Array,
+  w: number,
+  h: number,
+  trimap: Uint8Array,
+  iterations: number,
+): Promise<Uint8Array> {
 
   const t0 = performance.now();
-  const scale = chooseScale(w, h);
+  // Each GPU pass binds one f32 per (downsampled) pixel as a storage buffer;
+  // downsample further if that would exceed the device binding limit.
+  const maxPixels = Math.floor(grabCutMaxStorageBytes() / 4);
+  const scaleForLimit =
+    maxPixels > 0 ? Math.ceil(Math.sqrt((w * h) / maxPixels)) : 1;
+  const scale = Math.max(chooseScale(w, h), scaleForLimit);
 
   let workPixels = pixels;
   let workTrimap = trimap;

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { SelectiveColorEffectLayer } from "@/core/effects/SelectiveColor/SelectiveColorEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./SelectiveColorPanel.module.scss";
@@ -58,7 +58,7 @@ export function SelectiveColorPanel({
   layer,
   parentLayerName,
 }: SelectiveColorPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const [activeRange, setActiveRange] = useState<RangeKey>("reds");
 
   const pct = (v: number, min: number, max: number): string =>

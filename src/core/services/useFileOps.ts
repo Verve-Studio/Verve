@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import type { AppShellState } from "@/core/store/AppContext";
+import { useCallback, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import {
@@ -9,14 +10,13 @@ import { decodeExrLayers } from "@/wasm";
 import {
   IMAGE_EXTENSIONS,
   EXT_TO_MIME,
-  loadImagePixels,
+  loadImageBytes,
 } from "@/core/io/imageLoader";
 import { makeTabId, fileTitle, DEFAULT_SWATCHES } from "@/core/store/tabTypes";
 import type { TabRecord, TabSnapshot } from "@/core/store/tabTypes";
 import type {
   LayerState,
   BackgroundFill,
-  AppState,
   SwatchGroup,
   PixelBrush,
   PixelFormat,
@@ -36,6 +36,12 @@ import { parseProfileColorSpace } from "@/core/cms/iccProfile";
 import { notificationStore } from "@/core/store/notificationStore";
 import { statusMessageStore } from "@/core/store/statusMessageStore";
 import { preferencesStore } from "@/core/store/preferencesStore";
+import {
+  VerveBlobWriter,
+  decodeVerveContainer,
+  isBlobRef,
+  isVerveContainer,
+} from "@/core/io/verveContainer";
 
 // ─── Linked-layer path helpers ────────────────────────────────────────────────
 // Renderer-side path arithmetic for the linked-layer feature. The renderer
@@ -109,12 +115,13 @@ function resolveRelative(fromDir: string, relative: string): string {
 
 interface UseFileOpsOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
-  state: AppState;
+  state: AppShellState;
   tabs: TabRecord[];
   activeTabId: string;
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   setActiveTabId: Dispatch<SetStateAction<string>>;
   setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  activeTabIdRef: { readonly current: string };
   captureActiveSnapshot: () => TabSnapshot;
   serializeActiveTabPixels: () => Map<string, string> | null;
   handleSwitchTab: (toId: string) => void;
@@ -137,17 +144,6 @@ export interface UseFileOpsReturn {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Encode a Float32Array as base64 using chunked approach to avoid stack overflow. */
-function f32ToBase64(arr: Float32Array): string {
-  const bytes = new Uint8Array(arr.buffer);
-  let str = "";
-  const CHUNK = 65536;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    str += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(str);
-}
 
 /** Encode a Uint8Array as base64 using chunked approach to avoid stack overflow. */
 function uint8ToBase64(arr: Uint8Array): string {
@@ -221,8 +217,53 @@ export function useFileOps({
   handleSwitchTab,
   dispatch,
   onRecentFilesUpdated,
+  activeTabIdRef,
 }: UseFileOpsOptions): UseFileOpsReturn {
   const [untitledCounter, setUntitledCounter] = useState(0);
+
+  // Latest-render versions of the snapshot/serialize helpers. File opens
+  // await disk reads and decodes; anything captured from the render that
+  // started the open (tabs, active tab, state) can be stale by the time the
+  // new tab is committed — e.g. the user switched tabs meanwhile.
+  const liveRef = useRef({ captureActiveSnapshot, serializeActiveTabPixels });
+  liveRef.current = { captureActiveSnapshot, serializeActiveTabPixels };
+
+  /**
+   * Background whichever tab is active *now* (snapshot + pixels) and append
+   * `newTab`, using a functional update so concurrent opens can't drop each
+   * other's tabs. If the active tab's canvas hasn't mounted yet (nothing to
+   * serialize) its existing `savedLayerData` is kept.
+   */
+  const addTabBackgroundingActive = useCallback(
+    (newTab: TabRecord): void => {
+      const live = liveRef.current;
+      const activeId = activeTabIdRef.current;
+      const snapshot = live.captureActiveSnapshot();
+      const savedLayerData = live.serializeActiveTabPixels();
+      setTabs((prev) => [
+        ...prev.map((t) =>
+          t.id === activeId
+            ? {
+                ...t,
+                snapshot,
+                savedLayerData: savedLayerData ?? t.savedLayerData,
+                exposureEV: displayStore.exposureEV,
+                toneMappingOperator: displayStore.toneMappingOperator,
+                viewTransformLutId: displayStore.viewTransformLutId,
+              }
+            : t,
+        ),
+        newTab,
+      ]);
+    },
+    [activeTabIdRef, setTabs],
+  );
+
+  // Opens run one at a time: each open backgrounds the active tab and
+  // swaps the active scope, so two interleaved opens would serialize the
+  // wrong canvas. After each open we also wait for React to commit and
+  // paint, so the next open sees the new tab as active.
+  const openQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const handleNewConfirm = useCallback(
     ({
@@ -236,8 +277,6 @@ export function useFileOps({
       backgroundFill: BackgroundFill;
       pixelFormat?: PixelFormat;
     }): void => {
-      const snapshot = captureActiveSnapshot();
-      const savedLayerData = serializeActiveTabPixels();
       const n = untitledCounter;
       setUntitledCounter(n + 1);
       const newId: string = makeTabId();
@@ -264,13 +303,7 @@ export function useFileOps({
         pixelBrushes: [],
         pixelFormat: fmt,
       };
-      const updated: TabRecord[] = [
-        ...tabs.map((t) =>
-          t.id === activeTabId
-            ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
-            : t,
-        ),
-        {
+      addTabBackgroundingActive({
           id: newId,
           title: `Untitled-${n + 1}`,
           filePath: null,
@@ -285,9 +318,7 @@ export function useFileOps({
           toneMappingOperator: "clamp",
             viewTransformLutId: null,
           animationMode: false,
-        },
-      ];
-      setTabs(updated);
+        });
       setActiveScope(newScope);
       setActiveTabId(newId);
       activeScope().history.clear({ recaptureSnapshot: false });
@@ -298,11 +329,8 @@ export function useFileOps({
       });
     },
     [
-      tabs,
-      activeTabId,
       untitledCounter,
-      captureActiveSnapshot,
-      serializeActiveTabPixels,
+      addTabBackgroundingActive,
       dispatch,
       setTabs,
       setActiveTabId,
@@ -310,17 +338,19 @@ export function useFileOps({
     ],
   );
 
-  const openFromPath = useCallback(
+  const openFromPathNow = useCallback(
     async (path: string): Promise<void> => {
       // ── Image file import ──────────────────────────────────────────────────
       const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
       if (ext === ".psd") {
         const { loadPsdLayers } = await import("@/core/io/psdLoader");
-        const base64 = await window.api.readFileBase64(path);
-        const bin = atob(base64);
-        const buf = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-        const psd = loadPsdLayers(buf.buffer);
+        const buf = await window.api.readFile(path);
+        const psd = loadPsdLayers(
+          buf.buffer.slice(
+            buf.byteOffset,
+            buf.byteOffset + buf.byteLength,
+          ) as ArrayBuffer,
+        );
         const hasAnyLeaf = (
           ns: import("@/core/io/psdLoader").PsdImportedNode[],
         ): boolean =>
@@ -461,15 +491,7 @@ export function useFileOps({
           pixelFormat: "rgba8",
           iccProfile: psd.iccProfile,
         };
-        const snapshot = captureActiveSnapshot();
-        const savedLayerData = serializeActiveTabPixels();
-        const updated: TabRecord[] = [
-          ...tabs.map((t) =>
-            t.id === activeTabId
-              ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
-              : t,
-          ),
-          {
+        addTabBackgroundingActive({
             id: newId,
             title,
             filePath: path,
@@ -484,9 +506,7 @@ export function useFileOps({
             toneMappingOperator: "clamp",
             viewTransformLutId: null,
             animationMode: false,
-          },
-        ];
-        setTabs(updated);
+          });
         setActiveScope(newScope);
         setActiveTabId(newId);
         activeScope().history.clear({ recaptureSnapshot: false });
@@ -519,10 +539,7 @@ export function useFileOps({
       }
       // ── Multi-layer EXR ───────────────────────────────────────────────
       if (ext === ".exr") {
-        const base64 = await window.api.readFileBase64(path);
-        const bin = atob(base64);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const bytes = await window.api.readFile(path);
         const exr = await decodeExrLayers(bytes);
         if (exr.layers.length > 1) {
           const newId = makeTabId();
@@ -571,15 +588,7 @@ export function useFileOps({
             pixelBrushes: [],
             pixelFormat: "rgba32f",
           };
-          const snapshot = captureActiveSnapshot();
-          const savedLayerData = serializeActiveTabPixels();
-          const updated: TabRecord[] = [
-            ...tabs.map((t) =>
-              t.id === activeTabId
-                ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
-                : t,
-            ),
-            {
+          addTabBackgroundingActive({
               id: newId,
               title,
               filePath: path,
@@ -594,9 +603,7 @@ export function useFileOps({
               toneMappingOperator: "clamp",
             viewTransformLutId: null,
               animationMode: false,
-            },
-          ];
-          setTabs(updated);
+            });
           setActiveScope(newScope);
           setActiveTabId(newId);
           activeScope().history.clear({ recaptureSnapshot: false });
@@ -625,9 +632,8 @@ export function useFileOps({
       }
 
       if (IMAGE_EXTENSIONS.has(ext)) {
-        const base64 = await window.api.readFileBase64(path);
         const mime = EXT_TO_MIME[ext] ?? "image/png";
-        const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
+        const loaded = await loadImageBytes(await window.api.readFile(path), mime);
         const { width, height } = loaded;
 
         // ── Tier-2 early-binding ICC conversion ─────────────────────────────
@@ -682,17 +688,13 @@ export function useFileOps({
           // HDR file — create a rgba32f tab, store float pixels via f32TransferStore
           const layerId = "layer-0";
           const f32Data = importPixels as Float32Array;
-          const layerDataKey = `f32:${layerId}`;
-          // Encode float pixels as data URL for savedLayerData map
-          const u8 = new Uint8Array(f32Data.buffer);
-          let binary = "";
-          const CHUNK = 8192;
-          for (let i = 0; i < u8.length; i += CHUNK) {
-            binary += String.fromCharCode(...u8.subarray(i, i + CHUNK));
-          }
-          const rawB64 = btoa(binary);
+          // Hand the floats to layer init through the transfer store (like the
+          // multi-layer EXR path) — a base64 round trip of an 8K HDR image is
+          // ~750 MB of string and exceeds V8's maximum string length.
+          const layerDataKey = `hdr-import:${Date.now()}-${Math.random().toString(36).slice(2)}:${layerId}`;
+          f32TransferStore.set(layerDataKey, f32Data);
           const layerData = new Map([
-            [layerId, `data:raw/f32;base64,${rawB64}`],
+            [layerId, `data:raw/f32-ref;id=${layerDataKey}`],
           ]);
           const layers: LayerState[] = [
             {
@@ -718,17 +720,9 @@ export function useFileOps({
             pixelFormat: "rgba32f",
             iccProfile: importIccProfile,
           };
-          const snapshot = captureActiveSnapshot();
-          const savedLayerData = serializeActiveTabPixels();
           const newId = makeTabId();
       const newScope = createDocumentScope();
-          const updated: TabRecord[] = [
-            ...tabs.map((t) =>
-              t.id === activeTabId
-                ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
-                : t,
-            ),
-            {
+          addTabBackgroundingActive({
               id: newId,
               title,
               filePath: null,
@@ -743,9 +737,7 @@ export function useFileOps({
               toneMappingOperator: "clamp",
             viewTransformLutId: null,
               animationMode: false,
-            },
-          ];
-          setTabs(updated);
+            });
           setActiveScope(newScope);
           setActiveTabId(newId);
           activeScope().history.clear({ recaptureSnapshot: false });
@@ -806,15 +798,7 @@ export function useFileOps({
           pixelFormat: "rgba8",
           iccProfile: importIccProfile,
         };
-        const snapshot = captureActiveSnapshot();
-        const savedLayerData = serializeActiveTabPixels();
-        const updated: TabRecord[] = [
-          ...tabs.map((t) =>
-            t.id === activeTabId
-              ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
-              : t,
-          ),
-          {
+        addTabBackgroundingActive({
             id: newId,
             title,
             filePath: null,
@@ -829,9 +813,7 @@ export function useFileOps({
             toneMappingOperator: "clamp",
             viewTransformLutId: null,
             animationMode: false,
-          },
-        ];
-        setTabs(updated);
+          });
         setActiveScope(newScope);
         setActiveTabId(newId);
         activeScope().history.clear({ recaptureSnapshot: false });
@@ -865,8 +847,13 @@ export function useFileOps({
       }
 
       // ── .verve file ──────────────────────────────────────────────────────
-      const json = await window.api.openverveFile(path);
-      const doc = JSON.parse(json) as {
+      const fileBytes = await window.api.openverveFile(path);
+      const container = isVerveContainer(fileBytes)
+        ? decodeVerveContainer<Record<string, unknown>>(fileBytes)
+        : null;
+      const doc = (container
+        ? container.doc
+        : JSON.parse(new TextDecoder().decode(fileBytes))) as {
         version: number;
         pixelFormat?: string;
         canvas: {
@@ -920,6 +907,11 @@ export function useFileOps({
 
       const docDir = directoryOf(path);
       const layerData = new Map<string, string>();
+      // Binary-container blobs are handed to the layer-init path through the
+      // in-process transfer stores (no base64 round trip).
+      const loadKey = `verve-load:${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const blobBytes = (ref: string): Uint8Array | null =>
+        container && isBlobRef(ref) ? container.blob(ref) : null;
       const layers: LayerState[] = doc.layers.map(
         ({
           layerDataRGBA8,
@@ -930,13 +922,29 @@ export function useFileOps({
           ...meta
         }) => {
           if (layerDataRGBA8) layerData.set(meta.id, layerDataRGBA8);
-          if (layerDataF32)
-            layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`);
-          if (layerDataIndexed)
-            layerData.set(
-              meta.id,
-              `data:raw/indexed8;base64,${layerDataIndexed}`,
-            );
+          if (layerDataF32) {
+            const bytes = blobBytes(layerDataF32);
+            if (bytes) {
+              const key = `${loadKey}:${meta.id}`;
+              f32TransferStore.set(key, new Float32Array(bytes.buffer));
+              layerData.set(meta.id, `data:raw/f32-ref;id=${key}`);
+            } else {
+              layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`);
+            }
+          }
+          if (layerDataIndexed) {
+            const bytes = blobBytes(layerDataIndexed);
+            if (bytes) {
+              const key = `${loadKey}:${meta.id}`;
+              u8TransferStore.set(key, bytes);
+              layerData.set(meta.id, `data:raw/indexed8-ref;id=${key}`);
+            } else {
+              layerData.set(
+                meta.id,
+                `data:raw/indexed8;base64,${layerDataIndexed}`,
+              );
+            }
+          }
           if (layerGeo)
             layerData.set(`${meta.id}:geo`, JSON.stringify(layerGeo));
           if (adjustmentMaskPng)
@@ -1034,17 +1042,9 @@ export function useFileOps({
         spritesheet: docSpritesheet,
         iccProfile: docIccProfile,
       };
-      const snapshot = captureActiveSnapshot();
-      const savedLayerData = serializeActiveTabPixels();
       const newId = makeTabId();
       const newScope = createDocumentScope();
-      const updated: TabRecord[] = [
-        ...tabs.map((t) =>
-          t.id === activeTabId
-            ? { ...t, snapshot, savedLayerData, exposureEV: displayStore.exposureEV, toneMappingOperator: displayStore.toneMappingOperator, viewTransformLutId: displayStore.viewTransformLutId }
-            : t,
-        ),
-        {
+      addTabBackgroundingActive({
           id: newId,
           title,
           filePath: path,
@@ -1059,9 +1059,7 @@ export function useFileOps({
           toneMappingOperator: "clamp" as ToneMappingOperator,
           viewTransformLutId: null,
           animationMode: false,
-        },
-      ];
-      setTabs(updated);
+        });
       setActiveScope(newScope);
       setActiveTabId(newId);
       activeScope().history.clear({ recaptureSnapshot: false });
@@ -1092,10 +1090,7 @@ export function useFileOps({
       onRecentFilesUpdated?.(updated2);
     },
     [
-      tabs,
-      activeTabId,
-      captureActiveSnapshot,
-      serializeActiveTabPixels,
+      addTabBackgroundingActive,
       handleSwitchTab,
       dispatch,
       setTabs,
@@ -1103,6 +1098,25 @@ export function useFileOps({
       setPendingLayerData,
       onRecentFilesUpdated,
     ],
+  );
+
+  const openFromPath = useCallback(
+    (path: string): Promise<void> => {
+      const run = openQueueRef.current.then(async () => {
+        try {
+          await openFromPathNow(path);
+        } catch (err) {
+          console.error("[Open] Failed:", path, err);
+          showOperationError(`Could not open ${fileTitle(path)}.`, err);
+        }
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => setTimeout(resolve, 0)),
+        );
+      });
+      openQueueRef.current = run.catch(() => undefined);
+      return run;
+    },
+    [openFromPathNow],
   );
 
   const handleOpen = useCallback(async (): Promise<void> => {
@@ -1118,7 +1132,7 @@ export function useFileOps({
     [openFromPath],
   );
 
-  const handleSave = useCallback(
+  const handleSaveNow = useCallback(
     async (saveAs = false): Promise<void> => {
       const activeTab = tabs.find((t) => t.id === activeTabId);
       const existingPath = activeTab?.filePath ?? null;
@@ -1132,6 +1146,7 @@ export function useFileOps({
         if (!path) return;
       }
 
+      const blobs = new VerveBlobWriter();
       const layerPngs: Record<string, string> = {};
       const layerF32Data: Record<string, string> = {};
       const layerIndexedData: Record<string, string> = {};
@@ -1169,10 +1184,10 @@ export function useFileOps({
             }
           } else if (state.pixelFormat === "rgba32f") {
             const f32 = canvasHandleRef.current?.exportLayerF32(layer.id);
-            if (f32) layerF32Data[layer.id] = f32ToBase64(f32);
+            if (f32) layerF32Data[layer.id] = blobs.add(f32);
           } else {
             const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id);
-            if (idx) layerIndexedData[layer.id] = uint8ToBase64(idx);
+            if (idx) layerIndexedData[layer.id] = blobs.add(idx);
           }
         } else if (
           layer.type !== "adjustment" &&
@@ -1245,7 +1260,8 @@ export function useFileOps({
           ? uint8ToBase64(state.iccProfile)
           : null,
       };
-      await window.api.saveverveFile(path, JSON.stringify(doc));
+      await window.api.saveverveFile(path, blobs.encode(doc));
+      activeScope().history.markSaved();
       const savedPath = path;
       const title = fileTitle(savedPath);
       setTabs((prev) =>
@@ -1260,7 +1276,19 @@ export function useFileOps({
     [tabs, activeTabId, state, canvasHandleRef, setTabs, onRecentFilesUpdated],
   );
 
-  const handleSaveACopy = useCallback(async (): Promise<void> => {
+  const handleSave = useCallback(
+    async (saveAs = false): Promise<void> => {
+      try {
+        await handleSaveNow(saveAs);
+      } catch (err) {
+        console.error("[Save] Failed:", err);
+        showOperationError("The document could not be saved.", err);
+      }
+    },
+    [handleSaveNow],
+  );
+
+  const handleSaveACopyNow = useCallback(async (): Promise<void> => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     const path = await window.api.saveverveDialog(
       activeTab?.filePath ?? undefined,
@@ -1268,6 +1296,7 @@ export function useFileOps({
     if (!path) return;
 
     const layerPngs2: Record<string, string> = {};
+    const blobs2 = new VerveBlobWriter();
     const layerF32Data2: Record<string, string> = {};
     const layerIndexedData2: Record<string, string> = {};
     const adjustmentMaskPngs2: Record<string, string> = {};
@@ -1302,10 +1331,10 @@ export function useFileOps({
           }
         } else if (state.pixelFormat === "rgba32f") {
           const f32 = canvasHandleRef.current?.exportLayerF32(layer.id);
-          if (f32) layerF32Data2[layer.id] = f32ToBase64(f32);
+          if (f32) layerF32Data2[layer.id] = blobs2.add(f32);
         } else {
           const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id);
-          if (idx) layerIndexedData2[layer.id] = uint8ToBase64(idx);
+          if (idx) layerIndexedData2[layer.id] = blobs2.add(idx);
         }
       } else if (
         layer.type !== "adjustment" &&
@@ -1372,10 +1401,19 @@ export function useFileOps({
         ? uint8ToBase64(state.iccProfile)
         : null,
     };
-    await window.api.saveverveFile(path, JSON.stringify(doc2));
+    await window.api.saveverveFile(path, blobs2.encode(doc2));
     // The current tab's filePath is NOT updated — this is a copy.
     statusMessageStore.show(`Saved a copy to ${fileTitle(path)}`);
   }, [tabs, activeTabId, state, canvasHandleRef]);
+
+  const handleSaveACopy = useCallback(async (): Promise<void> => {
+    try {
+      await handleSaveACopyNow();
+    } catch (err) {
+      console.error("[Save a Copy] Failed:", err);
+      showOperationError("The copy could not be saved.", err);
+    }
+  }, [handleSaveACopyNow]);
 
   return {
     untitledCounter,

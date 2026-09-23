@@ -122,6 +122,27 @@ export function cloneHistoryEntries(entries: HistoryEntry[]): HistoryEntry[] {
 
 const listeners = new Set<() => void>();
 
+/**
+ * Every live HistoryStore (one per open document). The memory cap is one
+ * budget across all of them: a per-tab cap let N open documents hold N× the
+ * RAM the user allowed, and scopes created after startup never even
+ * received the user's preference (they kept the 4 GB default).
+ */
+const liveStores = new Set<HistoryStore>();
+let globalCapBytes = 4 * 1024 * 1024 * 1024;
+
+/** Unique pixel buffers referenced by `entry` (with their sizes). */
+function entryBuffers(entry: HistoryEntry): Map<ArrayBufferLike, number> {
+  const out = new Map<ArrayBufferLike, number>();
+  for (const buf of entry.layerPixels.values()) {
+    if (!out.has(buf.buffer)) out.set(buf.buffer, buf.byteLength);
+  }
+  for (const buf of entry.adjustmentMasks.values()) {
+    if (!out.has(buf.buffer)) out.set(buf.buffer, buf.byteLength);
+  }
+  return out;
+}
+
 // App-level handlers registered once (by App.tsx / useHistory) and shared
 // across every per-tab HistoryStore instance — see comment on the getters
 // below for why these aren't per-instance fields.
@@ -140,13 +161,30 @@ export class HistoryStore {
   currentIndex = -1;
   selectedIndex = -1;
 
+  constructor() {
+    liveStores.add(this);
+  }
+
   /**
-   * Maximum total bytes allowed across all history entries (after dedup of
-   * shared buffers). Set by `useHistory` from the user's `historyMemoryBytes`
-   * preference. Defaults to 4 GB so the store works before the renderer
-   * has loaded preferences.
+   * Id of the entry the document matched when it was last saved. `null`
+   * means "the baseline": a freshly opened or created document is clean
+   * while it sits on its first history entry.
    */
-  private memoryCapBytes = 4 * 1024 * 1024 * 1024;
+  private savedEntryId: string | null = null;
+
+  /** Record the current state as saved (called after a successful Save). */
+  markSaved(): void {
+    this.savedEntryId = this.entries[this.currentIndex]?.id ?? null;
+    this.notify();
+  }
+
+  /** Whether the document has changes that haven't been saved. */
+  isDirty(): boolean {
+    const current = this.entries[this.currentIndex];
+    if (!current) return false;
+    if (this.savedEntryId === null) return this.currentIndex > 0;
+    return current.id !== this.savedEntryId;
+  }
 
   /**
    * Registered by App.tsx. Called when the user clicks Restore.
@@ -179,17 +217,25 @@ export class HistoryStore {
   }
 
   /**
-   * Set the memory cap (in bytes) and immediately evict oldest entries until
-   * the total fits. Called by `useHistory` whenever the preference changes.
+   * Set the memory cap (in bytes) shared by every document's history and
+   * immediately evict oldest entries until the total fits. Called by
+   * `useHistory` whenever the preference changes.
    */
   setMemoryCapBytes(bytes: number): void {
-    this.memoryCapBytes = Math.max(0, bytes);
-    this.evictUntilUnderCap();
+    globalCapBytes = Math.max(0, bytes);
+    HistoryStore.enforceMemoryCap();
     this.notify();
   }
 
   getMemoryCapBytes(): number {
-    return this.memoryCapBytes;
+    return globalCapBytes;
+  }
+
+  /** Bytes used by the history of every open document together. */
+  static totalBytes(): number {
+    let total = 0;
+    for (const store of liveStores) total += store.getCurrentBytes();
+    return total;
   }
 
   /**
@@ -230,15 +276,56 @@ export class HistoryStore {
    * deduplicated total is <= cap. Always keeps at least one entry so undo
    * always has a baseline. Caller is responsible for `notify()`.
    */
-  private evictUntilUnderCap(): void {
-    while (
-      this.entries.length > 1 &&
-      this.getCurrentBytes() > this.memoryCapBytes
-    ) {
-      const oldest = this.entries.shift()!;
-      this.releaseEntry(oldest);
-      this.currentIndex = Math.max(0, this.currentIndex - 1);
-      this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+  /**
+   * Evict the globally oldest history entries (by timestamp, across every
+   * open document) until the total fits the shared cap. Each store keeps at
+   * least one entry so undo always has a baseline. Background tabs' older
+   * entries therefore go first.
+   *
+   * Freed bytes are tracked with per-store buffer reference counts built
+   * once up front, instead of recomputing every store's deduplicated total
+   * after each eviction (which was O(entries² × layers)).
+   */
+  private static enforceMemoryCap(): void {
+    const states = [...liveStores].map((store) => {
+      const refs = new Map<ArrayBufferLike, { count: number; bytes: number }>();
+      for (const entry of store.entries) {
+        for (const [buf, bytes] of entryBuffers(entry)) {
+          const r = refs.get(buf);
+          if (r) r.count++;
+          else refs.set(buf, { count: 1, bytes });
+        }
+      }
+      return { store, refs };
+    });
+    let total = 0;
+    for (const { refs } of states) {
+      for (const r of refs.values()) total += r.bytes;
+    }
+    while (total > globalCapBytes) {
+      let victim: (typeof states)[number] | null = null;
+      for (const state of states) {
+        if (state.store.entries.length <= 1) continue;
+        if (
+          !victim ||
+          state.store.entries[0].timestamp < victim.store.entries[0].timestamp
+        ) {
+          victim = state;
+        }
+      }
+      if (!victim) break;
+      const { store, refs } = victim;
+      const oldest = store.entries.shift()!;
+      for (const buf of entryBuffers(oldest).keys()) {
+        const r = refs.get(buf)!;
+        if (--r.count === 0) {
+          total -= r.bytes;
+          refs.delete(buf);
+        }
+      }
+      store.releaseEntry(oldest);
+      store.currentIndex = Math.max(0, store.currentIndex - 1);
+      store.selectedIndex = Math.max(0, store.selectedIndex - 1);
     }
   }
 
@@ -255,7 +342,7 @@ export class HistoryStore {
     // the old fixed entry-count cap — entry size varies wildly between docs
     // (a 7000×9933 layer is ~278 MB; a 512×512 layer is ~1 MB), so a count
     // cap is meaningless. Byte cap gives the user direct control over RAM.
-    this.evictUntilUnderCap();
+    HistoryStore.enforceMemoryCap();
 
     this.notify();
   }
@@ -297,6 +384,20 @@ export class HistoryStore {
     this.currentIndex = index;
     this.selectedIndex = index;
     this.notify();
+  }
+
+  /**
+   * Release every entry without notifying subscribers or firing `onClear`.
+   * For a scope that is being thrown away (closed tab) — `clear()` would
+   * route `onClear` to the *active* tab's handler and record a
+   * "History Cleared" entry there.
+   */
+  dispose(): void {
+    this.entries.forEach((e) => this.releaseEntry(e));
+    this.entries = [];
+    this.currentIndex = -1;
+    this.selectedIndex = -1;
+    liveStores.delete(this);
   }
 
   clear(options?: ClearHistoryOptions): void {

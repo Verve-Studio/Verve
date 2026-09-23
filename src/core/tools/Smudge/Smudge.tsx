@@ -11,9 +11,13 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import smudgeIconSvg from "./smudge.svg?raw";
 import {
+  brushSelection,
+  copyLayerRect,
+  flushStamps,
   forEachBrushPixel,
   forEachStamp,
   markBrushDirty,
+  scratchBuffer,
 } from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -49,24 +53,26 @@ function sampleSnapshot(
   const y0 = Math.floor(y);
   const fx = x - x0;
   const fy = y - y0;
-  const x1 = x0 + 1;
-  const y1 = y0 + 1;
-  const w00 = (1 - fx) * (1 - fy);
-  const w10 = fx * (1 - fy);
-  const w01 = (1 - fx) * fy;
-  const w11 = fx * fy;
-
-  const fetch = (px: number, py: number, ch: number): number => {
-    if (px < 0 || py < 0 || px >= bw || py >= bh) return 0;
-    return buf[(py * bw + px) * 4 + ch];
-  };
-
-  for (let ch = 0; ch < 4; ch++) {
-    out[ch] =
-      fetch(x0, y0, ch) * w00 +
-      fetch(x1, y0, ch) * w10 +
-      fetch(x0, y1, ch) * w01 +
-      fetch(x1, y1, ch) * w11;
+  out[0] = out[1] = out[2] = out[3] = 0;
+  // Bilinear, alpha-weighted (premultiplied): transparent texels add no
+  // colour, only (lack of) coverage. Out-of-bounds texels count as
+  // transparent.
+  for (let k = 0; k < 4; k++) {
+    const px = x0 + (k & 1);
+    const py = y0 + (k >> 1);
+    if (px < 0 || py < 0 || px >= bw || py >= bh) continue;
+    const wt = ((k & 1) ? fx : 1 - fx) * ((k >> 1) ? fy : 1 - fy);
+    const i = (py * bw + px) * 4;
+    const aw = buf[i + 3] * wt;
+    out[0] += buf[i] * aw;
+    out[1] += buf[i + 1] * aw;
+    out[2] += buf[i + 2] * aw;
+    out[3] += aw;
+  }
+  if (out[3] > 0) {
+    out[0] /= out[3];
+    out[1] /= out[3];
+    out[2] /= out[3];
   }
 }
 
@@ -109,19 +115,8 @@ function smudgeStamp(
   const bw = maxLx - minLx + 1;
   const bh = maxLy - minLy + 1;
 
-  const snapshot: Uint8Array | Float32Array = isFloat
-    ? new Float32Array(bw * bh * 4)
-    : new Uint8Array(bw * bh * 4);
-  for (let y = 0; y < bh; y++) {
-    for (let x = 0; x < bw; x++) {
-      const li = ((minLy + y) * W + (minLx + x)) * 4;
-      const di = (y * bw + x) * 4;
-      snapshot[di] = data[li];
-      snapshot[di + 1] = data[li + 1];
-      snapshot[di + 2] = data[li + 2];
-      snapshot[di + 3] = data[li + 3];
-    }
-  }
+  const snapshot = scratchBuffer(0, isFloat, bw * bh * 4);
+  copyLayerRect(data, W, minLx, minLy, bw, bh, snapshot);
 
   const max = isFloat ? 1 : 255;
   const sample = new Float64Array(4);
@@ -129,7 +124,7 @@ function smudgeStamp(
   forEachBrushPixel(
     W,
     H,
-    { cxL, cyL, radius, hardness01, strength01 },
+    { cxL, cyL, radius, hardness01, strength01, selection: brushSelection(ctx) },
     (lx, ly, w) => {
       // Sample the snapshot at the position the brush *came from*, scaled by
       // this pixel's per-stamp weight. This is what creates Photoshop's
@@ -150,28 +145,31 @@ function smudgeStamp(
       const oG = snapshot[oi + 1];
       const oB = snapshot[oi + 2];
       const oA = snapshot[oi + 3];
+      // Alpha-weighted mix (no dark fringes against transparency).
       const inv = 1 - w;
+      const oW = oA * inv;
+      const sW = sA * w;
+      const outA = oW + sW;
+      let r = oR;
+      let g = oG;
+      let b = oB;
+      if (outA > 0) {
+        r = (oR * oW + sR * sW) / outA;
+        g = (oG * oW + sG * sW) / outA;
+        b = (oB * oW + sB * sW) / outA;
+      }
       if (isFloat) {
         const arr = data as Float32Array;
-        arr[li] = oR * inv + sR * w;
-        arr[li + 1] = oG * inv + sG * w;
-        arr[li + 2] = oB * inv + sB * w;
-        arr[li + 3] = oA * inv + sA * w;
+        arr[li] = r;
+        arr[li + 1] = g;
+        arr[li + 2] = b;
+        arr[li + 3] = outA;
       } else {
         const arr = data as Uint8Array;
-        arr[li] = Math.max(0, Math.min(max, Math.round(oR * inv + sR * w)));
-        arr[li + 1] = Math.max(
-          0,
-          Math.min(max, Math.round(oG * inv + sG * w)),
-        );
-        arr[li + 2] = Math.max(
-          0,
-          Math.min(max, Math.round(oB * inv + sB * w)),
-        );
-        arr[li + 3] = Math.max(
-          0,
-          Math.min(max, Math.round(oA * inv + sA * w)),
-        );
+        arr[li] = Math.max(0, Math.min(max, Math.round(r)));
+        arr[li + 1] = Math.max(0, Math.min(max, Math.round(g)));
+        arr[li + 2] = Math.max(0, Math.min(max, Math.round(b)));
+        arr[li + 3] = Math.max(0, Math.min(max, Math.round(outA)));
       }
     },
   );
@@ -190,6 +188,7 @@ function createSmudgeHandler(): ToolHandler {
     onPointerDown(pos: ToolPointerPos, ctx: ToolContext): void {
       if (ctx.layer.format === "indexed8") return;
       isDown = true;
+      ctx.renderer.strokeStart();
       prevX = pos.x;
       prevY = pos.y;
       // No motion yet — first stamp does nothing visible (matches PS).
@@ -220,11 +219,12 @@ function createSmudgeHandler(): ToolHandler {
       });
       prevX = pos.x;
       prevY = pos.y;
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      flushStamps(ctx);
     },
-    onPointerUp(_pos: ToolPointerPos, _ctx: ToolContext): void {
+    onPointerUp(_pos: ToolPointerPos, ctx: ToolContext): void {
+      if (!isDown) return;
       isDown = false;
+      ctx.renderer.strokeEnd();
     },
   };
 }

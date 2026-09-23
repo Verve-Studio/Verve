@@ -34,14 +34,23 @@ fn fs_gaussian_h(in: AdjVertOut) -> @location(0) vec4<f32> {
   let inv2sig2 = 1.0 / (2.0 * sigma * sigma);
   let maxR     = i32(params.radius);
 
-  var weightSum = 0.0;
-  var colorSum  = vec4f(0.0);
+  // Gaussian weights by recurrence instead of one exp() per tap:
+  //   g(x+1) = g(x) · ratio,  ratio(x+1) = ratio(x) · e1²,  e1 = exp(-1/2σ²)
+  // and each weight serves both the +x and -x taps.
+  let lastX = i32(dims.x) - 1;
+  let e1 = exp(-inv2sig2);
+  var w = 1.0;
+  var ratio = e1;
+  let step = e1 * e1;
+  var colorSum  = textureLoad(srcTex, coord, 0);
+  var weightSum = 1.0;
 
-  for (var x = -maxR; x <= maxR; x++) {
-    let w  = exp(-f32(x * x) * inv2sig2);
-    let sx = clamp(coord.x + x, 0, i32(dims.x) - 1);
-    colorSum  += textureLoad(srcTex, vec2i(sx, coord.y), 0) * w;
-    weightSum += w;
+  for (var x = 1; x <= maxR; x++) {
+    w *= ratio;
+    ratio *= step;
+    colorSum += (textureLoad(srcTex, vec2i(clamp(coord.x + x, 0, lastX), coord.y), 0) +
+                 textureLoad(srcTex, vec2i(clamp(coord.x - x, 0, lastX), coord.y), 0)) * w;
+    weightSum += 2.0 * w;
   }
 
   return colorSum * (1.0 / weightSum);

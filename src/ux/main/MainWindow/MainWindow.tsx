@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { TabRecord } from "@/core/store/tabTypes";
@@ -77,7 +77,6 @@ export interface MainWindowProps {
   swatches: RGBAColor[];
   canvasWidth: number;
   canvasHeight: number;
-  zoom: number;
   tiledMode: boolean;
   animationMode: boolean;
 
@@ -278,7 +277,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     swatches,
     canvasWidth,
     canvasHeight,
-    zoom,
     tiledMode,
     animationMode,
     tabs,
@@ -286,10 +284,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     activeTabId,
     canvasHandleRef,
     pendingLayerData,
-    setPendingLayerData,
     tabCanvasRef,
     captureHistory,
-    pendingLayerLabelRef,
     dispatch,
     hasActiveDocument,
     adjustments,
@@ -384,7 +380,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     guardedSwitchTab,
     guardedCloseTab,
     handleCafConfirm,
-    requireTransformDecision,
     isPlaying,
     isLooping,
     currentFrame,
@@ -400,19 +395,46 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     onCopyNextFrame,
   } = props;
 
+  // Stable callbacks for the memoized Canvas / RightPanel / TopBar. The
+  // latest props are read through a ref so identities never change.
+  const propsRef = React.useRef(props);
+  propsRef.current = props;
+  const handleCanvasReady = useCallback((): void => {
+    const p = propsRef.current;
+    p.setPendingLayerData(null);
+    p.captureHistory(p.pendingLayerLabelRef.current ?? "Initial State");
+    p.pendingLayerLabelRef.current = null;
+    p.canvasHandleRef.current?.fitToWindow();
+  }, []);
+  const handleOpenAdjustmentPanel = useCallback((id: string): void => {
+    const p = propsRef.current;
+    p.requireTransformDecision(() =>
+      p.adjustments.handleOpenAdjustmentPanel(id),
+    );
+  }, []);
+  const handleGeneratePalette = useCallback(
+    (): void => propsRef.current.setShowGeneratePaletteDialog(true),
+    [],
+  );
+  const handleOpenDevTools = useCallback(
+    (): void => {
+      void window.api.openDevTools();
+    },
+    [],
+  );
+
   return (
     <div className={styles.app}>
       <TopBar
         deps={menuDeps}
         isMac={isMac}
         tiledMode={tiledMode}
-        onDebug={() => window.api.openDevTools()}
+        onDebug={handleOpenDevTools}
       />
       <ToolOptionsBar />
       <TabBar
         tabs={tabInfos}
         activeTabId={activeTabId}
-        activeZoom={zoom}
         onSwitch={guardedSwitchTab}
         onClose={guardedCloseTab}
       />
@@ -433,14 +455,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
                 }
                 isActive={true}
                 onStrokeEnd={captureHistory}
-                onReady={() => {
-                  setPendingLayerData(null);
-                  captureHistory(
-                    pendingLayerLabelRef.current ?? "Initial State",
-                  );
-                  pendingLayerLabelRef.current = null;
-                  canvasHandleRef.current?.fitToWindow();
-                }}
+                onReady={handleCanvasReady}
               />
             );
           })}
@@ -485,12 +500,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           onFlattenImage={handleFlattenImage}
           onRasterizeLayer={handleRasterizeLayer}
           onDuplicateLayer={handleDuplicateLayer}
-          onOpenAdjustmentPanel={(id) =>
-            requireTransformDecision(() =>
-              adjustments.handleOpenAdjustmentPanel(id),
-            )
-          }
-          onGeneratePalette={() => setShowGeneratePaletteDialog(true)}
+          onOpenAdjustmentPanel={handleOpenAdjustmentPanel}
+          onGeneratePalette={handleGeneratePalette}
           onMergeGroup={handleMergeGroup}
           onGroupSelected={handleGroupLayers}
           onUngroup={handleUngroupLayers}

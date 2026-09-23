@@ -19,7 +19,7 @@
  *
  * Returned handlers are wired to the two canvases in Canvas.tsx's JSX.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useCanvas } from "@/core/services/useCanvas";
 import { TOOL_REGISTRY } from "@/core/tools";
 import type { ToolContext, ToolHandler, ToolPointerPos } from "@/core/tools";
@@ -101,15 +101,30 @@ export function useCanvasPointerInput(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, activeLayerId, isActive]);
 
+  // ── Stroke pinning ──────────────────────────────────────────────────────
+  // The handler (and tool) that received pointer-down keeps receiving the
+  // moves and the pointer-up of that stroke, even if the active tool changes
+  // mid-stroke (keyboard shortcut while the pen is down). Otherwise the new
+  // handler gets a pointer-up for a stroke it never started, and the old
+  // one never finishes: Brush's build-up timer keeps stamping forever,
+  // `strokeStart` is never paired with `strokeEnd`, Move leaves its text
+  // layer hidden, and the history entry is recorded (or dropped) under the
+  // wrong tool.
+  const strokeRef = useRef<{ handler: ToolHandler; tool: Tool } | null>(null);
+  const strokeHandler = (): ToolHandler =>
+    strokeRef.current?.handler ?? toolHandlerRef.current;
+
   // ── Shared event handlers (factored so we can wire them to both canvases) ─
   const handleDown = (pos: ToolPointerPos): void => {
     const ctx = buildCtx();
-    if (ctx) toolHandlerRef.current.onPointerDown(pos, ctx);
+    if (!ctx) return;
+    strokeRef.current = { handler: toolHandlerRef.current, tool: activeTool };
+    toolHandlerRef.current.onPointerDown(pos, ctx);
   };
 
   const handleMove = (pos: ToolPointerPos): void => {
     const ctx = buildCtx();
-    if (ctx) toolHandlerRef.current.onPointerMove(pos, ctx);
+    if (ctx) strokeHandler().onPointerMove(pos, ctx);
     updatePixelInfo(pos);
   };
 
@@ -125,24 +140,45 @@ export function useCanvasPointerInput(
     const noopRender = (): void => {
       /* deferred */
     };
-    for (const pos of positions) {
-      toolHandlerRef.current.onPointerMove(pos, {
-        ...ctx,
-        render: noopRender,
-      });
+    try {
+      const handler = strokeHandler();
+      for (const pos of positions) {
+        handler.onPointerMove(pos, {
+          ...ctx,
+          render: noopRender,
+        });
+      }
+    } finally {
+      // Always re-enable flushing: if a tool throws mid-batch and this stays
+      // true, every later flushLayer is silently skipped and painting stops.
+      renderer.deferFlush = false;
+      // The tools' own palette-aware flushes were no-ops under deferFlush,
+      // so this flush must carry the palette for indexed8 layers — without
+      // it the layer expands against an empty palette and renders blank.
+      renderer.flushLayer(
+        ctx.layer,
+        ctx.layer.format === "indexed8" ? ctx.swatches : undefined,
+      );
+      ctx.render();
     }
-    renderer.deferFlush = false;
-    renderer.flushLayer(ctx.layer);
-    ctx.render();
   };
 
   const handleUp = (pos: ToolPointerPos): void => {
+    const stroke = strokeRef.current;
+    strokeRef.current = null;
+    const handler = stroke?.handler ?? toolHandlerRef.current;
+    const tool = stroke?.tool ?? activeTool;
     const ctx = buildCtx();
-    if (ctx) toolHandlerRef.current.onPointerUp(pos, ctx);
+    const result = ctx ? handler.onPointerUp(pos, ctx) : undefined;
     newPixelLayerRef.current = null;
-    const def = TOOL_REGISTRY[activeTool];
-    if (def.modifiesPixels && !def.skipAutoHistory && ctx) {
-      const label = activeTool.charAt(0).toUpperCase() + activeTool.slice(1);
+    const def = TOOL_REGISTRY[tool];
+    if (
+      def.modifiesPixels &&
+      !def.skipAutoHistory &&
+      !result?.skipHistory &&
+      ctx
+    ) {
+      const label = tool.charAt(0).toUpperCase() + tool.slice(1);
       onStrokeEndRef.current?.(label);
     }
   };
@@ -182,7 +218,7 @@ export function useCanvasPointerInput(
     onPointerDown: handleDown,
     onPointerMove: (pos) => {
       const ctx = buildCtx();
-      if (ctx) toolHandlerRef.current.onPointerMove(pos, ctx);
+      if (ctx) strokeHandler().onPointerMove(pos, ctx);
     },
     onPointerMoveBatch: handleMoveBatch,
     onPointerUp: handleUp,

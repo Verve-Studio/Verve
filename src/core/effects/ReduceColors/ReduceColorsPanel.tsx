@@ -1,11 +1,46 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import type { RGBAColor } from "@/types";
 import type { ReduceColorsEffectLayer } from "@/core/effects/ReduceColors/ReduceColorsEffect";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { quantize } from "@/wasm";
+import { linearToSrgbChannel } from "@/utils/pixelFormatConvert";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ReduceColorsPanel.module.scss";
+import { quantizeOffThread } from "@/wasm/pixelopsWorkerClient";
+
+const QUANTIZE_SAMPLE_PIXELS = 1_000_000;
+
+/** Even subsample of `native` (RGBA) as sRGB bytes for the quantizer. */
+function samplePixelsForQuantize(
+  native: Uint8Array | Float32Array,
+): Uint8Array {
+  const count = native.length / 4;
+  const stride = Math.max(1, Math.ceil(count / QUANTIZE_SAMPLE_PIXELS));
+  const out = new Uint8Array(Math.ceil(count / stride) * 4);
+  const isFloat = native instanceof Float32Array;
+  let o = 0;
+  for (let p = 0; p < count; p += stride, o += 4) {
+    const i = p * 4;
+    if (isFloat) {
+      for (let c = 0; c < 3; c++) {
+        const e = linearToSrgbChannel(native[i + c]);
+        out[o + c] = e <= 0 ? 0 : e >= 1 ? 255 : Math.round(e * 255);
+      }
+      const a = native[i + 3];
+      out[o + 3] = a <= 0 ? 0 : a >= 1 ? 255 : Math.round(a * 255);
+    } else {
+      out[o] = native[i];
+      out[o + 1] = native[i + 1];
+      out[o + 2] = native[i + 2];
+      out[o + 3] = native[i + 3];
+    }
+  }
+  return out;
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +57,11 @@ export function ReduceColorsPanel({
   parentLayerName,
   canvasHandleRef,
 }: ReduceColorsPanelProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ swatches: s.swatches }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const { mode, colorCount } = layer.params;
   const [isQuantizing, setIsQuantizing] = useState(false);
   const genRef = useRef(0);
@@ -39,22 +78,15 @@ export function ReduceColorsPanel({
         layer.id,
       );
       if (!native || gen !== genRef.current) return;
-      // quantize WASM expects 8-bit RGBA; convert HDR float pixels (clamped) at the boundary.
-      const pixels: Uint8Array =
-        native instanceof Float32Array
-          ? (() => {
-              const out = new Uint8Array(native.length);
-              for (let i = 0; i < native.length; i++) {
-                const v = native[i];
-                out[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255);
-              }
-              return out;
-            })()
-          : native;
+      // Palette statistics don't need every pixel: quantize an even
+      // subsample of at most QUANTIZE_SAMPLE_PIXELS. rgba32f input is
+      // scene-linear, so it's gamma-encoded to sRGB bytes (the quantizer
+      // and the palette are sRGB), not scaled by 255.
+      const pixels = samplePixelsForQuantize(native);
 
       setIsQuantizing(true);
       try {
-        const result = await quantize(pixels, colorCount);
+        const result = await quantizeOffThread(pixels, colorCount);
         if (gen !== genRef.current) return;
         const newPalette: RGBAColor[] = [];
         for (let i = 0; i < result.count; i++) {
@@ -77,7 +109,10 @@ export function ReduceColorsPanel({
       }
     };
 
-    run();
+    // Debounced: every slider tick used to trigger a full-resolution GPU
+    // readback + conversion + quantize; only the settled value matters.
+    const timer = setTimeout(() => void run(), 200);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layer.id, mode, colorCount]);
 

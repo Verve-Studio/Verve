@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { TwirlEffectLayer } from "@/core/effects/Twirl/TwirlEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -22,7 +22,7 @@ export function TwirlOptions({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
   const update = (patch: Partial<TwirlEffectLayer["params"]>): void => {
     dispatch({

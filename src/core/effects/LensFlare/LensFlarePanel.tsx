@@ -1,5 +1,9 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import type { LensFlareEffectLayer } from "@/core/effects/LensFlare/LensFlareEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -21,7 +25,11 @@ export function LensFlarePanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ canvas: { height: s.canvas.height, width: s.canvas.width } }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const p = layer.params;
   const canvasW = Math.max(1, state.canvas.width);
   const canvasH = Math.max(1, state.canvas.height);
@@ -73,7 +81,10 @@ export function LensFlarePanel({
             if (!isNaN(v))
               update(
                 field,
-                Math.min(max, Math.max(min, Math.round(v))) as (typeof p)[typeof field],
+                Math.min(
+                  max,
+                  Math.max(min, Math.round(v)),
+                ) as (typeof p)[typeof field],
               );
           }}
         />

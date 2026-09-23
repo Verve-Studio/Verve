@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { BlackAndWhiteEffectLayer } from "@/core/effects/BlackAndWhite/BlackAndWhiteEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -15,7 +15,8 @@ interface BlackAndWhitePanelProps {
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 const getDefaultParams = (): BlackAndWhiteEffectLayer["params"] =>
-  effectRegistry.get("black-and-white")!.defaultParams as BlackAndWhiteEffectLayer["params"];
+  effectRegistry.get("black-and-white")!
+    .defaultParams as BlackAndWhiteEffectLayer["params"];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -23,12 +24,15 @@ export function BlackAndWhitePanel({
   layer,
   parentLayerName,
 }: BlackAndWhitePanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
 
   const pct = (v: number, min: number, max: number): string =>
     String((v - min) / (max - min));
 
-  const update = (key: keyof BlackAndWhiteEffectLayer["params"], value: number): void => {
+  const update = (
+    key: keyof BlackAndWhiteEffectLayer["params"],
+    value: number,
+  ): void => {
     dispatch({
       type: "UPDATE_ADJUSTMENT_LAYER",
       payload: { ...layer, params: { ...layer.params, [key]: value } },

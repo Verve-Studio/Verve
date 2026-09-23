@@ -116,6 +116,12 @@ export class WebGPURenderer {
     this.executor.setPreviewMode(enabled);
   }
 
+  /** Hide a layer from the on-screen preview only; flatten / export / merge
+   *  still include it. */
+  setScreenHidden(layerId: string, hidden: boolean): void {
+    this.executor.setScreenHidden(layerId, hidden);
+  }
+
   /** Force the next renderPlan() to actually execute even if inputs look identical. */
   invalidateRenderCache(): void {
     this.executor.invalidateRenderCache();
@@ -160,6 +166,9 @@ export class WebGPURenderer {
   /** Lazily-allocated per-stroke max-coverage buffer, shared across tools.
    *  See {@link acquireTouchedBuffer}. */
   private touchedBuffer: TouchedBuffer | null = null;
+  /** Every layer created by this renderer and not yet destroyed, so
+   *  {@link destroy} can release their textures and WASM heap pages. */
+  private readonly liveLayers = new Set<GpuLayer>();
 
   /**
    * Hand the active tool a fresh-zeroed `TouchedBuffer` sized to the canvas.
@@ -365,6 +374,7 @@ export class WebGPURenderer {
     // the layer in-place — no slice marshalling per stamp.
     pinLayerToWasm(layer);
     this.layerTextures.register(layer);
+    this.liveLayers.add(layer);
     return layer;
   }
 
@@ -396,6 +406,11 @@ export class WebGPURenderer {
     ry: number,
   ): void {
     this.layerTextures.markDirty(layer, lx, ly, rx, ry);
+  }
+
+  /** Whether the layer has CPU-side changes not yet uploaded to its texture. */
+  hasPendingUpload(layer: GpuLayer): boolean {
+    return this.layerTextures.getDirty(layer.id) !== null;
   }
 
   /** Mark the entire layer dirty (full re-upload on next flush). */
@@ -453,6 +468,7 @@ export class WebGPURenderer {
     this.layerTextures.dispose(layer.id);
     this.cache.disposeFor(layer.id);
     unpinLayerFromWasm(layer);
+    this.liveLayers.delete(layer);
   }
 
   /**
@@ -516,17 +532,33 @@ export class WebGPURenderer {
       }
     }
 
-    // Clamp layer bounds to canvas — doubling can push bounds beyond the canvas edge
-    if (newX < 0) {
-      newW += newX;
-      newX = 0;
+    // Clamp the doubled bounds to the canvas — but never inside the layer's
+    // current extent. A layer can already reach past the canvas (after a
+    // move / transform); clamping only to the canvas then *shrank* it on
+    // that side, and the reblit below wrote the old rows past the end of
+    // the smaller buffer ("offset is out of bounds").
+    const minX = Math.min(0, layer.offsetX);
+    const minY = Math.min(0, layer.offsetY);
+    const maxX = Math.max(this.pixelWidth, layer.offsetX + layer.layerWidth);
+    const maxY = Math.max(this.pixelHeight, layer.offsetY + layer.layerHeight);
+    if (newX < minX) {
+      newW -= minX - newX;
+      newX = minX;
     }
-    if (newY < 0) {
-      newH += newY;
-      newY = 0;
+    if (newY < minY) {
+      newH -= minY - newY;
+      newY = minY;
     }
-    if (newX + newW > this.pixelWidth) newW = this.pixelWidth - newX;
-    if (newY + newH > this.pixelHeight) newH = this.pixelHeight - newY;
+    if (newX + newW > maxX) newW = maxX - newX;
+    if (newY + newH > maxY) newH = maxY - newY;
+    // The doubling recentres on the canvas centre, which need not contain an
+    // off-centre layer: always keep the full current extent.
+    const right = Math.max(newX + newW, layer.offsetX + layer.layerWidth);
+    const bottom = Math.max(newY + newH, layer.offsetY + layer.layerHeight);
+    newX = Math.min(newX, layer.offsetX);
+    newY = Math.min(newY, layer.offsetY);
+    newW = right - newX;
+    newH = bottom - newY;
 
     // If the doubling-then-clamping landed us back on the same geometry
     // (which is what happens for any canvas-sized layer once a stamp gets
@@ -573,7 +605,7 @@ export class WebGPURenderer {
     pinLayerToWasm(layer);
     this.layerTextures.replaceTexture(layer, newTex, newW, newH, layer.format);
     // Bump version since texture content changed.
-    layer.contentVersion = this.layerTextures.getVersion(layer.id) + 1;
+    layer.contentVersion = this.layerTextures.bumpVersion(layer.id);
     // The incremental composite (`stableTex`) was captured against the
     // OLD layer's offset / extent. After grow, the layer reaches new
     // canvas pixels and the layer texture is a different object. The
@@ -751,7 +783,18 @@ export class WebGPURenderer {
   ): Promise<Uint8Array | Float32Array> {
     const { device, pixelWidth: w, pixelHeight: h } = this;
     const encoder = device.createCommandEncoder();
-    const finalTex = this.executor.encodePlanToComposite(encoder, plan);
+    // Output encode: preview-only state (preview mode, stroke throttling,
+    // screen-hidden layers) must not leak into flatten / export / merge.
+    let finalTex: GPUTexture;
+    try {
+      finalTex = this.executor.withOutputEncode(() =>
+        this.executor.encodePlanToComposite(encoder, plan),
+      );
+    } catch (err) {
+      // Nothing was submitted — release this encode's temporaries now.
+      this.executor.flushPendingDestroys();
+      throw err;
+    }
     return this.readback.readTexture(
       encoder,
       finalTex,
@@ -843,6 +886,27 @@ export class WebGPURenderer {
    * for the process lifetime and is reused by subsequent renderers.
    */
   destroy(): void {
+    // Release every layer still alive (Canvas unmount on tab switch, resize,
+    // crop, …): GPU texture, cached outputs and WASM heap pages. The WASM
+    // registry holds each pinned layer strongly, so without this nothing
+    // would ever be freed. A layer's `data` view would point into freed heap
+    // memory afterwards, so it's swapped for an empty buffer: a late reader
+    // then fails visibly instead of reading someone else's pixels.
+    for (const layer of [...this.liveLayers]) {
+      const wasPinned = layer.wasmPtr !== undefined;
+      this.destroyLayer(layer);
+      if (wasPinned) {
+        layer.data =
+          layer.data instanceof Float32Array
+            ? new Float32Array(0)
+            : new Uint8Array(0);
+      }
+    }
+    if (this.touchedBuffer?.wasmPtr !== undefined) {
+      const m = getPixelOpsSync();
+      if (m) freeWasm(m, this.touchedBuffer.wasmPtr);
+    }
+    this.touchedBuffer = null;
     this.executor.refreshCallback = null;
     this.executor.destroy();
     this.adjEncoder.destroy();

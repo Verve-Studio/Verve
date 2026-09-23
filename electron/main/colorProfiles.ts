@@ -1,6 +1,7 @@
 import { app, ipcMain, dialog } from 'electron'
-import { readdir, readFile, writeFile, mkdir, unlink, stat } from 'node:fs/promises'
-import { join, basename, extname } from 'node:path'
+import { readdir, readFile, mkdir, unlink, stat } from 'node:fs/promises'
+import { writeFileAtomic } from './atomicWrite'
+import { join, basename, extname, resolve, sep } from 'node:path'
 
 // ─── Color profile catalog (Tier 3d) ─────────────────────────────────────────
 //
@@ -130,6 +131,18 @@ export function registerColorProfileHandlers(): void {
     return out
   })
 
+  /**
+   * Resolve `name` inside `dir`, refusing anything that isn't a plain file
+   * name. Profile ids come from the renderer (`usr:<name>` / `sys:<name>`),
+   * so without this `usr:..\..\Documents\x.psd` could read or delete
+   * any file the user can access.
+   */
+  const safeJoin = (dir: string, name: string): string | null => {
+    if (!name || name !== basename(name) || name === '.' || name === '..') return null
+    const full = resolve(dir, name)
+    return full.startsWith(resolve(dir) + sep) ? full : null
+  }
+
   ipcMain.handle('cms:readProfileBytes', async (
     _event,
     id: string,
@@ -137,10 +150,11 @@ export function registerColorProfileHandlers(): void {
     // Re-resolve the entry from the filesystem each call rather than
     // caching the catalog in module state — keeps imports/deletes between
     // catalog refreshes from serving stale paths. Returns base64 to keep
-    // the IPC boundary symmetrical with `readFileBase64`.
+    // the IPC boundary symmetrical with the other file reads.
     const userDir = userProfileDir()
     if (id.startsWith('usr:')) {
-      const path = join(userDir, id.slice(4))
+      const path = safeJoin(userDir, id.slice(4))
+      if (!path) return null
       try {
         const buf = await readFile(path)
         return buf.toString('base64')
@@ -151,7 +165,8 @@ export function registerColorProfileHandlers(): void {
     if (id.startsWith('sys:')) {
       const name = id.slice(4)
       for (const dir of systemProfileDirs()) {
-        const path = join(dir, name)
+        const path = safeJoin(dir, name)
+        if (!path) return null
         try {
           const buf = await readFile(path)
           return buf.toString('base64')
@@ -178,7 +193,7 @@ export function registerColorProfileHandlers(): void {
     const userDir = await ensureUserDir()
     const dst = join(userDir, filename)
     const bytes = await readFile(src)
-    await writeFile(dst, bytes)
+    await writeFileAtomic(dst, bytes)
     return {
       id: `usr:${filename}`,
       filename,
@@ -193,10 +208,10 @@ export function registerColorProfileHandlers(): void {
     id: string,
   ): Promise<boolean> => {
     if (!id.startsWith('usr:')) return false
-    const filename = id.slice(4)
-    const userDir = userProfileDir()
+    const path = safeJoin(userProfileDir(), id.slice(4))
+    if (!path) return false
     try {
-      await unlink(join(userDir, filename))
+      await unlink(path)
       return true
     } catch {
       return false

@@ -6,10 +6,15 @@ import type {
   ToolContext,
   ToolOptionsStyles,
 } from "../_shared/types";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import liquifyIconSvg from "./liquify.svg?raw";
+import {
+  brushSelection,
+  selectionWeight,
+} from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -53,65 +58,121 @@ function falloff(t: number, hardness01: number): number {
 
 // ─── Bilinear sampling ────────────────────────────────────────────────────────
 
-interface SourceLayer {
-  data: Uint8Array | Float32Array;
-  width: number;
-  height: number;
-  format: "rgba8" | "rgba32f" | "indexed8";
-}
+type LiquifyFormat = "rgba8" | "rgba32f" | "indexed8";
 
-/** Sample the source layer at sub-pixel (sx, sy). Out-of-bounds returns 0000.
- *  rgba8/rgba32f use bilinear; indexed8 uses nearest-neighbour because palette
- *  indices can't be linearly interpolated. */
-function sampleSource(
-  src: SourceLayer,
-  sx: number,
-  sy: number,
-  out: Float64Array,
-): void {
-  const { width: W, height: H, data, format } = src;
+/** Side of the square tiles the per-stroke state is split into. */
+const TILE = 64;
 
-  if (format === "indexed8") {
-    const ix = Math.round(sx);
-    const iy = Math.round(sy);
-    if (ix < 0 || iy < 0 || ix >= W || iy >= H) {
-      out[0] = 255;
-      return;
-    }
-    out[0] = (data as Uint8Array)[iy * W + ix];
-    return;
+/**
+ * Per-stroke liquify state, allocated lazily in 64×64 tiles.
+ *
+ * Every stamp resamples touched pixels from the pre-stroke image, using an
+ * accumulated displacement field. This used to copy the whole layer and
+ * allocate a full-size Float32 displacement map on every pointer-down
+ * (~200 MB at 4K rgba32f; ~550 MB for the displacement map alone on an A1
+ * rgba8 layer).
+ *
+ * Now a tile of the pre-stroke image is captured just before the brush
+ * first writes into it. Tiles that were never written still hold their
+ * original pixels in the live layer, so reads from them go to the layer —
+ * the result is identical to sampling a full snapshot. Displacement tiles
+ * exist only where the brush has been.
+ */
+class LiquifyStroke {
+  readonly width: number;
+  readonly height: number;
+  readonly format: LiquifyFormat;
+  private readonly channels: number;
+  private readonly tilesX: number;
+  private readonly snapTiles: (Uint8Array | Float32Array | null)[];
+  private readonly dispTiles: (Float32Array | null)[];
+
+  constructor(private readonly layer: GpuLayer) {
+    this.width = layer.layerWidth;
+    this.height = layer.layerHeight;
+    this.format = layer.format;
+    this.channels = layer.format === "indexed8" ? 1 : 4;
+    this.tilesX = Math.ceil(this.width / TILE);
+    const count = this.tilesX * Math.ceil(this.height / TILE);
+    this.snapTiles = new Array(count).fill(null);
+    this.dispTiles = new Array(count).fill(null);
   }
 
-  const x0 = Math.floor(sx);
-  const y0 = Math.floor(sy);
-  const fx = sx - x0;
-  const fy = sy - y0;
-  const x1 = x0 + 1;
-  const y1 = y0 + 1;
+  /** Capture snapshot tiles (and create displacement tiles) covering the
+   *  layer-local rect before it is written. Inclusive bounds. */
+  prepare(minLx: number, minLy: number, maxLx: number, maxLy: number): void {
+    const C = this.channels;
+    const data = this.layer.data;
+    for (let ty = minLy >> 6; ty <= maxLy >> 6; ty++) {
+      for (let tx = minLx >> 6; tx <= maxLx >> 6; tx++) {
+        const t = ty * this.tilesX + tx;
+        if (!this.dispTiles[t]) this.dispTiles[t] = new Float32Array(TILE * TILE * 2);
+        if (this.snapTiles[t]) continue;
+        const tile =
+          this.format === "rgba32f"
+            ? new Float32Array(TILE * TILE * C)
+            : new Uint8Array(TILE * TILE * C);
+        const x0 = tx * TILE;
+        const rowLen = Math.min(TILE, this.width - x0) * C;
+        for (let y = 0; y < TILE; y++) {
+          const ly = ty * TILE + y;
+          if (ly >= this.height) break;
+          const from = (ly * this.width + x0) * C;
+          tile.set(data.subarray(from, from + rowLen), y * TILE * C);
+        }
+        this.snapTiles[t] = tile;
+      }
+    }
+  }
 
-  const w00 = (1 - fx) * (1 - fy);
-  const w10 = fx * (1 - fy);
-  const w01 = (1 - fx) * fy;
-  const w11 = fx * fy;
+  /** Displacement tile + offset for a prepared pixel. */
+  dispAt(lx: number, ly: number): { tile: Float32Array; i: number } {
+    const tile = this.dispTiles[(ly >> 6) * this.tilesX + (lx >> 6)]!;
+    return { tile, i: (((ly & 63) << 6) + (lx & 63)) * 2 };
+  }
 
-  const fetch = (x: number, y: number, ch: number): number => {
-    if (x < 0 || y < 0 || x >= W || y >= H) return 0;
-    const i = (y * W + x) * 4 + ch;
-    return data[i];
-  };
+  /** Pre-stroke value of channel `ch` at integer (x, y); 0 outside. */
+  private src(x: number, y: number, ch: number): number {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return 0;
+    const tile = this.snapTiles[(y >> 6) * this.tilesX + (x >> 6)];
+    if (tile) return tile[(((y & 63) << 6) + (x & 63)) * this.channels + ch];
+    return this.layer.data[(y * this.width + x) * this.channels + ch];
+  }
 
-  for (let ch = 0; ch < 4; ch++) {
-    out[ch] =
-      fetch(x0, y0, ch) * w00 +
-      fetch(x1, y0, ch) * w10 +
-      fetch(x0, y1, ch) * w01 +
-      fetch(x1, y1, ch) * w11;
+  /** Sample the pre-stroke image at sub-pixel (sx, sy). rgba8/rgba32f are
+   *  bilinear; indexed8 is nearest-neighbour (palette indices can't be
+   *  interpolated) with 255 (transparent) outside. */
+  sample(sx: number, sy: number, out: Float64Array): void {
+    if (this.format === "indexed8") {
+      const ix = Math.round(sx);
+      const iy = Math.round(sy);
+      out[0] =
+        ix < 0 || iy < 0 || ix >= this.width || iy >= this.height
+          ? 255
+          : this.src(ix, iy, 0);
+      return;
+    }
+    const x0 = Math.floor(sx);
+    const y0 = Math.floor(sy);
+    const fx = sx - x0;
+    const fy = sy - y0;
+    const w00 = (1 - fx) * (1 - fy);
+    const w10 = fx * (1 - fy);
+    const w01 = (1 - fx) * fy;
+    const w11 = fx * fy;
+    for (let ch = 0; ch < 4; ch++) {
+      out[ch] =
+        this.src(x0, y0, ch) * w00 +
+        this.src(x0 + 1, y0, ch) * w10 +
+        this.src(x0, y0 + 1, ch) * w01 +
+        this.src(x0 + 1, y0 + 1, ch) * w11;
+    }
   }
 }
 
 function writeDest(
   dst: Uint8Array | Float32Array,
-  format: "rgba8" | "rgba32f" | "indexed8",
+  format: LiquifyFormat,
   W: number,
   lx: number,
   ly: number,
@@ -151,11 +212,7 @@ function createLiquifyHandler(): ToolHandler {
   // displacement field) and resamples touched pixels from `snapshot` (the
   // pre-stroke layer image). Sampling from an unchanging snapshot avoids the
   // sample-write aliasing artefacts you get when warping live pixels.
-  let snapshot: Uint8Array | Float32Array | null = null;
-  let dispMap: Float32Array | null = null; // 2 floats per pixel: dx, dy
-  let strokeW = 0;
-  let strokeH = 0;
-  let strokeFormat: "rgba8" | "rgba32f" | "indexed8" = "rgba8";
+  let stroke: LiquifyStroke | null = null;
   let prevX = 0;
   let prevY = 0;
   let isDown = false;
@@ -167,10 +224,13 @@ function createLiquifyHandler(): ToolHandler {
     motionX: number, // canvas-space motion vector since previous sample
     motionY: number,
     pressure: number,
-  ): void {
+  ): boolean {
     const layer = ctx.layer;
-    if (!snapshot || !dispMap) return;
-    if (layer.layerWidth !== strokeW || layer.layerHeight !== strokeH) return;
+    if (!stroke) return false;
+    const strokeW = stroke.width;
+    const strokeH = stroke.height;
+    const strokeFormat = stroke.format;
+    if (layer.layerWidth !== strokeW || layer.layerHeight !== strokeH) return false;
 
     const opts = liquifyOptions;
     const size = opts.pressureSize
@@ -191,15 +251,11 @@ function createLiquifyHandler(): ToolHandler {
     const maxLx = Math.min(strokeW - 1, Math.ceil(cxL + radius));
     const minLy = Math.max(0, Math.floor(cyL - radius));
     const maxLy = Math.min(strokeH - 1, Math.ceil(cyL + radius));
-    if (minLx > maxLx || minLy > maxLy) return;
+    if (minLx > maxLx || minLy > maxLy) return false;
 
-    const src: SourceLayer = {
-      data: snapshot,
-      width: strokeW,
-      height: strokeH,
-      format: strokeFormat,
-    };
+    stroke.prepare(minLx, minLy, maxLx, maxLy);
     const sample = new Float64Array(4);
+    const selection = brushSelection(ctx);
     const dst = layer.data;
 
     // Per-mode angular/radial field (in addition to the linear push).
@@ -218,10 +274,11 @@ function createLiquifyHandler(): ToolHandler {
         if (dist2 > r2) continue;
         const dist = Math.sqrt(dist2);
         const t = dist / radius;
-        const f = falloff(t, hardness01) * strength01;
+        let f = falloff(t, hardness01) * strength01;
+        if (selection) f *= selectionWeight(selection, lx, ly);
         if (f <= 0) continue;
 
-        const idx2 = (ly * strokeW + lx) * 2;
+        const { tile: dispMap, i: idx2 } = stroke.dispAt(lx, ly);
 
         if (mode === "push") {
           // Forward warp: pixels travel with the brush. Sampling at
@@ -254,50 +311,48 @@ function createLiquifyHandler(): ToolHandler {
         // Resample from the snapshot using the accumulated displacement.
         const sx = lx - dispMap[idx2];
         const sy = ly - dispMap[idx2 + 1];
-        sampleSource(src, sx, sy, sample);
+        stroke.sample(sx, sy, sample);
         writeDest(dst, strokeFormat, strokeW, lx, ly, sample);
       }
     }
 
     // Mark the brush footprint dirty.
     ctx.renderer.markDirtyRect(layer, minLx, minLy, maxLx + 1, maxLy + 1);
+    return true;
   }
 
   return {
     onPointerDown(pos: ToolPointerPos, ctx: ToolContext): void {
-      const layer = ctx.layer;
-      strokeW = layer.layerWidth;
-      strokeH = layer.layerHeight;
-      strokeFormat = layer.format;
-      // Snapshot: copy the pre-stroke pixels so warping is always against an
-      // unchanging source.
-      snapshot =
-        layer.format === "rgba32f"
-          ? new Float32Array(layer.data as Float32Array)
-          : new Uint8Array(layer.data as Uint8Array);
-      dispMap = new Float32Array(2 * strokeW * strokeH);
+      stroke = new LiquifyStroke(ctx.layer);
+      ctx.renderer.strokeStart();
       prevX = pos.x;
       prevY = pos.y;
       isDown = true;
       // First tap: still apply with zero motion so twirl/pinch/bloat react.
-      applyAt(ctx, pos.x, pos.y, 0, 0, pos.pressure);
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      if (applyAt(ctx, pos.x, pos.y, 0, 0, pos.pressure)) {
+        ctx.renderer.flushLayer(ctx.layer, ctx.swatches);
+        ctx.render();
+      }
     },
     onPointerMove(pos: ToolPointerPos, ctx: ToolContext): void {
       if (!isDown) return;
       const dx = pos.x - prevX;
       const dy = pos.y - prevY;
-      applyAt(ctx, pos.x, pos.y, dx, dy, pos.pressure);
+      const wrote = applyAt(ctx, pos.x, pos.y, dx, dy, pos.pressure);
       prevX = pos.x;
       prevY = pos.y;
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      // Brush entirely outside the layer: nothing to upload. (Flushing with
+      // no dirty rect would upload the whole layer on every move.)
+      if (wrote) {
+        ctx.renderer.flushLayer(ctx.layer, ctx.swatches);
+        ctx.render();
+      }
     },
-    onPointerUp(_pos: ToolPointerPos, _ctx: ToolContext): void {
+    onPointerUp(_pos: ToolPointerPos, ctx: ToolContext): void {
+      if (!isDown) return;
       isDown = false;
-      snapshot = null;
-      dispMap = null;
+      stroke = null;
+      ctx.renderer.strokeEnd();
     },
   };
 }

@@ -1,9 +1,7 @@
-import { ipcMain, app, BrowserWindow } from 'electron'
-import { join, dirname } from 'node:path'
+import { mlPaths } from './ml/paths'
+import { join } from 'node:path'
 import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
-import type { IpcMainInvokeEvent } from 'electron'
 
 // ─── ORT type stubs (mirror of sam.ts / matting.ts) ──────────────────────────
 
@@ -20,6 +18,8 @@ interface OrtInferenceSession {
   readonly inputNames: readonly string[]
   readonly outputNames: readonly string[]
   run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>
+  /** Frees the native session (model weights, DirectML/CoreML buffers). */
+  release?(): Promise<void>
 }
 
 interface OrtModule {
@@ -110,15 +110,15 @@ function findModel(id: string): ModelDescriptor | null {
 // .onnx into their profile without reinstalling.
 
 function getBundledDir(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'models', 'realesrgan')
+  if (mlPaths().isPackaged) {
+    return join(mlPaths().resourcesPath, 'models', 'realesrgan')
   }
-  const devRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const devRoot = mlPaths().appRoot
   return join(devRoot, 'resources', 'models', 'realesrgan')
 }
 
 function getUserDataDir(): string {
-  return join(app.getPath('userData'), 'models', 'realesrgan')
+  return join(mlPaths().userData, 'models', 'realesrgan')
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -152,10 +152,35 @@ interface LoadedSession {
 }
 
 const sessionCache = new Map<string, LoadedSession>()
+const sessionLoads = new Map<string, Promise<LoadedSession>>()
 
-async function loadSession(m: ModelDescriptor): Promise<LoadedSession> {
+/**
+ * Load (or reuse) the session for `m`. Concurrent calls share one in-flight
+ * load. Only one upscale model stays resident: each holds ~100–200 MB of
+ * native weights (and DirectML/CoreML GPU buffers that compete with the
+ * canvas for VRAM), so switching models releases the previous one.
+ */
+function loadSession(m: ModelDescriptor): Promise<LoadedSession> {
   const cached = sessionCache.get(m.id)
-  if (cached) return cached
+  if (cached) return Promise.resolve(cached)
+  let pending = sessionLoads.get(m.id)
+  if (!pending) {
+    pending = createSession(m)
+      .then(async (loaded) => {
+        for (const [id, other] of sessionCache) {
+          if (id === m.id) continue
+          sessionCache.delete(id)
+          await other.session.release?.()
+        }
+        return loaded
+      })
+      .finally(() => sessionLoads.delete(m.id))
+    sessionLoads.set(m.id, pending)
+  }
+  return pending
+}
+
+async function createSession(m: ModelDescriptor): Promise<LoadedSession> {
 
   const path = await resolveModelPath(m)
   if (!path) {
@@ -230,11 +255,13 @@ function rgbaTileToChw(
 /**
  * Bilinear-resize a single-channel uint8 buffer.
  */
-function resizeAlphaBilinear(
+/** Bilinear-resize the alpha channel of RGBA `src` straight into the alpha
+ *  channel of RGBA `dst` (no separate single-channel buffers: at 4× those
+ *  were two extra full-size allocations on top of the output). */
+function fillAlphaBilinear(
   src: Uint8Array, srcW: number, srcH: number,
-  dstW: number, dstH: number,
-): Uint8Array {
-  const out = new Uint8Array(dstW * dstH)
+  dst: Uint8Array, dstW: number, dstH: number,
+): void {
   const sx = srcW / dstW
   const sy = srcH / dstH
   for (let y = 0; y < dstH; y++) {
@@ -247,16 +274,15 @@ function resizeAlphaBilinear(
       const x0 = Math.max(0, Math.floor(fx))
       const x1 = Math.min(srcW - 1, x0 + 1)
       const wx = fx - x0
-      const a00 = src[y0 * srcW + x0]
-      const a01 = src[y0 * srcW + x1]
-      const a10 = src[y1 * srcW + x0]
-      const a11 = src[y1 * srcW + x1]
+      const a00 = src[(y0 * srcW + x0) * 4 + 3]
+      const a01 = src[(y0 * srcW + x1) * 4 + 3]
+      const a10 = src[(y1 * srcW + x0) * 4 + 3]
+      const a11 = src[(y1 * srcW + x1) * 4 + 3]
       const top = a00 * (1 - wx) + a01 * wx
       const bot = a10 * (1 - wx) + a11 * wx
-      out[y * dstW + x] = Math.round(top * (1 - wy) + bot * wy)
+      dst[(y * dstW + x) * 4 + 3] = Math.round(top * (1 - wy) + bot * wy)
     }
   }
-  return out
 }
 
 /**
@@ -318,6 +344,10 @@ interface UpscaleParams {
   targetHeight: number
 }
 
+/** Largest source or target side accepted (the native-scale buffer is
+ *  sized from these, so unchecked values could request absurd allocations). */
+const MAX_UPSCALE_DIM = 32768
+
 interface ProgressEmit {
   (loaded: number, total: number): void
 }
@@ -325,6 +355,13 @@ interface ProgressEmit {
 async function runUpscale(p: UpscaleParams, onProgress: ProgressEmit): Promise<Uint8Array> {
   const model = findModel(p.modelId)
   if (!model) throw new Error(`Unknown upscale model: ${p.modelId}`)
+  const isDim = (v: number): boolean => Number.isInteger(v) && v > 0 && v <= MAX_UPSCALE_DIM
+  if (!isDim(p.width) || !isDim(p.height) || !isDim(p.targetWidth) || !isDim(p.targetHeight)) {
+    throw new Error(
+      `Invalid upscale size ${p.width}×${p.height} → ${p.targetWidth}×${p.targetHeight} ` +
+      `(each side must be a whole number between 1 and ${MAX_UPSCALE_DIM})`,
+    )
+  }
   if (p.rgba.length !== p.width * p.height * 4) {
     throw new Error(`rgba length ${p.rgba.length} ≠ ${p.width}×${p.height}×4`)
   }
@@ -366,12 +403,7 @@ async function runUpscale(p: UpscaleParams, onProgress: ProgressEmit): Promise<U
 
   // Pre-fill the alpha channel from a bilinear-resized copy of the input
   // alpha. RGB will be overwritten tile-by-tile below.
-  const alphaIn = new Uint8Array(p.width * p.height)
-  for (let i = 0; i < alphaIn.length; i++) alphaIn[i] = p.rgba[i * 4 + 3]
-  const alphaUp = resizeAlphaBilinear(alphaIn, p.width, p.height, upW, upH)
-  for (let i = 0; i < upW * upH; i++) {
-    upRgba[i * 4 + 3] = alphaUp[i]
-  }
+  fillAlphaBilinear(p.rgba, p.width, p.height, upRgba, upW, upH)
 
   const fixed = model.fixedInput ?? null
 
@@ -465,72 +497,46 @@ async function runUpscale(p: UpscaleParams, onProgress: ProgressEmit): Promise<U
   return resizeRgbaBilinear(upRgba, upW, upH, p.targetWidth, p.targetHeight)
 }
 
-// ─── IPC handler registration ────────────────────────────────────────────────
+// ─── Public API (used by the ML worker and the IPC layer) ───────────────────
 
-export function registerUpscaleHandlers(): void {
-  ipcMain.handle('upscale:list-models', (): Array<{ id: string; label: string; scale: number }> => {
-    return MODELS.map((m) => ({ id: m.id, label: m.label, scale: m.scale }))
-  })
+export function listUpscaleModels(): Array<{ id: string; label: string; scale: number }> {
+  return MODELS.map((m) => ({ id: m.id, label: m.label, scale: m.scale }))
+}
 
-  ipcMain.handle(
-    'upscale:check-model',
-    async (_event, modelId: string): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> => {
-      const m = findModel(modelId)
-      if (!m) return { ready: false, path: null, searchedPaths: [] }
-      const path = await resolveModelPath(m)
-      return {
-        ready: path !== null,
-        path,
-        searchedPaths: [join(getUserDataDir(), m.file), join(getBundledDir(), m.file)],
-      }
-    },
-  )
+export async function checkUpscaleModel(
+  modelId: string,
+): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> {
+  const m = findModel(modelId)
+  if (!m) return { ready: false, path: null, searchedPaths: [] }
+  const path = await resolveModelPath(m)
+  return {
+    ready: path !== null,
+    path,
+    searchedPaths: [join(getUserDataDir(), m.file), join(getBundledDir(), m.file)],
+  }
+}
 
-  ipcMain.handle(
-    'upscale:run',
-    async (
-      event: IpcMainInvokeEvent,
-      params: {
-        rgba: Buffer
-        width: number
-        height: number
-        modelId: string
-        targetWidth: number
-        targetHeight: number
-      },
-    ): Promise<{ rgba: Buffer; width: number; height: number; provider: string }> => {
-      const sender = BrowserWindow.fromWebContents(event.sender)
-      const emit = (loaded: number, total: number): void => {
-        sender?.webContents.send('upscale:progress', {
-          progress: total > 0 ? loaded / total : 0,
-          loaded,
-          total,
-        })
-      }
-      const rgbaIn = new Uint8Array(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength)
-      const result = await runUpscale(
-        {
-          rgba: rgbaIn,
-          width: params.width,
-          height: params.height,
-          modelId: params.modelId,
-          targetWidth: params.targetWidth,
-          targetHeight: params.targetHeight,
-        },
-        emit,
-      )
-      const loaded = sessionCache.get(params.modelId)
-      return {
-        rgba: Buffer.from(result),
-        width: params.targetWidth,
-        height: params.targetHeight,
-        provider: loaded?.provider ?? 'cpu',
-      }
-    },
-  )
+export async function runUpscaleJob(
+  params: UpscaleParams,
+  onProgress: ProgressEmit,
+): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> {
+  const rgba = await runUpscale(params, onProgress)
+  return {
+    // Returned as-is: an extra Buffer.from() copy of a multi-hundred-MB
+    // result used to double the peak memory for nothing.
+    rgba,
+    width: params.targetWidth,
+    height: params.targetHeight,
+    provider: sessionCache.get(params.modelId)?.provider ?? 'cpu',
+  }
+}
 
-  ipcMain.handle('upscale:invalidate-session', (_event, modelId?: string): void => {
-    if (modelId) sessionCache.delete(modelId)
-    else sessionCache.clear()
-  })
+/** Drop one model's session (or all) and free its native memory. */
+export async function invalidateUpscaleSession(modelId?: string): Promise<void> {
+  const ids = modelId ? [modelId] : [...sessionCache.keys()]
+  for (const id of ids) {
+    const loaded = sessionCache.get(id)
+    sessionCache.delete(id)
+    await loaded?.session.release?.()
+  }
 }

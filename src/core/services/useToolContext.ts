@@ -64,7 +64,8 @@ const NO_LAYER_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
 ]);
 
 export interface ToolContextDeps {
-  state: AppState;
+  /** Live app state, read on every pointer event. */
+  getState: () => AppState;
   dispatch: React.Dispatch<AppAction>;
   rendererRef: React.RefObject<WebGPURenderer | null>;
   glLayersRef: React.RefObject<Map<string, GpuLayer>>;
@@ -110,7 +111,8 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
 
   return useCallback((): ToolContext | null => {
     const d = depsRef.current;
-    const { state, dispatch } = d;
+    const { dispatch } = d;
+    const state = d.getState();
     const renderer = d.rendererRef.current;
     if (!renderer) return null;
 

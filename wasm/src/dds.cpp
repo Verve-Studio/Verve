@@ -19,6 +19,7 @@
 #include <string.h>
 #include <math.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <algorithm>
 
 // ── DDS file format constants ─────────────────────────────────────────────────
@@ -118,7 +119,7 @@ static inline void write_u32(uint8_t *p, uint32_t v) {
 }
 
 static inline int blocks_in_dim(int dim) {
-    return (dim + 3) / 4;
+    return (int)(((int64_t)dim + 3) / 4);
 }
 
 // Compressed bytes per 4×4 block
@@ -425,6 +426,7 @@ static int parse_ctx(const uint8_t *data, int32_t size, DecodeCtx *ctx) {
     dds_info info;
     int err = dds_get_info(data, size, &info);
     if (err != DDS_OK) return err;
+    if (info.width < 0 || info.height < 0) return DDS_ERR_INVALID;
 
     int32_t headerBytes = (int32_t)DDS_HEADER_SIZE;
     uint32_t fourcc = read_u32(data + 84); // ddpf.dwFourCC
@@ -451,21 +453,23 @@ int dds_decode(const uint8_t *data, int32_t size, uint8_t *out, int32_t outSize)
     if (err != DDS_OK) return err;
 
     int32_t w = ctx.width, h = ctx.height;
-    int32_t needed = w * h * 4;
-    if (outSize < needed) return DDS_ERR_MEMORY;
+    const size_t pixelCount = (size_t)w * (size_t)h;
+    // 64-bit so a large header w*h can't wrap and slip past the size checks.
+    int64_t needed = (int64_t)pixelCount * 4;
+    if ((int64_t)outSize < needed) return DDS_ERR_MEMORY;
 
     if (ctx.fmt == DDS_FMT_RGBA8) {
-        if (ctx.pixelDataSize < needed) return DDS_ERR_INVALID;
+        if ((int64_t)ctx.pixelDataSize < needed) return DDS_ERR_INVALID;
         memcpy(out, ctx.pixelData, (size_t)needed);
         return DDS_OK;
     }
 
     if (ctx.fmt == DDS_FMT_RGBA32F) {
         // Tonemap float → RGBA8 (Reinhard per channel)
-        int32_t floatNeeded = w * h * 16;
-        if (ctx.pixelDataSize < floatNeeded) return DDS_ERR_INVALID;
+        int64_t floatNeeded = (int64_t)pixelCount * 16;
+        if ((int64_t)ctx.pixelDataSize < floatNeeded) return DDS_ERR_INVALID;
         const float *src = (const float *)ctx.pixelData;
-        for (int i = 0; i < w * h; i++) {
+        for (size_t i = 0; i < pixelCount; i++) {
             float r = src[i*4], g = src[i*4+1], b = src[i*4+2], a = src[i*4+3];
             // Simple Reinhard tonemap
             r = r / (1.0f + r); g = g / (1.0f + g); b = b / (1.0f + b);
@@ -487,8 +491,8 @@ int dds_decode(const uint8_t *data, int32_t size, uint8_t *out, int32_t outSize)
     if (bpb < 0) return DDS_ERR_UNSUPPORTED;
 
     int bx = blocks_in_dim(w), by = blocks_in_dim(h);
-    int32_t compressedNeeded = bx * by * bpb;
-    if (ctx.pixelDataSize < compressedNeeded) return DDS_ERR_INVALID;
+    int64_t compressedNeeded = (int64_t)bx * by * bpb;
+    if ((int64_t)ctx.pixelDataSize < compressedNeeded) return DDS_ERR_INVALID;
 
     const uint8_t *src = ctx.pixelData;
     // Temp buffer for one 4×4 block output
@@ -524,7 +528,7 @@ int dds_decode(const uint8_t *data, int32_t size, uint8_t *out, int32_t outSize)
                 for (int px = 0; px < 4; px++) {
                     int ix = bx_i * 4 + px;
                     if (ix >= w) continue;
-                    int dst_off = (iy * w + ix) * 4;
+                    size_t dst_off = ((size_t)iy * w + ix) * 4;
                     if (is6H) {
                         float fr = blk.frgb[(py*4+px)*3+0];
                         float fg = blk.frgb[(py*4+px)*3+1];
@@ -562,20 +566,21 @@ int dds_decode_f32(const uint8_t *data, int32_t size, float *out, int32_t outSiz
     if (err != DDS_OK) return err;
 
     int32_t w = ctx.width, h = ctx.height;
-    int32_t needed = w * h * 16; // 4 floats per pixel
-    if (outSize < needed) return DDS_ERR_MEMORY;
+    const size_t pixelCount = (size_t)w * (size_t)h;
+    int64_t needed = (int64_t)pixelCount * 16; // 4 floats per pixel
+    if ((int64_t)outSize < needed) return DDS_ERR_MEMORY;
 
     if (ctx.fmt == DDS_FMT_RGBA32F) {
-        if (ctx.pixelDataSize < needed) return DDS_ERR_INVALID;
+        if ((int64_t)ctx.pixelDataSize < needed) return DDS_ERR_INVALID;
         memcpy(out, ctx.pixelData, (size_t)needed);
         return DDS_OK;
     }
 
     if (ctx.fmt == DDS_FMT_RGBA8) {
-        int32_t rgbaNeeded = w * h * 4;
-        if (ctx.pixelDataSize < rgbaNeeded) return DDS_ERR_INVALID;
+        int64_t rgbaNeeded = (int64_t)pixelCount * 4;
+        if ((int64_t)ctx.pixelDataSize < rgbaNeeded) return DDS_ERR_INVALID;
         const uint8_t *src8 = ctx.pixelData;
-        for (int i = 0; i < w * h; i++) {
+        for (size_t i = 0; i < pixelCount; i++) {
             out[i*4]   = src8[i*4]   / 255.0f;
             out[i*4+1] = src8[i*4+1] / 255.0f;
             out[i*4+2] = src8[i*4+2] / 255.0f;
@@ -588,8 +593,8 @@ int dds_decode_f32(const uint8_t *data, int32_t size, float *out, int32_t outSiz
     if (bpb < 0) return DDS_ERR_UNSUPPORTED;
 
     int bx = blocks_in_dim(w), by = blocks_in_dim(h);
-    int32_t compressedNeeded = bx * by * bpb;
-    if (ctx.pixelDataSize < compressedNeeded) return DDS_ERR_INVALID;
+    int64_t compressedNeeded = (int64_t)bx * by * bpb;
+    if ((int64_t)ctx.pixelDataSize < compressedNeeded) return DDS_ERR_INVALID;
 
     const uint8_t *src = ctx.pixelData;
     union { uint8_t rgba[64]; float frgb[16*3]; } blk;
@@ -622,7 +627,7 @@ int dds_decode_f32(const uint8_t *data, int32_t size, float *out, int32_t outSiz
                 for (int px = 0; px < 4; px++) {
                     int ix = bx_i * 4 + px;
                     if (ix >= w) continue;
-                    int dst_off = (iy * w + ix) * 4;
+                    size_t dst_off = ((size_t)iy * w + ix) * 4;
                     if (is6H) {
                         float fr = blk.frgb[(py*4+px)*3+0];
                         float fg = blk.frgb[(py*4+px)*3+1];
@@ -652,10 +657,10 @@ int dds_decode_f32(const uint8_t *data, int32_t size, float *out, int32_t outSiz
 
 // ── Header write helpers ──────────────────────────────────────────────────────
 
-static int32_t compute_compressed_size(int32_t w, int32_t h, int fmt) {
+static int64_t compute_compressed_size(int32_t w, int32_t h, int fmt) {
     int bpb = bytes_per_block(fmt);
     if (bpb < 0) return 0;
-    return blocks_in_dim(w) * blocks_in_dim(h) * bpb;
+    return (int64_t)blocks_in_dim(w) * blocks_in_dim(h) * bpb;
 }
 
 static void write_dx9_header(uint8_t *buf, int32_t w, int32_t h,
@@ -735,11 +740,11 @@ static void downscale_box_u8(const uint8_t *src, int32_t sw, int32_t sh,
         for (int x = 0; x < dw; x++) {
             int sx0 = x * 2;
             int sx1 = sx0 + 1; if (sx1 >= sw) sx1 = sw - 1;
-            const uint8_t *p00 = src + (sy0 * sw + sx0) * 4;
-            const uint8_t *p01 = src + (sy0 * sw + sx1) * 4;
-            const uint8_t *p10 = src + (sy1 * sw + sx0) * 4;
-            const uint8_t *p11 = src + (sy1 * sw + sx1) * 4;
-            uint8_t *d = dst + (y * dw + x) * 4;
+            const uint8_t *p00 = src + ((size_t)sy0 * sw + sx0) * 4;
+            const uint8_t *p01 = src + ((size_t)sy0 * sw + sx1) * 4;
+            const uint8_t *p10 = src + ((size_t)sy1 * sw + sx0) * 4;
+            const uint8_t *p11 = src + ((size_t)sy1 * sw + sx1) * 4;
+            uint8_t *d = dst + ((size_t)y * dw + x) * 4;
             for (int c = 0; c < 4; c++) {
                 d[c] = (uint8_t)((p00[c] + p01[c] + p10[c] + p11[c] + 2) >> 2);
             }
@@ -756,11 +761,11 @@ static void downscale_box_f32(const float *src, int32_t sw, int32_t sh,
         for (int x = 0; x < dw; x++) {
             int sx0 = x * 2;
             int sx1 = sx0 + 1; if (sx1 >= sw) sx1 = sw - 1;
-            const float *p00 = src + (sy0 * sw + sx0) * 4;
-            const float *p01 = src + (sy0 * sw + sx1) * 4;
-            const float *p10 = src + (sy1 * sw + sx0) * 4;
-            const float *p11 = src + (sy1 * sw + sx1) * 4;
-            float *d = dst + (y * dw + x) * 4;
+            const float *p00 = src + ((size_t)sy0 * sw + sx0) * 4;
+            const float *p01 = src + ((size_t)sy0 * sw + sx1) * 4;
+            const float *p10 = src + ((size_t)sy1 * sw + sx0) * 4;
+            const float *p11 = src + ((size_t)sy1 * sw + sx1) * 4;
+            float *d = dst + ((size_t)y * dw + x) * 4;
             for (int c = 0; c < 4; c++) {
                 d[c] = 0.25f * (p00[c] + p01[c] + p10[c] + p11[c]);
             }
@@ -778,20 +783,24 @@ int32_t dds_get_encoded_size(int32_t width, int32_t height, int fmt, int mipLeve
 
     int32_t hdrSize = (int32_t)DDS_HEADER_SIZE + (useDx10 ? (int32_t)DXT10_EXT_SIZE : 0);
 
-    int32_t total = 0;
+    // Accumulate in 64 bits. The exported return type is int32, so a file
+    // whose size can't be expressed in it reports DDS_ERR_MEMORY instead of
+    // wrapping to a small/negative size the caller would under-allocate.
+    int64_t total = 0;
     for (int lvl = 0; lvl < mipLevels; lvl++) {
         int32_t w = mip_dim(width, lvl);
         int32_t h = mip_dim(height, lvl);
-        int32_t lvlSize;
-        if (fmt == DDS_FMT_RGBA8)         lvlSize = w * h * 4;
-        else if (fmt == DDS_FMT_RGBA32F)  lvlSize = w * h * 16;
+        int64_t lvlSize;
+        if (fmt == DDS_FMT_RGBA8)         lvlSize = (int64_t)w * h * 4;
+        else if (fmt == DDS_FMT_RGBA32F)  lvlSize = (int64_t)w * h * 16;
         else {
             lvlSize = compute_compressed_size(w, h, fmt);
             if (lvlSize == 0) return DDS_ERR_INVALID;
         }
         total += lvlSize;
+        if ((int64_t)hdrSize + total > (int64_t)INT32_MAX) return DDS_ERR_MEMORY;
     }
-    return hdrSize + total;
+    return (int32_t)(hdrSize + total);
 }
 
 // ── dds_encode ───────────────────────────────────────────────────────────────
@@ -809,7 +818,7 @@ static void encode_bcx_level(const uint8_t *pixels, int32_t width, int32_t heigh
                 for (int px = 0; px < 4; px++) {
                     int ix = bxi * 4 + px;
                     if (ix >= width) ix = width - 1;
-                    const uint8_t *src = pixels + (iy * width + ix) * 4;
+                    const uint8_t *src = pixels + ((size_t)iy * width + ix) * 4;
                     memcpy(blk + (py * 4 + px) * 4, src, 4);
                 }
             }
@@ -838,19 +847,19 @@ int dds_encode(const uint8_t *pixels, int32_t width, int32_t height,
 
     bool useDx10 = (fmt == DDS_FMT_BC7) || (headerMode == DDS_HEADER_DX10);
     int32_t hdrSize = (int32_t)DDS_HEADER_SIZE + (useDx10 ? (int32_t)DXT10_EXT_SIZE : 0);
-    int32_t mip0Size = compute_compressed_size(width, height, fmt);
+    int64_t mip0Size = compute_compressed_size(width, height, fmt);
 
     if (useDx10) {
         uint32_t dxgi;
         if (fmt == DDS_FMT_BC1) dxgi = DXGI_FORMAT_BC1_UNORM;
         else if (fmt == DDS_FMT_BC3) dxgi = DXGI_FORMAT_BC3_UNORM;
         else dxgi = DXGI_FORMAT_BC7_UNORM;
-        write_dx10_header(out, width, height, mip0Size, dxgi, true, mipLevels);
+        write_dx10_header(out, width, height, (int32_t)mip0Size, dxgi, true, mipLevels);
     } else {
         uint32_t fcc;
         if (fmt == DDS_FMT_BC1) fcc = make_fourcc('D','X','T','1');
         else fcc = make_fourcc('D','X','T','5'); // BC3
-        write_dx9_header(out, width, height, mip0Size, fcc, mipLevels);
+        write_dx9_header(out, width, height, (int32_t)mip0Size, fcc, mipLevels);
     }
 
     static bool rgbcx_init_done = false;
@@ -866,9 +875,9 @@ int dds_encode(const uint8_t *pixels, int32_t width, int32_t height,
     dst += mip0Size;
 
     if (mipLevels > 1) {
-        int32_t maxBytes = mip_dim(width, 1) * mip_dim(height, 1) * 4;
-        uint8_t *bufA = (uint8_t *)malloc((size_t)maxBytes);
-        uint8_t *bufB = (uint8_t *)malloc((size_t)maxBytes);
+        size_t maxBytes = (size_t)mip_dim(width, 1) * mip_dim(height, 1) * 4;
+        uint8_t *bufA = (uint8_t *)malloc(maxBytes);
+        uint8_t *bufB = (uint8_t *)malloc(maxBytes);
         if (!bufA || !bufB) { free(bufA); free(bufB); return DDS_ERR_MEMORY; }
 
         int32_t curW = mip_dim(width, 1), curH = mip_dim(height, 1);
@@ -904,7 +913,7 @@ static void encode_bc6h_level(const float *pixels, int32_t width, int32_t height
                 for (int px = 0; px < 4; px++) {
                     int ix = bxi * 4 + px;
                     if (ix >= width) ix = width - 1;
-                    const float *src = pixels + (iy * width + ix) * 4;
+                    const float *src = pixels + ((size_t)iy * width + ix) * 4;
                     float *bdst = blk + (py * 4 + px) * 4;
                     bdst[0] = src[0]; bdst[1] = src[1];
                     bdst[2] = src[2]; bdst[3] = src[3];
@@ -928,27 +937,27 @@ int dds_encode_f32(const float *pixels, int32_t width, int32_t height,
     int32_t hdrSize = (int32_t)DDS_HEADER_SIZE + (int32_t)DXT10_EXT_SIZE;
 
     if (fmt == DDS_FMT_RGBA32F) {
-        int32_t pitchBytes = width * 16;
+        int32_t pitchBytes = (int32_t)((int64_t)width * 16);
         write_dx10_header(out, width, height, pitchBytes, DXGI_FORMAT_R32G32B32A32_FLOAT, false, mipLevels);
         uint8_t *dst = out + hdrSize;
-        memcpy(dst, pixels, (size_t)(width * height * 16));
-        dst += width * height * 16;
+        memcpy(dst, pixels, (size_t)width * height * 16);
+        dst += (size_t)width * height * 16;
         if (mipLevels > 1) {
-            int32_t maxFloats = mip_dim(width, 1) * mip_dim(height, 1) * 4;
-            float *bufA = (float *)malloc((size_t)maxFloats * sizeof(float));
-            float *bufB = (float *)malloc((size_t)maxFloats * sizeof(float));
+            size_t maxFloats = (size_t)mip_dim(width, 1) * mip_dim(height, 1) * 4;
+            float *bufA = (float *)malloc(maxFloats * sizeof(float));
+            float *bufB = (float *)malloc(maxFloats * sizeof(float));
             if (!bufA || !bufB) { free(bufA); free(bufB); return DDS_ERR_MEMORY; }
             int32_t curW = mip_dim(width, 1), curH = mip_dim(height, 1);
             downscale_box_f32(pixels, width, height, bufA, curW, curH);
-            memcpy(dst, bufA, (size_t)(curW * curH * 16));
-            dst += curW * curH * 16;
+            memcpy(dst, bufA, (size_t)curW * curH * 16);
+            dst += (size_t)curW * curH * 16;
             float *src = bufA, *dstBuf = bufB;
             int32_t prevW = curW, prevH = curH;
             for (int lvl = 2; lvl < mipLevels; lvl++) {
                 curW = mip_dim(width, lvl); curH = mip_dim(height, lvl);
                 downscale_box_f32(src, prevW, prevH, dstBuf, curW, curH);
-                memcpy(dst, dstBuf, (size_t)(curW * curH * 16));
-                dst += curW * curH * 16;
+                memcpy(dst, dstBuf, (size_t)curW * curH * 16);
+                dst += (size_t)curW * curH * 16;
                 float *tmp = src; src = dstBuf; dstBuf = tmp;
                 prevW = curW; prevH = curH;
             }
@@ -958,17 +967,17 @@ int dds_encode_f32(const float *pixels, int32_t width, int32_t height,
     }
 
     // BC6H UF16
-    int32_t mip0Size = compute_compressed_size(width, height, DDS_FMT_BC6H);
-    write_dx10_header(out, width, height, mip0Size, DXGI_FORMAT_BC6H_UF16, true, mipLevels);
+    int64_t mip0Size = compute_compressed_size(width, height, DDS_FMT_BC6H);
+    write_dx10_header(out, width, height, (int32_t)mip0Size, DXGI_FORMAT_BC6H_UF16, true, mipLevels);
 
     uint8_t *dst = out + hdrSize;
     encode_bc6h_level(pixels, width, height, dst);
     dst += mip0Size;
 
     if (mipLevels > 1) {
-        int32_t maxFloats = mip_dim(width, 1) * mip_dim(height, 1) * 4;
-        float *bufA = (float *)malloc((size_t)maxFloats * sizeof(float));
-        float *bufB = (float *)malloc((size_t)maxFloats * sizeof(float));
+        size_t maxFloats = (size_t)mip_dim(width, 1) * mip_dim(height, 1) * 4;
+        float *bufA = (float *)malloc(maxFloats * sizeof(float));
+        float *bufB = (float *)malloc(maxFloats * sizeof(float));
         if (!bufA || !bufB) { free(bufA); free(bufB); return DDS_ERR_MEMORY; }
         int32_t curW = mip_dim(width, 1), curH = mip_dim(height, 1);
         downscale_box_f32(pixels, width, height, bufA, curW, curH);

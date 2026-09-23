@@ -1,3 +1,4 @@
+import type { AppShellState } from "@/core/store/AppContext";
 import {
   useState,
   useRef,
@@ -7,7 +8,7 @@ import {
 } from "react";
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
-import type { AppState, AnimationDef } from "@/types";
+import type { AnimationDef } from "@/types";
 import { computeEffectivePalette, paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { activeScope } from "@/core/store/scope";
@@ -35,7 +36,7 @@ export interface AnimationPlayback {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useAnimationPlayback(
-  state: AppState,
+  state: AppShellState,
   dispatch: Dispatch<AppAction>,
   canvasHandleRef: { readonly current: CanvasHandle | null },
 ): AnimationPlayback {

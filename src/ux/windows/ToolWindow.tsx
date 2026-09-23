@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual, useAppSelector } from "@/core/store/AppContext";
 import { effectRegistry } from "@/core/effects";
 import { EffectFallbackIcon } from "@/core/effects/_shared/icons";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
@@ -45,8 +45,13 @@ export function AdjustmentPanel({
   onClose,
   canvasHandleRef,
 }: ToolWindowProps): React.JSX.Element | null {
-  const { state } = useAppContext();
-  const { openAdjustmentLayerId, layers } = state;
+  const { openAdjustmentLayerId, layers } = useAppSelector(
+    (s) => ({
+      openAdjustmentLayerId: s.openAdjustmentLayerId,
+      layers: s.layers,
+    }),
+    shallowEqual,
+  );
 
   const layer =
     openAdjustmentLayerId !== null

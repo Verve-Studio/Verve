@@ -419,8 +419,14 @@ export function ensureBakedBitmap(
     s.bakedBitmapPtr = 0;
     s.bakedBitmapKey = "";
   }
-  const bmPtr = m._malloc(byteCount);
-  if (bmPtr === 0) return null;
+  // Out of heap → return null so the caller falls back (malloc throws on
+  // failure rather than returning 0).
+  let bmPtr: number;
+  try {
+    bmPtr = m._malloc(byteCount);
+  } catch {
+    return null;
+  }
 
   // Pack the shape params into the scratch BrushStampParams (the bake
   // function reads only shape fields — cx/cy/colour/etc. are ignored).

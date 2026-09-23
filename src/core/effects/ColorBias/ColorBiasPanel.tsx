@@ -1,9 +1,6 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
-import type {
-  ColorBiasEffectLayer,
-  ColorBiasMetric,
-} from "./ColorBiasEffect";
+import { useAppDispatch } from "@/core/store/AppContext";
+import type { ColorBiasEffectLayer, ColorBiasMetric } from "./ColorBiasEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorBiasPanel.module.scss";
@@ -46,7 +43,7 @@ export function ColorBiasPanel({
   layer,
   parentLayerName,
 }: ColorBiasPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const {
     targetColor,
     useSeparateOutput,

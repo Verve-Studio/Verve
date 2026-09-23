@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual2, useAppSelector } from "@/core/store/AppContext";
 import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 import type { IndexedPixelInfo } from "@/ux/main/Canvas/cursorStore";
 import {
@@ -77,7 +77,14 @@ function memoryEstimate(w: number, h: number, format: string): string {
 }
 
 export function InfoPanel(): React.JSX.Element {
-  const { state } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      canvas: s.canvas,
+      iccProfile: s.iccProfile,
+      pixelFormat: s.pixelFormat,
+    }),
+    shallowEqual2,
+  );
   const { width, height } = state.canvas;
   const format = state.pixelFormat ?? "rgba8";
   const isFloat = format === "rgba32f";

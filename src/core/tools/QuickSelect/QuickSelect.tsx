@@ -18,6 +18,7 @@ import {
   markBrushDirty as _markBrushDirty,
 } from "../_shared/localBrush";
 import { activeScope } from "@/core/store/scope";
+import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 void _markBrushDirty;
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -69,12 +70,9 @@ function buildCanvasAlignedPixels(ctx: ToolContext): Uint8Array | null {
   if (layer.format === "indexed8") {
     src = expandIndicesToRgba(layer.data as Uint8Array, ctx.swatches);
   } else if (layer.format === "rgba32f") {
-    // Convert float [0..1] to byte [0..255] for tolerance comparison.
-    const f = layer.data as Float32Array;
-    src = new Uint8Array(f.length);
-    for (let i = 0; i < f.length; i++) {
-      src[i] = Math.max(0, Math.min(255, Math.round(f[i] * 255)));
-    }
+    // Scene-linear floats → sRGB bytes (transfer function, not ×255) so
+    // tolerance behaves the same as on rgba8 documents.
+    src = clampF32ToUint8(layer.data as Float32Array);
   } else {
     src = layer.data as Uint8Array;
   }
@@ -240,10 +238,21 @@ function createQuickSelectHandler(): ToolHandler {
       strokeSeen,
       strokeMask,
     );
-    // Push the in-progress mask into the live selection so the user sees the
-    // marching ants update every stamp. mergeMask copies the mask, so we can
-    // keep mutating `strokeMask` afterwards.
-    activeScope().selection.mergeMask(new Uint8Array(strokeMask), strokeMode);
+  }
+
+  /**
+   * Push the in-progress mask into the live selection so the marching ants
+   * follow the stroke. Called once per pointer event, not once per stamp:
+   * each merge is O(canvas), and a single move can produce many stamps.
+   */
+  function publish(): void {
+    if (!strokeMask) return;
+    // "set" keeps a reference to the mask it is given; copy so we can keep
+    // mutating `strokeMask`. The other modes only read it.
+    activeScope().selection.mergeMask(
+      strokeMode === "set" ? new Uint8Array(strokeMask) : strokeMask,
+      strokeMode,
+    );
   }
 
   return {
@@ -275,6 +284,7 @@ function createQuickSelectHandler(): ToolHandler {
       prevX = x;
       prevY = y;
       stamp(x, y);
+      publish();
       // After the first "new" stamp the rest of the stroke should add to the
       // freshly-set selection, not keep replacing it.
       if (strokeMode === "set") strokeMode = "add";
@@ -284,6 +294,7 @@ function createQuickSelectHandler(): ToolHandler {
       if (!isDown) return;
       const radius = Math.max(1, quickSelectOptions.size / 2);
       forEachStamp(prevX, prevY, x, y, radius * 0.5, (cx, cy) => stamp(cx, cy));
+      publish();
       prevX = x;
       prevY = y;
     },

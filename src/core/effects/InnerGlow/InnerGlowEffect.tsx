@@ -1,4 +1,5 @@
 import type { EffectLayerOf, RGBAColor } from "@/types";
+import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerGlowOptions } from "./InnerGlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -47,11 +48,12 @@ export const InnerGlowEffect: IPipelineEffect<
   encode({ engine, encoder, srcTex, dstTex }, entry) {
     const { color, opacity, spread, softness } = entry.params;
     // Inner glow is inner-shadow with offsetX/offsetY = 0; shares texCache.
+    const col = colorForTarget(color, dstTex.format);
     encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: color.r / 255,
-      colorG: color.g / 255,
-      colorB: color.b / 255,
-      colorA: color.a / 255,
+      colorR: col.r,
+      colorG: col.g,
+      colorB: col.b,
+      colorA: col.a,
       opacity: opacity / 100,
       offsetX: 0,
       offsetY: 0,

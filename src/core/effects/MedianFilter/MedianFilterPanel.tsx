@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { MedianFilterEffectLayer } from "@/core/effects/MedianFilter/MedianFilterEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -13,7 +13,7 @@ export function MedianFilterPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { radius } = layer.params;
   const up = (r: number) =>
     dispatch({

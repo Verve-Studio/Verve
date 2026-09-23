@@ -13,8 +13,36 @@ import {
 const K = 5;
 const GAMMA = 75.0; // must match grabcut.cpp
 
+/**
+ * Run `fn` (which submits GPU work and maps readback buffers) inside
+ * validation / out-of-memory error scopes. Without them a failed dispatch
+ * (e.g. a storage buffer over the binding limit) is only logged to the
+ * console and the readback returns zeros, which silently becomes an empty
+ * selection.
+ */
+async function withGpuErrorScopes<T>(
+  device: GPUDevice,
+  fn: () => Promise<T>,
+): Promise<T> {
+  device.pushErrorScope("validation");
+  device.pushErrorScope("out-of-memory");
+  let result: T | undefined;
+  let thrown: unknown = null;
+  try {
+    result = await fn();
+  } catch (err) {
+    thrown = err;
+  }
+  const oom = await device.popErrorScope();
+  const validation = await device.popErrorScope();
+  if (thrown) throw thrown;
+  const gpuError = oom ?? validation;
+  if (gpuError) throw new Error(`GrabCut GPU pass failed: ${gpuError.message}`);
+  return result as T;
+}
+
 class GrabCutComputeEngine {
-  private readonly device: GPUDevice;
+  readonly device: GPUDevice;
   private readonly nlinksPipeline: GPUComputePipeline;
   private readonly datatermsPipeline: GPUComputePipeline;
 
@@ -44,7 +72,30 @@ class GrabCutComputeEngine {
     });
   }
 
-  async computeNLinks(
+  computeNLinks(
+    rgba: Uint8Array,
+    w: number,
+    h: number,
+    beta: number,
+  ): Promise<{ hW: Float32Array; vW: Float32Array }> {
+    return withGpuErrorScopes(this.device, () =>
+      this.computeNLinksUnscoped(rgba, w, h, beta),
+    );
+  }
+
+  computeDataTerms(
+    rgba: Uint8Array,
+    trimap: Uint8Array,
+    w: number,
+    h: number,
+    gmmParams: Float32Array,
+  ): Promise<{ capS: Float32Array; capT: Float32Array }> {
+    return withGpuErrorScopes(this.device, () =>
+      this.computeDataTermsUnscoped(rgba, trimap, w, h, gmmParams),
+    );
+  }
+
+  private async computeNLinksUnscoped(
     rgba: Uint8Array,
     w: number,
     h: number,
@@ -110,32 +161,32 @@ class GrabCutComputeEngine {
     encoder.copyBufferToBuffer(vBuf, 0, vReadbuf, 0, vBytes);
     device.queue.submit([encoder.finish()]);
 
-    await Promise.all([
-      hReadbuf.mapAsync(GPUMapMode.READ),
-      vReadbuf.mapAsync(GPUMapMode.READ),
-    ]);
-    const hW =
-      hLen > 0
-        ? new Float32Array(hReadbuf.getMappedRange(0, hLen * 4).slice(0))
-        : new Float32Array(0);
-    const vW =
-      vLen > 0
-        ? new Float32Array(vReadbuf.getMappedRange(0, vLen * 4).slice(0))
-        : new Float32Array(0);
-    hReadbuf.unmap();
-    vReadbuf.unmap();
-
-    destroyTrackedTexture(srcTex);
-    hBuf.destroy();
-    vBuf.destroy();
-    paramsBuf.destroy();
-    hReadbuf.destroy();
-    vReadbuf.destroy();
-
-    return { hW, vW };
+    try {
+      await Promise.all([
+        hReadbuf.mapAsync(GPUMapMode.READ),
+        vReadbuf.mapAsync(GPUMapMode.READ),
+      ]);
+      const hW =
+        hLen > 0
+          ? new Float32Array(hReadbuf.getMappedRange(0, hLen * 4).slice(0))
+          : new Float32Array(0);
+      const vW =
+        vLen > 0
+          ? new Float32Array(vReadbuf.getMappedRange(0, vLen * 4).slice(0))
+          : new Float32Array(0);
+      return { hW, vW };
+    } finally {
+      // destroy() also unmaps; always release, even if mapAsync rejected.
+      destroyTrackedTexture(srcTex);
+      hBuf.destroy();
+      vBuf.destroy();
+      paramsBuf.destroy();
+      hReadbuf.destroy();
+      vReadbuf.destroy();
+    }
   }
 
-  async computeDataTerms(
+  private async computeDataTermsUnscoped(
     rgba: Uint8Array,
     trimap: Uint8Array,
     w: number,
@@ -216,33 +267,40 @@ class GrabCutComputeEngine {
     encoder.copyBufferToBuffer(capTBuf, 0, capTReadbuf, 0, capBytes);
     device.queue.submit([encoder.finish()]);
 
-    await Promise.all([
-      capSReadbuf.mapAsync(GPUMapMode.READ),
-      capTReadbuf.mapAsync(GPUMapMode.READ),
-    ]);
-    const capS = new Float32Array(capSReadbuf.getMappedRange().slice(0));
-    const capT = new Float32Array(capTReadbuf.getMappedRange().slice(0));
-    capSReadbuf.unmap();
-    capTReadbuf.unmap();
-
-    destroyTrackedTexture(srcTex);
-    destroyTrackedTexture(trimapTex);
-    dimsBuf.destroy();
-    gmmBuf.destroy();
-    capSBuf.destroy();
-    capTBuf.destroy();
-    capSReadbuf.destroy();
-    capTReadbuf.destroy();
-
-    return { capS, capT };
+    try {
+      await Promise.all([
+        capSReadbuf.mapAsync(GPUMapMode.READ),
+        capTReadbuf.mapAsync(GPUMapMode.READ),
+      ]);
+      const capS = new Float32Array(capSReadbuf.getMappedRange().slice(0));
+      const capT = new Float32Array(capTReadbuf.getMappedRange().slice(0));
+      return { capS, capT };
+    } finally {
+      destroyTrackedTexture(srcTex);
+      destroyTrackedTexture(trimapTex);
+      dimsBuf.destroy();
+      gmmBuf.destroy();
+      capSBuf.destroy();
+      capTBuf.destroy();
+      capSReadbuf.destroy();
+      capTReadbuf.destroy();
+    }
   }
 }
 
 let _engine: GrabCutComputeEngine | null = null;
 
 export function initGrabCutCompute(device: GPUDevice): void {
+  // The device is shared by every renderer; only rebuild the pipelines when
+  // it actually changed (first init, or after device loss).
+  if (_engine?.device === device) return;
   _engine?.destroy();
   _engine = GrabCutComputeEngine.create(device);
+}
+
+/** Largest storage-buffer binding the GrabCut passes may use, in bytes. */
+export function grabCutMaxStorageBytes(): number {
+  return _engine?.device.limits.maxStorageBufferBindingSize ?? 0;
 }
 
 export function isGrabCutComputeReady(): boolean {

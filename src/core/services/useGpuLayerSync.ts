@@ -20,7 +20,13 @@
  * Both effects no-op when the canvas tab isn't active.
  */
 import { useEffect } from "react";
-import type { AppState, PixelFormat, RGBAColor, Tool } from "@/types";
+import type {
+  AppState,
+  LayerState,
+  PixelFormat,
+  RGBAColor,
+  Tool,
+} from "@/types";
 import type {
   GpuLayer,
   WebGPURenderer,
@@ -61,6 +67,57 @@ function linkedSig(
   pixelFormat: PixelFormat,
 ): string {
   return `${pixelFormat}|${ls.centerX}|${ls.centerY}|${ls.scaleX}|${ls.scaleY}|${ls.rotation}|${ls.refreshNonce}|${ls.source.absolutePath}`;
+}
+
+/**
+ * Raster signatures for text / shape / path / frame layers, keyed by the
+ * GpuLayer object (a remount creates new GpuLayers, which then always
+ * re-rasterise). The sync effect re-runs on ANY layer-state change; without
+ * this gate an opacity drag, a rename or a visibility toggle anywhere
+ * re-rasterised every parametric layer on the CPU and re-uploaded it —
+ * and the contentVersion bump then invalidated the composite caches too.
+ */
+const parametricRasterSig = new WeakMap<GpuLayer, string>();
+
+/** Stable small ids for large payloads (frame content) so the signature
+ *  never stringifies megabytes of base64. */
+const payloadIds = new WeakMap<object, number>();
+let nextPayloadId = 1;
+function payloadId(obj: object | null | undefined): number {
+  if (!obj) return 0;
+  let id = payloadIds.get(obj);
+  if (id === undefined) {
+    id = nextPayloadId++;
+    payloadIds.set(obj, id);
+  }
+  return id;
+}
+
+/** Everything that affects the raster, i.e. the layer state minus the
+ *  compositing-only fields that are mirrored onto the GpuLayer directly. */
+function parametricSig(ls: LayerState, pixelFormat: PixelFormat): string {
+  const {
+    opacity: _opacity,
+    visible: _visible,
+    blendMode: _blendMode,
+    name: _name,
+    locked: _locked,
+    colorSpace: _colorSpace,
+    ...rest
+  } = ls as LayerState & Record<string, unknown>;
+  const content = (rest as { content?: object | null }).content;
+  return (
+    `${pixelFormat}|${payloadId(content)}|` +
+    JSON.stringify(rest, (key, value) => (key === "content" ? undefined : value))
+  );
+}
+
+/** True when `gl` must be re-rasterised for `ls` (and records the new sig). */
+function needsRaster(gl: GpuLayer, ls: LayerState, pixelFormat: PixelFormat): boolean {
+  const sig = parametricSig(ls, pixelFormat);
+  if (parametricRasterSig.get(gl) === sig) return false;
+  parametricRasterSig.set(gl, sig);
+  return true;
 }
 
 export interface GpuLayerSyncParams {
@@ -179,7 +236,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
           cw,
           ch,
         ).then(flushAndRender);
-        ensureLinkedDecoded(ls, window.api.readFileBase64, () => {
+        ensureLinkedDecoded(ls, window.api.readFile, () => {
           if (!map.get(ls.id)) return;
           const err = tryGetLinkedSourceError(ls);
           if (err) notificationStore.error(err.errorMessage);
@@ -271,11 +328,12 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         // GpuLayer is hidden during edit, and we re-rasterise once when
         // the editor closes (the dep on `editingTextLayerId` makes this
         // effect re-run on that transition).
-        if (ls.id !== editingTextLayerId) {
+        if (ls.id !== editingTextLayerId && needsRaster(gl, ls, pixelFormat)) {
           rasterizeTextToLayer(ls, gl);
           renderer.flushLayer(gl);
         }
       } else if ("type" in ls && ls.type === "shape") {
+        if (!needsRaster(gl, ls, pixelFormat)) continue;
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         rasterizeShapeToLayer(ls, gl, cw, ch, pixelFormat, swatches as RGBAColor[]);
@@ -285,6 +343,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         const ch = renderer.pixelHeight;
         gl.offsetX = 0;
         gl.offsetY = 0;
+        if (!needsRaster(gl, ls, pixelFormat)) continue;
         rasterizePathToLayer(ls, gl, cw, ch, pixelFormat);
         renderer.flushLayer(gl);
       } else if ("type" in ls && ls.type === "linked") {
@@ -322,7 +381,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
           cw,
           ch,
         ).then(flushAndRender);
-        ensureLinkedDecoded(ls, window.api.readFileBase64, () => {
+        ensureLinkedDecoded(ls, window.api.readFile, () => {
           if (!map.get(ls.id)) return;
           const err = tryGetLinkedSourceError(ls);
           if (err) notificationStore.error(err.errorMessage);
@@ -341,6 +400,7 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         const ch = renderer.pixelHeight;
         gl.offsetX = 0;
         gl.offsetY = 0;
+        if (!needsRaster(gl, ls, pixelFormat)) continue;
         rasterizeFrameToLayer(ls, gl, cw, ch);
         renderer.flushLayer(gl);
         if (ls.content) {

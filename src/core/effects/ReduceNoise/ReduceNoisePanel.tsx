@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ReduceNoiseEffectLayer } from "@/core/effects/ReduceNoise/ReduceNoiseEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -13,7 +13,7 @@ export function ReduceNoisePanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { strength, preserveDetails, reduceColorNoise, sharpenDetails } =
     layer.params;
   const up = (partial: Partial<typeof layer.params>) =>

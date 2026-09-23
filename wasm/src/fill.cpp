@@ -1,11 +1,12 @@
 #include "fill.h"
+#include <cstddef>
 #include <vector>
 #include <stack>
 #include <algorithm>
 #include <cmath>
 
 static inline int colorDist2(
-    const uint8_t* pixels, int idx,
+    const uint8_t* pixels, size_t idx,
     uint8_t r, uint8_t g, uint8_t b, uint8_t a
 ) {
     int dr = pixels[idx]     - r;
@@ -23,7 +24,7 @@ void fill_flood(
 ) {
     if (startX < 0 || startX >= width || startY < 0 || startY >= height) return;
 
-    const int startIdx = (startY * width + startX) * 4;
+    const size_t startIdx = (static_cast<size_t>(startY) * width + startX) * 4;
     const uint8_t targetR = pixels[startIdx];
     const uint8_t targetG = pixels[startIdx + 1];
     const uint8_t targetB = pixels[startIdx + 2];
@@ -34,11 +35,12 @@ void fill_flood(
 
     const int thresh2 = tolerance * tolerance * 4;
 
-    std::vector<bool> visited(width * height, false);
+    std::vector<bool> visited(static_cast<size_t>(width) * height, false);
 
     auto matches = [&](int x, int y) -> bool {
-        if (visited[y * width + x]) return false;
-        const int idx = (y * width + x) * 4;
+        const size_t pi = static_cast<size_t>(y) * width + x;
+        if (visited[pi]) return false;
+        const size_t idx = pi * 4;
         return colorDist2(pixels, idx, targetR, targetG, targetB, targetA) <= thresh2;
     };
 
@@ -60,8 +62,9 @@ void fill_flood(
 
         // Fill and mark visited
         for (int x = xl; x <= xr; ++x) {
-            const int idx = (y * width + x) * 4;
-            visited[y * width + x] = true;
+            const size_t pi = static_cast<size_t>(y) * width + x;
+            const size_t idx = pi * 4;
+            visited[pi] = true;
             pixels[idx]     = fillR;
             pixels[idx + 1] = fillG;
             pixels[idx + 2] = fillB;
@@ -87,7 +90,7 @@ void fill_flood(
 // ─── Float32 flood fill ───────────────────────────────────────────────────────
 
 static inline float colorDistF32_2(
-    const float* pixels, int idx,
+    const float* pixels, size_t idx,
     float r, float g, float b, float a
 ) {
     float dr = pixels[idx]     - r;
@@ -105,7 +108,7 @@ void fill_flood_f32(
 ) {
     if (startX < 0 || startX >= width || startY < 0 || startY >= height) return;
 
-    const int startIdx = (startY * width + startX) * 4;
+    const size_t startIdx = (static_cast<size_t>(startY) * width + startX) * 4;
     const float targetR = pixels[startIdx];
     const float targetG = pixels[startIdx + 1];
     const float targetB = pixels[startIdx + 2];
@@ -115,11 +118,12 @@ void fill_flood_f32(
 
     const float thresh2 = tolerance * tolerance * 4.0f;
 
-    std::vector<bool> visited(width * height, false);
+    std::vector<bool> visited(static_cast<size_t>(width) * height, false);
 
     auto matches = [&](int x, int y) -> bool {
-        if (visited[y * width + x]) return false;
-        const int idx = (y * width + x) * 4;
+        const size_t pi = static_cast<size_t>(y) * width + x;
+        if (visited[pi]) return false;
+        const size_t idx = pi * 4;
         return colorDistF32_2(pixels, idx, targetR, targetG, targetB, targetA) <= thresh2;
     };
 
@@ -138,8 +142,9 @@ void fill_flood_f32(
         while (xr + 1 < width && matches(xr + 1, y)) ++xr;
 
         for (int x = xl; x <= xr; ++x) {
-            const int idx = (y * width + x) * 4;
-            visited[y * width + x] = true;
+            const size_t pi = static_cast<size_t>(y) * width + x;
+            const size_t idx = pi * 4;
+            visited[pi] = true;
             pixels[idx]     = fillR;
             pixels[idx + 1] = fillG;
             pixels[idx + 2] = fillB;

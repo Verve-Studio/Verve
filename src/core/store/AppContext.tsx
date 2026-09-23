@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useReducer } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame, LinkedLayerState } from "@/types";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isContainerLayer, isCompositeLayer } from "@/types";
@@ -298,10 +306,16 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_SHAPE":
       return { ...state, activeShape: action.payload };
 
+    // Returning the same state object for a no-op lets React skip the
+    // re-render entirely. These fire on every pointer move while dragging
+    // the eyedropper / colour picker, and the whole app re-renders on any
+    // state change.
     case "SET_PRIMARY_COLOR":
+      if (sameColor(state.primaryColor, action.payload)) return state;
       return { ...state, primaryColor: action.payload };
 
     case "SET_SECONDARY_COLOR":
+      if (sameColor(state.secondaryColor, action.payload)) return state;
       return { ...state, secondaryColor: action.payload };
 
     case "ADD_SWATCH":
@@ -486,6 +500,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
         remaining.some((l) => l.id === state.openAdjustmentLayerId)
           ? state.openAdjustmentLayerId
           : null;
+      // Drop removed ids from the multi-selection so merge/group actions
+      // never receive dangling ids (keep the array identity when unchanged).
+      const selectedLayerIds = state.selectedLayerIds.some((id) =>
+        toRemove.has(id),
+      )
+        ? state.selectedLayerIds.filter((id) => !toRemove.has(id))
+        : state.selectedLayerIds;
       return {
         ...state,
         layers: remaining,
@@ -494,6 +515,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
             ? (remaining[remaining.length - 1]?.id ?? null)
             : state.activeLayerId,
         openAdjustmentLayerId: newOpenAdjId,
+        selectedLayerIds,
       };
     }
 
@@ -777,6 +799,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case "SET_ZOOM":
+      if (state.canvas.zoom === action.payload) return state;
       return { ...state, canvas: { ...state.canvas, zoom: action.payload } };
 
     case "TOGGLE_GRID":
@@ -1414,6 +1437,200 @@ function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
+// ─── Store ────────────────────────────────────────────────────────────────────
+//
+// The reducer runs in a small external store instead of `useReducer`, so
+// components subscribe to the slice they read (`useAppSelector`) instead of
+// re-rendering on every dispatch. `dispatch` is stable for the app's
+// lifetime. `useAppContext()` remains as a whole-state subscription for code
+// that genuinely needs everything — prefer the narrower hooks.
+
+export interface AppStore {
+  getState(): AppState;
+  dispatch: React.Dispatch<AppAction>;
+  subscribe(listener: () => void): () => void;
+}
+
+function createAppStore(): AppStore {
+  let state = initialState;
+  const listeners = new Set<() => void>();
+  return {
+    getState: () => state,
+    dispatch: (action) => {
+      const next = appReducer(state, action);
+      // No-op actions return the same object: nobody is notified.
+      if (next === state) return;
+      state = next;
+      for (const l of Array.from(listeners)) l();
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+const AppStoreContext = createContext<AppStore | null>(null);
+
+/** Shallow equality for selector results (own enumerable keys, `Object.is`). */
+export function shallowEqual<T>(a: T, b: T): boolean {
+  if (Object.is(a, b)) return true;
+  if (
+    typeof a !== "object" ||
+    typeof b !== "object" ||
+    a === null ||
+    b === null
+  )
+    return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (
+      !Object.prototype.hasOwnProperty.call(b, k) ||
+      !Object.is(
+        (a as Record<string, unknown>)[k],
+        (b as Record<string, unknown>)[k],
+      )
+    )
+      return false;
+  }
+  return true;
+}
+
+/**
+ * Like `shallowEqual`, but values that are plain objects are compared
+ * shallowly too (one level deeper). For slice selectors such as
+ * `{ canvas: { width, height }, layers }`: since reducer state is immutable,
+ * equal members imply equal content.
+ */
+export function shallowEqual2<T>(a: T, b: T): boolean {
+  if (Object.is(a, b)) return true;
+  if (
+    typeof a !== "object" ||
+    typeof b !== "object" ||
+    a === null ||
+    b === null
+  )
+    return false;
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  const ka = Object.keys(ra);
+  if (ka.length !== Object.keys(rb).length) return false;
+  for (const k of ka) {
+    const va = ra[k];
+    const vb = rb[k];
+    if (Object.is(va, vb)) continue;
+    if (
+      va === null ||
+      vb === null ||
+      typeof va !== "object" ||
+      typeof vb !== "object" ||
+      Array.isArray(va) !== Array.isArray(vb) ||
+      Object.getPrototypeOf(va) !== Object.getPrototypeOf(vb) ||
+      !shallowEqual(va, vb)
+    )
+      return false;
+  }
+  return true;
+}
+
+export function useAppStore(): AppStore {
+  const store = useContext(AppStoreContext);
+  if (!store) throw new Error("App store hooks must be used within an AppProvider");
+  return store;
+}
+
+/** Stable dispatch; never triggers a re-render by itself. */
+export function useAppDispatch(): React.Dispatch<AppAction> {
+  return useAppStore().dispatch;
+}
+
+/**
+ * Subscribe to a slice of app state. The component re-renders only when
+ * `isEqual(previous, next)` is false. The selector may close over props; it
+ * is re-evaluated whenever it changes identity or the state changes.
+ * Selectors returning a fresh object must pass `shallowEqual`.
+ */
+export function useAppSelector<T>(
+  selector: (state: AppState) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const store = useAppStore();
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
+  const isEqualRef = useRef(isEqual);
+  isEqualRef.current = isEqual;
+  const cache = useRef<{
+    state: AppState;
+    selector: (state: AppState) => T;
+    value: T;
+  } | null>(null);
+  const getSnapshot = useCallback((): T => {
+    const state = store.getState();
+    const sel = selectorRef.current;
+    const c = cache.current;
+    if (c && c.state === state && c.selector === sel) return c.value;
+    const value = sel(state);
+    if (c && isEqualRef.current(c.value, value)) {
+      cache.current = { state, selector: sel, value: c.value };
+      return c.value;
+    }
+    cache.current = { state, selector: sel, value };
+    return value;
+  }, [store]);
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+}
+
+/**
+ * App state minus the high-frequency fields (colours during picker /
+ * eyedropper drags, zoom during wheel/pinch). The app shell subscribes to
+ * this so those updates re-render only the components that read them; the
+ * type makes stale access to the omitted fields a compile error.
+ */
+export type AppShellState = Omit<
+  AppState,
+  "primaryColor" | "secondaryColor" | "canvas"
+> & { canvas: Omit<AppState["canvas"], "zoom"> };
+
+const SHELL_OMITTED = new Set<string>(["primaryColor", "secondaryColor", "canvas"]);
+
+export function selectAppShell(state: AppState): AppShellState {
+  return state;
+}
+
+/** Equality for `selectAppShell`: ignores colours and `canvas.zoom`. */
+export function appShellEqual(a: AppShellState, b: AppShellState): boolean {
+  if (a === b) return true;
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  for (const k of Object.keys(ra)) {
+    if (SHELL_OMITTED.has(k)) continue;
+    if (!Object.is(ra[k], rb[k])) return false;
+  }
+  if (a.canvas === b.canvas) return true;
+  const ca = a.canvas as Record<string, unknown>;
+  const cb = b.canvas as Record<string, unknown>;
+  for (const k of Object.keys(ca)) {
+    if (k === "zoom") continue;
+    if (!Object.is(ca[k], cb[k])) return false;
+  }
+  return true;
+}
+
+/** Whole-state subscription (re-renders on every state change). */
+export function useAppState(): AppState {
+  const store = useAppStore();
+  return useSyncExternalStore(store.subscribe, store.getState, store.getState);
+}
+
+/** Current state without subscribing — for event handlers / callbacks. */
+export function useGetAppState(): () => AppState {
+  return useAppStore().getState;
+}
+
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 interface AppContextValue {
@@ -1421,23 +1638,32 @@ interface AppContextValue {
   dispatch: React.Dispatch<AppAction>;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+
+function sameColor(
+  a: { r: number; g: number; b: number; a: number },
+  b: { r: number; g: number; b: number; a: number },
+): boolean {
+  return a.r === b.r && a.g === b.g && a.b === b.b && a.a === b.a;
+}
 
 export function AppProvider({
   children,
 }: {
   children: React.ReactNode;
 }): React.JSX.Element {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [store] = useState(createAppStore);
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
-      {children}
-    </AppContext.Provider>
+    <AppStoreContext.Provider value={store}>{children}</AppStoreContext.Provider>
   );
 }
 
+/**
+ * `{ state, dispatch }` with a whole-state subscription: the caller
+ * re-renders on every state change. Prefer `useAppSelector` +
+ * `useAppDispatch` for anything mounted during high-frequency updates.
+ */
 export function useAppContext(): AppContextValue {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useAppContext must be used within an AppProvider");
-  return ctx;
+  const store = useAppStore();
+  const state = useAppState();
+  return useMemo(() => ({ state, dispatch: store.dispatch }), [state, store]);
 }

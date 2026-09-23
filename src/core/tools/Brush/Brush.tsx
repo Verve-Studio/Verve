@@ -114,7 +114,13 @@ function createBrushHandler(): ToolHandler {
     ) {
       return;
     }
-    pendingFlushRenderer.flushLayer(pendingFlushLayer);
+    // With a pen, the coalesced-batch path in useCanvasPointerInput has
+    // usually uploaded this frame's dirty patch already. Flushing again with
+    // nothing pending would fall back to a FULL-layer upload (~133 MB on a
+    // 4K rgba32f layer) plus a full re-composite, every frame.
+    if (pendingFlushRenderer.hasPendingUpload(pendingFlushLayer)) {
+      pendingFlushRenderer.flushLayer(pendingFlushLayer);
+    }
     pendingFlushRender(pendingFlushLayers);
     pendingFlushRenderer = null;
     pendingFlushLayer = null;
@@ -380,8 +386,22 @@ function createBrushHandler(): ToolHandler {
     buildUpTimer = setInterval(() => {
       if (!strokeState || !lastPaintCtx || !lastBuildUpPoint) return;
       // Each tick is a fresh dose of paint — clear touched so coverage
-      // can climb past previous strokes within this tick.
-      strokeState.touched.data.fill(0);
+      // can climb past previous strokes within this tick. Only the region
+      // painted so far can be non-zero, so clear just that (same bbox the
+      // end-of-stroke cleanup uses) instead of the whole canvas-sized
+      // buffer, which cost ~16–70 MB of memset per tick (every ≥8 ms).
+      const touched = strokeState.touched;
+      if (strokeState.strokeBboxValid) {
+        const lx = Math.max(0, Math.floor(strokeState.strokeBboxLx));
+        const ly = Math.max(0, Math.floor(strokeState.strokeBboxLy));
+        const rx = Math.min(touched.width, Math.ceil(strokeState.strokeBboxRx) + 1);
+        const ry = Math.min(touched.height, Math.ceil(strokeState.strokeBboxRy) + 1);
+        for (let y = ly; y < ry; y++) {
+          touched.data.fill(0, y * touched.width + lx, y * touched.width + rx);
+        }
+      } else {
+        touched.data.fill(0);
+      }
       strokeState.strokeBboxValid = false;
       const { size, opacity } = resolveStrokeParams(smoothPressure);
       const px = lastBuildUpPoint.x;

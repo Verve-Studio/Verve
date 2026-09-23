@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { GlowEffectLayer } from "@/core/effects/Glow/GlowEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -38,7 +38,7 @@ export function GlowOptions({
   layer,
   parentLayerName,
 }: GlowOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<typeof p>): void => {

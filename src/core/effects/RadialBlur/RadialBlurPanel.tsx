@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useRef } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { useCanvasContext } from "@/core/store/CanvasContext";
 import type { RadialBlurEffectLayer } from "@/core/effects/RadialBlur/RadialBlurEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -18,7 +22,11 @@ export function RadialBlurPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ canvas: { height: s.canvas.height, width: s.canvas.width } }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const { thumbnailCanvasRef } = useCanvasContext();
   const { mode, amount, centerX, centerY, quality } = layer.params;
   const pctAmount = String((amount - 1) / 99);
@@ -32,7 +40,10 @@ export function RadialBlurPanel({
   // ── Preview canvas ────────────────────────────────────────────────
   const docW = state.canvas.width;
   const docH = state.canvas.height;
-  const scale = Math.min(1, Math.min(PREVIEW_MAX_W / docW, PREVIEW_MAX_H / docH));
+  const scale = Math.min(
+    1,
+    Math.min(PREVIEW_MAX_W / docW, PREVIEW_MAX_H / docH),
+  );
   const previewW = Math.max(1, Math.round(docW * scale));
   const previewH = Math.max(1, Math.round(docH * scale));
 
@@ -142,8 +153,7 @@ export function RadialBlurPanel({
           value={Math.round(centerX * 100)}
           onChange={(e) => {
             const v = e.target.valueAsNumber;
-            if (!isNaN(v))
-              up({ centerX: Math.min(1, Math.max(0, v / 100)) });
+            if (!isNaN(v)) up({ centerX: Math.min(1, Math.max(0, v / 100)) });
           }}
           aria-label="Centre X (%)"
         />
@@ -157,8 +167,7 @@ export function RadialBlurPanel({
           value={Math.round(centerY * 100)}
           onChange={(e) => {
             const v = e.target.valueAsNumber;
-            if (!isNaN(v))
-              up({ centerY: Math.min(1, Math.max(0, v / 100)) });
+            if (!isNaN(v)) up({ centerY: Math.min(1, Math.max(0, v / 100)) });
           }}
           aria-label="Centre Y (%)"
         />

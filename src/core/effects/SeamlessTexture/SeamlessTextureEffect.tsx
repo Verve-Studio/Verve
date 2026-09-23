@@ -157,7 +157,7 @@ export const SeamlessTextureEffect: IPipelineEffect<
           0,
         ]),
       );
-      const pass1Dst = seamlessBorders ? rt.makeRgba8Tex(w, h) : dstTex;
+      const pass1Dst = seamlessBorders ? rt.makeScratchTex(w, h, dstTex) : dstTex;
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(breakPair, pass1Dst),

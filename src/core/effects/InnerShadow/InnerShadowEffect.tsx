@@ -1,12 +1,13 @@
 import type { EffectLayerOf, RGBAColor } from "@/types";
+import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerShadowOptions } from "./InnerShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
-  destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
+import { TextureSetCache } from "../_shared/textureSetCache";
 
 
 export interface InnerShadowParams {
@@ -28,41 +29,30 @@ export type InnerShadowEffectLayer = EffectLayerOf<"inner-shadow", InnerShadowPa
 
 type InnerShadowOp = Extract<EffectRenderOp, { kind: "inner-shadow" }>;
 
-let texCache: {
-  tempA: GPUTexture;
-  tempB: GPUTexture;
-  format: GPUTextureFormat;
-} | null = null;
-let usedThisFrame = false;
+const texCache = new TextureSetCache<{ tempA: GPUTexture; tempB: GPUTexture }>();
 
 /** Scratch textures for the erode+blur ping-pong. Allocated in the doc
  *  format so the entire pipeline stays in f32 on HDR documents. */
 function ensureTextures(
-  device: GPUDevice,
+  runtime: EffectRuntime,
   width: number,
   height: number,
   format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
-  usedThisFrame = true;
-  if (texCache && texCache.format === format) return texCache;
-  if (texCache) {
-    destroyTrackedTexture(texCache.tempA);
-    destroyTrackedTexture(texCache.tempB);
-    texCache = null;
-  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
     GPUTextureUsage.COPY_DST |
     GPUTextureUsage.COPY_SRC;
   const make = (): GPUTexture =>
-    createTrackedTexture(device, {
+    createTrackedTexture(runtime.device, {
       size: { width, height },
       format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make(), format };
-  return texCache;
+  return texCache.get(runtime, `${width}x${height}:${format}`, () => ({
+    tempA: make(), tempB: make(),
+  }));
 }
 
 /** Shared inner-shadow encode used by InnerShadow and InnerGlow effects. */
@@ -86,7 +76,7 @@ export function encodeInnerShadowPass(
 ): void {
   const { device, pixelWidth: w, pixelHeight: h } = runtime;
   // Scratch + every compute pipeline in this pass runs in the doc format.
-  const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+  const { tempA, tempB } = ensureTextures(runtime, w, h, dstTex.format);
   const erodeH = runtime.getComputePipelineForStorageFormat(
     "outline-erode-h",
     "cs_outline_erode_h",
@@ -199,19 +189,10 @@ export function encodeInnerShadowPass(
 
 export const innerShadowCache = {
   onFrameEnd(): void {
-    if (!usedThisFrame && texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      texCache = null;
-    }
-    usedThisFrame = false;
+    texCache.onFrameEnd();
   },
   onDestroy(): void {
-    if (texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      texCache = null;
-    }
+    texCache.destroyAll();
   },
 };
 
@@ -243,11 +224,12 @@ export const InnerShadowEffect: IPipelineEffect<
 
   encode({ engine, encoder, srcTex, dstTex }, entry) {
     const { color, opacity, offsetX, offsetY, spread, softness } = entry.params;
+    const col = colorForTarget(color, dstTex.format);
     encodeInnerShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: color.r / 255,
-      colorG: color.g / 255,
-      colorB: color.b / 255,
-      colorA: color.a / 255,
+      colorR: col.r,
+      colorG: col.g,
+      colorB: col.b,
+      colorA: col.a,
       opacity: opacity / 100,
       offsetX,
       offsetY,

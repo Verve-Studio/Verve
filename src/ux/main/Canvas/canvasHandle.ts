@@ -19,7 +19,10 @@ import {
   type RasterReason,
 } from "@/graphics/rasterization";
 import { matchPaletteIndices } from "@/wasm";
-import { activeScope } from "@/core/store/scope";
+import {
+  linearToSrgbChannel,
+  srgbToLinearChannel,
+} from "@/utils/pixelFormatConvert";
 
 // ─── Public handle type (imported by App.tsx and other callers) ────────────
 
@@ -233,6 +236,21 @@ export interface CanvasHandle {
   ) => void;
 }
 
+function f32ToSrgbByte(v: number): number {
+  const e = linearToSrgbChannel(v);
+  return e <= 0 ? 0 : e >= 1 ? 255 : Math.round(e * 255);
+}
+
+let srgbLut: Float32Array | null = null;
+/** sRGB byte → linear float, 256 entries. */
+function srgbByteToLinearLut(): Float32Array {
+  if (!srgbLut) {
+    srgbLut = new Float32Array(256);
+    for (let i = 0; i < 256; i++) srgbLut[i] = srgbToLinearChannel(i / 255);
+  }
+  return srgbLut;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 interface UseCanvasHandleParams {
@@ -242,12 +260,17 @@ interface UseCanvasHandleParams {
   adjustmentMaskMap: { readonly current: Map<string, GpuLayer> };
   layersStateRef: { readonly current: readonly LayerState[] };
   swatchesRef: { readonly current: readonly RGBAColor[] };
+  /** Document pixel format — merge / rasterize plans must be built for it
+   *  (e.g. indexed8 excludes adjustments, as the screen plan does). */
+  pixelFormatRef: { readonly current: PixelFormat };
   /** Returns the correctly-filtered layers + mask map + full render plan. */
   buildRenderArgs: () => {
     layers: GpuLayer[];
     maskMap: Map<string, GpuLayer>;
     plan: RenderPlanEntry[];
   };
+  /** Plan for flatten / export / merge output (no preview-only state). */
+  buildOutputPlan: () => RenderPlanEntry[];
   width: number;
   height: number;
   viewportRef: React.RefObject<HTMLDivElement | null>;
@@ -268,7 +291,9 @@ export function useCanvasHandle({
   adjustmentMaskMap,
   layersStateRef,
   swatchesRef,
+  pixelFormatRef,
   buildRenderArgs,
+  buildOutputPlan,
   width,
   height,
   viewportRef,
@@ -279,6 +304,8 @@ export function useCanvasHandle({
 }: UseCanvasHandleParams): void {
   const buildRenderArgsRef = useRef(buildRenderArgs);
   buildRenderArgsRef.current = buildRenderArgs;
+  const buildOutputPlanRef = useRef(buildOutputPlan);
+  buildOutputPlanRef.current = buildOutputPlan;
 
   const requireRenderer = (): WebGPURenderer => {
     const renderer = rendererRef.current;
@@ -311,8 +338,10 @@ export function useCanvasHandle({
       glLayersRef.current,
       maskMap,
       adjustmentMaskMap.current,
-      activeScope().adjustmentPreview.snapshot(),
+      // Merge / rasterize output: preview-bypass toggles must not apply.
+      new Set(),
       swatchesRef.current as RGBAColor[],
+      pixelFormatRef.current,
     );
   };
 
@@ -376,7 +405,7 @@ export function useCanvasHandle({
 
       rasterizeComposite: async (reason) => {
         const renderer = requireRenderer();
-        const { plan } = buildRenderArgsRef.current();
+        const plan = buildOutputPlanRef.current();
         const result = await rasterizeDocument({
           plan,
           width: renderer.pixelWidth,
@@ -436,6 +465,7 @@ export function useCanvasHandle({
           adjustmentMaskMap.current,
           new Set(),
           swatches as RGBAColor[],
+          pixelFormatRef.current,
         );
         const result = await rasterizeDocument({
           plan,
@@ -493,10 +523,12 @@ export function useCanvasHandle({
             const si = (ly * layer.layerWidth + lx) * 4;
             const di = (cy * w + cx) * 4;
             if (isF32) {
-              result[di] = Math.round(Math.min(src[si], 1) * 255);
-              result[di + 1] = Math.round(Math.min(src[si + 1], 1) * 255);
-              result[di + 2] = Math.round(Math.min(src[si + 2], 1) * 255);
-              result[di + 3] = Math.round(Math.min(src[si + 3], 1) * 255);
+              // Linear floats → sRGB bytes (transfer function, not ×255).
+              result[di] = f32ToSrgbByte(src[si]);
+              result[di + 1] = f32ToSrgbByte(src[si + 1]);
+              result[di + 2] = f32ToSrgbByte(src[si + 2]);
+              const a = src[si + 3];
+              result[di + 3] = a <= 0 ? 0 : a >= 1 ? 255 : Math.round(a * 255);
             } else {
               result[di] = src[si];
               result[di + 1] = src[si + 1];
@@ -836,6 +868,10 @@ export function useCanvasHandle({
           renderer.growLayerToFit(layer, maxX, maxY);
         }
 
+        // `pixels` is sRGB RGBA8 (the getLayerPixels format); rgba32f layers
+        // store linear floats, so decode instead of copying bytes into them.
+        const isF32 = layer.format === "rgba32f";
+        const lut = isF32 ? srgbByteToLinearLut() : null;
         for (let ly = 0; ly < layer.layerHeight; ly++) {
           const cy = layer.offsetY + ly;
           if (cy < 0 || cy >= h) continue;
@@ -844,10 +880,17 @@ export function useCanvasHandle({
             if (cx < 0 || cx >= w) continue;
             const si = (cy * w + cx) * 4;
             const di = (ly * layer.layerWidth + lx) * 4;
-            layer.data[di] = pixels[si];
-            layer.data[di + 1] = pixels[si + 1];
-            layer.data[di + 2] = pixels[si + 2];
-            layer.data[di + 3] = pixels[si + 3];
+            if (lut) {
+              layer.data[di] = lut[pixels[si]];
+              layer.data[di + 1] = lut[pixels[si + 1]];
+              layer.data[di + 2] = lut[pixels[si + 2]];
+              layer.data[di + 3] = pixels[si + 3] / 255;
+            } else {
+              layer.data[di] = pixels[si];
+              layer.data[di + 1] = pixels[si + 1];
+              layer.data[di + 2] = pixels[si + 2];
+              layer.data[di + 3] = pixels[si + 3];
+            }
           }
         }
         renderer.flushLayer(layer);

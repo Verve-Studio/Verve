@@ -16,7 +16,10 @@
 // channel. Channel `c` at parameter `t∈[0,1]` is read at uv = (t, (c+0.5)/3).
 //
 // The cache is keyed by `(device, lutId)` and re-uploaded whenever the
-// underlying `LutTransform` reference changes.
+// underlying `LutTransform` reference changes. Entries unused for
+// LUT_IDLE_EVICT_MS are destroyed (removed LUT adjustments, superseded
+// proof / display-profile LUTs). Destroying after submit is safe: WebGPU
+// keeps a texture alive for work already queued.
 
 import type { LutTransform } from "./LUT";
 
@@ -29,9 +32,26 @@ export interface LutGpuBundle {
   shaperSize: number;
   hasShaper: boolean;
   source: LutTransform;
+  /** performance.now() of the last ensureLutOnGpu hit. */
+  lastUsed: number;
 }
 
 const cache = new WeakMap<GPUDevice, Map<string, LutGpuBundle>>();
+
+const LUT_IDLE_EVICT_MS = 60_000;
+const SWEEP_INTERVAL_MS = 5_000;
+let lastSweep = 0;
+
+function sweepIdle(perDevice: Map<string, LutGpuBundle>, now: number): void {
+  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
+  lastSweep = now;
+  for (const [id, b] of perDevice) {
+    if (now - b.lastUsed <= LUT_IDLE_EVICT_MS) continue;
+    b.cubeTex.destroy();
+    b.shaperTex.destroy();
+    perDevice.delete(id);
+  }
+}
 
 const f32buf = new ArrayBuffer(4);
 const f32 = new Float32Array(f32buf);
@@ -141,8 +161,13 @@ export function ensureLutOnGpu(
     perDevice = new Map();
     cache.set(device, perDevice);
   }
+  const now = performance.now();
+  sweepIdle(perDevice, now);
   const existing = perDevice.get(lut.id);
-  if (existing && existing.source === lut) return existing;
+  if (existing && existing.source === lut) {
+    existing.lastUsed = now;
+    return existing;
+  }
   if (existing) {
     existing.cubeTex.destroy();
     existing.shaperTex.destroy();
@@ -189,9 +214,17 @@ export function ensureLutOnGpu(
     shaperSize,
     hasShaper: !!lut.shaper,
     source: lut,
+    lastUsed: now,
   };
   perDevice.set(lut.id, bundle);
   return bundle;
+}
+
+/** Evict LUTs idle for longer than LUT_IDLE_EVICT_MS (rate-limited; cheap
+ *  to call every frame). */
+export function sweepIdleLuts(device: GPUDevice): void {
+  const perDevice = cache.get(device);
+  if (perDevice) sweepIdle(perDevice, performance.now());
 }
 
 export function evictLut(device: GPUDevice, id: string): void {

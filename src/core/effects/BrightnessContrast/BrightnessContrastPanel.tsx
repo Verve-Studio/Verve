@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { BrightnessContrastEffectLayer } from "@/core/effects/BrightnessContrast/BrightnessContrastEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BrightnessContrastPanel.module.scss";
@@ -17,7 +17,7 @@ export function BrightnessContrastPanel({
   layer,
   parentLayerName,
 }: BrightnessContrastPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { brightness, contrast } = layer.params;
 
   const pct = (v: number, min: number, max: number): string =>

@@ -1,5 +1,9 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { activeScope } from "@/core/store/scope";
 import type {
   RepeatAxisMode,
@@ -62,7 +66,11 @@ export function RepeatPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ canvas: { width: s.canvas.width } }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<RepeatEffectLayer["params"]>): void => {
@@ -135,7 +143,8 @@ export function RepeatPanel({
 
   const SLIDER_MAX = 256;
 
-  const hasSelection = state.canvas.width > 0 && activeScope().selection.mask !== null;
+  const hasSelection =
+    state.canvas.width > 0 && activeScope().selection.mask !== null;
 
   return (
     <div className={styles.content}>

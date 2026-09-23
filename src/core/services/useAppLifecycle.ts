@@ -9,6 +9,7 @@ import { MemoryLimitError } from "@/core/store/memoryStore";
 import { notificationStore } from "@/core/store/notificationStore";
 import { makeDefaultBrush } from "@/types";
 import { activeScope } from "@/core/store/scope";
+import { extractErrorMessage } from "@/utils/userFeedback";
 
 /** Initialise pixel brush + paint brush stores on mount, and pick a default
  *  active brush if none is set. Mount-only — `activeBrushId` is read once
@@ -81,7 +82,13 @@ export function useMemoryErrorHandler(): void {
       if (e.reason instanceof MemoryLimitError) {
         notificationStore.error(e.reason.message);
         e.preventDefault();
+        return;
       }
+      // Safety net: an async operation failed and nobody handled it. Tell
+      // the user instead of failing silently (the console still logs it).
+      notificationStore.error(
+        `An operation failed unexpectedly: ${extractErrorMessage(e.reason)}`,
+      );
     };
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onRejection);

@@ -15,10 +15,15 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
   return AdjVertOut(vec4f(positions[vi], 0.0, 1.0), uvs[vi]);
 }
 
+// One pass averages `taps` samples spaced `spacing` px apart along the
+// blur direction, centred on the pixel. Long blurs run as two passes (a
+// short box, then a comb spaced at the box length) whose convolution is the
+// same line blur — sampling every pixel of a 999-px line in one pass cost
+// ~4k texture loads per pixel.
 struct MotionBlurParams {
   angleDeg : f32,
-  distance : u32,
-  _pad0    : u32,
+  taps     : u32,
+  spacing  : f32,
   _pad1    : u32,
 }
 
@@ -50,13 +55,13 @@ fn fs_motion_blur(in: AdjVertOut) -> @location(0) vec4<f32> {
   let angle = params.angleDeg * 3.14159265358979323846 / 180.0;
   let stepX = cos(angle);
   let stepY = sin(angle);
-  let dist  = params.distance;
+  let taps  = max(params.taps, 1u);
 
   var colorSum = vec4f(0.0);
-  for (var i = 0u; i < dist; i++) {
-    let offset = f32(i) - f32(dist - 1u) * 0.5;
+  for (var i = 0u; i < taps; i++) {
+    let offset = (f32(i) - f32(taps - 1u) * 0.5) * params.spacing;
     colorSum += sampleBilinear(vec2f(px + stepX * offset, py + stepY * offset), dims);
   }
 
-  return colorSum * (1.0 / f32(dist));
+  return colorSum * (1.0 / f32(taps));
 }

@@ -1,4 +1,8 @@
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import type { RGBAColor, Tool } from "@/types";
 import { ColorPickerDialog } from "@/ux/modals/ColorPickerDialog/ColorPickerDialog";
 import { IndexedPaletteColorPicker } from "@/ux/widgets/IndexedPaletteColorPicker/IndexedPaletteColorPicker";
@@ -51,11 +55,23 @@ function StandardToolButton({
   );
 }
 
-export function Toolbar({
+function ToolbarImpl({
   activeTool = "pencil",
   onToolChange,
 }: ToolbarProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      activeLayerId: s.activeLayerId,
+      activePaletteIndex: s.activePaletteIndex,
+      layers: s.layers,
+      pixelFormat: s.pixelFormat,
+      primaryColor: s.primaryColor,
+      secondaryColor: s.secondaryColor,
+      swatches: s.swatches,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTarget, setDialogTarget] = useState<"fg" | "bg">("fg");
   const [dialogIsSwatchAdd, setDialogIsSwatchAdd] = useState(false);
@@ -77,7 +93,7 @@ export function Toolbar({
   const isToolDisabled = (tool: ITool): boolean =>
     Boolean(
       (tool.pixelOnly && pixelToolsDisabled) ||
-        (tool.indexed8Unsupported && indexedModeActive),
+      (tool.indexed8Unsupported && indexedModeActive),
     );
 
   const activate = (tool: ITool): void => {
@@ -287,3 +303,7 @@ export function Toolbar({
     </>
   );
 }
+
+// Memoized: subscribes to its own store slice, so it only needs to re-render
+// when that slice or its props change — not whenever the app shell does.
+export const Toolbar = React.memo(ToolbarImpl);

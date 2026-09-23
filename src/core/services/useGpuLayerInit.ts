@@ -50,6 +50,16 @@ import { decodePng } from "@/ux/main/Canvas/pngHelpers";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 import { notificationStore } from "@/core/store/notificationStore";
 
+/** Decode base64 (legacy .verve layer payloads). A plain loop — the
+ *  previous `Uint8Array.from(str, callback)` ran a callback per byte, which
+ *  is very slow over hundreds of MB. */
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 export interface GpuLayerInitParams {
   rendererRef: React.RefObject<WebGPURenderer | null>;
   /** Bumped by `useWebGPU` whenever a new renderer instance is created.
@@ -215,7 +225,7 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
           } else if (imageData.startsWith("data:raw/f32;base64,")) {
             // rgba32f layer: base64-encoded raw Float32Array bytes.
             const b64 = imageData.slice("data:raw/f32;base64,".length);
-            const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+            const bytes = base64ToBytes(b64);
             const f32 = new Float32Array(bytes.buffer);
             const geo = geoJson
               ? (JSON.parse(geoJson) as {
@@ -235,10 +245,32 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
               "rgba32f",
             );
             (layer.data as Float32Array).set(f32);
+          } else if (imageData.startsWith("data:raw/indexed8-ref;id=")) {
+            // indexed8 layer via in-process transfer store (no base64).
+            const refId = imageData.slice("data:raw/indexed8-ref;id=".length);
+            const idx = u8TransferStore.take(refId);
+            const geo = geoJson
+              ? (JSON.parse(geoJson) as {
+                  layerWidth: number;
+                  layerHeight: number;
+                  offsetX: number;
+                  offsetY: number;
+                })
+              : { layerWidth: cw, layerHeight: ch, offsetX: 0, offsetY: 0 };
+            layer = renderer.createLayer(
+              ls.id,
+              ls.name,
+              geo.layerWidth,
+              geo.layerHeight,
+              geo.offsetX,
+              geo.offsetY,
+              "indexed8",
+            );
+            if (idx) (layer.data as Uint8Array).set(idx);
           } else if (imageData.startsWith("data:raw/indexed8;base64,")) {
             // indexed8 layer: base64-encoded raw palette-index bytes.
             const b64 = imageData.slice("data:raw/indexed8;base64,".length);
-            const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+            const bytes = base64ToBytes(b64);
             const geo = geoJson
               ? (JSON.parse(geoJson) as {
                   layerWidth: number;
@@ -401,7 +433,7 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
           renderer.flushLayer(linkedLayer);
           renderer.invalidateRenderCache();
           // Re-rasterise once if the decode completes after init exits.
-          ensureLinkedDecoded(linkedLs, window.api.readFileBase64, () => {
+          ensureLinkedDecoded(linkedLs, window.api.readFile, () => {
             if (isStale()) return;
             if (glLayersRef.current.get(linkedLs.id) !== linkedLayer) return;
             if (!tryGetDecodedLinkedSource(linkedLs)) return;

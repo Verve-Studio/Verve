@@ -34,7 +34,7 @@ const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 250;
 const STORAGE_KEY = "verve-right-panel-width";
 
-export function RightPanel({
+function RightPanelImpl({
   activeTabId,
   findLayersTrigger,
   onMergeSelected,
@@ -153,3 +153,7 @@ export function RightPanel({
     </aside>
   );
 }
+
+// Memoized: subscribes to its own store slice, so it only needs to re-render
+// when that slice or its props change — not whenever the app shell does.
+export const RightPanel = React.memo(RightPanelImpl);

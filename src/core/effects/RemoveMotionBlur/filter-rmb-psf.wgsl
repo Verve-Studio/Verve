@@ -18,7 +18,10 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
 struct RmbPsfParams {
   angleDeg : f32,
   distance : u32,
-  _pad0    : u32,
+  // Number of samples spread evenly over the `distance`-pixel PSF. Capped
+  // on the CPU side: sampling every pixel of a 999-px PSF, twice per
+  // iteration for up to 15 iterations, tripped the OS GPU watchdog.
+  taps     : u32,
   _pad1    : u32,
 }
 
@@ -45,12 +48,14 @@ fn fs_rmb_psf(in: AdjVertOut) -> @location(0) vec4<f32> {
   let angle = params.angleDeg * 3.14159265358979 / 180.0;
   let stepX = cos(angle);
   let stepY = sin(angle);
-  let dist  = params.distance;
+  let span  = f32(max(params.distance, 1u) - 1u);
+  let taps  = max(params.taps, 1u);
+  let step  = select(0.0, span / f32(taps - 1u), taps > 1u);
 
   var sum = vec4f(0.0);
-  for (var i = 0u; i < dist; i++) {
-    let off = f32(i) - f32(dist - 1u) * 0.5;
+  for (var i = 0u; i < taps; i++) {
+    let off = f32(i) * step - span * 0.5;
     sum += sampleBilinearPsf(vec2f(f32(coord.x) + stepX * off, f32(coord.y) + stepY * off), dims);
   }
-  return sum / f32(dist);
+  return sum / f32(taps);
 }

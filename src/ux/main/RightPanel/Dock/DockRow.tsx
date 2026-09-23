@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import type { DockRowConfig, PanelId } from "./types";
 import { dockStore } from "./dockStore";
 import styles from "./DockRow.module.scss";
+import { useDocumentDrag } from "./useDocumentDrag";
 
 interface DockRowProps {
   row: DockRowConfig;
@@ -37,6 +38,7 @@ export function DockRow({
   const [tabBarDragOver, setTabBarDragOver] = React.useState(false);
   const [topZoneDragOver, setTopZoneDragOver] = React.useState(false);
 
+  const startDrag = useDocumentDrag();
   const resizingRef = useRef<{ startY: number; startHeight: number } | null>(
     null,
   );
@@ -127,18 +129,14 @@ export function DockRow({
       dockStore.setRowHeight(row.id, newH);
     };
 
-    const onUp = (me: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const delta = me.clientY - resizingRef.current.startY;
-      const newH = Math.max(80, resizingRef.current.startHeight + delta);
-      dockStore.setRowHeight(row.id, newH);
+    startDrag(onMove, (me) => {
+      if (resizingRef.current && me) {
+        const delta = me.clientY - resizingRef.current.startY;
+        const newH = Math.max(80, resizingRef.current.startHeight + delta);
+        dockStore.setRowHeight(row.id, newH);
+      }
       resizingRef.current = null;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    });
   }
 
   // ── Close tab ──────────────────────────────────────────────────────────────

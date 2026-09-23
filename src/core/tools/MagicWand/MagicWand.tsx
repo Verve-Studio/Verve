@@ -13,8 +13,9 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import magicWandIconSvg from "./magic-wand.svg?raw";
 import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual2, useAppSelector } from "@/core/store/AppContext";
 import { activeScope } from "@/core/store/scope";
+import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 
 // ─── Shared options ───────────────────────────────────────────────────────────
 
@@ -84,7 +85,13 @@ function createMagicWandHandler(): ToolHandler {
         return;
       }
 
-      const src = layer.data;
+      // rgba32f holds scene-linear floats; the flood fill compares sRGB
+      // bytes, so gamma-encode + quantise first (a raw copy into the
+      // Uint8Array would truncate every channel to 0 or 1).
+      const src =
+        layer.format === "rgba32f"
+          ? clampF32ToUint8(layer.data as Float32Array)
+          : layer.data;
       for (let ly = 0; ly < lh; ly++) {
         const cy = oy + ly;
         if (cy < 0 || cy >= ch) continue;
@@ -124,7 +131,10 @@ function MagicWandOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ pixelFormat: s.pixelFormat }),
+    shallowEqual2,
+  );
   const isIndexed = state.pixelFormat === "indexed8";
   const [tolerance, setTolerance] = useState(wandOptions.tolerance);
   const [contiguous, setContiguous] = useState(wandOptions.contiguous);
@@ -209,7 +219,7 @@ class MagicWandTool implements ITool {
   readonly id = "magic-wand";
   readonly label = "Magic Wand";
   readonly shortcut = "W";
-  readonly icon = <SvgIcon src={magicWandIconSvg} />;
+  readonly icon = (<SvgIcon src={magicWandIconSvg} />);
   readonly placement = {
     group: ToolGroup.Selection,
     row: 2,

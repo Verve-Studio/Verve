@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { AddNoiseEffectLayer } from "@/core/effects/AddNoise/AddNoiseEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -13,7 +13,7 @@ export function AddNoisePanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { amount, distribution, monochromatic, seed } = layer.params;
   const up = (partial: Partial<typeof layer.params>) =>
     dispatch({

@@ -41,21 +41,14 @@ export function useFormatRemount({
         if (!raw) continue;
         const geo = layerGeo.get(ls.id);
         if (geo) encoded.set(`${ls.id}:geo`, JSON.stringify(geo));
-        const CHUNK = 65535;
         if (toFormat === "rgba32f") {
           // Store the typed array directly — avoids ~576 MB of base64/atob
           // intermediaries for large images.
           f32TransferStore.set(ls.id, raw as Float32Array);
           encoded.set(ls.id, `data:raw/f32-ref;id=${ls.id}`);
         } else if (toFormat === "indexed8") {
-          const u8 = raw as Uint8Array;
-          let b64 = "";
-          for (let i = 0; i < u8.length; i += CHUNK) {
-            b64 += btoa(
-              String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))),
-            );
-          }
-          encoded.set(ls.id, `data:raw/indexed8;base64,${b64}`);
+          u8TransferStore.set(ls.id, raw as Uint8Array);
+          encoded.set(ls.id, `data:raw/indexed8-ref;id=${ls.id}`);
         } else {
           u8TransferStore.set(ls.id, raw as Uint8Array);
           encoded.set(ls.id, `data:raw/rgba8-ref;id=${ls.id}`);

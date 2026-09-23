@@ -340,69 +340,147 @@ function createMoveHandler(): ToolHandler {
   // When true, cachedVisibleBounds is already in canvas-space (pass origX=0/origY=0 to snapDelta)
   let boundsAreCanvasSpace = false;
 
+  // Canvas-space bbox (exclusive right/bottom) of the non-zero selection
+  // mask, computed once per drag; and the delta last written into layer.data.
+  let maskBBox: { x0: number; y0: number; x1: number; y1: number } | null =
+    null;
+  let appliedDx = 0;
+  let appliedDy = 0;
+
+  function computeMaskBBox(
+    mask: Uint8Array,
+    w: number,
+    h: number,
+  ): { x0: number; y0: number; x1: number; y1: number } | null {
+    let x0 = w;
+    let y0 = h;
+    let x1 = -1;
+    let y1 = -1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        if (mask[row + x] === 0) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    return x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
+  }
+
+  /**
+   * Move the selected pixels of the active layer by (dx, dy) relative to the
+   * drag start. Only the region touched by the previous and the new position
+   * is rewritten, and every pixel format is handled natively:
+   *  - rgba8:    0–255 bytes, straight alpha
+   *  - rgba32f:  float channels, alpha 0–1, no rounding
+   *  - indexed8: palette indices, 255 = transparent; the mask is thresholded
+   */
   function applySelectionMove(dx: number, dy: number, ctx: ToolContext): void {
     const { renderer, layer, layers, render } = ctx;
+    const bbox = maskBBox;
+    if (!bbox) return;
     const w = renderer.pixelWidth;
-    const h = renderer.pixelHeight;
     const lw = layer.layerWidth;
     const lh = layer.layerHeight;
+    const ox = layer.offsetX;
+    const oy = layer.offsetY;
     const src = originalPixels!;
     const dst = layer.data;
+    const mask = originalMask!;
 
-    // Step 1: restore original pixels
-    dst.set(src);
-    // Step 2: erase selected pixels from their original position (in layer-local coords)
-    for (let i = 0; i < w * h; i++) {
-      const a = originalMask![i];
-      if (a === 0) continue;
-      const cx = i % w;
-      const cy = Math.floor(i / w);
-      const lx = cx - layer.offsetX;
-      const ly = cy - layer.offsetY;
-      if (lx < 0 || ly < 0 || lx >= lw || ly >= lh) continue;
-      const pi = (ly * lw + lx) * 4;
-      const f = 1 - a / 255;
-      dst[pi] = Math.round(dst[pi] * f);
-      dst[pi + 1] = Math.round(dst[pi + 1] * f);
-      dst[pi + 2] = Math.round(dst[pi + 2] * f);
-      dst[pi + 3] = Math.round(dst[pi + 3] * f);
+    // Layer-local rect covering the selection at its origin, its previously
+    // applied position and its new position, clamped to the layer.
+    const lx0 = Math.max(0, Math.min(bbox.x0, bbox.x0 + appliedDx, bbox.x0 + dx) - ox);
+    const ly0 = Math.max(0, Math.min(bbox.y0, bbox.y0 + appliedDy, bbox.y0 + dy) - oy);
+    const lx1 = Math.min(lw, Math.max(bbox.x1, bbox.x1 + appliedDx, bbox.x1 + dx) - ox);
+    const ly1 = Math.min(lh, Math.max(bbox.y1, bbox.y1 + appliedDy, bbox.y1 + dy) - oy);
+    appliedDx = dx;
+    appliedDy = dy;
+    if (lx0 >= lx1 || ly0 >= ly1) return;
+
+    const format = layer.format;
+    const stride = format === "indexed8" ? 1 : 4;
+
+    // Step 1: restore original pixels within the affected region.
+    for (let ly = ly0; ly < ly1; ly++) {
+      const a = (ly * lw + lx0) * stride;
+      const b = (ly * lw + lx1) * stride;
+      dst.set(src.subarray(a, b), a);
     }
-    // Step 3: composite selected pixels at the new position (over)
-    for (let sy = 0; sy < h; sy++) {
-      const ty = sy + dy;
-      if (ty < 0 || ty >= h) continue;
-      for (let sx = 0; sx < w; sx++) {
-        const tx = sx + dx;
-        if (tx < 0 || tx >= w) continue;
-        const mi = sy * w + sx;
-        const a = originalMask![mi];
-        if (a === 0) continue;
-        const slx = sx - layer.offsetX;
-        const sly = sy - layer.offsetY;
-        if (slx < 0 || sly < 0 || slx >= lw || sly >= lh) continue;
-        const si = (sly * lw + slx) * 4;
-        const tlx = tx - layer.offsetX;
-        const tly = ty - layer.offsetY;
-        if (tlx < 0 || tly < 0 || tlx >= lw || tly >= lh) continue;
-        const di = (tly * lw + tlx) * 4;
-        const srcA = (src[si + 3] * a) / 255;
-        const dstA = dst[di + 3];
-        const outA = srcA + dstA * (1 - srcA / 255);
-        if (outA === 0) continue;
-        dst[di] = Math.round(
-          (src[si] * srcA + dst[di] * dstA * (1 - srcA / 255)) / outA,
-        );
-        dst[di + 1] = Math.round(
-          (src[si + 1] * srcA + dst[di + 1] * dstA * (1 - srcA / 255)) / outA,
-        );
-        dst[di + 2] = Math.round(
-          (src[si + 2] * srcA + dst[di + 2] * dstA * (1 - srcA / 255)) / outA,
-        );
-        dst[di + 3] = Math.min(255, Math.round(outA));
+
+    // Step 2: erase the selected pixels from their original position.
+    for (let cy = bbox.y0; cy < bbox.y1; cy++) {
+      const ly = cy - oy;
+      if (ly < 0 || ly >= lh) continue;
+      for (let cx = bbox.x0; cx < bbox.x1; cx++) {
+        const m = mask[cy * w + cx];
+        if (m === 0) continue;
+        const lx = cx - ox;
+        if (lx < 0 || lx >= lw) continue;
+        const li = ly * lw + lx;
+        if (format === "indexed8") {
+          if (m >= 128) dst[li] = 255;
+        } else {
+          // Straight alpha: removing a fraction of the pixel only lowers
+          // its alpha; the colour stays.
+          const ai = li * 4 + 3;
+          const f = 1 - m / 255;
+          dst[ai] = format === "rgba32f" ? dst[ai] * f : Math.round(dst[ai] * f);
+        }
       }
     }
 
-    renderer.flushLayer(layer);
+    // Step 3: composite the selected pixels at the new position (over).
+    for (let sy = bbox.y0; sy < bbox.y1; sy++) {
+      const sly = sy - oy;
+      const tly = sly + dy;
+      if (sly < 0 || sly >= lh || tly < 0 || tly >= lh) continue;
+      for (let sx = bbox.x0; sx < bbox.x1; sx++) {
+        const m = mask[sy * w + sx];
+        if (m === 0) continue;
+        const slx = sx - ox;
+        const tlx = slx + dx;
+        if (slx < 0 || slx >= lw || tlx < 0 || tlx >= lw) continue;
+        const sli = sly * lw + slx;
+        const tli = tly * lw + tlx;
+        if (format === "indexed8") {
+          const idx = src[sli];
+          if (m >= 128 && idx !== 255) dst[tli] = idx;
+          continue;
+        }
+        const si = sli * 4;
+        const di = tli * 4;
+        if (format === "rgba32f") {
+          const srcA = src[si + 3] * (m / 255);
+          const dstA = dst[di + 3];
+          const outA = srcA + dstA * (1 - srcA);
+          if (outA <= 0) continue;
+          const k = dstA * (1 - srcA);
+          dst[di] = (src[si] * srcA + dst[di] * k) / outA;
+          dst[di + 1] = (src[si + 1] * srcA + dst[di + 1] * k) / outA;
+          dst[di + 2] = (src[si + 2] * srcA + dst[di + 2] * k) / outA;
+          dst[di + 3] = outA;
+        } else {
+          const srcA = (src[si + 3] * m) / 255;
+          const dstA = dst[di + 3];
+          const outA = srcA + dstA * (1 - srcA / 255);
+          if (outA === 0) continue;
+          const k = dstA * (1 - srcA / 255);
+          dst[di] = Math.round((src[si] * srcA + dst[di] * k) / outA);
+          dst[di + 1] = Math.round((src[si + 1] * srcA + dst[di + 1] * k) / outA);
+          dst[di + 2] = Math.round((src[si + 2] * srcA + dst[di + 2] * k) / outA);
+          dst[di + 3] = Math.min(255, Math.round(outA));
+        }
+      }
+    }
+
+    renderer.markDirtyRect(layer, lx0, ly0, lx1, ly1);
+    renderer.flushLayer(
+      layer,
+      format === "indexed8" ? ctx.swatches : undefined,
+    );
     render(layers);
   }
 
@@ -446,6 +524,13 @@ function createMoveHandler(): ToolHandler {
         // Selection move: pixel-copy approach (selection moves pixels, offset unchanged)
         originalPixels = ctx.layer.data.slice();
         originalMask = selMask.slice();
+        maskBBox = computeMaskBBox(
+          originalMask,
+          ctx.renderer.pixelWidth,
+          ctx.renderer.pixelHeight,
+        );
+        appliedDx = 0;
+        appliedDy = 0;
         originalOffsetX = 0;
         originalOffsetY = 0;
         offsetFollowers = [];

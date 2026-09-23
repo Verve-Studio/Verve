@@ -1,14 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { useCanvasContext } from "@/core/store/CanvasContext";
 import styles from "./Navigator.module.scss";
+import { thumbnailMirror } from "@/ux/main/Canvas/thumbnailMirror";
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 32;
 const THUMB_W = 214;
 
 export function Navigator(): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector((s) => ({ canvas: s.canvas }), shallowEqual2);
+  const dispatch = useAppDispatch();
   const { canvasElRef, thumbnailCanvasRef } = useCanvasContext();
   const thumbRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -72,13 +78,26 @@ export function Navigator(): React.JSX.Element {
     };
   }, [canvasElRef, thumbH]);
 
-  // Refresh thumb + viewport rect on every animation frame while mounted
+  // Poll once per animation frame while mounted, but only do work when
+  // something changed: the thumbnail is copied only when the canvas mirror
+  // has a new version, and React state is only set when the viewport rect
+  // actually moved. (It used to redraw and re-render 60×/s even when idle.)
   useEffect(() => {
     let active = true;
+    let drawnVersion = -1;
+    let lastRectKey = "";
     const loop = (): void => {
       if (!active) return;
-      drawThumb();
-      setViewRect(getViewportRect());
+      if (thumbnailMirror.version !== drawnVersion) {
+        drawnVersion = thumbnailMirror.version;
+        drawThumb();
+      }
+      const rect = getViewportRect();
+      const key = JSON.stringify(rect);
+      if (key !== lastRectKey) {
+        lastRectKey = key;
+        setViewRect(rect);
+      }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);

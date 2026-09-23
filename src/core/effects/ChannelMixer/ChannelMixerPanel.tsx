@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ChannelMixerEffectLayer } from "@/core/effects/ChannelMixer/ChannelMixerEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -13,7 +13,8 @@ interface ChannelMixerPanelProps {
 }
 
 const getDefaultParams = (): ChannelMixerEffectLayer["params"] =>
-  effectRegistry.get("channel-mixer")!.defaultParams as ChannelMixerEffectLayer["params"];
+  effectRegistry.get("channel-mixer")!
+    .defaultParams as ChannelMixerEffectLayer["params"];
 
 type OutputChannel = ChannelMixerEffectLayer["params"]["outputChannel"];
 type SourceKey = "red" | "green" | "blue" | "constant";
@@ -24,7 +25,7 @@ export function ChannelMixerPanel({
   layer,
   parentLayerName,
 }: ChannelMixerPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { monochrome, outputChannel } = layer.params;
 
   // When monochrome is on, sliders always edit the gray row, regardless
@@ -119,7 +120,9 @@ export function ChannelMixerPanel({
       {sourceRow("green", "Green")}
       {sourceRow("blue", "Blue")}
 
-      <div className={`${styles.totalRow}${totalWarn ? ` ${styles.warn}` : ""}`}>
+      <div
+        className={`${styles.totalRow}${totalWarn ? ` ${styles.warn}` : ""}`}
+      >
         Total: {Math.round(total)}%
       </div>
 

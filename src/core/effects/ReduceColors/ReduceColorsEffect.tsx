@@ -61,6 +61,29 @@ function linearSrgbToOklab(
   };
 }
 
+const NO_COLORS: readonly RGBAColor[] = [];
+const paletteCache = new WeakMap<readonly RGBAColor[], Float32Array>();
+
+/** OKLab palette buffer for `colors`, cached per (immutable) colour array so
+ *  the plan entry — and its cache key — is stable across frames. */
+function oklabPaletteFor(colors: readonly RGBAColor[]): Float32Array {
+  const cached = paletteCache.get(colors);
+  if (cached) return cached;
+  const count = Math.min(colors.length, 256);
+  const palette = new Float32Array(256 * 4);
+  for (let i = 0; i < count; i++) {
+    const { r, g, b } = colors[i];
+    const lin = srgbByteToLinear(r, g, b);
+    const lab = linearSrgbToOklab(lin.r, lin.g, lin.b);
+    palette[i * 4 + 0] = lab.L;
+    palette[i * 4 + 1] = lab.a;
+    palette[i * 4 + 2] = lab.b;
+    palette[i * 4 + 3] = 0;
+  }
+  paletteCache.set(colors, palette);
+  return palette;
+}
+
 export const ReduceColorsEffect: IPipelineEffect<
   ReduceColorsEffectLayer,
   ReduceColorsOp
@@ -72,24 +95,15 @@ export const ReduceColorsEffect: IPipelineEffect<
 
   buildPlanEntry(layer, { mask, swatches }) {
     const { mode, derivedPalette } = layer.params;
-    const sourceColors: RGBAColor[] =
+    const sourceColors: readonly RGBAColor[] =
       mode === "reduce"
-        ? (derivedPalette ?? [])
+        ? (derivedPalette ?? NO_COLORS)
         : swatches.length >= 2
           ? swatches
-          : [];
+          : NO_COLORS;
 
     const paletteCount = Math.min(sourceColors.length, 256);
-    const palette = new Float32Array(256 * 4);
-    for (let i = 0; i < paletteCount; i++) {
-      const { r, g, b } = sourceColors[i];
-      const lin = srgbByteToLinear(r, g, b);
-      const lab = linearSrgbToOklab(lin.r, lin.g, lin.b);
-      palette[i * 4 + 0] = lab.L;
-      palette[i * 4 + 1] = lab.a;
-      palette[i * 4 + 2] = lab.b;
-      palette[i * 4 + 3] = 0;
-    }
+    const palette = oklabPaletteFor(sourceColors);
     return {
       kind: "reduce-colors",
       layerId: layer.id,

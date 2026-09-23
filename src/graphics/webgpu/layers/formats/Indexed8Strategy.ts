@@ -1,15 +1,37 @@
 import type { PixelFormatStrategy } from "./PixelFormatStrategy";
 import type { GpuLayer } from "../../types";
+import type { RGBAColor } from "@/types";
 import type { LayerDirtyRect } from "../LayerTextureStore";
 import { allocUint8 } from "@/core/store/memoryStore";
 import { uploadTextureData } from "../../utils";
 import { expandIndicesToRgba8 } from "../../rendering/indexedColorExpand";
 
+/** Palette each layer was last fully expanded with. */
+const uploadedPalette = new WeakMap<GpuLayer, readonly RGBAColor[]>();
+
+function samePalette(
+  a: readonly RGBAColor[] | undefined,
+  b: readonly RGBAColor[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x.r !== y.r || x.g !== y.g || x.b !== y.b || x.a !== y.a) return false;
+  }
+  return true;
+}
+
 /**
  * Indexed8 stores 1 byte/pixel: a palette index (0–254) or the transparent
  * sentinel (255). The GPU side is always rgba8unorm — uploads expand indices
- * via the current palette. Patch uploads aren't supported; any flush re-uploads
- * the entire layer.
+ * via the palette.
+ *
+ * A flush with an unchanged palette expands and uploads only the dirty
+ * rect (it used to re-expand and upload the whole layer on every pencil
+ * dab). A flush without a palette reuses the layer's last one instead of
+ * expanding against an empty palette, which rendered the layer blank.
  */
 export const Indexed8Strategy: PixelFormatStrategy = {
   format: "indexed8",
@@ -39,10 +61,9 @@ export const Indexed8Strategy: PixelFormatStrategy = {
   },
 
   uploadFull(device, texture, layer, palette) {
-    const expanded = expandIndicesToRgba8(
-      layer.data as Uint8Array,
-      palette ?? [],
-    );
+    const resolved = palette ?? uploadedPalette.get(layer) ?? [];
+    uploadedPalette.set(layer, resolved);
+    const expanded = expandIndicesToRgba8(layer.data as Uint8Array, resolved);
     uploadTextureData(
       device,
       texture,
@@ -52,12 +73,38 @@ export const Indexed8Strategy: PixelFormatStrategy = {
     );
   },
 
-  uploadPatch(device, texture, layer, _rect: LayerDirtyRect) {
-    // No patch upload for indexed8 — the palette could change for any pixel,
-    // so we always re-expand the whole layer. Behaves identically to the
-    // pre-strategy code path.
-    void _rect;
-    this.uploadFull(device, texture, layer, undefined);
+  canPatch(layer, palette) {
+    const last = uploadedPalette.get(layer);
+    return last !== undefined && (palette === undefined || samePalette(palette, last));
+  },
+
+  uploadPatch(device, texture, layer, rect: LayerDirtyRect) {
+    const palette = uploadedPalette.get(layer) ?? [];
+    const w = rect.rx - rect.lx;
+    const h = rect.ry - rect.ly;
+    if (w <= 0 || h <= 0) return;
+    const indices = layer.data as Uint8Array;
+    const out = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      let src = (rect.ly + y) * layer.layerWidth + rect.lx;
+      let dst = y * w * 4;
+      for (let x = 0; x < w; x++, src++, dst += 4) {
+        const idx = indices[src];
+        if (idx < palette.length) {
+          const col = palette[idx];
+          out[dst] = col.r;
+          out[dst + 1] = col.g;
+          out[dst + 2] = col.b;
+          out[dst + 3] = col.a;
+        }
+      }
+    }
+    device.queue.writeTexture(
+      { texture, origin: { x: rect.lx, y: rect.ly } },
+      out,
+      { bytesPerRow: w * 4, rowsPerImage: h },
+      { width: w, height: h },
+    );
   },
 
   reblitForGrow(src: GpuLayer, dstBuffer, dstWidth, copyX, copyY) {

@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { VignetteEffectLayer } from "@/core/effects/Vignette/VignetteEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -31,7 +31,7 @@ export function VignetteOptions({
   layer,
   parentLayerName,
 }: VignetteOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<typeof p>): void => {

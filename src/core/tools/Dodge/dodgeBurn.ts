@@ -4,6 +4,10 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { bresenham, wuLine } from "../_shared/primitives";
 import type { SelMask, TouchedBuffer } from "../_shared/primitives";
+import {
+  linearToSrgbChannel,
+  srgbToLinearChannel,
+} from "@/utils/pixelFormatConvert";
 
 /** Range channels covered by dodge/burn. */
 export type DodgeBurnRange = "shadows" | "midtones" | "highlights";
@@ -89,6 +93,29 @@ function dodgeBurnPixelOp(
     [r, g, b, a] = renderer.samplePixel(layer, lx, ly);
   }
   if (a === 0) return;
+
+  if (layer.format === "rgba32f") {
+    // rgba32f stores scene-linear floats. Classify and scale in sRGB-encoded
+    // space so the tool behaves like it does on rgba8, then decode back.
+    // No rounding and no upper clamp: HDR values > 1 are valid.
+    const re = linearToSrgbChannel(r),
+      ge = linearToSrgbChannel(g),
+      be = linearToSrgbChannel(b);
+    const lum = Math.min(1, 0.2126 * re + 0.7152 * ge + 0.0722 * be);
+    const weight = toneWeight(lum, range);
+    if (weight <= 0) return;
+    const factor = Math.max(0, 1 + exposure * maxCoverage * weight);
+    renderer.drawPixel(
+      layer,
+      lx,
+      ly,
+      srgbToLinearChannel(re * factor),
+      srgbToLinearChannel(ge * factor),
+      srgbToLinearChannel(be * factor),
+      a,
+    );
+    return;
+  }
 
   const rl = r / 255,
     gl = g / 255,

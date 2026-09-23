@@ -36,7 +36,7 @@ static constexpr float  LAMBDA      = 9.0f * GAMMA; // strong T-link for definit
 
 struct Vec3 { float r, g, b; };
 
-static inline Vec3 pixel_rgb(const uint8_t* rgba, int idx) {
+static inline Vec3 pixel_rgb(const uint8_t* rgba, size_t idx) {
     const uint8_t* p = rgba + idx * 4;
     return { p[0] / 255.0f, p[1] / 255.0f, p[2] / 255.0f };
 }
@@ -340,21 +340,49 @@ struct Graph {
         return level[T] >= 0;
     }
 
-    float dfs_augment(int u, float pushed) {
-        if (u == T) return pushed;
-        for (; iter[u] != -1; iter[u] = edges[iter[u]].next) {
-            int e = iter[u];
-            int v = edges[e].to;
-            if (edges[e].cap > 0.0f && level[v] == level[u] + 1) {
-                float got = dfs_augment(v, std::min(pushed, edges[e].cap));
-                if (got > 0.0f) {
-                    edges[e].cap     -= got;
-                    edges[e ^ 1].cap += got;
-                    return got;
+    std::vector<int> dfsPath; // edge indices from S along the current path
+
+    // Find one augmenting path S→T in the level graph and push its
+    // bottleneck. Iterative on purpose: the recursive version recursed once
+    // per path hop, and path length grows with the BFS depth on large grid
+    // graphs — enough to overflow the (small, 64 KB default) WASM stack,
+    // which silently corrupts memory in release builds.
+    //
+    // Same semantics as the classic recursive DFS: `iter[u]` stays on an
+    // edge that carried flow (it may carry more), and advances past an edge
+    // once the subtree behind it is a dead end.
+    float dfs_augment() {
+        dfsPath.clear();
+        int u = S;
+        while (true) {
+            if (u == T) {
+                float f = std::numeric_limits<float>::infinity();
+                for (int e : dfsPath) f = std::min(f, edges[e].cap);
+                for (int e : dfsPath) {
+                    edges[e].cap     -= f;
+                    edges[e ^ 1].cap += f;
+                }
+                return f;
+            }
+            bool advanced = false;
+            for (; iter[u] != -1; iter[u] = edges[iter[u]].next) {
+                int e = iter[u];
+                int v = edges[e].to;
+                if (edges[e].cap > 0.0f && level[v] == level[u] + 1) {
+                    dfsPath.push_back(e);
+                    u = v;
+                    advanced = true;
+                    break;
                 }
             }
+            if (advanced) continue;
+            // Dead end at u: retreat to the edge's tail and skip that edge.
+            if (dfsPath.empty()) return 0.0f;
+            int e = dfsPath.back();
+            dfsPath.pop_back();
+            u = edges[e ^ 1].to;
+            iter[u] = edges[iter[u]].next;
         }
-        return 0.0f;
     }
 
     void maxflow(std::vector<uint8_t>& label) {
@@ -364,7 +392,7 @@ struct Graph {
             iter.assign(N + 2, 0);
             for (int u = 0; u < N + 2; u++) iter[u] = head[u];
             while (true) {
-                float pushed = dfs_augment(S, std::numeric_limits<float>::infinity());
+                float pushed = dfs_augment();
                 if (pushed <= 0.0f) break;
             }
         }
@@ -396,14 +424,14 @@ static float compute_beta(const uint8_t* rgba, int width, int height) {
     long   count = 0;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            Vec3 c = pixel_rgb(rgba, y*width+x);
+            Vec3 c = pixel_rgb(rgba, static_cast<size_t>(y)*width+x);
             if (x+1 < width) {
-                Vec3 d = sub(c, pixel_rgb(rgba, y*width+x+1));
+                Vec3 d = sub(c, pixel_rgb(rgba, static_cast<size_t>(y)*width+x+1));
                 sumSq += d.r*d.r + d.g*d.g + d.b*d.b;
                 count++;
             }
             if (y+1 < height) {
-                Vec3 d = sub(c, pixel_rgb(rgba, (y+1)*width+x));
+                Vec3 d = sub(c, pixel_rgb(rgba, static_cast<size_t>(y+1)*width+x));
                 sumSq += d.r*d.r + d.g*d.g + d.b*d.b;
                 count++;
             }
@@ -430,13 +458,13 @@ void grabcut(
     int iterations,
     int k
 ) {
-    const int N = width * height;
+    const size_t N = static_cast<size_t>(width) * height;
     if (k > MAX_K) k = MAX_K;
     if (k < 1)     k = 1;
 
     // ── 0. Current labelling (0=BG, 1=FG) ────────────────────────────────────
     std::vector<uint8_t> label(N);
-    for (int i = 0; i < N; i++) {
+    for (size_t i = 0; i < N; i++) {
         label[i] = (trimap[i] >= 128) ? 1 : 0; // 128=unknown default to FG; 255=FG; 0=BG
     }
 
@@ -449,20 +477,20 @@ void grabcut(
     for (int y = 0; y < height; y++)
         for (int x = 0; x < width-1; x++)
             hW[(size_t)y*(width-1)+x] = nlink_weight(
-                pixel_rgb(rgba, y*width+x), pixel_rgb(rgba, y*width+x+1), beta);
+                pixel_rgb(rgba, static_cast<size_t>(y)*width+x), pixel_rgb(rgba, static_cast<size_t>(y)*width+x+1), beta);
     for (int y = 0; y < height-1; y++)
         for (int x = 0; x < width; x++)
             vW[(size_t)x*(height-1)+y] = nlink_weight(
-                pixel_rgb(rgba, y*width+x), pixel_rgb(rgba, (y+1)*width+x), beta);
+                pixel_rgb(rgba, static_cast<size_t>(y)*width+x), pixel_rgb(rgba, static_cast<size_t>(y+1)*width+x), beta);
 
     // ── 3. GMMs ───────────────────────────────────────────────────────────────
     GMM fgGMM, bgGMM;
 
     // Collect indices for each class
     std::vector<int> fgIdx, bgIdx;
-    for (int i = 0; i < N; i++) {
-        if (trimap[i] >= 128) fgIdx.push_back(i); // FG or unknown→FG initially
-        else                   bgIdx.push_back(i);
+    for (size_t i = 0; i < N; i++) {
+        if (trimap[i] >= 128) fgIdx.push_back(static_cast<int>(i)); // FG or unknown→FG initially
+        else                   bgIdx.push_back(static_cast<int>(i));
     }
 
     kmeans_init(fgGMM, rgba, fgIdx, k, 42);
@@ -475,7 +503,7 @@ void grabcut(
     for (int iter = 0; iter < iterations; iter++) {
 
         // Step 1: Assign each pixel to best GMM component
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             Vec3 c = pixel_rgb(rgba, i);
             fgComp[i] = fgGMM.assign(c);
             bgComp[i] = bgGMM.assign(c);
@@ -485,7 +513,7 @@ void grabcut(
         fgGMM.resetAccumulators();
         bgGMM.resetAccumulators();
         float nFG = 0.0f, nBG = 0.0f;
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             Vec3 c = pixel_rgb(rgba, i);
             if (label[i] == 1) { fgGMM.accumulate(fgComp[i], c); nFG += 1.0f; }
             else                { bgGMM.accumulate(bgComp[i], c); nBG += 1.0f; }
@@ -499,7 +527,7 @@ void grabcut(
         Graph graph;
         graph.init(width, height);
 
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             Vec3 c = pixel_rgb(rgba, i);
             float nllFG = fgGMM.nll(c);
             float nllBG = bgGMM.nll(c);
@@ -518,7 +546,7 @@ void grabcut(
                 cs = nllBG; // cutting S→pixel costs nllBG (prob of being BG)
                 ct = nllFG; // cutting pixel→T costs nllFG (prob of being FG)
             }
-            graph.set_tlink(i, cs, ct);
+            graph.set_tlink(static_cast<int>(i), cs, ct);
         }
 
         // N-links (symmetric, already precomputed)
@@ -532,14 +560,14 @@ void grabcut(
         graph.maxflow(label);
 
         // Honour trimap hard constraints after each cut
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             if (trimap[i] == 255) label[i] = 1;
             else if (trimap[i] == 0) label[i] = 0;
         }
     }
 
     // ── 5. Write output ───────────────────────────────────────────────────────
-    for (int i = 0; i < N; i++)
+    for (size_t i = 0; i < N; i++)
         alpha_out[i] = label[i] ? 255 : 0;
 }
 
@@ -587,11 +615,11 @@ void grabcut_kmeans_init(const uint8_t* rgba, int w, int h,
                          const uint8_t* trimap, int k, float* paramsOut) {
     if (k > MAX_K) k = MAX_K;
     if (k < 1)     k = 1;
-    const int N = w * h;
+    const size_t N = static_cast<size_t>(w) * h;
     std::vector<int> fgIdx, bgIdx;
-    for (int i = 0; i < N; i++) {
-        if (trimap[i] >= 128) fgIdx.push_back(i);
-        else                   bgIdx.push_back(i);
+    for (size_t i = 0; i < N; i++) {
+        if (trimap[i] >= 128) fgIdx.push_back(static_cast<int>(i));
+        else                   bgIdx.push_back(static_cast<int>(i));
     }
     GMM fg, bg;
     kmeans_init(fg, rgba, fgIdx, k, 42);
@@ -604,13 +632,13 @@ void grabcut_update_gmms(const uint8_t* rgba, int w, int h,
                          const uint8_t* label, int k, float* paramsInOut) {
     if (k > MAX_K) k = MAX_K;
     if (k < 1)     k = 1;
-    const int N = w * h;
+    const size_t N = static_cast<size_t>(w) * h;
     GMM fg, bg;
     unpack_gmm(fg, paramsInOut,          k);
     unpack_gmm(bg, paramsInOut + k * 20, k);
 
     std::vector<int> fgComp(N, 0), bgComp(N, 0);
-    for (int i = 0; i < N; i++) {
+    for (size_t i = 0; i < N; i++) {
         Vec3 c = pixel_rgb(rgba, i);
         fgComp[i] = fg.assign(c);
         bgComp[i] = bg.assign(c);
@@ -619,7 +647,7 @@ void grabcut_update_gmms(const uint8_t* rgba, int w, int h,
     fg.resetAccumulators();
     bg.resetAccumulators();
     float nFG = 0.0f, nBG = 0.0f;
-    for (int i = 0; i < N; i++) {
+    for (size_t i = 0; i < N; i++) {
         Vec3 c = pixel_rgb(rgba, i);
         if (label[i] == 1) { fg.accumulate(fgComp[i], c); nFG += 1.0f; }
         else                { bg.accumulate(bgComp[i], c); nBG += 1.0f; }
@@ -638,8 +666,8 @@ void grabcut_mincut(const float* capS, const float* capT,
                     const uint8_t* trimap, int w, int h, uint8_t* labelOut) {
     Graph graph;
     graph.init(w, h);
-    const int N = w * h;
-    for (int i = 0; i < N; i++) graph.set_tlink(i, capS[i], capT[i]);
+    const size_t N = static_cast<size_t>(w) * h;
+    for (size_t i = 0; i < N; i++) graph.set_tlink(static_cast<int>(i), capS[i], capT[i]);
     for (int y = 0; y < h; y++)
         for (int x = 0; x < w - 1; x++)
             graph.set_hlink(x, y, hW[(size_t)y * (w - 1) + x]);
@@ -651,7 +679,7 @@ void grabcut_mincut(const float* capS, const float* capT,
     std::vector<uint8_t> label;
     graph.maxflow(label);
 
-    for (int i = 0; i < N; i++) {
+    for (size_t i = 0; i < N; i++) {
         uint8_t v = label[i];
         if (trimap[i] == 255) v = 1;
         else if (trimap[i] == 0) v = 0;

@@ -76,9 +76,16 @@ export class SelectionStore {
 
   // ── Pending (live drag preview) ─────────────────────────────────────────────
 
+  /**
+   * Set the live drag preview. Deliberately does not notify: the only reader
+   * is the overlay's rAF loop, which polls `pending` every frame, and the
+   * subscribers (selection flag, Info panel bounds) depend on `mask` alone —
+   * notifying per pointer-move made the Info panel rescan the whole mask on
+   * every move. A path's `points` array may be the tool's live, append-only
+   * array (not a copy); readers must not mutate or retain it.
+   */
   setPending(p: PendingSelection | null): void {
     this.pending = p;
-    this.notify();
   }
 
   // ── Commit operations ───────────────────────────────────────────────────────

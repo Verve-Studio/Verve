@@ -6,6 +6,7 @@ import type {
   ToolPointerPos,
   ToolContext,
   ToolOptionsStyles,
+  ToolPointerUpResult,
 } from "../_shared/types";
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
@@ -37,39 +38,8 @@ export const healingBrushOptions = {
   pressureStrength: true,
 };
 
-// ─── Module-level source state (alt-click anchor) ─────────────────────────────
-
-interface HealingSource {
-  /** Anchor in canvas-space pixels. Set by alt-click. */
-  x: number;
-  y: number;
-  /** ID of the layer the alt-click landed on (used to read source pixels). */
-  layerId: string;
-}
-
-interface HealingState {
-  source: HealingSource | null;
-  /** Source-to-destination offset locked at the start of an aligned stroke.
-   *  Cleared when Aligned is OFF or when the source is re-set. */
-  alignedOffset: { dx: number; dy: number } | null;
-  listeners: Set<() => void>;
-}
-
-const healingState: HealingState = {
-  source: null,
-  alignedOffset: null,
-  listeners: new Set(),
-};
-
-function notifyHealing(): void {
-  for (const fn of healingState.listeners) fn();
-}
-
-function setHealingSource(x: number, y: number, layerId: string): void {
-  healingState.source = { x, y, layerId };
-  healingState.alignedOffset = null;
-  notifyHealing();
-}
+// Source anchor state is per document: `activeScope().healingSource`
+// (see healingSourceStore.ts).
 
 // ─── Tone-match + heal stamp ──────────────────────────────────────────────────
 
@@ -235,7 +205,7 @@ function healingStamp(
   const tShiftB = (dSumB - sSumB) / weightSum;
 
   // ── Second pass: write tone-shifted source pixels with brush blend.
-  const max = isFloat ? 1 : 255;
+  const max = 255;
   for (let y = 0; y < bh; y++) {
     const ly = minLy + y;
     for (let x = 0; x < bw; x++) {
@@ -254,9 +224,10 @@ function healingStamp(
       // transparency, just retexturing existing pixels.
       if (isFloat) {
         const arr = data as Float32Array;
-        arr[di] = Math.max(0, Math.min(max, arr[di] * inv + sR * w));
-        arr[di + 1] = Math.max(0, Math.min(max, arr[di + 1] * inv + sG * w));
-        arr[di + 2] = Math.max(0, Math.min(max, arr[di + 2] * inv + sB * w));
+        // Linear floats: only clamp below — values > 1 are valid HDR.
+        arr[di] = Math.max(0, arr[di] * inv + sR * w);
+        arr[di + 1] = Math.max(0, arr[di + 1] * inv + sG * w);
+        arr[di + 2] = Math.max(0, arr[di + 2] * inv + sB * w);
       } else {
         const arr = data as Uint8Array;
         arr[di] = Math.max(0, Math.min(max, Math.round(arr[di] * inv + sR * w)));
@@ -315,6 +286,13 @@ function createHealingBrushHandler(): ToolHandler {
           const lx = Math.round(x) - l.offsetX;
           const ly = Math.round(y) - l.offsetY;
           if (lx >= 0 && ly >= 0 && lx < l.layerWidth && ly < l.layerHeight) {
+            if (l.format === "indexed8") {
+              if (l.data[ly * l.layerWidth + lx] !== 255) {
+                hitLayerId = l.id;
+                break;
+              }
+              continue;
+            }
             const idx = (ly * l.layerWidth + lx) * 4;
             const alpha = l.data[idx + 3];
             // For rgba32f the threshold is 1/255 of full; for rgba8 just > 0.
@@ -332,26 +310,27 @@ function createHealingBrushHandler(): ToolHandler {
         // user moves the pointer).
         activeScope().selection.setPending({
           type: "path",
-          points: [...sourcePathPoints],
+          points: sourcePathPoints,
         });
         ctx.setCursor("crosshair");
         return;
       }
 
-      if (!healingState.source) return;
+      const hs = ctx.scope.healingSource;
+      const src = hs.source;
+      if (!src) return;
 
       isDown = true;
       prevX = x;
       prevY = y;
 
       // Compute source-to-destination offset for this stroke.
-      const src = healingState.source;
       if (healingBrushOptions.aligned) {
-        if (!healingState.alignedOffset) {
-          healingState.alignedOffset = { dx: src.x - x, dy: src.y - y };
+        if (!hs.alignedOffset) {
+          hs.alignedOffset = { dx: src.x - x, dy: src.y - y };
         }
-        strokeOffsetDX = healingState.alignedOffset.dx;
-        strokeOffsetDY = healingState.alignedOffset.dy;
+        strokeOffsetDX = hs.alignedOffset.dx;
+        strokeOffsetDY = hs.alignedOffset.dy;
       } else {
         strokeOffsetDX = src.x - x;
         strokeOffsetDY = src.y - y;
@@ -399,7 +378,7 @@ function createHealingBrushHandler(): ToolHandler {
         sourcePathPoints.push({ x, y });
         activeScope().selection.setPending({
           type: "path",
-          points: [...sourcePathPoints],
+          points: sourcePathPoints,
         });
         return;
       }
@@ -427,7 +406,7 @@ function createHealingBrushHandler(): ToolHandler {
     onPointerUp(
       { x, y }: ToolPointerPos,
       _ctx: ToolContext,
-    ): void {
+    ): ToolPointerUpResult | void {
       // Committing an alt-drag source selection: pick the centroid of the
       // drawn path as the source anchor. A single-point alt-tap (no drag)
       // also commits to a point source at the click location.
@@ -435,7 +414,7 @@ function createHealingBrushHandler(): ToolHandler {
         sourcePathPoints.push({ x, y });
         if (sourcePathPoints.length === 1) {
           // Plain alt-click — point source at this location.
-          setHealingSource(x, y, sourcePathHitLayerId);
+          activeScope().healingSource.setSource(x, y, sourcePathHitLayerId);
         } else {
           // Centroid of the drawn polygon.
           let sx = 0,
@@ -446,20 +425,22 @@ function createHealingBrushHandler(): ToolHandler {
           }
           sx /= sourcePathPoints.length;
           sy /= sourcePathPoints.length;
-          setHealingSource(sx, sy, sourcePathHitLayerId);
+          activeScope().healingSource.setSource(sx, sy, sourcePathHitLayerId);
         }
         activeScope().selection.setPending(null);
         drawingSourceSelection = false;
         sourcePathPoints = [];
-        return;
+        // Setting the source isn't an edit.
+        return { skipHistory: true };
       }
 
+      if (!isDown) return { skipHistory: true };
       isDown = false;
       sourceBuffer = null;
       // Aligned: keep alignedOffset so the next stroke continues in lock-step
       // with the original anchor. Non-aligned: clear it for explicitness.
       if (!healingBrushOptions.aligned) {
-        healingState.alignedOffset = null;
+        activeScope().healingSource.alignedOffset = null;
       }
     },
   };
@@ -480,13 +461,13 @@ function HealingBrushOptions({
   const [pressureStrength, setPressureStrength] = useState(
     healingBrushOptions.pressureStrength,
   );
-  const [hasSource, setHasSource] = useState(healingState.source !== null);
+  const [hasSource, setHasSource] = useState(activeScope().healingSource.source !== null);
 
   useEffect(() => {
-    const update = (): void => setHasSource(healingState.source !== null);
-    healingState.listeners.add(update);
+    const update = (): void => setHasSource(activeScope().healingSource.source !== null);
+    activeScope().healingSource.subscribe(update);
     return () => {
-      healingState.listeners.delete(update);
+      activeScope().healingSource.unsubscribe(update);
     };
   }, []);
 
@@ -556,7 +537,7 @@ function HealingBrushOptions({
           checked={aligned}
           onChange={(e) => {
             healingBrushOptions.aligned = e.target.checked;
-            if (!e.target.checked) healingState.alignedOffset = null;
+            if (!e.target.checked) activeScope().healingSource.alignedOffset = null;
             setAligned(e.target.checked);
           }}
         />
@@ -577,8 +558,8 @@ function HealingBrushOptions({
       <span className={styles.optSep} />
       <span className={styles.optText}>
         {hasSource
-          ? `Source: (${healingState.source!.x | 0}, ${
-              healingState.source!.y | 0
+          ? `Source: (${activeScope().healingSource.source!.x | 0}, ${
+              activeScope().healingSource.source!.y | 0
             })`
           : "No source — Alt+click to set"}
       </span>

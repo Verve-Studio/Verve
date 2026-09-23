@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { LutAdjustmentEffectLayer } from "./LutAdjustmentEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import { lutStore } from "@/core/lut";
@@ -27,7 +27,7 @@ export function LutAdjustmentPanel({
   layer,
   parentLayerName,
 }: LutAdjustmentPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { lutId, intensity } = layer.params;
   const luts = useLutList();
 

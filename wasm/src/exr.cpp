@@ -32,37 +32,47 @@
 #include <vector>
 
 // ─── Result structs ───────────────────────────────────────────────────────────
+//
+// Every struct here is walked from JS with a DataView at fixed offsets, so
+// the layout must not depend on the pointer width. The module is built with
+// MEMORY64 (8-byte pointers, heap up to 16 GB), so pointers are stored as
+// explicit uint64_t and read in JS with getBigUint64. Plain `int` pointer
+// fields would truncate once the heap passes 2 GB, and a raw `T*` member
+// silently moves every field after it.
 
 struct ExrResult {
-    int         width;
-    int         height;
-    float*      pixels;  // RGBA float32, width*height*4 floats
+    int32_t     width;   // 0
+    int32_t     height;  // 4
+    uint64_t    pixels;  // 8   (float* — RGBA float32, width*height*4 floats)
 };
+static_assert(sizeof(ExrResult) == 16, "ExrResult layout");
 
 struct ExrBytes {
-    unsigned char* data;
-    int            size;
+    uint64_t    data;    // 0   (unsigned char*)
+    int32_t     size;    // 8
+    int32_t     _pad;    // 12
 };
+static_assert(sizeof(ExrBytes) == 16, "ExrBytes layout");
 
-// Multi-layer decode result.  Layout chosen so that the JS side can walk it
-// with a DataView using fixed offsets.  All pointers are into the WASM heap.
+// Multi-layer decode result.  All pointers are into the WASM heap.
 struct ExrLayerOut {
-    int    width;       // 0
-    int    height;      // 4
-    int    offsetX;     // 8
-    int    offsetY;     // 12
-    int    namePtr;     // 16  (char* — null-terminated UTF-8 string)
-    int    pixelsPtr;   // 20  (float* — width*height*4 RGBA float32)
+    int32_t     width;      // 0
+    int32_t     height;     // 4
+    int32_t     offsetX;    // 8
+    int32_t     offsetY;    // 12
+    uint64_t    namePtr;    // 16  (char* — null-terminated UTF-8 string)
+    uint64_t    pixelsPtr;  // 24  (float* — width*height*4 RGBA float32)
 };
-static_assert(sizeof(ExrLayerOut) == 24, "ExrLayerOut layout");
+static_assert(sizeof(ExrLayerOut) == 32, "ExrLayerOut layout");
 
 struct ExrMultiResult {
-    int          canvasWidth;   // 0
-    int          canvasHeight;  // 4
-    int          numLayers;     // 8
-    int          layersPtr;     // 12  (ExrLayerOut* — array of numLayers entries)
+    int32_t     canvasWidth;   // 0
+    int32_t     canvasHeight;  // 4
+    int32_t     numLayers;     // 8
+    int32_t     _pad;          // 12
+    uint64_t    layersPtr;     // 16  (ExrLayerOut* — array of numLayers entries)
 };
-static_assert(sizeof(ExrMultiResult) == 16, "ExrMultiResult layout");
+static_assert(sizeof(ExrMultiResult) == 24, "ExrMultiResult layout");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -187,7 +197,8 @@ void decodePartIntoLayers(const EXRImage* image, const EXRHeader* header,
         const bool hasB = !chB.empty();
         const bool hasA = !chA.empty();
 
-        for (int i = 0; i < w * h; i++) {
+        const size_t npx = (size_t)w * (size_t)h;
+        for (size_t i = 0; i < npx; i++) {
             float r = hasR ? chR[i] : 0.0f;
             float gv = hasG ? chG[i] : (hasR ? r : 0.0f);
             float b = hasB ? chB[i] : (hasR ? r : 0.0f);
@@ -226,10 +237,10 @@ ExrMultiResult* buildMultiResult(int canvasW, int canvasH,
         layerArr[i].height    = L.height;
         layerArr[i].offsetX   = L.offsetX;
         layerArr[i].offsetY   = L.offsetY;
-        layerArr[i].namePtr   = (int)(uintptr_t)nameBuf;
-        layerArr[i].pixelsPtr = (int)(uintptr_t)pxBuf;
+        layerArr[i].namePtr   = (uint64_t)(uintptr_t)nameBuf;
+        layerArr[i].pixelsPtr = (uint64_t)(uintptr_t)pxBuf;
     }
-    result->layersPtr = (int)(uintptr_t)layerArr;
+    result->layersPtr = (uint64_t)(uintptr_t)layerArr;
     return result;
 }
 
@@ -250,13 +261,13 @@ ExrResult* loadExr(const unsigned char* src, int srcLen) {
         if (err) FreeEXRErrorMessage(err);
         return nullptr;
     }
-    return new ExrResult{ width, height, out };
+    return new ExrResult{ width, height, (uint64_t)(uintptr_t)out };
 }
 
 EMSCRIPTEN_KEEPALIVE
 void freeExrResult(ExrResult* r) {
     if (!r) return;
-    free(r->pixels);
+    free((void*)(uintptr_t)r->pixels);
     delete r;
 }
 
@@ -407,12 +418,13 @@ ExrBytes* saveExr(const float* pixels, int width, int height, int compression, i
     image.width        = width;
     image.height       = height;
 
-    std::vector<float> channelB(width * height);
-    std::vector<float> channelG(width * height);
-    std::vector<float> channelR(width * height);
-    std::vector<float> channelA(width * height);
+    const size_t npx = (size_t)width * (size_t)height;
+    std::vector<float> channelB(npx);
+    std::vector<float> channelG(npx);
+    std::vector<float> channelR(npx);
+    std::vector<float> channelA(npx);
 
-    for (int i = 0; i < width * height; i++) {
+    for (size_t i = 0; i < npx; i++) {
         channelR[i] = pixels[i * 4 + 0];
         channelG[i] = pixels[i * 4 + 1];
         channelB[i] = pixels[i * 4 + 2];
@@ -465,13 +477,13 @@ ExrBytes* saveExr(const float* pixels, int width, int height, int compression, i
         return nullptr;
     }
 
-    return new ExrBytes{ outBuf, static_cast<int>(outSize) };
+    return new ExrBytes{ (uint64_t)(uintptr_t)outBuf, static_cast<int32_t>(outSize), 0 };
 }
 
 EMSCRIPTEN_KEEPALIVE
 void freeExrBytes(ExrBytes* b) {
     if (!b) return;
-    free(b->data);
+    free((void*)(uintptr_t)b->data);
     delete b;
 }
 
@@ -531,7 +543,7 @@ ExrBytes* saveExrLayers(int width, int height, int numLayers,
         }
     }
 
-    const int pixelsPerLayer = width * height;
+    const size_t pixelsPerLayer = (size_t)width * (size_t)height;
     const int totalChannels  = numLayers * 4;
 
     // Per-channel float buffers (planar, EXR convention).
@@ -547,7 +559,7 @@ ExrBytes* saveExrLayers(int width, int height, int numLayers,
         B.resize(pixelsPerLayer);
         G.resize(pixelsPerLayer);
         R.resize(pixelsPerLayer);
-        for (int i = 0; i < pixelsPerLayer; i++) {
+        for (size_t i = 0; i < pixelsPerLayer; i++) {
             R[i] = src[i * 4 + 0];
             G[i] = src[i * 4 + 1];
             B[i] = src[i * 4 + 2];
@@ -609,7 +621,7 @@ ExrBytes* saveExrLayers(int width, int height, int numLayers,
         if (err) FreeEXRErrorMessage(err);
         return nullptr;
     }
-    return new ExrBytes{ outBuf, static_cast<int>(outSize) };
+    return new ExrBytes{ (uint64_t)(uintptr_t)outBuf, static_cast<int32_t>(outSize), 0 };
 }
 
 } // extern "C"

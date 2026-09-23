@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ColorVibranceEffectLayer } from "@/core/effects/ColorVibrance/ColorVibranceEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorVibrancePanel.module.scss";
@@ -17,7 +17,7 @@ export function ColorVibrancePanel({
   layer,
   parentLayerName,
 }: ColorVibrancePanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { vibrance, saturation } = layer.params;
 
   const pct = (v: number, min: number, max: number): string =>

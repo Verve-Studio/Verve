@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { BevelEffectLayer } from "@/core/effects/Bevel/BevelEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./BevelOptions.module.scss";
@@ -17,7 +17,7 @@ export function BevelOptions({
   layer,
   parentLayerName,
 }: BevelOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<typeof p>): void => {

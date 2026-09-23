@@ -206,10 +206,23 @@ export interface ToolPointerPos {
 
 // ─── Stateful handler created fresh for each tool activation ──────────────────
 
+/** Optional result of `ToolHandler.onPointerUp`. */
+export interface ToolPointerUpResult {
+  /**
+   * The gesture didn't change pixels (e.g. alt-click to set a clone source)
+   * or the handler already committed its own history entry — suppress the
+   * automatic pointer-up capture for this gesture only.
+   */
+  skipHistory?: boolean;
+}
+
 export interface ToolHandler {
   onPointerDown(pos: ToolPointerPos, ctx: ToolContext): void;
   onPointerMove(pos: ToolPointerPos, ctx: ToolContext): void;
-  onPointerUp(pos: ToolPointerPos, ctx: ToolContext): void;
+  onPointerUp(
+    pos: ToolPointerPos,
+    ctx: ToolContext,
+  ): void | ToolPointerUpResult;
   /** Called on every pointer-move regardless of button state — for hover UI effects. */
   onHover?(pos: ToolPointerPos, ctx: ToolContext): void;
   /** Called when the pointer leaves the canvas — clean up any hover UI. */

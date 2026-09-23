@@ -67,7 +67,7 @@ export const SmartSharpenEffect: IPipelineEffect<
       const gaussParamsBuf = rt.makeParamsBuf(
         new Uint32Array([radius, 0, 0, 0]),
       );
-      const blurredTex = rt.makeRgba8Tex(w, h);
+      const blurredTex = rt.makeScratchTex(w, h, dstTex);
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(gaussH, rt.intermediate),
@@ -79,7 +79,7 @@ export const SmartSharpenEffect: IPipelineEffect<
       );
       rt.encodeRenderPass(
         encoder,
-        gaussV.s8,
+        rt.selectPipeline(gaussV, dstTex),
         blurredTex,
         [
           { binding: 0, resource: rt.intermediate.createView() },
@@ -87,13 +87,13 @@ export const SmartSharpenEffect: IPipelineEffect<
         ],
       );
       if (reduceNoise > 0) {
-        const sharpenedTex = rt.makeRgba8Tex(w, h);
+        const sharpenedTex = rt.makeScratchTex(w, h, dstTex);
         const combineParamsBuf = rt.makeParamsBuf(
           new Uint32Array([amount, 0, 0, 0]),
         );
         rt.encodeRenderPass(
           encoder,
-          gaussCombine.s8,
+          rt.selectPipeline(gaussCombine, dstTex),
           sharpenedTex,
           [
             { binding: 0, resource: srcTex.createView() },
@@ -102,7 +102,7 @@ export const SmartSharpenEffect: IPipelineEffect<
           ],
         );
         const boxParamsBuf = rt.makeParamsBuf(new Uint32Array([1, 0, 0, 0]));
-        const smoothedTex = rt.makeRgba8Tex(w, h);
+        const smoothedTex = rt.makeScratchTex(w, h, dstTex);
         rt.encodeRenderPass(
           encoder,
           rt.selectPipeline(boxH, rt.intermediate),
@@ -114,7 +114,7 @@ export const SmartSharpenEffect: IPipelineEffect<
         );
         rt.encodeRenderPass(
           encoder,
-          boxV.s8,
+          rt.selectPipeline(boxV, dstTex),
           smoothedTex,
           [
             { binding: 0, resource: rt.intermediate.createView() },
@@ -151,13 +151,13 @@ export const SmartSharpenEffect: IPipelineEffect<
       }
     } else {
       if (reduceNoise > 0) {
-        const sharpenedTex = rt.makeRgba8Tex(w, h);
+        const sharpenedTex = rt.makeScratchTex(w, h, dstTex);
         const lensParamsBuf = rt.makeParamsBuf(
           new Uint32Array([amount, 0, 0, 0]),
         );
         rt.encodeRenderPass(
           encoder,
-          lensPipe.s8,
+          rt.selectPipeline(lensPipe, dstTex),
           sharpenedTex,
           [
             { binding: 0, resource: srcTex.createView() },
@@ -165,7 +165,7 @@ export const SmartSharpenEffect: IPipelineEffect<
           ],
         );
         const boxParamsBuf = rt.makeParamsBuf(new Uint32Array([1, 0, 0, 0]));
-        const smoothedTex = rt.makeRgba8Tex(w, h);
+        const smoothedTex = rt.makeScratchTex(w, h, dstTex);
         rt.encodeRenderPass(
           encoder,
           rt.selectPipeline(boxH, rt.intermediate),
@@ -177,7 +177,7 @@ export const SmartSharpenEffect: IPipelineEffect<
         );
         rt.encodeRenderPass(
           encoder,
-          boxV.s8,
+          rt.selectPipeline(boxV, dstTex),
           smoothedTex,
           [
             { binding: 0, resource: rt.intermediate.createView() },

@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { HalationEffectLayer } from "@/core/effects/Halation/HalationEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HalationOptions.module.scss";
@@ -13,7 +13,7 @@ export function HalationOptions({
   layer,
   parentLayerName,
 }: HalationOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { threshold, spread, blur, strength } = layer.params;
 
   const pct = (v: number, min: number, max: number): string =>

@@ -254,8 +254,9 @@ function decodePcxPixels(raw: Uint8Array): {
 
 // ─── Decode a data URL into raw RGBA pixels ───────────────────────────────────
 
-export async function loadImagePixels(
-  dataUrl: string,
+export async function loadImageBytes(
+  bytes: Uint8Array,
+  mime: string,
 ): Promise<{
   data: Uint8Array | Float32Array;
   width: number;
@@ -267,12 +268,8 @@ export async function loadImagePixels(
   iccProfile?: Uint8Array;
 }> {
   // DDS — decoded via WASM.
-  if (dataUrl.startsWith("data:image/vnd.ms-dds;base64,")) {
+  if (mime === "image/vnd.ms-dds") {
     try {
-      const base64 = dataUrl.slice("data:image/vnd.ms-dds;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const info = await getDdsInfo(bytes);
       if (info.fmt === DdsFormat.BC6H || info.fmt === DdsFormat.RGBA32F) {
         const result = await decodeDdsF32(bytes);
@@ -298,12 +295,8 @@ export async function loadImagePixels(
   }
 
   // EXR — decoded via WASM (tinyexr).
-  if (dataUrl.startsWith("data:image/x-exr;base64,")) {
+  if (mime === "image/x-exr") {
     try {
-      const base64 = dataUrl.slice("data:image/x-exr;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const result = await decodeExr(bytes);
       return {
         data: result.pixels,
@@ -319,12 +312,8 @@ export async function loadImagePixels(
   }
 
   // Radiance RGBE (.hdr) — pure TypeScript codec.
-  if (dataUrl.startsWith("data:image/vnd.radiance;base64,")) {
+  if (mime === "image/vnd.radiance") {
     try {
-      const base64 = dataUrl.slice("data:image/vnd.radiance;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const result = decodeRgbe(bytes);
       return {
         data: result.pixels,
@@ -340,12 +329,8 @@ export async function loadImagePixels(
   }
 
   // PCX is not supported by the browser's <img> element — decode manually.
-  if (dataUrl.startsWith("data:image/x-pcx;base64,")) {
+  if (mime === "image/x-pcx") {
     try {
-      const base64 = dataUrl.slice("data:image/x-pcx;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       return Promise.resolve(decodePcxPixels(bytes));
     } catch (err) {
       return Promise.reject(
@@ -355,12 +340,8 @@ export async function loadImagePixels(
   }
 
   // TGA is not supported by the browser's <img> element — decode manually.
-  if (dataUrl.startsWith("data:image/tga;base64,")) {
+  if (mime === "image/tga") {
     try {
-      const base64 = dataUrl.slice("data:image/tga;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       return Promise.resolve(decodeTgaPixels(bytes));
     } catch (err) {
       return Promise.reject(
@@ -370,16 +351,18 @@ export async function loadImagePixels(
   }
 
   // TIFF is not supported by the browser's <img> element — decode via UTIF.
-  if (dataUrl.startsWith("data:image/tiff;base64,")) {
+  if (mime === "image/tiff") {
     try {
-      const base64 = dataUrl.slice("data:image/tiff;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const iccProfile = extractIccFromTiff(bytes) ?? undefined;
-      const ifds = UTIF.decode(bytes.buffer as ArrayBuffer);
+      // UTIF works on an ArrayBuffer: pass exactly this file's bytes (an IPC
+      // Uint8Array can be a view into a larger buffer).
+      const tiffBuf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      const ifds = UTIF.decode(tiffBuf);
       if (ifds.length === 0) throw new Error("No images found in TIFF file");
-      UTIF.decodeImage(bytes.buffer as ArrayBuffer, ifds[0]);
+      UTIF.decodeImage(tiffBuf, ifds[0]);
       const ifd = ifds[0] as Record<string, number[]>;
       // Detect 32-bit float TIFF (SampleFormat=3, BitsPerSample=32)
       if (ifd["t339"]?.[0] === 3 && ifd["t258"]?.[0] === 32) {
@@ -432,31 +415,29 @@ export async function loadImagePixels(
   // any embedded ICC profile. Extract the profile from the raw bytes
   // first, then hand off pixel decoding to the browser.
   let extractedProfile: Uint8Array | undefined;
-  if (dataUrl.startsWith("data:image/png;base64,")) {
+  if (mime === "image/png") {
     try {
-      const base64 = dataUrl.slice("data:image/png;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       extractedProfile = (await extractIccFromPng(bytes)) ?? undefined;
     } catch {
       extractedProfile = undefined;
     }
-  } else if (dataUrl.startsWith("data:image/jpeg;base64,")) {
+  } else if (mime === "image/jpeg") {
     try {
-      const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       extractedProfile = extractIccFromJpeg(bytes) ?? undefined;
     } catch {
       extractedProfile = undefined;
     }
   }
 
+  // Browser-decodable formats: same <img> decode path as before, fed from
+  // an object URL instead of a base64 data URL.
+  const objectUrl = URL.createObjectURL(
+    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }),
+  );
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
       const tmp = document.createElement("canvas");
       tmp.width = img.naturalWidth;
       tmp.height = img.naturalHeight;
@@ -472,7 +453,28 @@ export async function loadImagePixels(
         iccProfile: extractedProfile,
       });
     };
-    img.onerror = () => reject(new Error("Failed to decode image"));
-    img.src = dataUrl;
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to decode image"));
+    };
+    img.src = objectUrl;
   });
+}
+
+/**
+ * Decode an image given as a base64 data URL (e.g. layer PNGs embedded in
+ * legacy `.verve` files). Prefer {@link loadImageBytes} when the raw bytes
+ * are at hand.
+ */
+export async function loadImagePixels(
+  dataUrl: string,
+): ReturnType<typeof loadImageBytes> {
+  const match = /^data:([^;,]+)(;base64)?,/.exec(dataUrl);
+  if (!match || !match[2]) {
+    throw new Error("Unsupported image data URL");
+  }
+  const binary = atob(dataUrl.slice(match[0].length));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return loadImageBytes(bytes, match[1]);
 }

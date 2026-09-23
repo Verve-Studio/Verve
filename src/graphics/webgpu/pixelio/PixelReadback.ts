@@ -37,23 +37,40 @@ export class PixelReadback {
   ): Promise<Uint8Array | Float32Array> {
     const bytesPerPixel = isFloat32 ? 16 : 4;
     const alignedBpr = Math.ceil((width * bytesPerPixel) / 256) * 256;
+    const device = this.gpu.device;
     const buf = this.pool.acquire(alignedBpr * height);
-    encoder.copyTextureToBuffer(
-      { texture },
-      { buffer: buf, bytesPerRow: alignedBpr, rowsPerImage: height },
-      { width, height },
-    );
-    this.gpu.device.queue.submit([encoder.finish()]);
-    onSubmit?.();
+    // Capture validation / OOM errors from finishing and submitting the
+    // encoder. Without this, a failed composite submits nothing while
+    // `mapAsync` still resolves with whatever a reused pool buffer held from
+    // a previous readback — an export of stale pixels with no error.
+    device.pushErrorScope("validation");
+    device.pushErrorScope("out-of-memory");
+    let mapped = false;
+    try {
+      encoder.copyTextureToBuffer(
+        { texture },
+        { buffer: buf, bytesPerRow: alignedBpr, rowsPerImage: height },
+        { width, height },
+      );
+      device.queue.submit([encoder.finish()]);
+      onSubmit?.();
+      const oomError = await device.popErrorScope();
+      const validationError = await device.popErrorScope();
+      const gpuError = oomError ?? validationError;
+      if (gpuError) {
+        throw new Error(`GPU readback failed: ${gpuError.message}`);
+      }
 
-    await buf.mapAsync(GPUMapMode.READ);
-    const raw = buf.getMappedRange();
-    const result: Uint8Array | Float32Array = isFloat32
-      ? unpackF32Rows(new Float32Array(raw), width, height, alignedBpr / 4)
-      : unpackRows(new Uint8Array(raw), width, height, alignedBpr);
-    buf.unmap();
-    this.pool.release(buf);
-    return result;
+      await buf.mapAsync(GPUMapMode.READ);
+      mapped = true;
+      const raw = buf.getMappedRange();
+      return isFloat32
+        ? unpackF32Rows(new Float32Array(raw), width, height, alignedBpr / 4)
+        : unpackRows(new Uint8Array(raw), width, height, alignedBpr);
+    } finally {
+      if (mapped) buf.unmap();
+      this.pool.release(buf);
+    }
   }
 
   destroy(): void {

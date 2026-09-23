@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { NeonGlowEffectLayer } from "./NeonGlowEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -12,7 +12,9 @@ interface Props {
 
 const toHex = (r: number, g: number, b: number): string => {
   const h = (v: number): string =>
-    Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+    Math.max(0, Math.min(255, Math.round(v)))
+      .toString(16)
+      .padStart(2, "0");
   return `#${h(r)}${h(g)}${h(b)}`;
 };
 const fromHex = (s: string): { r: number; g: number; b: number } | null => {
@@ -26,7 +28,7 @@ export function NeonGlowPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<NeonGlowEffectLayer["params"]>): void => {
@@ -54,7 +56,9 @@ export function NeonGlowPanel({
           step={1}
           value={Math.max(min, Math.min(max, value))}
           style={
-            { "--pct": String((value - min) / (max - min)) } as React.CSSProperties
+            {
+              "--pct": String((value - min) / (max - min)),
+            } as React.CSSProperties
           }
           onChange={(e) => onChange(Number(e.target.value))}
         />

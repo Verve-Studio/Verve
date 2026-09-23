@@ -34,14 +34,21 @@ fn fs_gaussian_v(in: AdjVertOut) -> @location(0) vec4<f32> {
   let inv2sig2 = 1.0 / (2.0 * sigma * sigma);
   let maxR     = i32(params.radius);
 
-  var weightSum = 0.0;
-  var colorSum  = vec4f(0.0);
+  // Gaussian weights by recurrence (see filter-gaussian-h.wgsl).
+  let lastY = i32(dims.y) - 1;
+  let e1 = exp(-inv2sig2);
+  var w = 1.0;
+  var ratio = e1;
+  let step = e1 * e1;
+  var colorSum  = textureLoad(srcTex, coord, 0);
+  var weightSum = 1.0;
 
-  for (var y = -maxR; y <= maxR; y++) {
-    let w  = exp(-f32(y * y) * inv2sig2);
-    let sy = clamp(coord.y + y, 0, i32(dims.y) - 1);
-    colorSum  += textureLoad(srcTex, vec2i(coord.x, sy), 0) * w;
-    weightSum += w;
+  for (var y = 1; y <= maxR; y++) {
+    w *= ratio;
+    ratio *= step;
+    colorSum += (textureLoad(srcTex, vec2i(coord.x, clamp(coord.y + y, 0, lastY)), 0) +
+                 textureLoad(srcTex, vec2i(coord.x, clamp(coord.y - y, 0, lastY)), 0)) * w;
+    weightSum += 2.0 * w;
   }
 
   return colorSum * (1.0 / weightSum);

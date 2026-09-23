@@ -25,9 +25,23 @@ export function useMarchingAnts(
     if (!isActive) return;
     let rafId: number;
     let dashOffset = 0;
+    // True once the overlay has been cleared with nothing to draw: idle
+    // frames then skip all DOM / canvas work until something appears.
+    let idleCleared = false;
 
     const tick = (): void => {
       rafId = requestAnimationFrame(tick);
+
+      const { mask, pending, borderSegments } = activeScope().selection;
+      const hasCrop = !!(activeScope().crop.pendingRect || activeScope().crop.rect);
+      const isPolyTool = activeToolRef.current === "polygonal-selection";
+      const hasPolyVerts =
+        isPolyTool && activeScope().polygonalSelection.vertices.length > 0;
+      const hasMeasure = !!(measureStore.start && measureStore.end);
+      const hasContent =
+        !!mask || !!pending || hasCrop || hasPolyVerts || hasMeasure;
+      if (!hasContent && idleCleared) return;
+
       const overlay = overlayRef.current;
       const viewport = viewportRef.current;
       const wrapper = canvasWrapperRef.current;
@@ -55,14 +69,8 @@ export function useMarchingAnts(
       overlay.style.transform = `translate(${sx}px, ${sy}px)`;
 
       ctx2d.clearRect(0, 0, overlay.width, overlay.height);
-
-      const { mask, pending, borderSegments } = activeScope().selection;
-      const hasCrop = !!(activeScope().crop.pendingRect || activeScope().crop.rect);
-      const isPolyTool = activeToolRef.current === "polygonal-selection";
-      const hasPolyVerts =
-        isPolyTool && activeScope().polygonalSelection.vertices.length > 0;
-      const hasMeasure = !!(measureStore.start && measureStore.end);
-      if (!mask && !pending && !hasCrop && !hasPolyVerts && !hasMeasure) return;
+      idleCleared = !hasContent;
+      if (!hasContent) return;
 
       // Map from image-pixel coordinates to overlay physical-pixel coordinates.
       // getBoundingClientRect returns CSS pixels; multiply by dpr for physical px.

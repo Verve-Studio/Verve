@@ -1,7 +1,7 @@
 import React from "react";
 import type { ShapeLayerState, TextLayerState, Tool } from "@/types";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual2, useAppSelector } from "@/core/store/AppContext";
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -49,11 +49,7 @@ function isOpaqueAt(gl: GpuLayer, x: number, y: number): boolean {
 
 // ─── Pick logic ───────────────────────────────────────────────────────────────
 
-function isInsideTextBounds(
-  ls: TextLayerState,
-  x: number,
-  y: number,
-): boolean {
+function isInsideTextBounds(ls: TextLayerState, x: number, y: number): boolean {
   const b = getTextBounds(ls);
   return x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h;
 }
@@ -201,7 +197,10 @@ function PickOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ activeLayerId: s.activeLayerId, layers: s.layers }),
+    shallowEqual2,
+  );
   const activeLayer = state.activeLayerId
     ? state.layers.find((l) => l.id === state.activeLayerId)
     : null;
@@ -221,7 +220,7 @@ class PickTool implements ITool {
   readonly id = "pick";
   readonly label = "Pick";
   readonly shortcut = "A";
-  readonly icon = <SvgIcon src={pickIconSvg} />;
+  readonly icon = (<SvgIcon src={pickIconSvg} />);
   readonly placement = { group: ToolGroup.Move, row: 0, column: 1 } as const;
   // Pick doesn't write pixels — but it does need to operate on text/shape/frame
   // layers and any layer in the stack, so flag worksOnAllLayers so Canvas's

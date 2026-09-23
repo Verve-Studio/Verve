@@ -18,7 +18,11 @@ import type {
   PathNodeKind,
   RGBAColor,
 } from "@/types";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import swatchStyles from "@/ux/widgets/ColorSwatch/ColorSwatch.module.scss";
@@ -1107,7 +1111,16 @@ function PenOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      layers: s.layers,
+      activeLayerId: s.activeLayerId,
+      primaryColor: s.primaryColor,
+      secondaryColor: s.secondaryColor,
+    }),
+    shallowEqual,
+  );
+  const dispatch = useAppDispatch();
 
   const activePath =
     state.layers.find(

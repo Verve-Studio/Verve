@@ -19,7 +19,11 @@
  *   * `revertActiveBrushOverrides` — drop override, canonical re-asserts.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { brushStore } from "@/core/store/brushStore";
 import { activeScope } from "@/core/store/scope";
 import type { Brush } from "@/types";
@@ -70,7 +74,11 @@ export interface UseBrushesResult {
 const FALLBACK_BRUSH = makeDefaultBrush("__fallback", "Default");
 
 export function useBrushes(): UseBrushesResult {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ activeBrushId: s.activeBrushId, brushes: s.brushes }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const [userBrushes, setUserBrushes] = useState<Brush[]>(
     brushStore.getUserBrushes(),
   );
@@ -155,12 +163,9 @@ export function useBrushes(): UseBrushesResult {
   // Live edits go to the per-doc override layer. Disk / .verve canonical
   // is left untouched until the user explicitly saves. `Promise<void>` is
   // kept on the signature for API parity with the previous version.
-  const updateBrush = useCallback(
-    async (brush: Brush): Promise<void> => {
-      activeScope().brushOverrides.patch(brush.id, brush);
-    },
-    [],
-  );
+  const updateBrush = useCallback(async (brush: Brush): Promise<void> => {
+    activeScope().brushOverrides.patch(brush.id, brush);
+  }, []);
 
   const deleteBrush = useCallback(
     async (id: string): Promise<void> => {

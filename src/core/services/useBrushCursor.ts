@@ -90,7 +90,8 @@ export interface BrushCursorParams {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   zoomRef: React.RefObject<number>;
   activeTool: Tool;
-  primaryColor: RGBAColor;
+  /** Read when the pixel-brush preview is drawn (not a render input). */
+  getPrimaryColor: () => RGBAColor;
   /** Document size, used to translate tiled-mode coords ([-W, 2W)) into
    *  wrapper-space CSS coords. */
   width: number;
@@ -120,7 +121,7 @@ export function useBrushCursor(params: BrushCursorParams): BrushCursorApi {
     canvasRef,
     zoomRef,
     activeTool,
-    primaryColor,
+    getPrimaryColor,
     width,
     height,
     baseClass,
@@ -176,6 +177,7 @@ export function useBrushCursor(params: BrushCursorParams): BrushCursorApi {
         return;
       }
       // primaryColor is float [0,1] — scale to 0-255 for the preview path
+      const primaryColor = getPrimaryColor();
       // (which writes into a 2D canvas and produces a data URL).
       const r = Math.round(Math.min(primaryColor.r, 1) * 255);
       const g = Math.round(Math.min(primaryColor.g, 1) * 255);
@@ -231,7 +233,7 @@ export function useBrushCursor(params: BrushCursorParams): BrushCursorApi {
       // would otherwise sit on top of the preview tile.
       if (canvasRef.current) canvasRef.current.style.cursor = "none";
     },
-    [activeTool, pixelBrushCursorRef, canvasRef, zoomRef, primaryColor],
+    [activeTool, pixelBrushCursorRef, canvasRef, zoomRef, getPrimaryColor],
   );
 
   const hideAll = useCallback((): void => {

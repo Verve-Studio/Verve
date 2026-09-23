@@ -5,10 +5,14 @@ import type {
   FrameContentFit,
   RGBAColor,
 } from "@/types";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
-import { loadImagePixels } from "@/core/io/imageLoader";
+import { loadImageBytes } from "@/core/io/imageLoader";
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -281,10 +285,7 @@ function drawHandles(
   _drawHandlesBody(c, ls, zoom);
 }
 
-function drawCreationPreview(
-  oc: HTMLCanvasElement,
-  ls: FrameLayerState,
-): void {
+function drawCreationPreview(oc: HTMLCanvasElement, ls: FrameLayerState): void {
   const c = oc.getContext("2d");
   if (!c) return;
   c.clearRect(0, 0, oc.width, oc.height);
@@ -359,12 +360,7 @@ function createFrameHandler(): ToolHandler {
         drawHandles(ctx.overlayCanvas, active, ctx.zoom);
       } else if (ctx.overlayCanvas) {
         const c2d = ctx.overlayCanvas.getContext("2d");
-        c2d?.clearRect(
-          0,
-          0,
-          ctx.overlayCanvas.width,
-          ctx.overlayCanvas.height,
-        );
+        c2d?.clearRect(0, 0, ctx.overlayCanvas.width, ctx.overlayCanvas.height);
       }
     },
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext): void {
@@ -438,7 +434,8 @@ function createFrameHandler(): ToolHandler {
         strokeWidth: frameOptions.strokeWidth,
       };
       mode = { t: "draw", id, sx: x, sy: y };
-      if (ctx.overlayCanvas) drawCreationPreview(ctx.overlayCanvas, drawPreview);
+      if (ctx.overlayCanvas)
+        drawCreationPreview(ctx.overlayCanvas, drawPreview);
     },
 
     onPointerMove({ x, y, shiftKey }: ToolPointerPos, ctx: ToolContext): void {
@@ -591,11 +588,12 @@ function mimeForExtension(ext: string): string {
   }
 }
 
-async function loadImageFromDataUrl(
-  dataUrl: string,
+async function loadImageFromBytes(
+  data: Uint8Array,
+  mime: string,
 ): Promise<{ rgba: string; width: number; height: number } | null> {
   try {
-    const loaded = await loadImagePixels(dataUrl);
+    const loaded = await loadImageBytes(data, mime);
     let bytes: Uint8Array;
     if (loaded.data instanceof Uint8Array) {
       bytes = loaded.data;
@@ -625,10 +623,9 @@ async function pickImageFromDisk(): Promise<{
 } | null> {
   const path = await window.api.openFile();
   if (!path) return null;
-  const base64 = await window.api.readFileBase64(path);
+  const bytes = await window.api.readFile(path);
   const ext = path.split(".").pop() ?? "png";
-  const dataUrl = `data:${mimeForExtension(ext)};base64,${base64}`;
-  return loadImageFromDataUrl(dataUrl);
+  return loadImageFromBytes(bytes, mimeForExtension(ext));
 }
 
 // ─── Options UI ───────────────────────────────────────────────────────────────
@@ -650,7 +647,11 @@ function FrameOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ activeLayerId: s.activeLayerId, layers: s.layers }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   // Bumped whenever module-level options change so the bar re-renders even
   // without an active frame to dispatch UPDATE_FRAME_LAYER on.
   const [, setTick] = useState(0);
@@ -734,7 +735,8 @@ function FrameOptions({
     (hex: string) => {
       const color = hexToRgba(hex, curStrokeColor.a);
       frameOptions.strokeColor = color;
-      if (activeFrame && activeFrame.strokeColor) update({ strokeColor: color });
+      if (activeFrame && activeFrame.strokeColor)
+        update({ strokeColor: color });
       else refreshOptions();
     },
     [curStrokeColor.a, activeFrame, update, refreshOptions],
@@ -768,8 +770,10 @@ function FrameOptions({
       e.target.value = "";
       if (!file || !activeFrame) return;
       const buf = await file.arrayBuffer();
-      const dataUrl = `data:${file.type || "image/png"};base64,${uint8ArrayToBase64(new Uint8Array(buf))}`;
-      const result = await loadImageFromDataUrl(dataUrl);
+      const result = await loadImageFromBytes(
+        new Uint8Array(buf),
+        file.type || "image/png",
+      );
       if (!result) return;
       dispatch({
         type: "UPDATE_FRAME_LAYER",
@@ -834,11 +838,7 @@ function FrameOptions({
       <div className={styles.optSep} />
 
       <label className={styles.optCheckLabel}>
-        <input
-          type="checkbox"
-          checked={curUseStroke}
-          onChange={toggleStroke}
-        />
+        <input type="checkbox" checked={curUseStroke} onChange={toggleStroke} />
         Stroke
       </label>
       {curUseStroke && (
@@ -902,7 +902,7 @@ class FrameTool implements ITool {
   readonly id = "frame";
   readonly label = "Frame";
   readonly shortcut = "K";
-  readonly icon = <SvgIcon src={frameIconSvg} />;
+  readonly icon = (<SvgIcon src={frameIconSvg} />);
   readonly placement = { group: ToolGroup.Crop, row: 0, column: 1 } as const;
   // Frame layers are parametric and rasterized by the canvas — the tool needs
   // to be allowed to operate on its own (non-pixel) layer type.

@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ReplaceColorEffectLayer } from "@/core/effects/ReplaceColor/ReplaceColorEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -43,7 +43,7 @@ export function ReplaceColorPanel({
   layer,
   parentLayerName,
 }: ReplaceColorPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { originalColor, targetColor, hueRange, amount } = layer.params;
   const pct = (v: number, lo: number, hi: number): string =>
     String((v - lo) / (hi - lo));

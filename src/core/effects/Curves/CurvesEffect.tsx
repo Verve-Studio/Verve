@@ -30,7 +30,6 @@ import {
   createTrackedTexture,
   destroyTrackedTexture,
 } from "@/core/store/memoryStore";
-import { uploadR8TextureData } from "@/graphics/webgpu/utils";
 
 
 export interface CurvesParams {
@@ -52,11 +51,11 @@ const CURVES_BINDINGS: AdjBinding[] = [
   "sampler",
   "tex",
   "uniform",
-  "sampler-f",
-  "tex-f",
-  "tex-f",
-  "tex-f",
-  "tex-f",
+  "sampler-f", // unused since the LUTs became r32float (read with textureLoad)
+  "tex",
+  "tex",
+  "tex",
+  "tex",
 ];
 
 type CurvesLutTextures = {
@@ -69,7 +68,7 @@ type CurvesLutTextures = {
 // Module-level state — per-layer-id LUT cache. Keyed by layerId so multiple
 // curves layers coexist without trampling each other.
 const lutTextures = new Map<string, CurvesLutTextures>();
-const lutSignatures = new Map<string, string>();
+const lutSources = new Map<string, CurvesLuts>();
 const usedThisFrame = new Set<string>();
 
 function ensureLutTextures(
@@ -78,18 +77,22 @@ function ensureLutTextures(
   luts: CurvesLuts,
 ): CurvesLutTextures {
   usedThisFrame.add(layerId);
-  const signature = `${Array.from(luts.rgb).join(".")}-${Array.from(luts.red).join(".")}-${Array.from(luts.green).join(".")}-${Array.from(luts.blue).join(".")}`;
+  // `buildCurvesLuts` memoizes per params object, so identity is enough.
   const existing = lutTextures.get(layerId);
-  const prevSig = lutSignatures.get(layerId);
-  if (existing && prevSig === signature) return existing;
+  if (existing && lutSources.get(layerId) === luts) return existing;
 
-  const writeLut = (data: Uint8Array): GPUTexture => {
+  const writeLut = (data: Float32Array): GPUTexture => {
     const tex = createTrackedTexture(device, {
       size: { width: 256, height: 1 },
-      format: "r8unorm",
+      format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
-    uploadR8TextureData(device, tex, 256, 1, data);
+    device.queue.writeTexture(
+      { texture: tex },
+      data as Float32Array<ArrayBuffer>,
+      { bytesPerRow: 256 * 4, rowsPerImage: 1 },
+      { width: 256, height: 1 },
+    );
     return tex;
   };
 
@@ -107,7 +110,7 @@ function ensureLutTextures(
     blue: writeLut(luts.blue),
   };
   lutTextures.set(layerId, next);
-  lutSignatures.set(layerId, signature);
+  lutSources.set(layerId, luts);
   return next;
 }
 
@@ -162,7 +165,7 @@ export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
       destroyTrackedTexture(luts.green);
       destroyTrackedTexture(luts.blue);
       lutTextures.delete(layerId);
-      lutSignatures.delete(layerId);
+      lutSources.delete(layerId);
     }
     usedThisFrame.clear();
   },
@@ -175,7 +178,7 @@ export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
       destroyTrackedTexture(luts.blue);
     }
     lutTextures.clear();
-    lutSignatures.clear();
+    lutSources.clear();
     usedThisFrame.clear();
   },
 

@@ -5,11 +5,12 @@ import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   STD_BINDINGS,
   type AdjBinding,
+  type EffectRuntime,
 } from "@/graphics/webgpu/EffectRuntime";
 import {
   createTrackedTexture,
-  destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+import { TextureSetCache } from "../_shared/textureSetCache";
 
 const BloomIcon = (
   <svg
@@ -51,36 +52,19 @@ const COMPOSITE_BINDINGS: AdjBinding[] = [
 
 type BloomQuality = "full" | "half" | "quarter";
 
-// Module-level texture cache for the bloom intermediate buffers.
-let texCache: {
-  quality: BloomQuality;
-  format: GPUTextureFormat;
-  extractTex: GPUTexture;
-  blurATex: GPUTexture;
-  blurBTex: GPUTexture;
-} | null = null;
-let usedThisFrame = false;
+const texCache = new TextureSetCache<{ blurATex: GPUTexture; blurBTex: GPUTexture }>();
 
 /** Scratch buffers for extract + downsampled blur ping-pong. Allocated in
  *  the doc format because the whole point of Bloom on HDR is to bloom
  *  pixels > 1.0 — clamping the extract output to rgba8 [0,1] would erase
  *  the highlights the effect is supposed to catch. */
 function ensureTextures(
-  device: GPUDevice,
+  runtime: EffectRuntime,
   width: number,
   height: number,
   quality: BloomQuality,
   format: GPUTextureFormat,
 ): { extractTex: GPUTexture; blurATex: GPUTexture; blurBTex: GPUTexture } {
-  usedThisFrame = true;
-  if (texCache && texCache.quality === quality && texCache.format === format) {
-    return texCache;
-  }
-  if (texCache) {
-    destroyTrackedTexture(texCache.extractTex);
-    destroyTrackedTexture(texCache.blurATex);
-    destroyTrackedTexture(texCache.blurBTex);
-  }
   const scaleFactor = quality === "full" ? 1 : quality === "half" ? 2 : 4;
   const bw = Math.ceil(width / scaleFactor);
   const bh = Math.ceil(height / scaleFactor);
@@ -90,19 +74,22 @@ function ensureTextures(
     GPUTextureUsage.COPY_DST |
     GPUTextureUsage.COPY_SRC;
   const make = (tw: number, th: number): GPUTexture =>
-    createTrackedTexture(device, {
+    createTrackedTexture(runtime.device, {
       size: { width: tw, height: th },
       format,
       usage,
     });
-  texCache = {
-    quality,
-    format,
-    extractTex: make(width, height),
+  const cached = texCache.get(runtime, `${width}x${height}:${format}:${quality}`, () => ({
     blurATex: make(bw, bh),
     blurBTex: make(bw, bh),
-  };
-  return texCache;
+  }));
+  // The full-resolution extract target is only needed while encoding (it is
+  // downsampled straight away), so it is transient rather than cached next
+  // to the small blur buffers — at half/quarter quality it used to be the
+  // largest resident texture of the effect.
+  const extractTex = make(width, height);
+  runtime.pendingDestroyTextures.push(extractTex);
+  return { extractTex, ...cached };
 }
 
 export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
@@ -133,7 +120,7 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     // Scratch is allocated in the doc format so HDR highlights (>1.0)
     // survive the extract+blur ping-pong without being clamped.
     const { extractTex, blurATex, blurBTex } = ensureTextures(
-      runtime.device,
+      runtime,
       w,
       h,
       entry.params.quality,
@@ -263,22 +250,11 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
   },
 
   onFrameEnd() {
-    if (!usedThisFrame && texCache) {
-      destroyTrackedTexture(texCache.extractTex);
-      destroyTrackedTexture(texCache.blurATex);
-      destroyTrackedTexture(texCache.blurBTex);
-      texCache = null;
-    }
-    usedThisFrame = false;
+    texCache.onFrameEnd();
   },
 
   onDestroy() {
-    if (texCache) {
-      destroyTrackedTexture(texCache.extractTex);
-      destroyTrackedTexture(texCache.blurATex);
-      destroyTrackedTexture(texCache.blurBTex);
-      texCache = null;
-    }
+    texCache.destroyAll();
   },
 
   Panel: BloomOptions,

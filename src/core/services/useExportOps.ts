@@ -69,20 +69,6 @@ export function useExportOps({
   const [pendingLdrExport, setPendingLdrExport] =
     useState<ExportSettings | null>(null);
 
-  // Chunked Uint8Array → base64. Avoids "Maximum call stack size exceeded" from
-  // String.fromCharCode(...largeArray) for multi-MB HDR/EXR/TIFF32 buffers.
-  const bytesToBase64 = (bytes: Uint8Array): string => {
-    const CHUNK = 8192;
-    let s = "";
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      s += String.fromCharCode.apply(
-        null,
-        Array.from(bytes.subarray(i, i + CHUNK)),
-      );
-    }
-    return btoa(s);
-  };
-
   const doExport = useCallback(
     async (settings: ExportSettings): Promise<void> => {
       const handle = canvasHandleRef.current;
@@ -191,7 +177,7 @@ export function useExportOps({
             );
             const filename = `${stem}_${sanitiseName(ls.name)}${ext}`;
             const filePath = dir ? `${dir}${sep}${filename}` : filename;
-            await window.api.exportImage(filePath, bytesToBase64(bytes));
+            await window.api.exportImage(filePath, bytes);
             continue;
           }
 
@@ -227,7 +213,7 @@ export function useExportOps({
             });
             const filename = `${stem}_${sanitiseName(ls.name)}${ext}`;
             const filePath = dir ? `${dir}${sep}${filename}` : filename;
-            await window.api.exportImage(filePath, bytesToBase64(psdBytes));
+            await window.api.exportImage(filePath, psdBytes);
             continue;
           }
 
@@ -507,7 +493,7 @@ export function useExportOps({
           nodes: pdfNodes,
           iccProfile: stateRef.current.iccProfile,
         });
-        await window.api.exportImage(settings.filePath, bytesToBase64(bytes));
+        await window.api.exportImage(settings.filePath, bytes);
         return;
       }
 
@@ -558,10 +544,7 @@ export function useExportOps({
               },
             ],
           });
-          await window.api.exportImage(
-            settings.filePath,
-            bytesToBase64(psdBytes),
-          );
+          await window.api.exportImage(settings.filePath, psdBytes);
           return;
         }
 
@@ -767,8 +750,7 @@ export function useExportOps({
           bitsPerChannel:
             stateRef.current.pixelFormat === "rgba32f" ? 32 : 8,
         });
-        const b64 = bytesToBase64(bytes);
-        await window.api.exportImage(settings.filePath, b64);
+        await window.api.exportImage(settings.filePath, bytes);
         return;
       }
 
@@ -871,8 +853,7 @@ export function useExportOps({
             settings.exrCompression,
             settings.exrHalfFloat ? 1 : 0,
           );
-          const b64 = bytesToBase64(bytes);
-          await window.api.exportImage(settings.filePath, b64);
+          await window.api.exportImage(settings.filePath, bytes);
           return;
         }
 
@@ -883,24 +864,21 @@ export function useExportOps({
           settings.exrCompression,
           settings.exrHalfFloat ? 1 : 0,
         );
-        const b64 = bytesToBase64(bytes);
-        await window.api.exportImage(settings.filePath, b64);
+        await window.api.exportImage(settings.filePath, bytes);
         return;
       }
       if (settings.format === "hdr") {
         if (!(flat.data instanceof Float32Array))
           throw new Error("HDR export requires a rgba32f document.");
         const bytes = exportHdr(flat.data, width, height);
-        const b64 = bytesToBase64(bytes);
-        await window.api.exportImage(settings.filePath, b64);
+        await window.api.exportImage(settings.filePath, bytes);
         return;
       }
       if (settings.format === "tiff32") {
         if (!(flat.data instanceof Float32Array))
           throw new Error("TIFF32 export requires a rgba32f document.");
         const bytes = exportTiff32(flat.data, width, height);
-        const b64 = bytesToBase64(bytes);
-        await window.api.exportImage(settings.filePath, b64);
+        await window.api.exportImage(settings.filePath, bytes);
         return;
       }
       if (settings.format === "dds") {

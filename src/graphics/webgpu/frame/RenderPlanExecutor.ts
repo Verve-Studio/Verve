@@ -15,7 +15,7 @@ import {
   computeAdjGroupParamsKey,
 } from "../rendering/cacheKeys";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
-import { ensureLutOnGpu } from "@/core/lut/lutGpu";
+import { ensureLutOnGpu, sweepIdleLuts } from "@/core/lut/lutGpu";
 import { lutStore } from "@/core/lut/lutStore";
 import { effectiveColorSpace, idtLutIdFor } from "@/core/lut/layerColorSpace";
 import {
@@ -25,6 +25,9 @@ import {
 import type { GpuLayer, EffectRenderOp } from "../types";
 import { BLEND_MODE_INDEX } from "../types";
 import { writeUniformBuffer } from "../utils";
+
+/** Pooled scratch textures unused for this long are released. */
+const TEMP_TEX_IDLE_MS = 5000;
 
 /**
  * Outcome of a single `renderPlan` call. Lets downstream consumers (the
@@ -112,6 +115,12 @@ export class RenderPlanExecutor {
   // textures (layer, src ping-pong, mask) haven't changed object identity.
   compositeBufferPool: CompositeBufferSlot[] = [];
   compositeBufferIndex = 0;
+  /** Pooled scratch textures (see allocateTempGroupTex) and how many the
+   *  current encode has handed out. */
+  private tempTexPool: { tex: GPUTexture; lastUsed: number }[] = [];
+  private tempTexUsed = 0;
+  private tempTexTrimTimer: ReturnType<typeof setTimeout> | null = null;
+  private zeroTex: GPUTexture | null = null;
 
   // Pre-allocated scratch reused each frame to avoid GC pressure.
   // 80 bytes — see CompositeUniforms in composite.wgsl. Last 16 bytes hold
@@ -161,6 +170,54 @@ export class RenderPlanExecutor {
   // True while encoding a screen-preview renderPlan() — enables the adj-group
   // cache.
   adjGroupCacheEnabled = false;
+
+  // Layers hidden from the on-screen preview only (e.g. the text layer being
+  // live-edited, which the inline editor draws itself). Flatten / export /
+  // merge encodes ignore this set — see `withOutputEncode`.
+  private readonly screenHiddenLayerIds = new Set<string>();
+
+  // True while encoding for flatten / export / merge output. Preview-only
+  // state (screen-hidden layers, preview mode, stroke throttling) must never
+  // leak into those results.
+  private outputEncode = false;
+
+  /** Hide/show a layer in the on-screen preview only. */
+  setScreenHidden(layerId: string, hidden: boolean): void {
+    const had = this.screenHiddenLayerIds.has(layerId);
+    if (had === hidden) return;
+    if (hidden) this.screenHiddenLayerIds.add(layerId);
+    else this.screenHiddenLayerIds.delete(layerId);
+    this.lastPlanFp = null;
+    this.hasStableTex = false;
+  }
+
+  /** Whether a plan layer is skipped by the current encode. */
+  private isHidden(layer: GpuLayer): boolean {
+    return (
+      !layer.visible ||
+      (!this.outputEncode && this.screenHiddenLayerIds.has(layer.id))
+    );
+  }
+
+  /**
+   * Run a synchronous encode for flatten / export / merge output with every
+   * preview-only flag neutralised, restoring them afterwards (also on throw).
+   */
+  withOutputEncode<T>(fn: () => T): T {
+    const prevPreview = this.previewMode;
+    const prevStroke = this.strokeActive;
+    const prevOutput = this.outputEncode;
+    this.previewMode = false;
+    this.strokeActive = false;
+    this.outputEncode = true;
+    try {
+      return fn();
+    } finally {
+      this.previewMode = prevPreview;
+      this.strokeActive = prevStroke;
+      this.outputEncode = prevOutput;
+    }
+  }
 
   constructor(args: {
     gpu: GpuDevice;
@@ -242,20 +299,77 @@ export class RenderPlanExecutor {
   /** Allocate a single-frame canvas-sized texture for an isolated group's
    *  ping/pong buffer. Tracked in `pendingDestroyTextures` so it's released
    *  after submit by {@link flushPendingDestroys}. */
-  allocateTempGroupTex(): GPUTexture {
-    const texUsage =
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.COPY_SRC |
-      GPUTextureUsage.STORAGE_BINDING |
-      GPUTextureUsage.RENDER_ATTACHMENT;
-    const tex = this.createPingPongTex(
-      this.pixelWidth,
-      this.pixelHeight,
-      texUsage,
-    );
-    this.pendingDestroyTextures.push(tex);
+  /**
+   * Hand out a cleared, canvas-sized scratch texture for the rest of this
+   * encode. Textures come from a persistent pool (slot `i` is reused by the
+   * i-th request of every frame) instead of being created and destroyed per
+   * frame — a stroke under a composite layer used to churn two canvas-sized
+   * textures per frame (~512 MB/frame at 4K f32) and defeat the bind-group
+   * caches. Slots nobody needed for a few seconds are released again by
+   * {@link trimTempTexPool}.
+   */
+  allocateTempGroupTex(encoder: GPUCommandEncoder): GPUTexture {
+    let slot = this.tempTexPool[this.tempTexUsed];
+    if (!slot) {
+      const texUsage =
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.COPY_SRC |
+        GPUTextureUsage.STORAGE_BINDING |
+        GPUTextureUsage.RENDER_ATTACHMENT;
+      slot = {
+        tex: this.createPingPongTex(this.pixelWidth, this.pixelHeight, texUsage),
+        lastUsed: 0,
+      };
+      this.tempTexPool.push(slot);
+    }
+    this.tempTexUsed++;
+    slot.lastUsed = performance.now();
+    this.scheduleTempTexTrim();
+    // A fresh texture used to be zero-initialised; a pooled one holds the
+    // previous frame's contents.
+    encodeClearTexture(encoder, slot.tex);
+    return slot.tex;
+  }
+
+  /** Persistent all-zero texture used as a copy source to clear sub-rects;
+   *  grown on demand. Never written to, so it stays zero (WebGPU
+   *  zero-initialises new textures). */
+  private zeroTexFor(w: number, h: number): GPUTexture {
+    const z = this.zeroTex;
+    if (z && z.width >= w && z.height >= h) return z;
+    if (z) this.pendingDestroyTextures.push(z);
+    const tex = createTrackedTexture(this.device, {
+      size: {
+        width: Math.max(w, z?.width ?? 0),
+        height: Math.max(h, z?.height ?? 0),
+      },
+      format: this.internalFormat,
+      usage: GPUTextureUsage.COPY_SRC,
+    });
+    this.zeroTex = tex;
     return tex;
+  }
+
+  private scheduleTempTexTrim(): void {
+    if (this.tempTexTrimTimer !== null) return;
+    this.tempTexTrimTimer = setTimeout(() => {
+      this.tempTexTrimTimer = null;
+      this.trimTempTexPool();
+    }, TEMP_TEX_IDLE_MS);
+  }
+
+  /** Release pool slots unused for TEMP_TEX_IDLE_MS (from the end, so the
+   *  slot indices the next frame hands out stay dense). */
+  private trimTempTexPool(): void {
+    const cutoff = performance.now() - TEMP_TEX_IDLE_MS;
+    while (this.tempTexPool.length > 0) {
+      const last = this.tempTexPool[this.tempTexPool.length - 1];
+      if (last.lastUsed > cutoff) break;
+      this.tempTexPool.pop();
+      destroyTrackedTexture(last.tex);
+    }
+    if (this.tempTexPool.length > 0) this.scheduleTempTexTrim();
   }
 
   /** Hand out the next pooled (uniform, vertex) buffer pair for one composite
@@ -298,6 +412,7 @@ export class RenderPlanExecutor {
     this.pendingDestroyTextures = [];
     this.adjEncoder.flushPendingDestroys();
     this.adjEncoder.endFrame();
+    sweepIdleLuts(this.device);
   }
 
   /** Union a canvas-space rect into the per-frame dirty accumulator. */
@@ -330,7 +445,7 @@ export class RenderPlanExecutor {
   detectDragDirty(plan: RenderPlanEntry[]): void {
     for (const entry of plan) {
       if (entry.kind === "layer") {
-        if (!entry.layer.visible || entry.layer.opacity === 0) continue;
+        if (this.isHidden(entry.layer) || entry.layer.opacity === 0) continue;
         const l = entry.layer;
         const prev = this.cache.lastRenderedOffsets.get(l.id);
         if (prev && (prev.x !== l.offsetX || prev.y !== l.offsetY)) {
@@ -343,7 +458,7 @@ export class RenderPlanExecutor {
           );
         }
       } else if (entry.kind === "adjustment-group") {
-        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue;
+        if (this.isHidden(entry.baseLayer) || entry.baseLayer.opacity === 0) continue;
         const l = entry.baseLayer;
         const prev = this.cache.lastRenderedOffsets.get(entry.parentLayerId);
         if (prev && (prev.x !== l.offsetX || prev.y !== l.offsetY)) {
@@ -370,7 +485,7 @@ export class RenderPlanExecutor {
   updateLastRenderedOffsets(plan: RenderPlanEntry[]): void {
     for (const entry of plan) {
       if (entry.kind === "layer") {
-        if (!entry.layer.visible || entry.layer.opacity === 0) continue;
+        if (this.isHidden(entry.layer) || entry.layer.opacity === 0) continue;
         const l = entry.layer;
         this.cache.lastRenderedOffsets.set(l.id, {
           x: l.offsetX,
@@ -379,7 +494,7 @@ export class RenderPlanExecutor {
           h: l.layerHeight,
         });
       } else if (entry.kind === "adjustment-group") {
-        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue;
+        if (this.isHidden(entry.baseLayer) || entry.baseLayer.opacity === 0) continue;
         const l = entry.baseLayer;
         this.cache.lastRenderedOffsets.set(entry.parentLayerId, {
           x: l.offsetX,
@@ -443,7 +558,7 @@ export class RenderPlanExecutor {
         return false;
       }
       if (entry.kind === "adjustment-group") {
-        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue;
+        if (this.isHidden(entry.baseLayer) || entry.baseLayer.opacity === 0) continue;
         if (
           entry.locked === true &&
           this.cache.bakedLocked.has(entry.parentLayerId)
@@ -512,7 +627,7 @@ export class RenderPlanExecutor {
   appendPlanFp(plan: RenderPlanEntry[], out: string[]): void {
     for (const entry of plan) {
       if (entry.kind === "layer") {
-        if (!entry.layer.visible || entry.layer.opacity === 0) continue;
+        if (this.isHidden(entry.layer) || entry.layer.opacity === 0) continue;
         const l = entry.layer;
         const maskPart = entry.mask
           ? `:M${entry.mask.contentVersion}:${entry.mask.offsetX}:${entry.mask.offsetY}`
@@ -544,7 +659,7 @@ export class RenderPlanExecutor {
         this.appendPlanFp(entry.children, out);
         out.push(`]:${adjKey}`);
       } else if (entry.kind === "adjustment-group") {
-        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue;
+        if (this.isHidden(entry.baseLayer) || entry.baseLayer.opacity === 0) continue;
         const l = entry.baseLayer;
         const baseMaskVersion = entry.baseMask
           ? entry.baseMask.contentVersion
@@ -869,6 +984,88 @@ export class RenderPlanExecutor {
    * 4. Snapshot the rendered offsets so the next frame can detect drag deltas.
    */
   renderPlan(plan: RenderPlanEntry[]): RenderPlanResult {
+    try {
+      return this.renderPlanUnguarded(plan);
+    } catch (err) {
+      // Anything can throw mid-encode (MemoryLimitError from a texture
+      // allocation, an unregistered effect kind, an effect's encode body).
+      // Reset the per-encode state that is normally cleared after the encode
+      // returns: a leftover `incrementalScissor` would clip every later full
+      // render and every export to a stale dirty rect.
+      this.incrementalScissor = null;
+      this.adjGroupCacheEnabled = false;
+      this.compositeBufferIndex = 0;
+    this.tempTexUsed = 0;
+      this.lastPlanFp = null;
+      this.hasStableTex = false;
+      // Nothing from this frame was submitted, so its queued temporaries can
+      // be released right away.
+      this.flushPendingDestroys();
+      throw err;
+    }
+  }
+
+  /** Every id a cache entry can be keyed by, across the whole (nested) plan. */
+  private collectPlanIds(plan: RenderPlanEntry[], out: Set<string>): void {
+    for (const entry of plan) {
+      switch (entry.kind) {
+        case "layer":
+          out.add(entry.layer.id);
+          if (entry.mask) out.add(entry.mask.id);
+          break;
+        case "adjustment-group":
+          out.add(entry.parentLayerId);
+          for (const op of entry.adjustments) out.add(op.layerId);
+          break;
+        case "layer-group":
+          out.add(entry.groupId);
+          this.collectPlanIds(entry.children, out);
+          break;
+        case "composite-layer":
+          out.add(entry.layerId);
+          for (const op of entry.adjustments) out.add(op.layerId);
+          this.collectPlanIds(entry.children, out);
+          break;
+        default:
+          out.add((entry as EffectRenderOp).layerId);
+      }
+    }
+  }
+
+  /**
+   * Free cached outputs whose owner is no longer in the plan. Adjustment and
+   * standalone-effect layers never get a GpuLayer, so `destroyLayer` (the
+   * only other eviction path) never runs for them: deleting or hiding one
+   * would otherwise keep a canvas-sized texture alive for the renderer's
+   * lifetime. Runs after submit on full renders, so nothing evicted here is
+   * still referenced by an in-flight encoder.
+   */
+  private sweepUnreferencedCaches(plan: RenderPlanEntry[]): void {
+    const ids = new Set<string>();
+    this.collectPlanIds(plan, ids);
+    for (const [id, entry] of this.cache.standaloneOp) {
+      if (ids.has(id)) continue;
+      destroyTrackedTexture(entry.tex);
+      this.cache.standaloneOp.delete(id);
+    }
+    for (const [id, entry] of this.cache.adjGroup) {
+      if (ids.has(id)) continue;
+      destroyTrackedTexture(entry.tex);
+      this.cache.adjGroup.delete(id);
+    }
+    for (const [id, entry] of this.cache.compositeLayer) {
+      if (ids.has(id)) continue;
+      destroyTrackedTexture(entry.tex);
+      this.cache.compositeLayer.delete(id);
+    }
+    for (const [id, tex] of this.cache.bakedLocked) {
+      if (ids.has(id)) continue;
+      destroyTrackedTexture(tex);
+      this.cache.bakedLocked.delete(id);
+    }
+  }
+
+  private renderPlanUnguarded(plan: RenderPlanEntry[]): RenderPlanResult {
     const { device, pixelWidth: w, pixelHeight: h } = this;
 
     const planFp = this.computePlanFingerprint(plan);
@@ -916,13 +1113,7 @@ export class RenderPlanExecutor {
 
     let result: RenderPlanResult;
     if (canIncremental && dirty !== null && this.stableTex !== null) {
-      const zeroTex = createTrackedTexture(device, {
-        size: { width: dirty.w, height: dirty.h },
-        format: this.internalFormat,
-        usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-      this.pendingDestroyTextures.push(zeroTex);
-      encodeClearTexture(encoder, zeroTex);
+      const zeroTex = this.zeroTexFor(dirty.w, dirty.h);
       encoder.copyTextureToTexture(
         { texture: zeroTex },
         { texture: this.pingTex, origin: { x: dirty.x, y: dirty.y } },
@@ -937,6 +1128,7 @@ export class RenderPlanExecutor {
       this.adjGroupCacheEnabled = true;
       this.incrementalScissor = dirty;
       this.compositeBufferIndex = 0;
+    this.tempTexUsed = 0;
       const { src: finalTex } = this.encodeSubPlan(
         encoder,
         plan,
@@ -987,6 +1179,7 @@ export class RenderPlanExecutor {
 
       device.queue.submit([encoder.finish()]);
       this.flushPendingDestroys();
+      this.sweepUnreferencedCaches(plan);
       this.hasStableTex = true;
       result = { kind: "full" };
     }
@@ -1006,6 +1199,7 @@ export class RenderPlanExecutor {
     plan: RenderPlanEntry[],
   ): GPUTexture {
     this.compositeBufferIndex = 0;
+    this.tempTexUsed = 0;
     encodeClearTexture(encoder, this.pingTex);
     encodeClearTexture(encoder, this.pongTex);
     const { src } = this.encodeSubPlan(
@@ -1042,7 +1236,7 @@ export class RenderPlanExecutor {
   } {
     for (const entry of plan) {
       if (entry.kind === "layer") {
-        if (!entry.layer.visible || entry.layer.opacity === 0) continue;
+        if (this.isHidden(entry.layer) || entry.layer.opacity === 0) continue;
         this.encodeCompositeLayer(
           encoder,
           entry.layer,
@@ -1074,10 +1268,8 @@ export class RenderPlanExecutor {
           srcIsEmpty = child.srcIsEmpty;
           inputFp += `|GRP-end:${entry.groupId}`;
         } else {
-          const iso1 = this.allocateTempGroupTex();
-          const iso2 = this.allocateTempGroupTex();
-          encodeClearTexture(encoder, iso1);
-          encodeClearTexture(encoder, iso2);
+          const iso1 = this.allocateTempGroupTex(encoder);
+          const iso2 = this.allocateTempGroupTex(encoder);
           const child = this.encodeSubPlan(
             encoder,
             entry.children,
@@ -1195,26 +1387,9 @@ export class RenderPlanExecutor {
           const cached = this.cache.compositeLayer.get(entry.layerId);
           if (cached) {
             const dirty = this.incrementalScissor;
-            const isoA = this.allocateTempGroupTex();
-            const isoB = this.allocateTempGroupTex();
-            const zeroTex = createTrackedTexture(this.device, {
-              size: { width: dirty.w, height: dirty.h },
-              format: this.internalFormat,
-              usage:
-                GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
-            });
-            this.pendingDestroyTextures.push(zeroTex);
-            encodeClearTexture(encoder, zeroTex);
-            encoder.copyTextureToTexture(
-              { texture: zeroTex },
-              { texture: isoA, origin: { x: dirty.x, y: dirty.y } },
-              { width: dirty.w, height: dirty.h },
-            );
-            encoder.copyTextureToTexture(
-              { texture: zeroTex },
-              { texture: isoB, origin: { x: dirty.x, y: dirty.y } },
-              { width: dirty.w, height: dirty.h },
-            );
+            const isoA = this.allocateTempGroupTex(encoder);
+            const isoB = this.allocateTempGroupTex(encoder);
+            // (isoA / isoB come back fully cleared from the pool.)
             const child = this.encodeSubPlan(
               encoder,
               entry.children,
@@ -1246,10 +1421,8 @@ export class RenderPlanExecutor {
           }
         }
 
-        const iso1 = this.allocateTempGroupTex();
-        const iso2 = this.allocateTempGroupTex();
-        encodeClearTexture(encoder, iso1);
-        encodeClearTexture(encoder, iso2);
+        const iso1 = this.allocateTempGroupTex(encoder);
+        const iso2 = this.allocateTempGroupTex(encoder);
         const child = this.encodeSubPlan(
           encoder,
           entry.children,
@@ -1338,7 +1511,7 @@ export class RenderPlanExecutor {
         srcIsEmpty = false;
         inputFp += `|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:${child.inputFp}:${adjKey}`;
       } else if (entry.kind === "adjustment-group") {
-        if (!entry.baseLayer.visible || entry.baseLayer.opacity === 0) continue;
+        if (this.isHidden(entry.baseLayer) || entry.baseLayer.opacity === 0) continue;
 
         if (entry.locked) {
           const bakedTex = this.cache.bakedLocked.get(entry.parentLayerId);
@@ -1584,6 +1757,12 @@ export class RenderPlanExecutor {
   /** Release ping-pong + composite-buffer-pool resources. Called from the
    *  renderer's `destroy()`. */
   destroy(): void {
+    if (this.tempTexTrimTimer !== null) clearTimeout(this.tempTexTrimTimer);
+    this.tempTexTrimTimer = null;
+    for (const slot of this.tempTexPool) destroyTrackedTexture(slot.tex);
+    this.tempTexPool = [];
+    if (this.zeroTex) destroyTrackedTexture(this.zeroTex);
+    this.zeroTex = null;
     destroyTrackedTexture(this.pingTex);
     destroyTrackedTexture(this.pongTex);
     destroyTrackedTexture(this.groupPingTex);

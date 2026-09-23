@@ -1,4 +1,5 @@
 #include "quantize.h"
+#include <cstddef>
 #include <vector>
 #include <algorithm>
 #include <numeric>
@@ -65,7 +66,7 @@ int quantize_median_cut(
     Bucket initial;
     initial.pixels.reserve(pixelCount);
     for (int i = 0; i < pixelCount; ++i) {
-        const int idx = i * 4;
+        const size_t idx = static_cast<size_t>(i) * 4;
         initial.pixels.push_back({ pixels[idx], pixels[idx+1], pixels[idx+2], pixels[idx+3] });
     }
 

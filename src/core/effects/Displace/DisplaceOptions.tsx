@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { DisplaceEffectLayer } from "@/core/effects/Displace/DisplaceEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -16,13 +16,14 @@ interface Props {
 }
 
 const getDefaultParams = (): DisplaceEffectLayer["params"] =>
-  effectRegistry.get("displace")!.defaultParams as DisplaceEffectLayer["params"];
+  effectRegistry.get("displace")!
+    .defaultParams as DisplaceEffectLayer["params"];
 
 export function DisplaceOptions({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
   const update = (patch: Partial<DisplaceEffectLayer["params"]>): void => {
     dispatch({

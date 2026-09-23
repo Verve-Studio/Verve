@@ -1,9 +1,7 @@
-import { ipcMain, app } from 'electron'
-import { join, dirname } from 'node:path'
+import { mlPaths } from './ml/paths'
+import { join } from 'node:path'
 import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
-import type { IpcMainInvokeEvent } from 'electron'
 
 // ─── ORT type stubs (mirror of isnet.ts / upscale.ts) ────────────────────────
 
@@ -20,6 +18,8 @@ interface OrtInferenceSession {
   readonly inputNames: readonly string[]
   readonly outputNames: readonly string[]
   run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>
+  /** Frees the native session (model weights, DirectML/CoreML buffers). */
+  release?(): Promise<void>
 }
 
 interface OrtModule {
@@ -55,15 +55,15 @@ const MODEL_FILE = 'lama_fp32.onnx'
 const LAMA_INPUT = 512
 
 function getBundledDir(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'models', 'lama')
+  if (mlPaths().isPackaged) {
+    return join(mlPaths().resourcesPath, 'models', 'lama')
   }
-  const devRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const devRoot = mlPaths().appRoot
   return join(devRoot, 'resources', 'models', 'lama')
 }
 
 function getUserDataDir(): string {
-  return join(app.getPath('userData'), 'models', 'lama')
+  return join(mlPaths().userData, 'models', 'lama')
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -91,10 +91,19 @@ function preferredProviders(): string[] {
 }
 
 let session: OrtInferenceSession | null = null
+let sessionPromise: Promise<OrtInferenceSession> | null = null
 let sessionProvider: string = 'cpu'
 
-async function loadSession(): Promise<OrtInferenceSession> {
-  if (session) return session
+/** Shared in-flight load: concurrent runs must not each create a session. */
+function loadSession(): Promise<OrtInferenceSession> {
+  sessionPromise ??= createSession().catch((err) => {
+    sessionPromise = null
+    throw err
+  })
+  return sessionPromise
+}
+
+async function createSession(): Promise<OrtInferenceSession> {
   const path = await resolveModelPath()
   if (!path) {
     throw new Error(
@@ -292,150 +301,149 @@ function maskBoundingBox(
   return { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 }
 }
 
-// ─── IPC handler ─────────────────────────────────────────────────────────────
+// ─── Public API (used by the ML worker and the IPC layer) ───────────────────
 
 const MASK_THRESHOLD = 8 // u8 values ≥ this count as "inpaint here"
 
-export function registerInpaintHandlers(): void {
-  ipcMain.handle(
-    'inpaint:check-model',
-    async (): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> => {
-      const path = await resolveModelPath()
-      return {
-        ready: path !== null,
-        path,
-        searchedPaths: [join(getUserDataDir(), MODEL_FILE), join(getBundledDir(), MODEL_FILE)],
-      }
-    },
+export async function checkInpaintModel(): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> {
+  const path = await resolveModelPath()
+  return {
+    ready: path !== null,
+    path,
+    searchedPaths: [join(getUserDataDir(), MODEL_FILE), join(getBundledDir(), MODEL_FILE)],
+  }
+}
+
+export async function runInpaint(params: {
+  rgba: Uint8Array
+  mask: Uint8Array
+  width: number
+  height: number
+}): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> {
+  const { width: w, height: h } = params
+  if (params.rgba.length !== w * h * 4) {
+    throw new Error(`rgba length ${params.rgba.length} ≠ ${w}×${h}×4`)
+  }
+  if (params.mask.length !== w * h) {
+    throw new Error(`mask length ${params.mask.length} ≠ ${w}×${h}`)
+  }
+
+  const sess = await loadSession()
+  const ort = getOrt()
+  const rgba = params.rgba
+  const mask = params.mask
+
+  const bbox = maskBoundingBox(mask, w, h, MASK_THRESHOLD)
+  if (!bbox) {
+    // Nothing to inpaint — return the input unchanged.
+    return {
+      rgba: new Uint8Array(rgba),
+      width: w,
+      height: h,
+      provider: sessionProvider,
+    }
+  }
+
+  // Add padding around the mask bbox so the model sees enough context.
+  // 30% of the largest masked dimension, with a 64-pixel floor.
+  const bw = bbox.x1 - bbox.x0
+  const bh = bbox.y1 - bbox.y0
+  const pad = Math.max(64, Math.round(0.3 * Math.max(bw, bh)))
+  const cropX0 = Math.max(0, bbox.x0 - pad)
+  const cropY0 = Math.max(0, bbox.y0 - pad)
+  const cropX1 = Math.min(w, bbox.x1 + pad)
+  const cropY1 = Math.min(h, bbox.y1 + pad)
+  const cropW = cropX1 - cropX0
+  const cropH = cropY1 - cropY0
+
+  // Resize the crop to LaMa's working size.
+  const imgChw = rgbaRegionToChw(
+    rgba, w, h,
+    cropX0, cropY0, cropW, cropH,
+    LAMA_INPUT, LAMA_INPUT,
+  )
+  const maskChw = maskRegionToChw(
+    mask, w, h,
+    cropX0, cropY0, cropW, cropH,
+    LAMA_INPUT, LAMA_INPUT,
+    MASK_THRESHOLD,
   )
 
-  ipcMain.handle(
-    'inpaint:run',
-    async (
-      _event: IpcMainInvokeEvent,
-      params: { rgba: Buffer; mask: Buffer; width: number; height: number },
-    ): Promise<{ rgba: Buffer; width: number; height: number; provider: string }> => {
-      const { width: w, height: h } = params
-      if (params.rgba.length !== w * h * 4) {
-        throw new Error(`rgba length ${params.rgba.length} ≠ ${w}×${h}×4`)
-      }
-      if (params.mask.length !== w * h) {
-        throw new Error(`mask length ${params.mask.length} ≠ ${w}×${h}`)
-      }
-
-      const sess = await loadSession()
-      const ort = getOrt()
-      const rgba = new Uint8Array(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength)
-      const mask = new Uint8Array(params.mask.buffer, params.mask.byteOffset, params.mask.byteLength)
-
-      const bbox = maskBoundingBox(mask, w, h, MASK_THRESHOLD)
-      if (!bbox) {
-        // Nothing to inpaint — return the input unchanged.
-        return {
-          rgba: Buffer.from(rgba),
-          width: w,
-          height: h,
-          provider: sessionProvider,
-        }
-      }
-
-      // Add padding around the mask bbox so the model sees enough context.
-      // 30% of the largest masked dimension, with a 64-pixel floor.
-      const bw = bbox.x1 - bbox.x0
-      const bh = bbox.y1 - bbox.y0
-      const pad = Math.max(64, Math.round(0.3 * Math.max(bw, bh)))
-      const cropX0 = Math.max(0, bbox.x0 - pad)
-      const cropY0 = Math.max(0, bbox.y0 - pad)
-      const cropX1 = Math.min(w, bbox.x1 + pad)
-      const cropY1 = Math.min(h, bbox.y1 + pad)
-      const cropW = cropX1 - cropX0
-      const cropH = cropY1 - cropY0
-
-      // Resize the crop to LaMa's working size.
-      const imgChw = rgbaRegionToChw(
-        rgba, w, h,
-        cropX0, cropY0, cropW, cropH,
-        LAMA_INPUT, LAMA_INPUT,
-      )
-      const maskChw = maskRegionToChw(
-        mask, w, h,
-        cropX0, cropY0, cropW, cropH,
-        LAMA_INPUT, LAMA_INPUT,
-        MASK_THRESHOLD,
-      )
-
-      // Pre-mask the image: zero out RGB wherever the mask is set. The LaMa
-      // generator was trained to receive `image * (1 - mask)` (the masked
-      // region blanked) plus the mask itself, then to fill those blanked
-      // pixels with plausible content. Full-pipeline ONNX exports do this
-      // step internally; generator-only exports don't — feeding the raw
-      // image to a generator-only export produces grey blobs.
-      // Applying this unconditionally is safe: the full-pipeline export
-      // would just re-zero already-zero pixels.
-      const plane = LAMA_INPUT * LAMA_INPUT
-      let maskedPixels = 0
-      for (let i = 0; i < plane; i++) {
-        if (maskChw[i] > 0.5) {
-          imgChw[i] = 0
-          imgChw[plane + i] = 0
-          imgChw[2 * plane + i] = 0
-          maskedPixels++
-        }
-      }
-      // eslint-disable-next-line no-console
-      console.log(
-        `[inpaint] crop=${cropW}×${cropH}@(${cropX0},${cropY0}) → ${LAMA_INPUT}×${LAMA_INPUT}, ` +
-        `masked=${maskedPixels}px (${((maskedPixels / plane) * 100).toFixed(1)}%)`,
-      )
-
-      // LaMa input naming convention: "image" + "mask". If the export uses
-      // different names, fall back to positional.
-      const feeds: Record<string, OrtTensor> = {}
-      const imageTensor = new ort.Tensor('float32', imgChw, [1, 3, LAMA_INPUT, LAMA_INPUT])
-      const maskTensor = new ort.Tensor('float32', maskChw, [1, 1, LAMA_INPUT, LAMA_INPUT])
-      const imgName = sess.inputNames.find((n) => /image/i.test(n)) ?? sess.inputNames[0]
-      const mskName = sess.inputNames.find((n) => /mask/i.test(n)) ?? sess.inputNames[1] ?? sess.inputNames[0]
-      feeds[imgName] = imageTensor
-      if (mskName !== imgName) feeds[mskName] = maskTensor
-
-      const outputs = await sess.run(feeds)
-      const outTensor = outputs[sess.outputNames[0]]
-      const out = new Float32Array(outTensor.data as Float32Array)
-      const outH = outTensor.dims[outTensor.dims.length - 2]
-      const outW = outTensor.dims[outTensor.dims.length - 1]
-
-      // Detect the model's output range. saic-mdal exports [0,1]; lama-cleaner
-      // exports [0,255]. The composite step divides by the detected scale to
-      // bring everything into uint8.
-      const stats = detectOutputScale(out)
-      // eslint-disable-next-line no-console
-      console.log(
-        `[inpaint] output dims=[${outTensor.dims.join(',')}] ` +
-        `range=[${stats.min.toFixed(3)}, ${stats.max.toFixed(3)}] mean=${stats.mean.toFixed(3)} ` +
-        `→ scale ×${stats.scale}`,
-      )
-
-      // Composite the model output back into a copy of the source — only the
-      // pixels inside the original mask change.
-      const result = new Uint8Array(rgba)
-      compositePatchOver(
-        result, w, h,
-        out, outW, outH,
-        mask, MASK_THRESHOLD,
-        cropX0, cropY0, cropW, cropH,
-        stats.scale,
-      )
-
-      return {
-        rgba: Buffer.from(result),
-        width: w,
-        height: h,
-        provider: sessionProvider,
-      }
-    },
+  // Pre-mask the image: zero out RGB wherever the mask is set. The LaMa
+  // generator was trained to receive `image * (1 - mask)` (the masked
+  // region blanked) plus the mask itself, then to fill those blanked
+  // pixels with plausible content. Full-pipeline ONNX exports do this
+  // step internally; generator-only exports don't — feeding the raw
+  // image to a generator-only export produces grey blobs.
+  // Applying this unconditionally is safe: the full-pipeline export
+  // would just re-zero already-zero pixels.
+  const plane = LAMA_INPUT * LAMA_INPUT
+  let maskedPixels = 0
+  for (let i = 0; i < plane; i++) {
+    if (maskChw[i] > 0.5) {
+      imgChw[i] = 0
+      imgChw[plane + i] = 0
+      imgChw[2 * plane + i] = 0
+      maskedPixels++
+    }
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[inpaint] crop=${cropW}×${cropH}@(${cropX0},${cropY0}) → ${LAMA_INPUT}×${LAMA_INPUT}, ` +
+    `masked=${maskedPixels}px (${((maskedPixels / plane) * 100).toFixed(1)}%)`,
   )
 
-  ipcMain.handle('inpaint:invalidate-session', (): void => {
-    session = null
-  })
+  // LaMa input naming convention: "image" + "mask". If the export uses
+  // different names, fall back to positional.
+  const feeds: Record<string, OrtTensor> = {}
+  const imageTensor = new ort.Tensor('float32', imgChw, [1, 3, LAMA_INPUT, LAMA_INPUT])
+  const maskTensor = new ort.Tensor('float32', maskChw, [1, 1, LAMA_INPUT, LAMA_INPUT])
+  const imgName = sess.inputNames.find((n) => /image/i.test(n)) ?? sess.inputNames[0]
+  const mskName = sess.inputNames.find((n) => /mask/i.test(n)) ?? sess.inputNames[1] ?? sess.inputNames[0]
+  feeds[imgName] = imageTensor
+  if (mskName !== imgName) feeds[mskName] = maskTensor
+
+  const outputs = await sess.run(feeds)
+  const outTensor = outputs[sess.outputNames[0]]
+  const out = new Float32Array(outTensor.data as Float32Array)
+  const outH = outTensor.dims[outTensor.dims.length - 2]
+  const outW = outTensor.dims[outTensor.dims.length - 1]
+
+  // Detect the model's output range. saic-mdal exports [0,1]; lama-cleaner
+  // exports [0,255]. The composite step divides by the detected scale to
+  // bring everything into uint8.
+  const stats = detectOutputScale(out)
+  // eslint-disable-next-line no-console
+  console.log(
+    `[inpaint] output dims=[${outTensor.dims.join(',')}] ` +
+    `range=[${stats.min.toFixed(3)}, ${stats.max.toFixed(3)}] mean=${stats.mean.toFixed(3)} ` +
+    `→ scale ×${stats.scale}`,
+  )
+
+  // Composite the model output back into a copy of the source — only the
+  // pixels inside the original mask change.
+  const result = new Uint8Array(rgba)
+  compositePatchOver(
+    result, w, h,
+    out, outW, outH,
+    mask, MASK_THRESHOLD,
+    cropX0, cropY0, cropW, cropH,
+    stats.scale,
+  )
+
+  return {
+    rgba: result,
+    width: w,
+    height: h,
+    provider: sessionProvider,
+  }
+}
+
+/** Drop the session and free its native memory. */
+export async function invalidateInpaintSession(): Promise<void> {
+  const pending = sessionPromise
+  sessionPromise = null
+  session = null
+  const s = await pending?.catch(() => null)
+  await s?.release?.()
 }

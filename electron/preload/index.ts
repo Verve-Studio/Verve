@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 
 const api = {
   openDevTools: (): Promise<void> => ipcRenderer.invoke('debug:openDevTools'),
@@ -19,15 +18,18 @@ const api = {
     ipcRenderer.invoke('file:writeJson', path, data),
   saveverveDialog: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveverve', defaultPath),
-  openverveFile: (path: string): Promise<string> => ipcRenderer.invoke('file:openverve', path),
-  saveverveFile: (path: string, data: string): Promise<void> =>
+  openverveFile: (path: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke('file:openverve', path),
+  saveverveFile: (path: string, data: Uint8Array): Promise<void> =>
     ipcRenderer.invoke('file:saveverve', path, data),
   exportBrowse: (ext: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:exportBrowse', ext),
-  exportImage: (path: string, base64: string): Promise<void> =>
-    ipcRenderer.invoke('file:exportImage', path, base64),
-  readFileBase64: (path: string): Promise<string> =>
-    ipcRenderer.invoke('file:readFileBase64', path),
+  /** Write an exported image: raw bytes, or a base64 string. */
+  exportImage: (path: string, data: Uint8Array | string): Promise<void> =>
+    ipcRenderer.invoke('file:exportImage', path, data),
+  /** Read an image / ICC file as raw bytes. */
+  readFile: (path: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke('file:read', path),
   loadCurvesPresets: (): Promise<unknown> =>
     ipcRenderer.invoke('presets:loadCurvesPresets'),
   saveCurvesPresets: (presets: unknown): Promise<void> =>
@@ -55,10 +57,12 @@ const api = {
     ipcRenderer.invoke('file:readPalette', path),
   writePaletteFile: (path: string, data: string): Promise<void> =>
     ipcRenderer.invoke('file:writePalette', path, data),
-  clipboardWriteImage: (pngBase64: string): Promise<void> =>
-    ipcRenderer.invoke('clipboard:write-image', pngBase64),
-  clipboardReadImage: (): Promise<string | null> =>
+  clipboardWriteImage: (bgraPremul: Uint8Array, width: number, height: number): Promise<void> =>
+    ipcRenderer.invoke('clipboard:write-image', bgraPremul, width, height),
+  clipboardReadImage: (): Promise<{ width: number; height: number; data: Uint8Array } | null> =>
     ipcRenderer.invoke('clipboard:read-image'),
+  clipboardImageSize: (): Promise<{ width: number; height: number } | null> =>
+    ipcRenderer.invoke('clipboard:image-size'),
 
   // ── Recent files ─────────────────────────────────────────────────────────────
   getRecentFiles: (): Promise<string[]> => ipcRenderer.invoke('recentFiles:get'),
@@ -205,8 +209,8 @@ const api = {
       height: number
     }): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> =>
       ipcRenderer.invoke('inpaint:run', {
-        rgba: Buffer.from(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength),
-        mask: Buffer.from(params.mask.buffer, params.mask.byteOffset, params.mask.byteLength),
+        rgba: params.rgba,
+        mask: params.mask,
         width: params.width,
         height: params.height,
       }),
@@ -226,13 +230,23 @@ const api = {
       height: number
     }): Promise<{ mask: Uint8Array; width: number; height: number; provider: string }> =>
       ipcRenderer.invoke('isnet:run', {
-        rgba: Buffer.from(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength),
+        rgba: params.rgba,
         width: params.width,
         height: params.height,
       }),
 
     invalidateSession: (): Promise<void> =>
       ipcRenderer.invoke('isnet:invalidate-session'),
+  },
+
+  /** Titles of open documents with unsaved changes (for the close prompt). */
+  setUnsavedDocuments: (titles: string[]): void =>
+    ipcRenderer.send('app:unsaved-documents', titles),
+
+  // ── AI jobs (all models) ───────────────────────────────────────
+  ml: {
+    /** Abort the running AI job(s); the pending promises reject. */
+    cancel: (): Promise<void> => ipcRenderer.invoke('ml:cancel'),
   },
 
   // ── AI Upscale (Rescale Image) ────────────────────────────────
@@ -254,7 +268,7 @@ const api = {
       targetHeight: number
     }): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> =>
       ipcRenderer.invoke('upscale:run', {
-        rgba: Buffer.from(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength),
+        rgba: params.rgba,
         width: params.width,
         height: params.height,
         modelId: params.modelId,
@@ -294,10 +308,10 @@ const api = {
       mode: 'hair' | 'object'
     }): Promise<{ alpha: Uint8Array }> =>
       ipcRenderer.invoke('matting:refine', {
-        imageRgba: Buffer.from(params.imageRgba.buffer, params.imageRgba.byteOffset, params.imageRgba.byteLength),
+        imageRgba: params.imageRgba,
         width: params.width,
         height: params.height,
-        selectionMask: Buffer.from(params.selectionMask.buffer, params.selectionMask.byteOffset, params.selectionMask.byteLength),
+        selectionMask: params.selectionMask,
         bandRadius: params.bandRadius,
         mode: params.mode,
       }),
@@ -318,16 +332,8 @@ const api = {
   },
 }
 
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
-}
+// Only the typed `api` is exposed. The raw `ipcRenderer` wrapper that
+// @electron-toolkit exposed as `window.electron` (send/invoke/on for ANY
+// channel) was unused and bypassed this API entirely. The renderer is
+// sandboxed with context isolation, so there is no non-isolated fallback.
+contextBridge.exposeInMainWorld('api', api)

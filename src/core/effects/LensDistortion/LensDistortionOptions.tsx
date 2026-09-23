@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { LensDistortionEffectLayer } from "@/core/effects/LensDistortion/LensDistortionEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -13,7 +13,8 @@ interface LensDistortionOptionsProps {
 }
 
 const getDefaultParams = (): LensDistortionEffectLayer["params"] =>
-  effectRegistry.get("lens-distortion")!.defaultParams as LensDistortionEffectLayer["params"];
+  effectRegistry.get("lens-distortion")!
+    .defaultParams as LensDistortionEffectLayer["params"];
 
 type DistortionType = LensDistortionEffectLayer["params"]["type"];
 type EdgeMode = LensDistortionEffectLayer["params"]["edgeMode"];
@@ -31,7 +32,7 @@ export function LensDistortionOptions({
   layer,
   parentLayerName,
 }: LensDistortionOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (

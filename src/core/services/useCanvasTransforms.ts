@@ -24,6 +24,8 @@ import {
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
 import { activeScope } from "@/core/store/scope";
+import { notificationStore } from "@/core/store/notificationStore";
+import { showOperationError } from "@/utils/userFeedback";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,8 @@ interface UseCanvasTransformsOptions {
   captureHistory: (label: string) => void;
   dispatch: Dispatch<AppAction>;
   activeTabId: string;
+  /** Live active-tab id, read after awaits to detect a tab switch. */
+  activeTabIdRef: { readonly current: string };
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
   pendingLayerLabelRef: MutableRefObject<string | null>;
@@ -130,6 +134,35 @@ function flipF32(
   return dst;
 }
 
+type LayerGeo = {
+  layerWidth: number;
+  layerHeight: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+/**
+ * Where a layer-local rect lands after rotating the whole canvas (W×H).
+ * Matches `rotateF32`'s mapping: amount 0 = 90° CW, 1 = 180°, 2 = 270° CW.
+ */
+function rotatedGeo(geo: LayerGeo, W: number, H: number, amount: 0 | 1 | 2): LayerGeo {
+  const { layerWidth: lw, layerHeight: lh, offsetX: ox, offsetY: oy } = geo;
+  if (amount === 0) {
+    return { layerWidth: lh, layerHeight: lw, offsetX: H - oy - lh, offsetY: ox };
+  }
+  if (amount === 1) {
+    return { layerWidth: lw, layerHeight: lh, offsetX: W - ox - lw, offsetY: H - oy - lh };
+  }
+  return { layerWidth: lh, layerHeight: lw, offsetX: oy, offsetY: W - ox - lw };
+}
+
+/** Where a layer-local rect lands after flipping the whole canvas (W×H). */
+function flippedGeo(geo: LayerGeo, W: number, H: number, axis: 0 | 1): LayerGeo {
+  return axis === 0
+    ? { ...geo, offsetX: W - geo.offsetX - geo.layerWidth }
+    : { ...geo, offsetY: H - geo.offsetY - geo.layerHeight };
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useCanvasTransforms({
@@ -145,7 +178,31 @@ export function useCanvasTransforms({
   canvasHeight,
   setRescaling,
   setRescaleProgress,
+  activeTabIdRef,
 }: UseCanvasTransformsOptions): UseCanvasTransformsReturn {
+  // Transfer-store keys for this tab's transform results. Prefixed so they
+  // can't collide with another tab's layer ids (every document has a
+  // "layer-0") or with this tab's own backgrounded pixels (`${tabId}:${id}`).
+  const xformPrefix = `${activeTabId}:xform:`;
+
+  /**
+   * Async transforms (AI rescale/restore can take minutes) must not apply
+   * their result to whichever tab happens to be active when they finish.
+   * If the user switched tabs meanwhile, drop the results and tell them.
+   */
+  const abandonedAfterTabSwitch = useCallback(
+    (startTabId: string, what: string): boolean => {
+      if (activeTabIdRef.current === startTabId) return false;
+      f32TransferStore.dropPrefix(`${startTabId}:xform:`);
+      u8TransferStore.dropPrefix(`${startTabId}:xform:`);
+      notificationStore.error(
+        `${what} was cancelled because a different document became active while it was running.`,
+      );
+      return true;
+    },
+    [activeTabIdRef],
+  );
+
   const handleResizeImage = useCallback(
     async (settings: ResizeImageSettings): Promise<void> => {
       const { width: newW, height: newH, filter } = settings;
@@ -176,16 +233,17 @@ export function useCanvasTransforms({
               swatches,
               255,
             );
-            const binary = btoa(String.fromCharCode(...resizedIndices));
-            encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`);
+            u8TransferStore.set(xformPrefix + layer.id, resizedIndices);
+            encoded.set(layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`);
           } else {
             const pixels = handle.getLayerPixels(layer.id);
             if (!pixels) continue;
             const resized = await resizeFn(pixels, oldW, oldH, newW, newH);
-            u8TransferStore.set(layer.id, resized);
-            encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+            u8TransferStore.set(xformPrefix + layer.id, resized);
+            encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
           }
         }
+        if (abandonedAfterTabSwitch(activeTabId, "Resize Image")) return;
         captureHistory("Before Resize Image");
         const resizeTabId = activeTabId;
         setTabs((prev) =>
@@ -211,6 +269,7 @@ export function useCanvasTransforms({
         });
       } catch (err) {
         console.error("[Resize] Failed to resize image:", err);
+        showOperationError("Resize Image failed.", err);
       }
     },
     [
@@ -219,6 +278,8 @@ export function useCanvasTransforms({
       canvasHandleRef,
       stateRef,
       captureHistory,
+      abandonedAfterTabSwitch,
+      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -300,9 +361,10 @@ export function useCanvasTransforms({
             });
             resized = result.rgba;
           }
-          u8TransferStore.set(layer.id, resized);
-          encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+          u8TransferStore.set(xformPrefix + layer.id, resized);
+          encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
         }
+        if (abandonedAfterTabSwitch(activeTabId, "Rescale Image")) return;
         captureHistory("Before Rescale Image");
         const rescaleTabId = activeTabId;
         setTabs((prev) =>
@@ -328,6 +390,7 @@ export function useCanvasTransforms({
         });
       } catch (err) {
         console.error("[Rescale] Failed to rescale image:", err);
+        showOperationError("AI Rescale failed.", err);
       } finally {
         unsubProgress();
         setRescaling?.(false);
@@ -339,6 +402,8 @@ export function useCanvasTransforms({
       canvasHandleRef,
       stateRef,
       captureHistory,
+      abandonedAfterTabSwitch,
+      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -408,10 +473,11 @@ export function useCanvasTransforms({
             targetWidth: W,
             targetHeight: H,
           });
-          u8TransferStore.set(layer.id, result.rgba);
-          encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+          u8TransferStore.set(xformPrefix + layer.id, result.rgba);
+          encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
         }
         if (encoded.size === 0) return;
+        if (abandonedAfterTabSwitch(activeTabId, "Restore Image")) return;
         captureHistory("Before Restore Image");
         const restoreTabId = activeTabId;
         // No snapshot or dimension change — restore returns pixels at the
@@ -428,6 +494,7 @@ export function useCanvasTransforms({
         pendingLayerLabelRef.current = "Restore Image";
       } catch (err) {
         console.error("[Restore] Failed to restore image:", err);
+        showOperationError("AI Restore failed.", err);
       } finally {
         unsubProgress();
         setRescaling?.(false);
@@ -439,6 +506,8 @@ export function useCanvasTransforms({
       canvasHandleRef,
       stateRef,
       captureHistory,
+      abandonedAfterTabSwitch,
+      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -494,8 +563,8 @@ export function useCanvasTransforms({
               );
             }
           }
-          const binary = btoa(String.fromCharCode(...newIndices));
-          encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`);
+          u8TransferStore.set(xformPrefix + layer.id, newIndices);
+          encoded.set(layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`);
         } else {
           const oldPixels = handle.getLayerPixels(layer.id);
           if (!oldPixels) continue;
@@ -516,8 +585,8 @@ export function useCanvasTransforms({
               );
             }
           }
-          u8TransferStore.set(layer.id, newPixels);
-          encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+          u8TransferStore.set(xformPrefix + layer.id, newPixels);
+          encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
         }
       }
 
@@ -551,6 +620,8 @@ export function useCanvasTransforms({
       canvasHandleRef,
       stateRef,
       captureHistory,
+      abandonedAfterTabSwitch,
+      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -590,8 +661,8 @@ export function useCanvasTransforms({
             dst[row * cropW + col] = src[srcRow * oldW + srcCol];
           }
         }
-        const binary = btoa(String.fromCharCode(...dst));
-        encoded.set(layer.id, `data:raw/indexed8;base64,${binary}`);
+        u8TransferStore.set(xformPrefix + layer.id, dst);
+        encoded.set(layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`);
       } else {
         const pixels = handle.getLayerPixels(layer.id);
         if (!pixels) continue;
@@ -601,8 +672,8 @@ export function useCanvasTransforms({
           const dstOff = row * cropW * 4;
           cropPixels.set(pixels.subarray(srcOff, srcOff + cropW * 4), dstOff);
         }
-        u8TransferStore.set(layer.id, cropPixels);
-        encoded.set(layer.id, `data:raw/rgba8-ref;id=${layer.id}`);
+        u8TransferStore.set(xformPrefix + layer.id, cropPixels);
+        encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
       }
     }
 
@@ -636,6 +707,7 @@ export function useCanvasTransforms({
     canvasHandleRef,
     stateRef,
     captureHistory,
+    xformPrefix,
     activeTabId,
     setTabs,
     setPendingLayerData,
@@ -654,6 +726,7 @@ export function useCanvasTransforms({
     async (amount: RotateAmount): Promise<void> => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
+      const startTabId = activeTabIdRef.current;
       const oldW = canvasWidth;
       const oldH = canvasHeight;
       const { layers, pixelFormat } = stateRef.current;
@@ -662,6 +735,10 @@ export function useCanvasTransforms({
       const newH = amount === "180" ? oldH : oldW;
       const wasmAmount: 0 | 1 | 2 =
         amount === "90cw" ? 0 : amount === "180" ? 1 : 2;
+      // rgba32f layers are stored layer-local (not canvas-sized), so they're
+      // rotated in their own space and their offset is remapped.
+      const layerGeo = handle.captureAllLayerGeometry();
+      const geoEntries: [string, string][] = [];
 
       try {
         const entries = await Promise.all(
@@ -670,31 +747,42 @@ export function useCanvasTransforms({
               const srcIdx = handle.getLayerIndexData(layer.id);
               if (!srcIdx) return null;
               const dst = await rotateIndexed(srcIdx, oldW, oldH, wasmAmount);
-              const binary = btoa(String.fromCharCode(...dst));
-              return [layer.id, `data:raw/indexed8;base64,${binary}`];
+              u8TransferStore.set(xformPrefix + layer.id, dst);
+              return [layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`];
             } else if (stateRef.current.pixelFormat === "rgba32f") {
               const raw = handle.getLayerRawData(layer.id);
               if (!raw) return null;
+              const geo = layerGeo.get(layer.id) ?? {
+                layerWidth: oldW,
+                layerHeight: oldH,
+                offsetX: 0,
+                offsetY: 0,
+              };
               const { data } = rotateF32(
                 raw as Float32Array,
-                oldW,
-                oldH,
+                geo.layerWidth,
+                geo.layerHeight,
                 wasmAmount,
               );
-              f32TransferStore.set(layer.id, data);
-              return [layer.id, `data:raw/f32-ref;id=${layer.id}`];
+              f32TransferStore.set(xformPrefix + layer.id, data);
+              geoEntries.push([
+                `${layer.id}:geo`,
+                JSON.stringify(rotatedGeo(geo, oldW, oldH, wasmAmount)),
+              ]);
+              return [layer.id, `data:raw/f32-ref;id=${xformPrefix}${layer.id}`];
             } else {
               const src = handle.getLayerPixels(layer.id);
               if (!src) return null;
               const rotated = await rotateRgba(src, oldW, oldH, wasmAmount);
-              u8TransferStore.set(layer.id, rotated);
-              return [layer.id, `data:raw/rgba8-ref;id=${layer.id}`];
+              u8TransferStore.set(xformPrefix + layer.id, rotated);
+              return [layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`];
             }
           }),
         );
-        const encoded = new Map(
-          entries.filter((e): e is [string, string] => e !== null),
-        );
+        const encoded = new Map([
+          ...entries.filter((e): e is [string, string] => e !== null),
+          ...geoEntries,
+        ]);
 
         const label =
           amount === "90cw"
@@ -702,6 +790,7 @@ export function useCanvasTransforms({
             : amount === "270cw"
               ? "Rotate 270° CW"
               : "Rotate 180°";
+        if (abandonedAfterTabSwitch(startTabId, label)) return;
         captureHistory(`Before ${label}`);
         const tabId = activeTabId;
         setTabs((prev) =>
@@ -729,6 +818,7 @@ export function useCanvasTransforms({
         }
       } catch (err) {
         console.error("[Rotate] Failed:", err);
+        showOperationError("Rotate failed.", err);
       }
     },
     [
@@ -737,6 +827,8 @@ export function useCanvasTransforms({
       canvasHandleRef,
       stateRef,
       captureHistory,
+      abandonedAfterTabSwitch,
+      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -749,11 +841,16 @@ export function useCanvasTransforms({
     async (axis: FlipAxis): Promise<void> => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
+      const startTabId = activeTabIdRef.current;
       const w = canvasWidth;
       const h = canvasHeight;
       const { layers, pixelFormat } = stateRef.current;
       const isIndexed = pixelFormat === "indexed8";
       const wasmAxis: 0 | 1 = axis === "horizontal" ? 0 : 1;
+      // rgba32f layers are stored layer-local (not canvas-sized), so they're
+      // flipped in their own space and their offset is mirrored.
+      const layerGeo = handle.captureAllLayerGeometry();
+      const geoEntries: [string, string][] = [];
 
       try {
         const entries = await Promise.all(
@@ -762,29 +859,46 @@ export function useCanvasTransforms({
               const srcIdx = handle.getLayerIndexData(layer.id);
               if (!srcIdx) return null;
               const dst = await flipIndexed(srcIdx, w, h, wasmAxis);
-              const binary = btoa(String.fromCharCode(...dst));
-              return [layer.id, `data:raw/indexed8;base64,${binary}`];
+              u8TransferStore.set(xformPrefix + layer.id, dst);
+              return [layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`];
             } else if (stateRef.current.pixelFormat === "rgba32f") {
               const raw = handle.getLayerRawData(layer.id);
               if (!raw) return null;
-              const data = flipF32(raw as Float32Array, w, h, wasmAxis);
-              f32TransferStore.set(layer.id, data);
-              return [layer.id, `data:raw/f32-ref;id=${layer.id}`];
+              const geo = layerGeo.get(layer.id) ?? {
+                layerWidth: w,
+                layerHeight: h,
+                offsetX: 0,
+                offsetY: 0,
+              };
+              const data = flipF32(
+                raw as Float32Array,
+                geo.layerWidth,
+                geo.layerHeight,
+                wasmAxis,
+              );
+              f32TransferStore.set(xformPrefix + layer.id, data);
+              geoEntries.push([
+                `${layer.id}:geo`,
+                JSON.stringify(flippedGeo(geo, w, h, wasmAxis)),
+              ]);
+              return [layer.id, `data:raw/f32-ref;id=${xformPrefix}${layer.id}`];
             } else {
               const src = handle.getLayerPixels(layer.id);
               if (!src) return null;
               const flipped = await flipRgba(src, w, h, wasmAxis);
-              u8TransferStore.set(layer.id, flipped);
-              return [layer.id, `data:raw/rgba8-ref;id=${layer.id}`];
+              u8TransferStore.set(xformPrefix + layer.id, flipped);
+              return [layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`];
             }
           }),
         );
-        const encoded = new Map(
-          entries.filter((e): e is [string, string] => e !== null),
-        );
+        const encoded = new Map([
+          ...entries.filter((e): e is [string, string] => e !== null),
+          ...geoEntries,
+        ]);
 
         const label =
           axis === "horizontal" ? "Flip Horizontal" : "Flip Vertical";
+        if (abandonedAfterTabSwitch(startTabId, label)) return;
         captureHistory(`Before ${label}`);
         const tabId = activeTabId;
         setTabs((prev) =>
@@ -796,6 +910,7 @@ export function useCanvasTransforms({
         pendingLayerLabelRef.current = label;
       } catch (err) {
         console.error("[Flip] Failed:", err);
+        showOperationError("Flip failed.", err);
       }
     },
     [
@@ -804,6 +919,8 @@ export function useCanvasTransforms({
       canvasHandleRef,
       stateRef,
       captureHistory,
+      abandonedAfterTabSwitch,
+      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -815,6 +932,7 @@ export function useCanvasTransforms({
     async (amount: RotateAmount): Promise<void> => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
+      const startTabId = activeTabIdRef.current;
       const { layers, selectedLayerIds, activeLayerId, swatches } =
         stateRef.current;
       const effectiveIds = new Set(selectedLayerIds);
@@ -893,6 +1011,7 @@ export function useCanvasTransforms({
             : amount === "270cw"
               ? "Rotate Layer 270° CW"
               : "Rotate Layer 180°";
+        if (abandonedAfterTabSwitch(startTabId, label)) return;
         captureHistory(`Before ${label}`);
         for (const op of ops) {
           const gpuLayer = handle.getGpuLayer(op.id);
@@ -910,15 +1029,17 @@ export function useCanvasTransforms({
         }
       } catch (err) {
         console.error("[RotateLayer] Failed:", err);
+        showOperationError("Rotate Layer failed.", err);
       }
     },
-    [canvasHandleRef, stateRef, captureHistory],
+    [canvasHandleRef, stateRef, captureHistory, activeTabIdRef, abandonedAfterTabSwitch],
   );
 
   const handleFlipSelectedLayers = useCallback(
     async (axis: FlipAxis): Promise<void> => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
+      const startTabId = activeTabIdRef.current;
       const { layers, selectedLayerIds, activeLayerId, swatches } =
         stateRef.current;
       const effectiveIds = new Set(selectedLayerIds);
@@ -972,6 +1093,7 @@ export function useCanvasTransforms({
           axis === "horizontal"
             ? "Flip Layer Horizontal"
             : "Flip Layer Vertical";
+        if (abandonedAfterTabSwitch(startTabId, label)) return;
         captureHistory(`Before ${label}`);
         for (const op of ops) {
           handle.replaceLayerData(
@@ -985,9 +1107,10 @@ export function useCanvasTransforms({
         }
       } catch (err) {
         console.error("[FlipLayer] Failed:", err);
+        showOperationError("Flip Layer failed.", err);
       }
     },
-    [canvasHandleRef, stateRef, captureHistory],
+    [canvasHandleRef, stateRef, captureHistory, activeTabIdRef, abandonedAfterTabSwitch],
   );
 
   return {

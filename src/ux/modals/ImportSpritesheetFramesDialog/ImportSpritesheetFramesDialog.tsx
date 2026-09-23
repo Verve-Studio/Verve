@@ -4,7 +4,7 @@ import { ModalDialog } from "../ModalDialog/ModalDialog";
 import {
   EXT_TO_MIME,
   IMAGE_EXTENSIONS,
-  loadImagePixels,
+  loadImageBytes,
 } from "@/core/io/imageLoader";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 import styles from "./ImportSpritesheetFramesDialog.module.scss";
@@ -93,14 +93,13 @@ export function ImportSpritesheetFramesDialog({
     setBusy(true);
     setError(null);
     try {
-      // Decode each file via the shared loadImagePixels path.
+      // Decode each file via the shared loadImageBytes path.
       const decoded: { pixels: Uint8Array; width: number; height: number }[] =
         [];
       for (const path of paths) {
         const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
         const mime = EXT_TO_MIME[ext] ?? "image/png";
-        const base64 = await window.api.readFileBase64(path);
-        const loaded = await loadImagePixels(`data:${mime};base64,${base64}`);
+        const loaded = await loadImageBytes(await window.api.readFile(path), mime);
         const u8 =
           loaded.data instanceof Float32Array
             ? clampF32ToUint8(loaded.data)

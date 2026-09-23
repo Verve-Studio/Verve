@@ -1,6 +1,7 @@
 import React from "react";
 import type { PixelFormat } from "@/types";
 import styles from "./TabBar.module.scss";
+import { useAppSelector } from "@/core/store/AppContext";
 
 export interface TabInfo {
   id: string;
@@ -17,18 +18,18 @@ function formatLabel(fmt: PixelFormat): string {
 interface TabBarProps {
   tabs: TabInfo[];
   activeTabId: string;
-  activeZoom: number;
   onSwitch: (id: string) => void;
   onClose: (id: string) => void;
 }
 
-export function TabBar({
+function TabBarImpl({
   tabs,
   activeTabId,
-  activeZoom,
   onSwitch,
   onClose,
 }: TabBarProps): React.JSX.Element {
+  // Selected here (not passed down) so zooming re-renders only the tab bar.
+  const activeZoom = useAppSelector((s) => s.canvas.zoom);
   const zoom = Math.round(activeZoom * 100);
 
   return (
@@ -64,3 +65,7 @@ export function TabBar({
     </div>
   );
 }
+
+// Memoized: subscribes to its own store slice, so it only needs to re-render
+// when that slice or its props change — not whenever the app shell does.
+export const TabBar = React.memo(TabBarImpl);

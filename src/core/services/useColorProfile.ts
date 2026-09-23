@@ -1,3 +1,4 @@
+import type { AppShellState } from "@/core/store/AppContext";
 // ─── useColorProfile ─────────────────────────────────────────────────────────
 //
 // Hook owning the three ICC-profile commands on the Image menu:
@@ -19,7 +20,7 @@
 import { useCallback } from "react";
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
-import type { AppState, LayerColorSpace, PixelFormat } from "@/types";
+import type { LayerColorSpace, PixelFormat } from "@/types";
 import type { LutTransform } from "@/core/lut/LUT";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
@@ -45,7 +46,7 @@ import { displayStore } from "@/ux/main/Canvas/displayStore";
 
 interface UseColorProfileOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
-  state: AppState;
+  state: AppShellState;
   dispatch: Dispatch<AppAction>;
   captureHistory: (label: string) => void;
 }

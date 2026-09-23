@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PixelBrush } from "@/types";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import {
   pixelBrushStore,
   serializePixelBrushFile,
@@ -26,7 +30,11 @@ export function PixelBrushesModal({
   open,
   onClose,
 }: PixelBrushesModalProps): React.JSX.Element | null {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ pixelBrushes: s.pixelBrushes }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const [activeTab, setActiveTab] = useState<Tab>("document");
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);

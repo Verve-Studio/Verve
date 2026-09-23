@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { HalftoneEffectLayer } from "@/core/effects/Halftone/HalftoneEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HalftoneOptions.module.scss";
@@ -28,7 +28,7 @@ export function HalftoneOptions({
   layer,
   parentLayerName,
 }: HalftoneOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<typeof p>): void => {

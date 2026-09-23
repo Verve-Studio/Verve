@@ -74,6 +74,16 @@ export function syncIfGrew(module: PixelOpsModule): void {
   }
 }
 
+/** `_malloc` that returns 0 instead of throwing when the heap is full —
+ *  pinning is an optimisation, so callers here fall back to JS memory. */
+function mallocOrZero(module: PixelOpsModule, size: number): number {
+  try {
+    return module._malloc(size);
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Allocate `length` bytes in the WASM heap and hand back a Uint8Array
  * view + a pointer. Returns `null` if the allocation can't be made —
@@ -99,7 +109,7 @@ export function allocWasmU8(
   // the request would exceed the user's budget (and Max Out is off);
   // caller falls back rather than throw.
   if (!memoryStore.tryAlloc("cpu", length)) return null;
-  const ptr = module._malloc(length);
+  const ptr = mallocOrZero(module, length);
   if (ptr === 0) {
     memoryStore.release("cpu", length);
     return null;
@@ -127,7 +137,7 @@ export function allocWasmF32(
   syncIfGrew(module);
   const byteLength = length * 4;
   if (!memoryStore.tryAlloc("cpu", byteLength)) return null;
-  const ptr = module._malloc(byteLength);
+  const ptr = mallocOrZero(module, byteLength);
   if (ptr === 0) {
     memoryStore.release("cpu", byteLength);
     return null;

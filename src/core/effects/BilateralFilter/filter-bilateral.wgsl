@@ -39,17 +39,21 @@ fn fs_bilateral(in: AdjVertOut) -> @location(0) vec4<f32> {
   var weightSum = 0.0;
   var colorSum  = vec3f(0.0);
 
+  // Circular window (the square's corners were ~21% of the taps) and one
+  // exp per tap instead of two: exp(a)·exp(b) = exp(a + b).
+  let r2 = r * r;
   for (var ky = -r; ky <= r; ky++) {
     for (var kx = -r; kx <= r; kx++) {
+      let d2 = kx * kx + ky * ky;
+      if (d2 > r2) { continue; }
       let sx = clamp(coord.x + kx, 0, i32(dims.x) - 1);
       let sy = clamp(coord.y + ky, 0, i32(dims.y) - 1);
       let neighbor = textureLoad(srcTex, vec2i(sx, sy), 0);
 
-      let spatialDist2 = f32(kx * kx + ky * ky);
-      let colorDiff    = neighbor.rgb - center.rgb;
-      let colorDist2   = dot(colorDiff, colorDiff);
+      let colorDiff  = neighbor.rgb - center.rgb;
+      let colorDist2 = dot(colorDiff, colorDiff);
 
-      let w = exp(-spatialDist2 * inv2SigmaS2) * exp(-colorDist2 * inv2SigmaC2);
+      let w = exp(-(f32(d2) * inv2SigmaS2 + colorDist2 * inv2SigmaC2));
 
       colorSum  += neighbor.rgb * w;
       weightSum += w;

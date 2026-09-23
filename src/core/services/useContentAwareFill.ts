@@ -2,13 +2,17 @@ import type { AppAction } from "@/core/store/AppContext";
 
 import type { AppState } from "@/types";
 import { computeSourceMask } from "@/utils/computeSourceMask";
-import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
+import {
+  clampF32ToUint8,
+  convertRgba8ToF32,
+} from "@/utils/pixelFormatConvert";
 import { extractErrorMessage } from "@/utils/userFeedback";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import { getPixelOps, inpaintRegion } from "@/wasm";
+import { getPixelOps } from "@/wasm";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useRef } from "react";
 import { activeScope } from "@/core/store/scope";
+import { inpaintRegionOffThread } from "@/wasm/pixelopsWorkerClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,9 +127,15 @@ export function useContentAwareFill({
           height,
         } = await handle.rasterizeComposite("sample");
 
-        // Run PatchMatch inpainting — mask is canvas-space 1ch (255=fill, 0=source)
-        const inpainted = await inpaintRegion(
-          composite as Uint8Array,
+        // Run PatchMatch inpainting — mask is canvas-space 1ch (255=fill, 0=source).
+        // Inpainting works on sRGB bytes; an rgba32f composite is converted
+        // with the transfer function (the fill is decoded back below).
+        const compositeBytes =
+          composite instanceof Float32Array
+            ? clampF32ToUint8(composite)
+            : (composite as Uint8Array);
+        const inpainted = await inpaintRegionOffThread(
+          compositeBytes,
           width,
           height,
           mask,
@@ -150,10 +160,9 @@ export function useContentAwareFill({
         pendingLayerLabelRef.current = label;
 
         // Prepare GPU layer (before dispatching so the sync effect is a no-op).
-        // The inpainting algorithm always returns RGBA8 bytes; in an f32 doc
-        // we convert to Float32 (using the codebase's naive /255 convention,
-        // matching `convertRgba8ToF32`) and create the layer with the right
-        // format so the float buffer isn't value-clamped into a Uint8Array.
+        // The inpainting algorithm always returns sRGB RGBA8 bytes; in an f32
+        // doc they're gamma-decoded with `convertRgba8ToF32` and the layer is
+        // created in the doc format so the floats aren't clamped into bytes.
         const newLayerId = `layer-${Date.now()}`;
         const docFormat = stateRef.current.pixelFormat;
         const layerData =

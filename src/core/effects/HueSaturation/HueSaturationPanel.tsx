@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { HueSaturationEffectLayer } from "@/core/effects/HueSaturation/HueSaturationEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./HueSaturationPanel.module.scss";
@@ -17,7 +17,7 @@ export function HueSaturationPanel({
   layer,
   parentLayerName,
 }: HueSaturationPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { hue, saturation, lightness } = layer.params;
 
   const pct = (v: number, min: number, max: number): string =>

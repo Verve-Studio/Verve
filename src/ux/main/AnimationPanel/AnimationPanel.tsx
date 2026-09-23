@@ -1,5 +1,9 @@
 import React, { useRef, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type { AnimationPlaybackMode } from "@/types";
 import styles from "./AnimationPanel.module.scss";
@@ -58,7 +62,17 @@ export function AnimationPanel({
   onCopyPrevFrame,
   onCopyNextFrame,
 }: AnimationPanelProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      canvas: { height: s.canvas.height, width: s.canvas.width },
+      paletteAnimation: s.paletteAnimation,
+      pixelFormat: s.pixelFormat,
+      spritesheet: s.spritesheet,
+      swatchGroups: s.swatchGroups,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const ss = state.spritesheet;
   const pa = state.paletteAnimation;
   const canvasW = state.canvas.width;
@@ -203,7 +217,6 @@ export function AnimationPanel({
               }
             />
           </div>
-
         </div>
 
         {/* ── Sprite Sheet ──────────────────────────────────── */}

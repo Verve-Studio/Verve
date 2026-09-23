@@ -1,6 +1,8 @@
 struct ShadowBlurParams {
-  radius : u32,
-  _pad0  : u32,
+  radius    : u32,
+  // 1: read the source's alpha instead of .r — lets Drop Shadow blur the
+  // layer alpha directly when there's no spread (no dilate passes).
+  readAlpha : u32,
   _pad1  : u32,
   _pad2  : u32,
 }
@@ -18,7 +20,8 @@ fn cs_shadow_blur_h(@builtin(global_invocation_id) id: vec3u) {
   var acc = 0.0;
   for (var dx: i32 = -r; dx <= r; dx++) {
     let sx = clamp(i32(id.x) + dx, 0, i32(dims.x) - 1);
-    acc += textureLoad(srcTex, vec2i(sx, i32(id.y)), 0).r;
+    let t = textureLoad(srcTex, vec2i(sx, i32(id.y)), 0);
+    acc += select(t.r, t.a, params.readAlpha != 0u);
   }
   textureStore(dstTex, vec2i(id.xy), vec4f(acc / count, 0.0, 0.0, 1.0));
 }

@@ -13,7 +13,11 @@ import {
 } from "@/core/lut/layerColorSpace";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isCompositeLayer, isContainerLayer } from "@/types";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import {
   buildRootLayerIds,
   getParentGroup,
@@ -329,7 +333,16 @@ export function Layers({
   activeTabId,
   findLayersTrigger,
 }: LayerPanelProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      activeLayerId: s.activeLayerId,
+      layers: s.layers,
+      pixelFormat: s.pixelFormat,
+      selectedLayerIds: s.selectedLayerIds,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const layers = state.layers;
   const activeLayerId = state.activeLayerId ?? undefined;
 
@@ -485,8 +498,7 @@ export function Layers({
             (l) =>
               "type" in l &&
               (l.type === "mask" || l.type === "adjustment") &&
-              (l as MaskLayerState | EffectLayerState).parentId ===
-                layer.id,
+              (l as MaskLayerState | EffectLayerState).parentId === layer.id,
           );
           result.push({
             layer,
@@ -517,8 +529,7 @@ export function Layers({
             (l) =>
               "type" in l &&
               (l.type === "mask" || l.type === "adjustment") &&
-              (l as MaskLayerState | EffectLayerState).parentId ===
-                layer.id,
+              (l as MaskLayerState | EffectLayerState).parentId === layer.id,
           );
           const isCollapsed = collapsedPixelLayers.has(layer.id);
           result.push({
@@ -598,8 +609,7 @@ export function Layers({
           if (
             "type" in l &&
             (l.type === "mask" || l.type === "adjustment") &&
-            (l as MaskLayerState | EffectLayerState).parentId ===
-              group.id &&
+            (l as MaskLayerState | EffectLayerState).parentId === group.id &&
             nameMatchIds.has(l.id)
           )
             return true;
@@ -629,8 +639,7 @@ export function Layers({
         "type" in layer &&
         (layer.type === "mask" || layer.type === "adjustment")
       ) {
-        const parentId = (layer as MaskLayerState | EffectLayerState)
-          .parentId;
+        const parentId = (layer as MaskLayerState | EffectLayerState).parentId;
         if (visibleIds.has(parentId)) visibleIds.add(layer.id);
       }
     }
@@ -1100,7 +1109,10 @@ export function Layers({
         activeLayer &&
         !("type" in activeLayer) && (
           <div className={styles.blendRow}>
-            <label className={styles.numLabel} title="Input colour space — drives the IDT decode pre-pass">
+            <label
+              className={styles.numLabel}
+              title="Input colour space — drives the IDT decode pre-pass"
+            >
               Color Space:
             </label>
             <select

@@ -1,12 +1,13 @@
 import type { EffectLayerOf, RGBAColor } from "@/types";
+import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OutlineOptions } from "./OutlineOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
-  destroyTrackedTexture,
 } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
+import { TextureSetCache } from "../_shared/textureSetCache";
 
 const OutlineIcon = (
   <svg
@@ -41,44 +42,31 @@ export type OutlineEffectLayer = EffectLayerOf<"outline", OutlineParams>;
 
 type OutlineOp = Extract<EffectRenderOp, { kind: "outline" }>;
 
-let texCache: {
-  tempA: GPUTexture;
-  tempB: GPUTexture;
-  tempC: GPUTexture;
-  format: GPUTextureFormat;
-} | null = null;
-let usedThisFrame = false;
+const texCache = new TextureSetCache<{ tempA: GPUTexture; tempB: GPUTexture; tempC: GPUTexture }>();
 
 /** Scratch textures (3-way ping-pong for center-position outlines).
  *  Allocated in the doc format — the whole effect runs at full doc precision
  *  on f32 documents. */
 function ensureTextures(
-  device: GPUDevice,
+  runtime: EffectRuntime,
   width: number,
   height: number,
   format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture; tempC: GPUTexture } {
-  usedThisFrame = true;
-  if (texCache && texCache.format === format) return texCache;
-  if (texCache) {
-    destroyTrackedTexture(texCache.tempA);
-    destroyTrackedTexture(texCache.tempB);
-    destroyTrackedTexture(texCache.tempC);
-    texCache = null;
-  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
     GPUTextureUsage.COPY_DST |
     GPUTextureUsage.COPY_SRC;
   const make = (): GPUTexture =>
-    createTrackedTexture(device, {
+    createTrackedTexture(runtime.device, {
       size: { width, height },
       format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make(), tempC: make(), format };
-  return texCache;
+  return texCache.get(runtime, `${width}x${height}:${format}`, () => ({
+    tempA: make(), tempB: make(), tempC: make(),
+  }));
 }
 
 const MODE_MAP = { outside: 0, inside: 1, center: 2 } as const;
@@ -162,7 +150,7 @@ export const OutlineEffect: IPipelineEffect<
   encode({ engine, encoder, srcTex, dstTex }, entry) {
     const { runtime } = engine;
     const { device, pixelWidth: w, pixelHeight: h } = runtime;
-    const { tempA, tempB, tempC } = ensureTextures(device, w, h, dstTex.format);
+    const { tempA, tempB, tempC } = ensureTextures(runtime, w, h, dstTex.format);
     const pipes = getOutlinePipelines(runtime, dstTex);
     const compositePipeline = runtime.getComputePipelineForStorageFormat(
       "outline-composite",
@@ -171,10 +159,12 @@ export const OutlineEffect: IPipelineEffect<
     );
 
     const { color, opacity, thickness, position, softness } = entry.params;
-    const colorR = color.r / 255;
-    const colorG = color.g / 255;
-    const colorB = color.b / 255;
-    const colorA = color.a / 255;
+    const {
+      r: colorR,
+      g: colorG,
+      b: colorB,
+      a: colorA,
+    } = colorForTarget(color, dstTex.format);
     const opacityN = opacity / 100;
     const T = Math.max(1, Math.round(thickness));
     const dilateR = position === "center" ? Math.ceil(T / 2) : T;
@@ -305,22 +295,11 @@ export const OutlineEffect: IPipelineEffect<
   },
 
   onFrameEnd() {
-    if (!usedThisFrame && texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      destroyTrackedTexture(texCache.tempC);
-      texCache = null;
-    }
-    usedThisFrame = false;
+    texCache.onFrameEnd();
   },
 
   onDestroy() {
-    if (texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      destroyTrackedTexture(texCache.tempC);
-      texCache = null;
-    }
+    texCache.destroyAll();
   },
 
   Panel: OutlineOptions,

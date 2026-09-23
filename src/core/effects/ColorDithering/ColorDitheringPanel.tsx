@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch, useAppSelector } from "@/core/store/AppContext";
 import type { ColorDitheringEffectLayer } from "@/core/effects/ColorDithering/ColorDitheringEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorDitheringPanel.module.scss";
@@ -18,10 +18,8 @@ export function ColorDitheringPanel({
   layer,
   parentLayerName,
 }: ColorDitheringPanelProps): React.JSX.Element {
-  const {
-    state: { swatches },
-    dispatch,
-  } = useAppContext();
+  const swatches = useAppSelector((s) => s.swatches);
+  const dispatch = useAppDispatch();
   const { style, opacity } = layer.params;
 
   const paletteEmpty = swatches.length === 0;

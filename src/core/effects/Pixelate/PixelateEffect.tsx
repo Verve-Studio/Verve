@@ -1,14 +1,13 @@
 import React from "react";
 import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
 
-
 export interface PixelateParams {
- blockSize: number
+  blockSize: number;
 }
 
 export type PixelateEffectLayer = EffectLayerOf<"pixelate", PixelateParams>;
@@ -19,7 +18,7 @@ function PixelatePanel({
   layer,
   parentLayerName,
 }: PanelProps<PixelateEffectLayer>): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { blockSize } = layer.params;
   const up = (v: number): void =>
     dispatch({
@@ -76,38 +75,50 @@ function PixelatePanel({
   );
 }
 
-export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> = {
-  id: "pixelate",
-  label: "Pixelate…",
-  menu: { root: "filters", submenu: "artistic" },
-  defaultParams: { blockSize: 10 },
+export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> =
+  {
+    id: "pixelate",
+    label: "Pixelate…",
+    menu: { root: "filters", submenu: "artistic" },
+    defaultParams: { blockSize: 10 },
 
-  buildPlanEntry(layer, { mask }) {
-    return {
-      kind: "pixelate",
-      layerId: layer.id,
-      visible: layer.visible,
-      selMaskLayer: mask,
-      params: layer.params,
-    };
-  },
+    buildPlanEntry(layer, { mask }) {
+      return {
+        kind: "pixelate",
+        layerId: layer.id,
+        visible: layer.visible,
+        selMaskLayer: mask,
+        params: layer.params,
+      };
+    },
 
-  encode({ encoder, srcTex, dstTex, engine }, entry) {
-    const rt = engine.runtime;
-    const pair = rt.getRenderPipelinePair("filter-pixelate", "fs_pixelate");
-    const paramsBuf = rt.makeParamsBuf(
-      new Uint32Array([entry.params.blockSize, 0, 0, 0]),
-    );
-    rt.encodeRenderPass(
-      encoder,
-      rt.selectPipeline(pair, dstTex),
-      dstTex,
-      [
+    encode({ encoder, srcTex, dstTex, engine }, entry) {
+      const rt = engine.runtime;
+      const blockSize = Math.max(1, Math.round(entry.params.blockSize));
+      const reduce = rt.getRenderPipelinePair(
+        "filter-pixelate",
+        "fs_pixelate_reduce",
+      );
+      const expand = rt.getRenderPipelinePair(
+        "filter-pixelate",
+        "fs_pixelate_expand",
+      );
+      const paramsBuf = rt.makeParamsBuf(new Uint32Array([blockSize, 0, 0, 0]));
+      // One texel per block, in the doc format so f32 averages aren't clipped.
+      const blocks = rt.makeScratchTex(
+        Math.ceil(srcTex.width / blockSize),
+        Math.ceil(srcTex.height / blockSize),
+        dstTex,
+      );
+      rt.encodeRenderPass(encoder, rt.selectPipeline(reduce, blocks), blocks, [
         { binding: 0, resource: srcTex.createView() },
         { binding: 2, resource: { buffer: paramsBuf } },
-      ],
-    );
-  },
+      ]);
+      rt.encodeRenderPass(encoder, rt.selectPipeline(expand, dstTex), dstTex, [
+        { binding: 0, resource: blocks.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ]);
+    },
 
-  Panel: PixelatePanel,
-};
+    Panel: PixelatePanel,
+  };

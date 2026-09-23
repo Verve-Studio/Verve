@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ColorKeyEffectLayer } from "@/core/effects/ColorKey/ColorKeyEffect";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -43,7 +43,7 @@ export function ColorKeyPanel({
   layer,
   parentLayerName,
 }: ColorKeyPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { keyColor, tolerance, softness, dilation } = layer.params;
   const pct = (v: number, lo: number, hi: number): string =>
     String((v - lo) / (hi - lo));

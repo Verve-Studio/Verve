@@ -6,8 +6,9 @@ import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { BLOOM_COMPOSITE_BINDINGS } from "../Bloom/BloomEffect";
 import {
   createTrackedTexture,
-  destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+import { TextureSetCache } from "../_shared/textureSetCache";
+import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
 const HalationIcon = (
   <svg
@@ -49,40 +50,29 @@ export type HalationEffectLayer = EffectLayerOf<"halation", HalationParams>;
 
 type HalationOp = Extract<EffectRenderOp, { kind: "halation" }>;
 
-let texCache: {
-  glowATex: GPUTexture;
-  glowBTex: GPUTexture;
-  format: GPUTextureFormat;
-} | null = null;
-let usedThisFrame = false;
+const texCache = new TextureSetCache<{ glowATex: GPUTexture; glowBTex: GPUTexture }>();
 
 /** Glow ping-pong scratch. Allocated in the doc format so the warm
  *  halation glow keeps full HDR precision on f32 documents. */
 function ensureTextures(
-  device: GPUDevice,
+  runtime: EffectRuntime,
   width: number,
   height: number,
   format: GPUTextureFormat,
 ): { glowATex: GPUTexture; glowBTex: GPUTexture } {
-  usedThisFrame = true;
-  if (texCache && texCache.format === format) return texCache;
-  if (texCache) {
-    destroyTrackedTexture(texCache.glowATex);
-    destroyTrackedTexture(texCache.glowBTex);
-    texCache = null;
-  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.RENDER_ATTACHMENT |
     GPUTextureUsage.COPY_DST;
   const make = (): GPUTexture =>
-    createTrackedTexture(device, {
+    createTrackedTexture(runtime.device, {
       size: { width, height },
       format,
       usage,
     });
-  texCache = { glowATex: make(), glowBTex: make(), format };
-  return texCache;
+  return texCache.get(runtime, `${width}x${height}:${format}`, () => ({
+    glowATex: make(), glowBTex: make(),
+  }));
 }
 
 export const HalationEffect: IPipelineEffect<
@@ -108,7 +98,19 @@ export const HalationEffect: IPipelineEffect<
     const { runtime } = engine;
     const w = runtime.pixelWidth;
     const h = runtime.pixelHeight;
-    const { glowATex, glowBTex } = ensureTextures(runtime.device, w, h, format);
+    // The glow is blurred at half resolution: up to 5 iterations × H+V of a
+    // ~200-tap box blur used to run at full resolution. The composite
+    // samples the glow back up.
+    const gw = Math.ceil(w / 2);
+    const gh = Math.ceil(h / 2);
+    const { glowATex, glowBTex } = ensureTextures(runtime, gw, gh, format);
+    // Full-res extract target, only needed for this encode.
+    const extractTex = createTrackedTexture(runtime.device, {
+      size: { width: w, height: h },
+      format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    runtime.pendingDestroyTextures.push(extractTex);
 
     const dummyMask = entry.selMaskLayer?.texture ?? srcTex;
     const maskFlagsBuf = runtime.makeMaskFlagsBuf(!!entry.selMaskLayer, format === "rgba16float" || format === "rgba32float");
@@ -127,7 +129,7 @@ export const HalationEffect: IPipelineEffect<
     runtime.encodeRenderPass(
       encoder,
       extract.pipeline,
-      glowATex,
+      extractTex,
       [
         { binding: 0, resource: srcTex.createView() },
         { binding: 1, resource: runtime.adjSampler },
@@ -138,8 +140,26 @@ export const HalationEffect: IPipelineEffect<
       extract.bgl,
     );
 
-    // Passes 2..N: H+V box blur iterations (shared bloom pipelines)
-    const blurRadius = Math.max(1, Math.round(entry.params.spread));
+    // Box-filter 2× downsample into the glow buffer (shared bloom shader).
+    const downsample = runtime.getRenderPipelineAuto(
+      "bloom-downsample",
+      "fs_bloom_downsample",
+      format,
+    );
+    runtime.encodeRenderPass(
+      encoder,
+      downsample,
+      glowATex,
+      [
+        { binding: 0, resource: extractTex.createView() },
+        { binding: 2, resource: { buffer: runtime.makeParamsBuf(new Uint32Array([2, 0, 0, 0])) } },
+      ],
+      downsample.getBindGroupLayout(0),
+    );
+
+    // Passes 2..N: H+V box blur iterations (shared bloom pipelines), at half
+    // resolution, so the radius is halved to keep the same visual spread.
+    const blurRadius = Math.max(1, Math.round(entry.params.spread / 2));
     const iterations = Math.max(1, Math.min(5, Math.round(entry.params.blur)));
     const boxH = runtime.getRenderPipelineAuto(
       "bloom-blur-h",
@@ -199,20 +219,11 @@ export const HalationEffect: IPipelineEffect<
   },
 
   onFrameEnd() {
-    if (!usedThisFrame && texCache) {
-      destroyTrackedTexture(texCache.glowATex);
-      destroyTrackedTexture(texCache.glowBTex);
-      texCache = null;
-    }
-    usedThisFrame = false;
+    texCache.onFrameEnd();
   },
 
   onDestroy() {
-    if (texCache) {
-      destroyTrackedTexture(texCache.glowATex);
-      destroyTrackedTexture(texCache.glowBTex);
-      texCache = null;
-    }
+    texCache.destroyAll();
   },
 
   Panel: HalationOptions,

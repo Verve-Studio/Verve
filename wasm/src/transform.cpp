@@ -159,8 +159,8 @@ void rotate_rgba(const uint8_t* src, int srcW, int srcH, uint8_t* dst, int amoun
                 sx = srcW - 1 - dy;
                 sy = dx;
             }
-            const uint8_t* s = src + (sy * srcW + sx) * 4;
-            uint8_t*       d = dst + (dy * dstW + dx) * 4;
+            const uint8_t* s = src + (static_cast<std::ptrdiff_t>(sy) * srcW + sx) * 4;
+            uint8_t*       d = dst + (static_cast<std::ptrdiff_t>(dy) * dstW + dx) * 4;
             d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
         }
     }
@@ -173,8 +173,8 @@ void flip_rgba(const uint8_t* src, int w, int h, uint8_t* dst, int axis) {
         for (int x = 0; x < w; x++) {
             int sx = (axis == 0) ? (w - 1 - x) : x;
             int sy = (axis == 1) ? (h - 1 - y) : y;
-            const uint8_t* s = src + (sy * w + sx) * 4;
-            uint8_t*       d = dst + ( y * w +  x) * 4;
+            const uint8_t* s = src + (static_cast<std::ptrdiff_t>(sy) * w + sx) * 4;
+            uint8_t*       d = dst + (static_cast<std::ptrdiff_t>(y) * w + x) * 4;
             d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
         }
     }
@@ -198,7 +198,7 @@ void rotate_indexed(const uint8_t* src, int srcW, int srcH, uint8_t* dst, int am
                 sx = srcW - 1 - dy;
                 sy = dx;
             }
-            dst[dy * dstW + dx] = src[sy * srcW + sx];
+            dst[static_cast<std::ptrdiff_t>(dy) * dstW + dx] = src[static_cast<std::ptrdiff_t>(sy) * srcW + sx];
         }
     }
 }
@@ -210,7 +210,7 @@ void flip_indexed(const uint8_t* src, int w, int h, uint8_t* dst, int axis) {
         for (int x = 0; x < w; x++) {
             int sx = (axis == 0) ? (w - 1 - x) : x;
             int sy = (axis == 1) ? (h - 1 - y) : y;
-            dst[y * w + x] = src[sy * w + sx];
+            dst[static_cast<std::ptrdiff_t>(y) * w + x] = src[static_cast<std::ptrdiff_t>(sy) * w + sx];
         }
     }
 }

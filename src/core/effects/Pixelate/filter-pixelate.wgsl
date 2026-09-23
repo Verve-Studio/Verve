@@ -26,15 +26,18 @@ struct PixelateParams {
 @group(0) @binding(1) var smp             : sampler;
 @group(0) @binding(2) var<uniform> params : PixelateParams;
 
+// Pass 1 — rendered into a ceil(W/S) × ceil(H/S) target: each fragment
+// averages one S×S block of the source. Total work is one load per source
+// pixel, instead of S² loads per *output* pixel (which at S = 500 was 250k
+// loads per pixel and tripped the OS GPU watchdog).
 @fragment
-fn fs_pixelate(in: AdjVertOut) -> @location(0) vec4<f32> {
-  let dims  = textureDimensions(srcTex);
-  let coord = vec2i(i32(in.pos.x), i32(in.pos.y));
+fn fs_pixelate_reduce(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let dims  = vec2i(textureDimensions(srcTex));
   let S  = i32(params.blockSize);
-  let bx = (coord.x / S) * S;
-  let by = (coord.y / S) * S;
-  let ex = min(bx + S, i32(dims.x));
-  let ey = min(by + S, i32(dims.y));
+  let bx = i32(in.pos.x) * S;
+  let by = i32(in.pos.y) * S;
+  let ex = min(bx + S, dims.x);
+  let ey = min(by + S, dims.y);
   var sum   = vec4f(0.0);
   var count = 0;
   for (var py = by; py < ey; py++) {
@@ -43,5 +46,13 @@ fn fs_pixelate(in: AdjVertOut) -> @location(0) vec4<f32> {
       count += 1;
     }
   }
-  return sum / f32(count);
+  return sum / f32(max(count, 1));
+}
+
+// Pass 2 — full resolution: every pixel copies its block's average.
+@fragment
+fn fs_pixelate_expand(in: AdjVertOut) -> @location(0) vec4<f32> {
+  let S = i32(params.blockSize);
+  let block = vec2i(i32(in.pos.x) / S, i32(in.pos.y) / S);
+  return textureLoad(srcTex, block, 0);
 }

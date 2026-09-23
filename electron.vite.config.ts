@@ -10,7 +10,19 @@ export default defineConfig({
       sourcemap: false,
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'electron/main/index.ts')
+          index: resolve(__dirname, 'electron/main/index.ts'),
+          // ML inference runs in a utility process (see electron/main/ml/mlHost.ts)
+          mlWorker: resolve(__dirname, 'electron/main/mlWorker.ts')
+        },
+        output: {
+          // Rolldown places its runtime helpers in the first entry and makes
+          // every other entry require it. The ML worker must not load
+          // index.js (it would start a second copy of the main process), so
+          // give the runtime its own chunk.
+          manualChunks: (id: string) =>
+            id.includes('rolldown/runtime') || id.includes('rolldown:runtime')
+              ? 'runtime'
+              : undefined
         }
       }
     }

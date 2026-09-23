@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import type { AutoMatchSourceStats, AutoMatchStats, LayerState } from "@/types";
 import type { AutoMatchEffectLayer } from "@/core/effects/AutoMatch/AutoMatchEffect";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
@@ -16,7 +20,8 @@ interface AutoMatchPanelProps {
 }
 
 const getDefaultParams = (): AutoMatchEffectLayer["params"] =>
-  effectRegistry.get("auto-match")!.defaultParams as AutoMatchEffectLayer["params"];
+  effectRegistry.get("auto-match")!
+    .defaultParams as AutoMatchEffectLayer["params"];
 
 // ─── Stats helpers ────────────────────────────────────────────────────────────
 
@@ -231,7 +236,8 @@ export function AutoMatchPanel({
   parentLayerName,
   canvasHandleRef,
 }: AutoMatchPanelProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector((s) => ({ layers: s.layers }), shallowEqual2);
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const [isRunning, setIsRunning] = useState(false);
@@ -433,12 +439,8 @@ export function AutoMatchPanel({
 
   return (
     <div className={styles.content}>
-      {slider(
-        "Sample Radius",
-        p.samplingDistance,
-        0,
-        1000,
-        (v) => updateParams({ samplingDistance: v }),
+      {slider("Sample Radius", p.samplingDistance, 0, 1000, (v) =>
+        updateParams({ samplingDistance: v }),
       )}
       {slider("Strength", p.strength, 0, 100, (v) =>
         updateParams({ strength: v }),
@@ -466,9 +468,7 @@ export function AutoMatchPanel({
           checked={p.clampHighlights}
           onChange={(e) => updateParams({ clampHighlights: e.target.checked })}
         />
-        <label htmlFor={`am-clamp-hi-${layer.id}`}>
-          Clamp highlights
-        </label>
+        <label htmlFor={`am-clamp-hi-${layer.id}`}>Clamp highlights</label>
       </div>
       <div className={styles.checkRow}>
         <input
@@ -477,9 +477,7 @@ export function AutoMatchPanel({
           checked={p.clampShadows}
           onChange={(e) => updateParams({ clampShadows: e.target.checked })}
         />
-        <label htmlFor={`am-clamp-lo-${layer.id}`}>
-          Clamp shadows
-        </label>
+        <label htmlFor={`am-clamp-lo-${layer.id}`}>Clamp shadows</label>
       </div>
 
       <div className={styles.footer}>

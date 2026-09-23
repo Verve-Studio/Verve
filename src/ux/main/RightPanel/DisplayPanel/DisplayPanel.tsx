@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual2, useAppSelector } from "@/core/store/AppContext";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
 import { lutStore, type LutTransform } from "@/core/lut";
 import { LutSelectOptions } from "@/core/lut/lutSelectOptions";
@@ -30,7 +30,10 @@ function useLutList(): LutTransform[] {
 }
 
 export function DisplayPanel(): React.JSX.Element {
-  const { state } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ pixelFormat: s.pixelFormat }),
+    shallowEqual2,
+  );
   const isHdr = state.pixelFormat === "rgba32f";
   const luts = useLutList();
 

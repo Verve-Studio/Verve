@@ -23,7 +23,15 @@ struct CloudsParams {
   bgColor   : u32,
   imgWidth  : u32,
   imgHeight : u32,
-  _pad      : u32,
+  // 1 for scene-linear targets (float docs): the sRGB cloud colour is
+  // decoded before mixing, and HDR source values aren't clipped.
+  outputIsLinear : u32,
+}
+
+fn clouds_srgb_to_linear(c: vec3f) -> vec3f {
+  return select(c / 12.92,
+                pow((c + 0.055) / 1.055, vec3f(2.4)),
+                c > vec3f(0.04045));
 }
 
 @group(0) @binding(0) var srcTex                   : texture_2d<f32>;
@@ -106,9 +114,11 @@ fn fs_clouds(in: AdjVertOut) -> @location(0) vec4<f32> {
   let orig     = textureLoad(srcTex, vec2i(i32(ix), i32(iy)), 0);
   let opacityF = f32(params.opacity) / 100.0;
 
-  let outR = clamp(orig.r + (cloudR - orig.r) * opacityF, 0.0, 1.0);
-  let outG = clamp(orig.g + (cloudG - orig.g) * opacityF, 0.0, 1.0);
-  let outB = clamp(orig.b + (cloudB - orig.b) * opacityF, 0.0, 1.0);
+  var cloud = vec3f(cloudR, cloudG, cloudB);
+  let isLin = params.outputIsLinear != 0u;
+  if (isLin) { cloud = clouds_srgb_to_linear(cloud); }
+  let hi  = select(1.0, 3.4e38, isLin);
+  let out = clamp(orig.rgb + (cloud - orig.rgb) * opacityF, vec3f(0.0), vec3f(hi));
 
-  return vec4f(outR, outG, outB, orig.a);
+  return vec4f(out, orig.a);
 }

@@ -13,6 +13,7 @@
 export class StagingBufferPool {
   private readonly device: GPUDevice;
   private readonly idle = new Map<number, GPUBuffer[]>();
+  private destroyed = false;
 
   constructor(device: GPUDevice) {
     this.device = device;
@@ -30,6 +31,12 @@ export class StagingBufferPool {
   }
 
   release(buffer: GPUBuffer): void {
+    // A readback can still be in flight when the renderer is destroyed (tab
+    // switch during export). Pooling the buffer then would leak it forever.
+    if (this.destroyed || buffer.mapState !== "unmapped") {
+      buffer.destroy();
+      return;
+    }
     let slot = this.idle.get(buffer.size);
     if (!slot) {
       slot = [];
@@ -40,6 +47,7 @@ export class StagingBufferPool {
 
   /** Drop all pooled buffers (renderer destroy). */
   destroy(): void {
+    this.destroyed = true;
     for (const slot of this.idle.values()) {
       for (const b of slot) b.destroy();
     }

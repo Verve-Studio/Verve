@@ -23,6 +23,7 @@ import { CloneStampStore } from "./cloneStampStore";
 import { AdjustmentPreviewStore } from "./adjustmentPreviewStore";
 import { PaletteCycleStore } from "./paletteCycleStore";
 import { BrushOverridesStore } from "./brushOverridesStore";
+import { HealingSourceStore } from "@/core/tools/HealingBrush/healingSourceStore";
 
 export interface DocumentScope {
   selection: SelectionStore;
@@ -35,6 +36,7 @@ export interface DocumentScope {
   adjustmentPreview: AdjustmentPreviewStore;
   paletteCycle: PaletteCycleStore;
   brushOverrides: BrushOverridesStore;
+  healingSource: HealingSourceStore;
 }
 
 export function createDocumentScope(): DocumentScope {
@@ -49,6 +51,7 @@ export function createDocumentScope(): DocumentScope {
     adjustmentPreview: new AdjustmentPreviewStore(),
     paletteCycle: new PaletteCycleStore(),
     brushOverrides: new BrushOverridesStore(),
+    healingSource: new HealingSourceStore(),
   };
 }
 
@@ -86,4 +89,5 @@ export function setActiveScope(scope: DocumentScope): void {
   scope.adjustmentPreview.notify();
   scope.paletteCycle.notify();
   scope.brushOverrides.notify();
+  scope.healingSource.notify();
 }

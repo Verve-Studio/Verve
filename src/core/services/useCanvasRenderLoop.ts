@@ -24,6 +24,21 @@ import type {
   RenderPlanEntry,
   WebGPURenderer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import { notificationStore } from "@/core/store/notificationStore";
+import { extractErrorMessage } from "@/utils/userFeedback";
+import { thumbnailMirror } from "@/ux/main/Canvas/thumbnailMirror";
+
+/** Render errors happen inside a rAF callback, where they'd otherwise vanish
+ *  into the console. Surface them, at most once every 10 s so an error that
+ *  repeats every frame doesn't flood the notification area. */
+let lastRenderErrorAt = -Infinity;
+function reportRenderError(err: unknown): void {
+  console.error("[Canvas] Render failed:", err);
+  const now = performance.now();
+  if (now - lastRenderErrorAt < 10_000) return;
+  lastRenderErrorAt = now;
+  notificationStore.error(`Canvas rendering failed: ${extractErrorMessage(err)}`);
+}
 
 const MIRROR_MIN_INTERVAL_MS = 500; // 2 fps cap on the navigator/thumbnail repaint.
 
@@ -185,6 +200,7 @@ export function useCanvasRenderLoop(
           const ctx = m.getContext("2d");
           ctx?.clearRect(0, 0, m.width, m.height);
           ctx?.drawImage(bitmap, 0, 0);
+          thumbnailMirror.bump();
         } else {
           mirrorBitmapPendingRef.current = true;
         }
@@ -217,7 +233,15 @@ export function useCanvasRenderLoop(
       renderer.setViewportScissor(
         computeViewportScissor(canvasRef.current, viewportRef.current, tiledMode),
       );
-      const renderResult = renderer.renderPlan(buildRenderPlanRef.current());
+      const renderResult = (() => {
+        try {
+          return renderer.renderPlan(buildRenderPlanRef.current());
+        } catch (err) {
+          reportRenderError(err);
+          return null;
+        }
+      })();
+      if (!renderResult) return;
       // A render has been submitted to the current swapchain; the mirror
       // path can now safely createImageBitmap.
       mirrorReadyRef.current = true;
@@ -264,7 +288,13 @@ export function useCanvasRenderLoop(
           }
         }
       }
-      scheduleMirrorUpdate();
+      // A no-op render left the canvas unchanged, so the mirror is still
+      // current — only an owed update (e.g. from before the first present)
+      // needs flushing. Updating on every no-op frame did a full unscissored
+      // re-blit + createImageBitmap while idle.
+      if (renderResult.kind !== "noop" || mirrorBitmapPendingRef.current) {
+        scheduleMirrorUpdate();
+      }
     });
   };
 

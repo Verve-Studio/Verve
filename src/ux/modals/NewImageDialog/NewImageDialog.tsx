@@ -225,16 +225,10 @@ export function NewImageDialog({
 
   const handleClipboardSize = useCallback(async (): Promise<void> => {
     try {
-      const b64 = await window.api.clipboardReadImage();
-      if (!b64) return;
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const el = new Image();
-        el.onload = () => resolve(el);
-        el.onerror = reject;
-        el.src = `data:image/png;base64,${b64}`;
-      });
-      setWidthPx(img.naturalWidth);
-      setHeightPx(img.naturalHeight);
+      const size = await window.api.clipboardImageSize();
+      if (!size) return;
+      setWidthPx(size.width);
+      setHeightPx(size.height);
       setPreset("Clipboard");
     } catch {
       /* clipboard empty or no image — silently ignore */

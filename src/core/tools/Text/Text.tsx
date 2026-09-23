@@ -1,4 +1,8 @@
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import type { RGBAColor, TextAlign, TextLayerState } from "@/types";
 import { EmbedColorPicker } from "@/ux/widgets/EmbedColorPicker/EmbedColorPicker";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
@@ -34,7 +38,9 @@ function RgbaColorSwatch({
     const popupW = 220;
     const popupH = 290;
     const top =
-      r.top > popupH + 8 ? r.top - popupH - 6 : Math.min(r.bottom + 6, window.innerHeight - popupH - 8);
+      r.top > popupH + 8
+        ? r.top - popupH - 6
+        : Math.min(r.bottom + 6, window.innerHeight - popupH - 8);
     const left = Math.max(8, Math.min(r.left, window.innerWidth - popupW - 8));
     setPos({ top, left });
   }, [open]);
@@ -758,7 +764,9 @@ function AdvancedTextPopover({
         height: 22,
         minWidth: 28,
         padding: "0 6px",
-        background: active ? "var(--color-surface-selected)" : "var(--color-surface)",
+        background: active
+          ? "var(--color-surface-selected)"
+          : "var(--color-surface)",
         color: "var(--color-text)",
         border: "1px solid var(--color-border)",
         borderRadius: 3,
@@ -844,11 +852,15 @@ function AdvancedTextPopover({
             </div>
             <div style={row}>
               <span style={labelW}>H Scale (%)</span>
-              {slider(v.horizontalScale, (n) => setField("horizontalScale", n), {
-                min: 1,
-                max: 1000,
-                step: 1,
-              })}
+              {slider(
+                v.horizontalScale,
+                (n) => setField("horizontalScale", n),
+                {
+                  min: 1,
+                  max: 1000,
+                  step: 1,
+                },
+              )}
               <span style={{ width: 12 }} />
               <span style={{ width: 60 }}>V Scale (%)</span>
               {slider(v.verticalScale, (n) => setField("verticalScale", n), {
@@ -962,11 +974,15 @@ function AdvancedTextPopover({
             <div style={groupTitle}>Paragraph</div>
             <div style={row}>
               <span style={labelW}>First-line indent</span>
-              {slider(v.firstLineIndent, (n) => setField("firstLineIndent", n), {
-                min: -2000,
-                max: 2000,
-                step: 1,
-              })}
+              {slider(
+                v.firstLineIndent,
+                (n) => setField("firstLineIndent", n),
+                {
+                  min: -2000,
+                  max: 2000,
+                  step: 1,
+                },
+              )}
             </div>
             <div style={row}>
               <span style={labelW}>Left indent</span>
@@ -1030,7 +1046,6 @@ function AdvancedTextPopover({
                 () => setField("noBreak", !v.noBreak),
               )}
             </div>
-
           </div>,
           document.body,
         )}
@@ -1045,7 +1060,11 @@ function TextOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ activeLayerId: s.activeLayerId, layers: s.layers }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
 
   const activeTextLayer = state.layers.find(
     (l): l is TextLayerState =>
@@ -1396,7 +1415,10 @@ function TextOptions({
         }}
       />
       <span className={styles.optSep} data-text-editor-safe />
-      <AdvancedTextPopover activeTextLayer={activeTextLayer} apply={applyChange} />
+      <AdvancedTextPopover
+        activeTextLayer={activeTextLayer}
+        apply={applyChange}
+      />
     </>
   );
 }
@@ -1407,7 +1429,7 @@ class TextTool implements ITool {
   readonly id = "text";
   readonly label = "Type";
   readonly shortcut = "T";
-  readonly icon = <SvgIcon src={textIconSvg} />;
+  readonly icon = (<SvgIcon src={textIconSvg} />);
   readonly placement = { group: ToolGroup.Type, row: 0, column: 0 } as const;
   readonly modifiesPixels = false;
   readonly skipAutoHistory = true;

@@ -12,8 +12,11 @@ import {
   matchPaletteIndices,
 } from "@/wasm";
 import type { Dispatch, MutableRefObject } from "react";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { activeScope } from "@/core/store/scope";
+import { statusMessageStore } from "@/core/store/statusMessageStore";
+import { notificationStore } from "@/core/store/notificationStore";
+import { extractErrorMessage } from "@/utils/userFeedback";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,7 +29,10 @@ interface UseTransformOptions {
 
 export interface UseTransformReturn {
   handleEnterTransform: () => void;
-  handleApply: () => void;
+  /** Commit the transform and leave transform mode. Resolves true when the
+   *  transform was committed (or none was active), false when it failed —
+   *  the transform then stays open so the user can retry or cancel. */
+  handleApply: () => Promise<boolean>;
   handleCancel: () => void;
   isFreeTransformEnabled: boolean;
 }
@@ -106,6 +112,30 @@ function cropPixels(
   return out;
 }
 
+/** Porter-Duff "over" of a canvas-sized RGBA8 `top` onto `base`, in place
+ *  on `base` (straight alpha). */
+function compositeOver(base: Uint8Array, top: Uint8Array): void {
+  for (let i = 0; i < top.length; i += 4) {
+    const ta = top[i + 3];
+    if (ta === 0) continue;
+    if (ta === 255) {
+      base[i] = top[i];
+      base[i + 1] = top[i + 1];
+      base[i + 2] = top[i + 2];
+      base[i + 3] = 255;
+      continue;
+    }
+    const sa = ta / 255;
+    const da = base[i + 3] / 255;
+    const oa = sa + da * (1 - sa);
+    const k = da * (1 - sa);
+    base[i] = Math.round((top[i] * sa + base[i] * k) / oa);
+    base[i + 1] = Math.round((top[i + 1] * sa + base[i + 1] * k) / oa);
+    base[i + 2] = Math.round((top[i + 2] * sa + base[i + 2] * k) / oa);
+    base[i + 3] = Math.round(oa * 255);
+  }
+}
+
 function interpToInt(interp: string): number {
   if (interp === "nearest") return 0;
   if (interp === "bicubic") return 2;
@@ -120,10 +150,15 @@ export function useTransform({
   dispatch,
   captureHistory,
 }: UseTransformOptions): UseTransformReturn {
-  const handleApply = useCallback(async (): Promise<void> => {
-    if (!activeScope().transform.isActive) return;
+  const applyingRef = useRef(false);
+
+  const handleApply = useCallback(async (): Promise<boolean> => {
+    const tx = activeScope().transform;
+    if (!tx.isActive) return true;
+    // Enter + button + guard dialog can all fire; one commit at a time.
+    if (applyingRef.current) return false;
     const handle = canvasHandleRef.current;
-    if (!handle) return;
+    if (!handle) return false;
 
     const {
       params,
@@ -133,18 +168,19 @@ export function useTransform({
       originalW,
       originalH,
       layerId,
-    } = activeScope().transform;
-    const { canvas } = stateRef.current;
-    const { width: cw, height: ch } = canvas;
-    if (!floatBuffer) return;
+      previousTool,
+      isSelectionMode,
+    } = tx;
+    const { width: cw, height: ch } = stateRef.current.canvas;
+    if (!floatBuffer) return false;
 
-    const layer = handle.getGpuLayer(layerId);
-    const isIndexed = layer?.format === "indexed8";
-    const effectiveInterp = isIndexed ? "nearest" : interpolation;
-    const interpInt = interpToInt(effectiveInterp);
-    let result: Uint8Array;
-
+    applyingRef.current = true;
     try {
+      const layer = handle.getGpuLayer(layerId);
+      const isIndexed = layer?.format === "indexed8";
+      const interpInt = interpToInt(isIndexed ? "nearest" : interpolation);
+
+      let result: Uint8Array;
       if (handleMode === "perspective" && params.perspectiveCorners) {
         const srcQuad: [
           { x: number; y: number },
@@ -182,94 +218,56 @@ export function useTransform({
           interpInt,
         );
       }
-    } catch (err) {
-      console.error("[useTransform] WASM transform failed:", err);
-      return;
-    }
 
-    if (isIndexed) {
-      const swatches = stateRef.current.swatches;
-      const indexResult = await matchPaletteIndices(result, swatches, 255);
-      handle.writeLayerIndexData(layerId, indexResult);
-    } else {
-      handle.writeLayerPixels(layerId, result);
-    }
-    captureHistory("Free Transform");
+      // The transform may have been cancelled / the tab switched while the
+      // WASM call ran — don't commit into a document that moved on.
+      if (activeScope().transform !== tx || !tx.isActive) return false;
 
-    // Stay on the transform tool with a fresh baseline so the user can chain
-    // transformations. Re-bootstrap the store from the just-committed pixels.
-    const committedPixels = handle.getLayerPixels(layerId);
-    const previousTool = activeScope().transform.previousTool;
-    const wasSelectionMode = activeScope().transform.isSelectionMode;
-    const savedSelectionMask = activeScope().transform.savedSelectionMask;
+      // `result` holds only the transformed content. Composite it over what
+      // is left of the layer (the rest of the layer outside a selection;
+      // nothing in whole-layer mode) — writing `result` alone erased
+      // everything outside the transformed selection.
+      const composed = handle.getLayerPixels(layerId);
+      if (!composed) throw new Error("The layer no longer exists.");
+      compositeOver(composed, result);
 
-    if (!committedPixels) {
+      if (isIndexed) {
+        const indexResult = await matchPaletteIndices(
+          composed,
+          stateRef.current.swatches,
+          255,
+        );
+        handle.writeLayerIndexData(layerId, indexResult);
+      } else {
+        handle.writeLayerPixels(layerId, composed);
+      }
+
+      // A selection-mode transform moves the selection with the pixels.
+      if (isSelectionMode) {
+        const mask = new Uint8Array(cw * ch);
+        for (let p = 0, q = 3; p < mask.length; p++, q += 4) {
+          if (result[q] > 0) mask[p] = 255;
+        }
+        activeScope().selection.replaceMask(mask);
+      }
+
+      // Leave transform mode: the handles disappearing (plus the status
+      // message) is the confirmation that the transform was applied. Ctrl+T
+      // starts a new one on the committed pixels.
+      tx.clear();
       dispatch({ type: "SET_TOOL", payload: previousTool });
-      activeScope().transform.clear();
-      return;
+      captureHistory("Free Transform");
+      statusMessageStore.show("Transform applied");
+      return true;
+    } catch (err) {
+      console.error("[useTransform] apply failed:", err);
+      notificationStore.error(
+        `Could not apply the transform: ${extractErrorMessage(err)}`,
+      );
+      return false;
+    } finally {
+      applyingRef.current = false;
     }
-
-    let nextRect: { x: number; y: number; w: number; h: number };
-    let nextFloatBuffer: Uint8Array;
-    if (wasSelectionMode && savedSelectionMask) {
-      // After applying a selection-mode transform, the selection itself moved
-      // to wherever the user dragged it. Re-fit on the committed pixels' bbox.
-      nextRect = findBoundingRect(committedPixels, cw, ch);
-      if (nextRect.w <= 0 || nextRect.h <= 0) {
-        dispatch({ type: "SET_TOOL", payload: previousTool });
-        activeScope().transform.clear();
-        return;
-      }
-      nextFloatBuffer = cropPixels(committedPixels, cw, nextRect, null);
-    } else {
-      nextRect = findBoundingRect(committedPixels, cw, ch);
-      if (nextRect.w <= 0 || nextRect.h <= 0) {
-        dispatch({ type: "SET_TOOL", payload: previousTool });
-        activeScope().transform.clear();
-        return;
-      }
-      nextFloatBuffer = cropPixels(committedPixels, cw, nextRect, null);
-    }
-
-    const { w: nW, h: nH } = nextRect;
-    const nextFloatCanvas = new OffscreenCanvas(nW, nH);
-    const nfc = nextFloatCanvas.getContext("2d")!;
-    nfc.putImageData(
-      new ImageData(new Uint8ClampedArray(nextFloatBuffer), nW, nH),
-      0,
-      0,
-    );
-
-    const nextSavedLayerPixels = committedPixels.slice();
-
-    // Clear the layer so the WebGL composite doesn't show the committed pixels
-    // underneath the next overlay preview (mirrors the initial-entry behavior).
-    handle.writeLayerPixels(layerId, new Uint8Array(cw * ch * 4));
-
-    activeScope().transform.enter({
-      layerId,
-      previousTool,
-      isSelectionMode: false,
-      originalW: nW,
-      originalH: nH,
-      originalRect: nextRect,
-      floatBuffer: nextFloatBuffer,
-      floatCanvas: nextFloatCanvas,
-      savedLayerPixels: nextSavedLayerPixels,
-      savedSelectionMask: null,
-      params: {
-        x: nextRect.x,
-        y: nextRect.y,
-        w: nW,
-        h: nH,
-        rotation: 0,
-        pivotX: nextRect.x + nW / 2,
-        pivotY: nextRect.y + nH / 2,
-        shearX: 0,
-        shearY: 0,
-        perspectiveCorners: null,
-      },
-    });
   }, [canvasHandleRef, stateRef, dispatch, captureHistory]);
 
   const handleCancel = useCallback((): void => {
@@ -286,6 +284,7 @@ export function useTransform({
 
     dispatch({ type: "SET_TOOL", payload: tx.previousTool });
     tx.clear();
+    statusMessageStore.show("Transform cancelled");
   }, [canvasHandleRef, dispatch]);
 
   const handleEnterTransform = useCallback((): void => {
@@ -359,7 +358,7 @@ export function useTransform({
       perspectiveCorners: null as null,
     };
 
-    activeScope().transform.onApply = handleApply;
+    activeScope().transform.onApply = () => void handleApply();
     activeScope().transform.onCancel = handleCancel;
 
     activeScope().transform.enter({
@@ -383,16 +382,21 @@ export function useTransform({
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!activeScope().transform.isActive) return;
-      if (
+      // A dialog (e.g. "Transform in Progress") owns the keyboard.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const inField =
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      )
-        return;
+        e.target instanceof HTMLTextAreaElement;
       if (e.key === "Enter") {
+        // In a numeric field Enter commits that field (it blurs itself);
+        // the next Enter applies the transform.
+        if (inField) return;
         e.preventDefault();
-        handleApply();
+        void handleApply();
       } else if (e.key === "Escape") {
+        // Escape always cancels, even from a field.
         e.preventDefault();
+        if (inField) (e.target as HTMLElement).blur();
         handleCancel();
       }
     };

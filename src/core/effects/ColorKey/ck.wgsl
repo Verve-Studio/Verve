@@ -17,8 +17,18 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
 
 
 struct MaskFlags {
-  hasMask : u32,
-  _pad    : vec3u,
+  hasMask       : u32,
+  inputIsLinear : u32,
+  _pad          : vec2u,
+}
+
+// The key colour and tolerance are sRGB/perceptual; linear (float-doc)
+// pixels are encoded before comparing so keying matches 8-bit docs.
+fn ck_linear_to_srgb(c: vec3f) -> vec3f {
+  let x = clamp(c, vec3f(0.0), vec3f(1.0));
+  return select(x * 12.92,
+                1.055 * pow(x, vec3f(1.0 / 2.4)) - 0.055,
+                x > vec3f(0.0031308));
 }
 
 
@@ -63,7 +73,8 @@ struct CKParams {
 // ── Helper: compute keyed alpha for a single pixel ────────────────────────────
 fn keyedAlpha(src: vec4f, kHsv: vec3f, tol: f32, soft: f32) -> f32 {
   if (src.a < 0.0001) { return 0.0; }
-  let pHsv   = rgb2hsv(src.rgb);
+  let rgb    = select(src.rgb, ck_linear_to_srgb(src.rgb), maskFlags.inputIsLinear != 0u);
+  let pHsv   = rgb2hsv(rgb);
   let dH_raw = abs(pHsv.x - kHsv.x);
   let dH     = min(dH_raw, 1.0 - dH_raw) * 2.0;
   let dS     = abs(pHsv.y - kHsv.y);
@@ -103,6 +114,8 @@ fn fs_color_key(in: AdjVertOut) -> @location(0) vec4<f32> {
       let nsrc = textureLoad(srcTex, nc, 0);
       let nAlpha = keyedAlpha(nsrc, kHsv, tol, soft);
       if (nAlpha < alpha) { alpha = nAlpha; }
+      // Running minimum: once fully keyed out, nothing can lower it.
+      if (alpha <= 0.0) { break; }
     }
   }
 

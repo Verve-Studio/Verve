@@ -108,10 +108,7 @@ export function ProfilePickerDialog(): React.JSX.Element | null {
   const handleBrowse = async (): Promise<void> => {
     const path = await window.api.openIccProfileDialog();
     if (!path) return; // user cancelled the file dialog; picker stays open
-    const base64 = await window.api.readFileBase64(path);
-    const bin = atob(base64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const bytes = await window.api.readFile(path);
     profilePickerStore.resolve(bytes);
   };
 

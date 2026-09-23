@@ -1,12 +1,11 @@
 import type { EffectLayerOf, RGBAColor } from "@/types";
+import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DropShadowOptions } from "./DropShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
-import {
-  createTrackedTexture,
-  destroyTrackedTexture,
-} from "@/core/store/memoryStore";
+import { createTrackedTexture } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
+import { TextureSetCache } from "../_shared/textureSetCache";
 
 const DropShadowIcon = (
   <svg
@@ -32,67 +31,62 @@ const DropShadowIcon = (
   </svg>
 );
 
-
 export interface DropShadowParams {
-    /** Shadow color including alpha channel. r/g/b/a are 0–255. Default: { r:0, g:0, b:0, a:255 } */
-    color: RGBAColor;
-    /** Overall shadow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
-    opacity: number;
-    /** Horizontal offset in canvas pixels, −200 to +200. Default: 5 */
-    offsetX: number;
-    /** Vertical offset in canvas pixels, −200 to +200. Default: 5 */
-    offsetY: number;
-    /** Morphological dilation radius in pixels, 0–100. Default: 0 */
-    spread: number;
-    /** Gaussian blur radius in pixels, 0–100. Default: 10 */
-    softness: number;
-    /** How the shadow composites with layers beneath it. Default: 'multiply' */
-    blendMode: "normal" | "multiply" | "screen";
-    /** When true, the shadow is masked by the inverse of the source alpha. Default: true */
-    knockout: boolean;
+  /** Shadow color including alpha channel. r/g/b/a are 0–255. Default: { r:0, g:0, b:0, a:255 } */
+  color: RGBAColor;
+  /** Overall shadow opacity, 0–100 (%). Applied on top of color.a. Default: 75 */
+  opacity: number;
+  /** Horizontal offset in canvas pixels, −200 to +200. Default: 5 */
+  offsetX: number;
+  /** Vertical offset in canvas pixels, −200 to +200. Default: 5 */
+  offsetY: number;
+  /** Morphological dilation radius in pixels, 0–100. Default: 0 */
+  spread: number;
+  /** Gaussian blur radius in pixels, 0–100. Default: 10 */
+  softness: number;
+  /** How the shadow composites with layers beneath it. Default: 'multiply' */
+  blendMode: "normal" | "multiply" | "screen";
+  /** When true, the shadow is masked by the inverse of the source alpha. Default: true */
+  knockout: boolean;
 }
 
-export type DropShadowEffectLayer = EffectLayerOf<"drop-shadow", DropShadowParams>;
+export type DropShadowEffectLayer = EffectLayerOf<
+  "drop-shadow",
+  DropShadowParams
+>;
 
 type DropShadowOp = Extract<EffectRenderOp, { kind: "drop-shadow" }>;
 
-let texCache: {
+const texCache = new TextureSetCache<{
   tempA: GPUTexture;
   tempB: GPUTexture;
-  format: GPUTextureFormat;
-} | null = null;
-let usedThisFrame = false;
+}>();
 
 /** Scratch textures for the dilate+blur ping-pong. Allocated in the same
  *  format as the doc-output texture so the entire pipeline runs at full
  *  precision on f32 documents — no 8-bit precision loss in shadow falloff
  *  on HDR content. Re-allocated when the doc switches color modes. */
 function ensureTextures(
-  device: GPUDevice,
+  runtime: EffectRuntime,
   width: number,
   height: number,
   format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
-  usedThisFrame = true;
-  if (texCache && texCache.format === format) return texCache;
-  if (texCache) {
-    destroyTrackedTexture(texCache.tempA);
-    destroyTrackedTexture(texCache.tempB);
-    texCache = null;
-  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
     GPUTextureUsage.COPY_DST |
     GPUTextureUsage.COPY_SRC;
   const make = (): GPUTexture =>
-    createTrackedTexture(device, {
+    createTrackedTexture(runtime.device, {
       size: { width, height },
       format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make(), format };
-  return texCache;
+  return texCache.get(runtime, `${width}x${height}:${format}`, () => ({
+    tempA: make(),
+    tempB: make(),
+  }));
 }
 
 const BLEND_MODE_MAP: Record<"normal" | "multiply" | "screen", number> = {
@@ -122,16 +116,14 @@ export function encodeDropShadowPass(
     softness: number;
     blendMode: "normal" | "multiply" | "screen";
     knockout: boolean;
-    selMaskLayer:
-      | { texture: GPUTexture }
-      | undefined;
+    selMaskLayer: { texture: GPUTexture } | undefined;
   },
 ): void {
   const { device, pixelWidth: w, pixelHeight: h } = runtime;
   // Scratch + every compute pipeline runs in the doc format. The shaders'
   // `texture_storage_2d<rgba8unorm, …>` declarations get rewritten to the
   // doc format on first compile (see `getComputePipelineForStorageFormat`).
-  const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+  const { tempA, tempB } = ensureTextures(runtime, w, h, dstTex.format);
   const dilateH = runtime.getComputePipelineForStorageFormat(
     "drop-shadow-dilate-h",
     "cs_shadow_dilate_h",
@@ -162,78 +154,70 @@ export function encodeDropShadowPass(
   const blurR =
     args.softness > 0 ? Math.max(1, Math.round(args.softness * 0.577)) : 0;
 
-  const dilateParamsBuf = runtime.makeParamsBuf(
-    new Uint32Array([spreadR, 0, 0, 0]),
-  );
+  const groups = [Math.ceil(w / 8), Math.ceil(h / 8)] as const;
+  const pass = (
+    pipeline: GPUComputePipeline,
+    src: GPUTexture,
+    dst: GPUTexture,
+    paramsBuf: GPUBuffer,
+  ): void => {
+    const bg = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: src.createView() },
+        { binding: 1, resource: dst.createView() },
+        { binding: 2, resource: { buffer: paramsBuf } },
+      ],
+    });
+    const p = encoder.beginComputePass();
+    p.setPipeline(pipeline);
+    p.setBindGroup(0, bg);
+    p.dispatchWorkgroups(groups[0], groups[1]);
+    p.end();
+  };
 
-  // Pass 1: DilateH
-  const dilateHBG = device.createBindGroup({
-    layout: dilateH.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: srcTex.createView() },
-      { binding: 1, resource: tempA.createView() },
-      { binding: 2, resource: { buffer: dilateParamsBuf } },
-    ],
-  });
-  const p1 = encoder.beginComputePass();
-  p1.setPipeline(dilateH);
-  p1.setBindGroup(0, dilateHBG);
-  p1.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
-  p1.end();
+  // Mask (in .r): the layer alpha, dilated by `spread`, then blurred.
+  let maskTex: GPUTexture;
+  // The first blur pass reads the layer alpha directly when there is no
+  // spread, so the two dilate passes are skipped.
+  let blurFromAlpha = false;
+  if (spreadR > 0) {
+    const dilateParamsBuf = runtime.makeParamsBuf(
+      new Uint32Array([spreadR, 0, 0, 0]),
+    );
+    pass(dilateH, srcTex, tempA, dilateParamsBuf);
+    pass(dilateV, tempA, tempB, dilateParamsBuf);
+    maskTex = tempB;
+  } else if (args.softness > 0) {
+    maskTex = srcTex;
+    blurFromAlpha = true;
+  } else {
+    // No spread, no blur: a radius-0 dilate just copies alpha into .r.
+    pass(
+      dilateH,
+      srcTex,
+      tempA,
+      runtime.makeParamsBuf(new Uint32Array([0, 0, 0, 0])),
+    );
+    maskTex = tempA;
+  }
 
-  // Pass 2: DilateV
-  const dilateVBG = device.createBindGroup({
-    layout: dilateV.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: tempA.createView() },
-      { binding: 1, resource: tempB.createView() },
-      { binding: 2, resource: { buffer: dilateParamsBuf } },
-    ],
-  });
-  const p2 = encoder.beginComputePass();
-  p2.setPipeline(dilateV);
-  p2.setBindGroup(0, dilateVBG);
-  p2.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
-  p2.end();
-
-  // Optional blur passes
-  let maskTex: GPUTexture = tempB;
+  // Optional blur passes (3 × box H+V ≈ gaussian), ping-ponging between
+  // the two scratch textures.
   if (args.softness > 0) {
     const blurParamsBuf = runtime.makeParamsBuf(
       new Uint32Array([blurR, 0, 0, 0]),
     );
-    let workingSrc = tempB;
-    let workingDst = tempA;
+    const firstHParamsBuf = blurFromAlpha
+      ? runtime.makeParamsBuf(new Uint32Array([blurR, 1, 0, 0]))
+      : blurParamsBuf;
+    let workingSrc = maskTex;
     for (let i = 0; i < 3; i++) {
-      const hBG = device.createBindGroup({
-        layout: blurH.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: workingSrc.createView() },
-          { binding: 1, resource: workingDst.createView() },
-          { binding: 2, resource: { buffer: blurParamsBuf } },
-        ],
-      });
-      const hPass = encoder.beginComputePass();
-      hPass.setPipeline(blurH);
-      hPass.setBindGroup(0, hBG);
-      hPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
-      hPass.end();
-      [workingSrc, workingDst] = [workingDst, workingSrc];
-
-      const vBG = device.createBindGroup({
-        layout: blurV.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: workingSrc.createView() },
-          { binding: 1, resource: workingDst.createView() },
-          { binding: 2, resource: { buffer: blurParamsBuf } },
-        ],
-      });
-      const vPass = encoder.beginComputePass();
-      vPass.setPipeline(blurV);
-      vPass.setBindGroup(0, vBG);
-      vPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
-      vPass.end();
-      [workingSrc, workingDst] = [workingDst, workingSrc];
+      const hDst = workingSrc === tempA ? tempB : tempA;
+      pass(blurH, workingSrc, hDst, i === 0 ? firstHParamsBuf : blurParamsBuf);
+      const vDst = hDst === tempA ? tempB : tempA;
+      pass(blurV, hDst, vDst, blurParamsBuf);
+      workingSrc = vDst;
     }
     maskTex = workingSrc;
   }
@@ -281,19 +265,10 @@ export function encodeDropShadowPass(
 /** Hooks for sharing the texture cache lifetime across DropShadow + Glow. */
 export const dropShadowCache = {
   onFrameEnd(): void {
-    if (!usedThisFrame && texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      texCache = null;
-    }
-    usedThisFrame = false;
+    texCache.onFrameEnd();
   },
   onDestroy(): void {
-    if (texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      texCache = null;
-    }
+    texCache.destroyAll();
   },
 };
 
@@ -336,11 +311,12 @@ export const DropShadowEffect: IPipelineEffect<
       blendMode,
       knockout,
     } = entry.params;
+    const col = colorForTarget(color, dstTex.format);
     encodeDropShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: color.r / 255,
-      colorG: color.g / 255,
-      colorB: color.b / 255,
-      colorA: color.a / 255,
+      colorR: col.r,
+      colorG: col.g,
+      colorB: col.b,
+      colorA: col.a,
       opacity: opacity / 100,
       offsetX,
       offsetY,

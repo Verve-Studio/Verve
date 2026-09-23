@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ColorGradingWheelParams } from "@/types";
 import type { ColorGradingEffectLayer } from "@/core/effects/ColorGrading/ColorGradingEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -20,7 +20,7 @@ export function ColorGradingPanel({
   layer,
   parentLayerName,
 }: ColorGradingPanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { params } = layer;
 
   const update = useCallback(
@@ -199,8 +199,8 @@ export function ColorGradingPanel({
         </label>
         <span className={styles.hdrHint}>
           Removes the per-stage [0,1] clamp and uses OKLab for hue/sat so
-          scene-linear values &gt; 1 survive the grade. Use on rgba32f docs
-          with HDR content.
+          scene-linear values &gt; 1 survive the grade. Use on rgba32f docs with
+          HDR content.
         </span>
       </div>
 

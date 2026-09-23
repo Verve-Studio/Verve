@@ -31,15 +31,17 @@ function createLassoHandler(): ToolHandler {
     ) {
       points = [{ x, y }];
       mode = altKey ? "subtract" : shiftKey ? "add" : "set";
-      activeScope().selection.setPending({ type: "path", points: [...points] });
+      activeScope().selection.setPending({ type: "path", points });
     },
 
     onPointerMove({ x, y }: ToolPointerPos, _ctx: ToolContext) {
+      // No stroke in progress (move without a matching pointer-down).
+      if (points.length === 0) return;
       const last = points[points.length - 1];
       // Subsample: only record if moved at least 2px to keep array small
       if (Math.abs(x - last.x) < 2 && Math.abs(y - last.y) < 2) return;
       points.push({ x, y });
-      activeScope().selection.setPending({ type: "path", points: [...points] });
+      activeScope().selection.setPending({ type: "path", points });
     },
 
     onPointerUp({ x, y }: ToolPointerPos, _ctx: ToolContext) {

@@ -43,15 +43,6 @@ export interface PixelOpsModule {
     tolerance: number,
   ): void;
 
-  _pixelops_convolve(
-    srcPtr: number,
-    dstPtr: number,
-    width: number,
-    height: number,
-    kernelPtr: number,
-    kernelSize: number,
-  ): void;
-
   _pixelops_resize_bilinear(
     srcPtr: number,
     srcWidth: number,
@@ -68,13 +59,6 @@ export interface PixelOpsModule {
     dstPtr: number,
     dstWidth: number,
     dstHeight: number,
-  ): void;
-
-  _pixelops_dither_bayer(
-    pixelsPtr: number,
-    width: number,
-    height: number,
-    matrixSize: number,
   ): void;
 
   /**
@@ -238,20 +222,6 @@ export interface PixelOpsModule {
     paletteSize: number,
     outPtr: number,
     transparentIdx: number,
-  ): void;
-
-  /**
-   * BFS 4-connected flood fill on a 1-byte-per-pixel indexed buffer.
-   * Replaces all pixels connected to (startX, startY) that share the same
-   * index value with fillIndex.  Operates in-place on the layer buffer.
-   */
-  _floodFillIndexed(
-    indicesPtr: number,
-    w: number,
-    h: number,
-    startX: number,
-    startY: number,
-    fillIndex: number,
   ): void;
 
   // ── EXR I/O (tinyexr) ─────────────────────────────────────────────────────

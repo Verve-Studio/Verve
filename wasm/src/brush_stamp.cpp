@@ -15,6 +15,7 @@
 #include "brush_stamp.h"
 #include <cmath>
 #include <algorithm>
+#include <cstddef>
 
 #ifdef __wasm_simd128__
 #include <wasm_simd128.h>
@@ -255,13 +256,13 @@ extern "C" void brush_bake_coverage(
                 cosT, sinT, shear, fxFlip, fyFlip,
                 invRadius, invRadiusY, radius, aaWidth, tipKind,
                 sdf_data, sdf_w, sdf_h);
-            if (coverage <= 0.0f) { out_bitmap[by * bm_w + bx] = 0; continue; }
+            if (coverage <= 0.0f) { out_bitmap[static_cast<ptrdiff_t>(by) * bm_w + bx] = 0; continue; }
             if (dualOn) {
                 coverage *= sample_dual_modulation(
                     dxBase0, dyBase0,
                     dualCosT, dualSinT, dualInvR, dualRadius, dualMix,
                     dualTipKind, dual_sdf_data, dual_sdf_w, dual_sdf_h);
-                if (coverage <= 0.0f) { out_bitmap[by * bm_w + bx] = 0; continue; }
+                if (coverage <= 0.0f) { out_bitmap[static_cast<ptrdiff_t>(by) * bm_w + bx] = 0; continue; }
             }
             if (grainBake) {
                 // tip-local grain coords = the same (lx, ly) the primary
@@ -272,9 +273,9 @@ extern "C" void brush_bake_coverage(
                 lx *= fxFlip;
                 ly *= fyFlip;
                 coverage *= sample_grain(lx, ly, grainAmount, grainScale);
-                if (coverage <= 0.0f) { out_bitmap[by * bm_w + bx] = 0; continue; }
+                if (coverage <= 0.0f) { out_bitmap[static_cast<ptrdiff_t>(by) * bm_w + bx] = 0; continue; }
             }
-            out_bitmap[by * bm_w + bx] = to_byte_nearest(coverage);
+            out_bitmap[static_cast<ptrdiff_t>(by) * bm_w + bx] = to_byte_nearest(coverage);
         }
     }
 }
@@ -356,8 +357,8 @@ extern "C" void brush_stamp_bitmap(
 
     for (int py = cy0; py <= cy1; py++) {
         const int bm_y = py - bm_offset_y;
-        const uint8_t* bm_row = bitmap + bm_y * bm_w;
-        const uint8_t* touched_row = touched_data + py * touchedW;
+        const uint8_t* bm_row = bitmap + static_cast<ptrdiff_t>(bm_y) * bm_w;
+        const uint8_t* touched_row = touched_data + static_cast<ptrdiff_t>(py) * touchedW;
         int px = cx0;
 
 #ifdef __wasm_simd128__
@@ -420,7 +421,7 @@ extern "C" void brush_stamp_bitmap(
                     if (coverage <= 0.0f) continue;
                     const int cxPx = px + lane;
                     if (cxPx < 0 || cxPx >= canvasW) continue;
-                    const int touchedKey = py * touchedW + cxPx;
+                    const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(py) * touchedW + cxPx;
                     const uint8_t existingByte = touched_data[touchedKey];
                     if ((int)existingByte >= maxTouchedByte) continue;
                     const float existingA = (float)existingByte * (1.0f / 255.0f);
@@ -451,7 +452,7 @@ extern "C" void brush_stamp_bitmap(
                 const v128_t vLaneMask = wasm_v128_load(laneMask);
                 if (!wasm_v128_any_true(vLaneMask)) continue;
 
-                const int basePixelIdx = (lyLocalGroup * layerW + lxLocalGroup0) * 4;
+                const ptrdiff_t basePixelIdx = (static_cast<ptrdiff_t>(lyLocalGroup) * layerW + lxLocalGroup0) * 4;
                 const v128_t vOrig = wasm_v128_load(layerBytes + basePixelIdx);
                 const v128_t vByteMask = wasm_i32x4_splat(0xFF);
                 const v128_t vEr_i = wasm_v128_and(vOrig, vByteMask);
@@ -513,10 +514,10 @@ extern "C" void brush_stamp_bitmap(
                 const int cxPx = px + lane;
                 const int cyPx = py;
                 if (cxPx < 0 || cxPx >= canvasW) continue;
-                const int touchedKey = cyPx * touchedW + cxPx;
+                const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
                 const uint8_t existingByte = touched_data[touchedKey];
                 if ((int)existingByte >= maxTouchedByte) continue;
-                if (sel_mask && sel_mask[cyPx * canvasW + cxPx] == 0) continue;
+                if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
                 const int lxLocal = cxPx - layerOX;
                 const int lyLocal = cyPx - layerOY;
                 if (lxLocal < 0 || lxLocal >= layerW ||
@@ -543,7 +544,7 @@ extern "C" void brush_stamp_bitmap(
                     if (blendA <= 0.0f) continue;
                     touched_data[touchedKey] = to_byte_nearest(srcA);
                 }
-                const int pixelIdx = (lyLocal * layerW + lxLocal) * 4;
+                const ptrdiff_t pixelIdx = (static_cast<ptrdiff_t>(lyLocal) * layerW + lxLocal) * 4;
                 if (isF32) {
                     const float er = layerF32[pixelIdx + 0];
                     const float eg = layerF32[pixelIdx + 1];
@@ -607,10 +608,10 @@ extern "C" void brush_stamp_bitmap(
                 if (coverage <= 0.0f) continue;
             }
             const int cyPx = py;
-            const int touchedKey = cyPx * touchedW + px;
+            const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + px;
             const uint8_t existingByte = touched_data[touchedKey];
             if ((int)existingByte >= maxTouchedByte) continue;
-            if (sel_mask && sel_mask[cyPx * canvasW + px] == 0) continue;
+            if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + px] == 0) continue;
             const int lxLocal = px - layerOX;
             const int lyLocal = cyPx - layerOY;
             // bbox clip above guarantees in-layer; skip defensive checks.
@@ -636,7 +637,7 @@ extern "C" void brush_stamp_bitmap(
                 if (blendA <= 0.0f) continue;
                 touched_data[touchedKey] = to_byte_nearest(srcA);
             }
-            const int pixelIdx = (lyLocal * layerW + lxLocal) * 4;
+            const ptrdiff_t pixelIdx = (static_cast<ptrdiff_t>(lyLocal) * layerW + lxLocal) * 4;
             if (isF32) {
                 const float er = layerF32[pixelIdx + 0];
                 const float eg = layerF32[pixelIdx + 1];
@@ -811,7 +812,7 @@ extern "C" void brush_stamp(
             const v128_t vThreshold = wasm_u8x16_splat((uint8_t)maxTouchedByte);
 #endif
             for (int py = p->min_y; py <= p->max_y && allSat; py++) {
-                const uint8_t* row = touched_data + py * touchedW + p->min_x;
+                const uint8_t* row = touched_data + static_cast<ptrdiff_t>(py) * touchedW + p->min_x;
                 int x = 0;
 #ifdef __wasm_simd128__
                 // 16-byte SIMD scan: build a per-byte "below threshold"
@@ -881,7 +882,7 @@ extern "C" void brush_stamp(
             // touched row base — used by the group-level saturation precheck
             // below. Inside the row, all 4 lanes share `py` so we only need
             // one row index for the byte gather.
-            const int touchedRowOff = py * touchedW;
+            const ptrdiff_t touchedRowOff = static_cast<ptrdiff_t>(py) * touchedW;
             int px = p->min_x;
             for (; px + 3 <= p->max_x; px += 4) {
                 // ── (B) Group-level saturation precheck ──────────────────
@@ -1004,7 +1005,7 @@ extern "C" void brush_stamp(
                         const int cxPx = px + lane;
                         // Canvas bounds (cyPx = py, already in-canvas by bbox clip).
                         if (cxPx < 0 || cxPx >= canvasW) continue;
-                        const int touchedKey = py * touchedW + cxPx;
+                        const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(py) * touchedW + cxPx;
                         const uint8_t existingByte = touched_data[touchedKey];
                         if ((int)existingByte >= maxTouchedByte) continue;
                         const float existingA = (float)existingByte * (1.0f / 255.0f);
@@ -1036,7 +1037,7 @@ extern "C" void brush_stamp(
                     if (!wasm_v128_any_true(vLaneMask)) continue;
 
                     // Phase 2: SIMD Porter-Duff for 4 lanes at once.
-                    const int basePixelIdx = (lyLocalGroup * layerW + lxLocalGroup0) * 4;
+                    const ptrdiff_t basePixelIdx = (static_cast<ptrdiff_t>(lyLocalGroup) * layerW + lxLocalGroup0) * 4;
                     const v128_t vOrig = wasm_v128_load(layerBytes + basePixelIdx);
                     // Deinterleave RGBA bytes via u32x4 view (LE: byte 0 is R).
                     const v128_t vByteMask = wasm_i32x4_splat(0xFF);
@@ -1118,11 +1119,11 @@ extern "C" void brush_stamp(
                     // win for fast strokes with heavy stamp overlap: any
                     // pixel already at the per-stroke cap exits before
                     // touching grain, dual, layer-bounds, or blend math.
-                    const int touchedKey = cyPx * touchedW + cxPx;
+                    const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
                     const uint8_t existingByte = touched_data[touchedKey];
                     if ((int)existingByte >= maxTouchedByte) continue;
 
-                    if (sel_mask && sel_mask[cyPx * canvasW + cxPx] == 0) continue;
+                    if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
 
                     // Grain + dual modulation. Computed per-pixel because
                     // the SDF samples need the actual lane (px+lane) and
@@ -1192,7 +1193,7 @@ extern "C" void brush_stamp(
                         touched_data[touchedKey] = to_byte_nearest(srcA);
                     }
 
-                    const int pixelIdx = (lyLocal * layerW + lxLocal) * 4;
+                    const ptrdiff_t pixelIdx = (static_cast<ptrdiff_t>(lyLocal) * layerW + lxLocal) * 4;
                     if (isF32) {
                         const float er = layerF32[pixelIdx + 0];
                         const float eg = layerF32[pixelIdx + 1];
@@ -1276,10 +1277,10 @@ extern "C" void brush_stamp(
                 if (cxPx < 0 || cxPx >= canvasW ||
                     cyPx < 0 || cyPx >= canvasH) continue;
                 // Saturation precheck — see the main per-active-lane block.
-                const int touchedKey = cyPx * touchedW + cxPx;
+                const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
                 const uint8_t existingByte = touched_data[touchedKey];
                 if ((int)existingByte >= maxTouchedByte) continue;
-                if (sel_mask && sel_mask[cyPx * canvasW + cxPx] == 0) continue;
+                if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
                 if (grainOn || dualOn) {
                     const float dxBase0 = (float)cxPx - cx;
                     const float dyBase0Lc = (float)cyPx - cy;
@@ -1334,7 +1335,7 @@ extern "C" void brush_stamp(
                     if (blendA <= 0.0f) continue;
                     touched_data[touchedKey] = to_byte_nearest(srcA);
                 }
-                const int pixelIdx = (lyLocal * layerW + lxLocal) * 4;
+                const ptrdiff_t pixelIdx = (static_cast<ptrdiff_t>(lyLocal) * layerW + lxLocal) * 4;
                 if (isF32) {
                     const float er = layerF32[pixelIdx + 0];
                     const float eg = layerF32[pixelIdx + 1];
@@ -1461,10 +1462,10 @@ extern "C" void brush_stamp(
             // the grain + dual modulation has already happened above, so
             // this still saves the layer-bounds + blend work. Not as big a
             // win as in the SIMD path but free and never hurts.
-            const int touchedKey = cyPx * touchedW + cxPx;
+            const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
             const uint8_t existingByte = touched_data[touchedKey];
             if ((int)existingByte >= maxTouchedByte) continue;
-            if (sel_mask && sel_mask[cyPx * canvasW + cxPx] == 0) continue;
+            if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
 
             const int lxLocal = cxPx - layerOX;
             const int lyLocal = cyPx - layerOY;
@@ -1505,7 +1506,7 @@ extern "C" void brush_stamp(
             }
 
             // ── Porter-Duff "over" composite ─────────────────────────────
-            const int pixelIdx = (lyLocal * layerW + lxLocal) * 4;
+            const ptrdiff_t pixelIdx = (static_cast<ptrdiff_t>(lyLocal) * layerW + lxLocal) * 4;
             if (isF32) {
                 const float er = layerF32[pixelIdx + 0];
                 const float eg = layerF32[pixelIdx + 1];

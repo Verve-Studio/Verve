@@ -1,12 +1,12 @@
-import type { FilterKey, RGBAColor } from "@/types";
+import type { AppState, FilterKey } from "@/types";
 import type { EffectType } from "@/core/effects/effectTypes";
 import type { UseAdjustmentsReturn } from "@/core/services/useAdjustments";
 import { useCallback } from "react";
 
 interface UseFiltersOptions {
   adjustments: UseAdjustmentsReturn;
-  primaryColor: RGBAColor;
-  secondaryColor: RGBAColor;
+  /** Live app state; colours are read when a filter is created. */
+  getState: () => AppState;
   /** Wraps every filter-creation action so that an in-flight free-transform
    *  is committed/cancelled before mutating the layer stack. */
   requireTransformDecision: (action: () => void) => void;
@@ -30,14 +30,14 @@ export interface UseFiltersReturn {
 
 export function useFilters({
   adjustments,
-  primaryColor,
-  secondaryColor,
+  getState,
   requireTransformDecision,
 }: UseFiltersOptions): UseFiltersReturn {
   const onCreateFilterAdjLayer = useCallback(
     (type: EffectType): void => {
       requireTransformDecision(() => {
         if (type === "clouds") {
+          const { primaryColor, secondaryColor } = getState();
           const { r: fgR, g: fgG, b: fgB } = primaryColor;
           const { r: bgR, g: bgG, b: bgB } = secondaryColor;
           adjustments.handleCreateAdjustmentLayer("clouds", {
@@ -60,7 +60,7 @@ export function useFilters({
         adjustments.handleCreateAdjustmentLayer(type);
       });
     },
-    [adjustments, requireTransformDecision, primaryColor, secondaryColor],
+    [adjustments, requireTransformDecision, getState],
   );
 
   const handleInstantFilter = useCallback(

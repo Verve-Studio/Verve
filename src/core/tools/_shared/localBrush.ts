@@ -9,6 +9,86 @@
  *     widely-spaced disks.
  */
 
+import type { ToolContext } from "./types";
+
+/** Active selection, mapped onto a layer (canvas-sized mask). */
+export interface BrushSelection {
+  mask: Uint8Array;
+  width: number;
+  height: number;
+  /** Layer offset on the canvas (layer-local → canvas coordinates). */
+  offsetX: number;
+  offsetY: number;
+}
+
+/** The context's selection for the active layer, or null if none. */
+export function brushSelection(ctx: ToolContext): BrushSelection | null {
+  const mask = ctx.selectionMask;
+  if (!mask) return null;
+  return {
+    mask,
+    width: ctx.renderer.pixelWidth,
+    height: ctx.renderer.pixelHeight,
+    offsetX: ctx.layer.offsetX,
+    offsetY: ctx.layer.offsetY,
+  };
+}
+
+/** Selection coverage (0–1) at a layer-local pixel. */
+export function selectionWeight(sel: BrushSelection, lx: number, ly: number): number {
+  const x = lx + sel.offsetX;
+  const y = ly + sel.offsetY;
+  if (x < 0 || y < 0 || x >= sel.width || y >= sel.height) return 0;
+  return sel.mask[y * sel.width + x] / 255;
+}
+
+const scratchPool = new Map<number, Uint8Array | Float32Array>();
+
+/**
+ * Reusable per-stamp scratch buffer (`slot` distinguishes buffers a stamp
+ * needs at the same time). Stamps run many times per pointer move; fresh
+ * typed arrays each time were pure allocation churn. Contents are stale —
+ * callers overwrite what they read.
+ */
+export function scratchBuffer(
+  slot: number,
+  isFloat: boolean,
+  length: number,
+): Uint8Array | Float32Array {
+  const key = slot * 2 + (isFloat ? 1 : 0);
+  let buf = scratchPool.get(key);
+  if (!buf || buf.length < length) {
+    buf = isFloat ? new Float32Array(length) : new Uint8Array(length);
+    scratchPool.set(key, buf);
+  }
+  return buf.subarray(0, length);
+}
+
+/** Copy a layer-local rect of RGBA pixels into `dst` (tightly packed). */
+export function copyLayerRect(
+  data: Uint8Array | Float32Array,
+  layerW: number,
+  minLx: number,
+  minLy: number,
+  bw: number,
+  bh: number,
+  dst: Uint8Array | Float32Array,
+): void {
+  for (let y = 0; y < bh; y++) {
+    const from = ((minLy + y) * layerW + minLx) * 4;
+    dst.set(data.subarray(from, from + bw * 4), y * bw * 4);
+  }
+}
+
+/** Upload the stamps' dirty region (if any) and re-render. Flushing with no
+ *  pending dirty rect would upload the whole layer. */
+export function flushStamps(ctx: ToolContext): void {
+  if (ctx.renderer.hasPendingUpload(ctx.layer)) {
+    ctx.renderer.flushLayer(ctx.layer);
+  }
+  ctx.render();
+}
+
 export interface BrushFootprint {
   /** Brush center in layer-local pixels. */
   cxL: number;
@@ -18,6 +98,8 @@ export interface BrushFootprint {
   hardness01: number;
   /** 0..1 — global multiplier on the per-pixel weight. */
   strength01: number;
+  /** When set, the weight is scaled by the selection (0 = untouched). */
+  selection?: BrushSelection | null;
 }
 
 /**
@@ -42,7 +124,7 @@ export function forEachBrushPixel(
   p: BrushFootprint,
   cb: (lx: number, ly: number, weight: number) => void,
 ): void {
-  const { cxL, cyL, radius, hardness01, strength01 } = p;
+  const { cxL, cyL, radius, hardness01, strength01, selection } = p;
   const r2 = radius * radius;
   const minLx = Math.max(0, Math.floor(cxL - radius));
   const maxLx = Math.min(layerW - 1, Math.ceil(cxL + radius));
@@ -57,7 +139,8 @@ export function forEachBrushPixel(
       if (d2 > r2) continue;
       const t = Math.sqrt(d2) / radius;
       const f = brushFalloff(t, hardness01);
-      const w = f * strength01;
+      let w = f * strength01;
+      if (selection) w *= selectionWeight(selection, lx, ly);
       if (w <= 0) continue;
       cb(lx, ly, w);
     }

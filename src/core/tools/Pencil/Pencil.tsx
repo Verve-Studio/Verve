@@ -4,7 +4,12 @@ import { bresenham, blendPixelOver, srgbColorToLinearF32 } from "../_shared/prim
 import { walkQuadBezier, stampAirbrush } from "./brushStroke";
 import type { BrushShape } from "./brushStroke";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
+import type { AppAction } from "@/core/store/AppContext";
 
 import { pixelBrushStore } from "@/core/store/pixelBrushStore";
 import { PixelBrushGallery } from "@/ux/widgets/PixelBrushGallery/PixelBrushGallery";
@@ -423,6 +428,48 @@ function paintBrushPixel(
  * The footprint shape follows the pencil's `shape` setting (round / square /
  * diamond) so the stroke profile matches the standard pencil.
  */
+/**
+ * Mark a canvas-space box (inclusive) dirty on `layer`, so the next flush
+ * uploads just that patch. A flush with no dirty rect uploads the WHOLE
+ * layer. In tiled mode stamps wrap around the edges, so mark everything.
+ */
+function markCanvasBoxDirty(
+  renderer: WebGPURenderer,
+  layer: GpuLayer,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+  tiled: boolean,
+): void {
+  if (tiled) {
+    renderer.markFullDirty(layer);
+    return;
+  }
+  const lx = Math.max(0, Math.floor(minX) - layer.offsetX);
+  const ly = Math.max(0, Math.floor(minY) - layer.offsetY);
+  const rx = Math.min(layer.layerWidth, Math.ceil(maxX) + 1 - layer.offsetX);
+  const ry = Math.min(layer.layerHeight, Math.ceil(maxY) + 1 - layer.offsetY);
+  if (rx > lx && ry > ly) renderer.markDirtyRect(layer, lx, ly, rx, ry);
+}
+
+/** srgbColorToLinearF32 memoised on the colour object (it used to run for
+ *  every single pencil pixel). */
+let linearColorKey: object | null = null;
+let linearColorValue: [number, number, number, number] | undefined;
+function linearColorOf(color: {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}): [number, number, number, number] {
+  if (color !== linearColorKey || !linearColorValue) {
+    linearColorKey = color;
+    linearColorValue = srgbColorToLinearF32(color);
+  }
+  return linearColorValue;
+}
+
 function paintBrushStamp(
   renderer: WebGPURenderer,
   layer: GpuLayer,
@@ -535,9 +582,10 @@ function createPencilHandler(): ToolHandler {
     const b = Math.round(Math.min(primaryColor.b, 1) * 255);
     const a = Math.round(primaryColor.a * 255);
     const srcFloat: [number, number, number, number] | undefined =
-      layer.format === "rgba32f"
-        ? srgbColorToLinearF32(primaryColor)
-        : undefined;
+      layer.format === "rgba32f" ? linearColorOf(primaryColor) : undefined;
+    // Only this pixel changed; without marking it the next flush uploads
+    // the whole layer (e.g. the pending pixel-perfect pixel at stroke end).
+    markCanvasBoxDirty(renderer, layer, px, py, px, py, ctx.tiledMode);
     // growLayerToFit is NOT called here — callers must pre-grow before entering
     // the per-pixel loop so we don't pay the bounds check on every Bresenham pixel.
     const sel = selectionMask
@@ -966,6 +1014,7 @@ function createPencilHandler(): ToolHandler {
           undefined,
           srcFloat,
         );
+        markCanvasBoxDirty(renderer, layer, x - padR, y - padR, x + padR, y + padR, ctx.tiledMode);
         renderer.flushLayer(layer);
         render(layers);
       }
@@ -1055,6 +1104,10 @@ function createPencilHandler(): ToolHandler {
         if (brush) {
           // Walk each Bresenham pixel and stamp a disk using the tiling brush mask
           const pad = Math.ceil(pencilOptions.size / 2) + 2;
+          const segMinX = Math.min(lastPx.x, x1) - pad;
+          const segMinY = Math.min(lastPx.y, y1) - pad;
+          const segMaxX = Math.max(lastPx.x, x1) + pad;
+          const segMaxY = Math.max(lastPx.y, y1) + pad;
           const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined;
           const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined;
           bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
@@ -1078,6 +1131,8 @@ function createPencilHandler(): ToolHandler {
               tiledH,
             );
           });
+          // Mark after the loop: growLayerToFit may have moved the layer.
+          markCanvasBoxDirty(renderer, layer, segMinX, segMinY, segMaxX, segMaxY, ctx.tiledMode);
           lastPx = { x: x1, y: y1 };
         } else {
           draw1pxSegment(x, y, ctx);
@@ -1114,10 +1169,11 @@ function createPencilHandler(): ToolHandler {
 
     onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
       if (ctx.layer.format === "indexed8") {
-        const { renderer, layer, layers, render, commitStroke } = ctx;
+        // History is captured by the pointer-up auto-capture, like the
+        // other formats (an explicit commit here added a second entry).
+        const { renderer, layer, layers, render } = ctx;
         renderer.flushLayer(layer, ctx.swatches);
         render(layers);
-        commitStroke("Pencil");
         strokeIndex = null;
         indexedTouched = null;
         lastPx = null;
@@ -1169,7 +1225,7 @@ function createPencilHandler(): ToolHandler {
  * from them, adding it to the document brush library.
  */
 function captureSelectionAsBrush(
-  dispatch: ReturnType<typeof useAppContext>["dispatch"],
+  dispatch: React.Dispatch<AppAction>,
 ): void {
   if (!_renderer || !_layer) return;
   const mask = activeScope().selection.mask;
@@ -1388,7 +1444,11 @@ function PencilOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ primaryColor: s.primaryColor, pixelBrushes: s.pixelBrushes }),
+    shallowEqual,
+  );
+  const dispatch = useAppDispatch();
   const { primaryColor } = state;
 
   const [size, setSize] = useState(pencilOptions.size);

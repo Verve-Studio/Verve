@@ -1,7 +1,10 @@
 import type { GpuDevice } from "../device/GpuDevice";
 import type { ResourceCache } from "../resources/ResourceCache";
 import type { PixelFormat } from "@/types";
-import { displayStore, OPERATOR_SHADER_ID } from "@/ux/main/Canvas/displayStore";
+import {
+  displayStore,
+  OPERATOR_SHADER_ID,
+} from "@/ux/main/Canvas/displayStore";
 import { ensureLutOnGpu } from "@/core/lut/lutGpu";
 import { lutStore } from "@/core/lut/lutStore";
 
@@ -25,6 +28,16 @@ export class DisplayPresenter {
   private readonly blitUnifAB = new ArrayBuffer(32);
   private readonly blitUnifView = new DataView(this.blitUnifAB);
 
+  // Last blit bind group and the resources it was built from — reused while
+  // they're unchanged (an idle or brush-only frame blits the same source).
+  private blitBindGroup: GPUBindGroup | null = null;
+  private blitBindKey: {
+    srcTex: GPUTexture;
+    sampler: GPUSampler;
+    cube: GPUTextureView;
+    shaper: GPUTextureView;
+  } | null = null;
+
   // ─── Viewport scissor ─────────────────────────────────────────────────────
   // When set, encodeCheckerboard and encodeBlit clip their fragment writes to
   // this rect (in swapchain backing pixels). Used at zoom > 1 where the canvas
@@ -42,7 +55,11 @@ export class DisplayPresenter {
    *  layers. The flag is read+cleared by the renderer's renderPlan. */
   viewportDirty = false;
 
-  constructor(gpu: GpuDevice, resources: ResourceCache, pixelFormat: PixelFormat) {
+  constructor(
+    gpu: GpuDevice,
+    resources: ResourceCache,
+    pixelFormat: PixelFormat,
+  ) {
     this.gpu = gpu;
     this.resources = resources;
     this.pixelFormat = pixelFormat;
@@ -201,21 +218,39 @@ export class DisplayPresenter {
     const lutCubeView = viewBundle?.cubeView ?? r.identityLutCubeView;
     const lutShaperView = viewBundle?.shaperView ?? r.identityLutShaperView;
 
-    const bindGroup = device.createBindGroup({
-      layout: r.hdrBlitBGL,
-      entries: [
-        // `screenBlitSampler`: bilinear when downscaling (zoom < 1)
-        // → smooth overview, crisp nearest when upscaling (zoom ≥ 1)
-        // → pixel-perfect paint view. See ResourceCache for the why.
-        { binding: 0, resource: r.screenBlitSampler },
-        { binding: 1, resource: srcTex.createView() },
-        { binding: 2, resource: { buffer: r.frameUniformBuf } },
-        { binding: 3, resource: { buffer: r.hdrUniformBuffer } },
-        { binding: 4, resource: lutCubeView },
-        { binding: 5, resource: lutShaperView },
-        { binding: 6, resource: r.lutBlitSampler },
-      ],
-    });
+    const k = this.blitBindKey;
+    let bindGroup = this.blitBindGroup;
+    if (
+      !bindGroup ||
+      !k ||
+      k.srcTex !== srcTex ||
+      k.sampler !== r.screenBlitSampler ||
+      k.cube !== lutCubeView ||
+      k.shaper !== lutShaperView
+    ) {
+      bindGroup = device.createBindGroup({
+        layout: r.hdrBlitBGL,
+        entries: [
+          // `screenBlitSampler`: bilinear when downscaling (zoom < 1)
+          // → smooth overview, crisp nearest when upscaling (zoom ≥ 1)
+          // → pixel-perfect paint view. See ResourceCache for the why.
+          { binding: 0, resource: r.screenBlitSampler },
+          { binding: 1, resource: srcTex.createView() },
+          { binding: 2, resource: { buffer: r.frameUniformBuf } },
+          { binding: 3, resource: { buffer: r.hdrUniformBuffer } },
+          { binding: 4, resource: lutCubeView },
+          { binding: 5, resource: lutShaperView },
+          { binding: 6, resource: r.lutBlitSampler },
+        ],
+      });
+      this.blitBindGroup = bindGroup;
+      this.blitBindKey = {
+        srcTex,
+        sampler: r.screenBlitSampler,
+        cube: lutCubeView,
+        shaper: lutShaperView,
+      };
+    }
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [{ view, loadOp: "load", storeOp: "store" }],

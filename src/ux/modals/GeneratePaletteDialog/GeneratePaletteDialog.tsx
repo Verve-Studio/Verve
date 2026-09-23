@@ -14,10 +14,11 @@ import {
   DEVICE_LABELS,
 } from "@/utils/devicePalettes";
 import type { DevicePaletteKey } from "@/utils/devicePalettes";
-import { quantize } from "@/wasm";
 import type { RGBAColor } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import styles from "./GeneratePaletteDialog.module.scss";
+import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
+import { quantizeOffThread } from "@/wasm/pixelopsWorkerClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,10 +145,13 @@ export function GeneratePaletteDialog({
           const handle = canvasHandleRef.current;
           if (!handle) return;
           const result = await handle.rasterizeComposite("export");
-          const { palette, count } = await quantize(
-            result.data as Uint8Array,
-            extractCount,
-          );
+          // rgba32f composites are scene-linear floats — encode to sRGB
+          // bytes first (the quantizer works on 8-bit RGBA).
+          const bytes =
+            result.data instanceof Float32Array
+              ? clampF32ToUint8(result.data)
+              : (result.data as Uint8Array);
+          const { palette, count } = await quantizeOffThread(bytes, extractCount);
           // Pull the raw bucket averages out of the WASM result, then run
           // the shared dedup → near-merge → hue-sort pipeline so the
           // extracted preview is consistent with how palettes appear

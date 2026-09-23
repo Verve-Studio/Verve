@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ChromaticAberrationEffectLayer } from "@/core/effects/ChromaticAberration/ChromaticAberrationEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ChromaticAberrationOptions.module.scss";
@@ -13,7 +13,7 @@ export function ChromaticAberrationOptions({
   layer,
   parentLayerName,
 }: ChromaticAberrationOptionsProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { type, distance, angle } = layer.params;
 
   const pct = (v: number, min: number, max: number): string =>

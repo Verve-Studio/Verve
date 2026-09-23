@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ColorBalanceEffectLayer } from "@/core/effects/ColorBalance/ColorBalanceEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorBalancePanel.module.scss";
@@ -19,7 +19,7 @@ export function ColorBalancePanel({
   layer,
   parentLayerName,
 }: ColorBalancePanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const [activeRange, setActiveRange] = useState<ToneRange>("midtones");
 
   const rangeParams = layer.params[activeRange];

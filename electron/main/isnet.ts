@@ -1,9 +1,7 @@
-import { ipcMain, app } from 'electron'
-import { join, dirname } from 'node:path'
+import { mlPaths } from './ml/paths'
+import { join } from 'node:path'
 import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
-import type { IpcMainInvokeEvent } from 'electron'
 
 // ─── ORT type stubs (mirror of matting.ts / upscale.ts) ──────────────────────
 
@@ -20,6 +18,8 @@ interface OrtInferenceSession {
   readonly inputNames: readonly string[]
   readonly outputNames: readonly string[]
   run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>
+  /** Frees the native session (model weights, DirectML/CoreML buffers). */
+  release?(): Promise<void>
 }
 
 interface OrtModule {
@@ -46,7 +46,7 @@ function getOrt(): OrtModule {
 //
 // Dev:   <root>/resources/models/isnet/isnet-general-use.onnx
 // Prod:  process.resourcesPath/models/isnet/isnet-general-use.onnx
-// User:  app.getPath('userData')/models/isnet/  (preferred when present)
+// User:  <userData>/models/isnet/  (preferred when present)
 
 const MODEL_FILE = 'isnet-general-use.onnx'
 
@@ -55,15 +55,15 @@ const MODEL_FILE = 'isnet-general-use.onnx'
 const ISNET_INPUT = 1024
 
 function getBundledDir(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'models', 'isnet')
+  if (mlPaths().isPackaged) {
+    return join(mlPaths().resourcesPath, 'models', 'isnet')
   }
-  const devRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const devRoot = mlPaths().appRoot
   return join(devRoot, 'resources', 'models', 'isnet')
 }
 
 function getUserDataDir(): string {
-  return join(app.getPath('userData'), 'models', 'isnet')
+  return join(mlPaths().userData, 'models', 'isnet')
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -87,10 +87,20 @@ function preferredProviders(): string[] {
 }
 
 let session: OrtInferenceSession | null = null
+let sessionPromise: Promise<OrtInferenceSession> | null = null
 let sessionProvider: string = 'cpu'
 
-async function loadSession(): Promise<OrtInferenceSession> {
-  if (session) return session
+/** Shared in-flight load: concurrent runs must not each create a session
+ *  (the extra one would leak its native memory). */
+function loadSession(): Promise<OrtInferenceSession> {
+  sessionPromise ??= createSession().catch((err) => {
+    sessionPromise = null
+    throw err
+  })
+  return sessionPromise
+}
+
+async function createSession(): Promise<OrtInferenceSession> {
   const path = await resolveModelPath()
   if (!path) {
     throw new Error(
@@ -208,59 +218,52 @@ function maybeSigmoid(buf: Float32Array): void {
   }
 }
 
-// ─── IPC handler registration ────────────────────────────────────────────────
+// ─── Public API (used by the ML worker and the IPC layer) ───────────────────
 
-export function registerIsnetHandlers(): void {
-  ipcMain.handle(
-    'isnet:check-model',
-    async (): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> => {
-      const path = await resolveModelPath()
-      return {
-        ready: path !== null,
-        path,
-        searchedPaths: [join(getUserDataDir(), MODEL_FILE), join(getBundledDir(), MODEL_FILE)],
-      }
-    },
-  )
+export async function checkIsnetModel(): Promise<{ ready: boolean; path: string | null; searchedPaths: string[] }> {
+  const path = await resolveModelPath()
+  return {
+    ready: path !== null,
+    path,
+    searchedPaths: [join(getUserDataDir(), MODEL_FILE), join(getBundledDir(), MODEL_FILE)],
+  }
+}
 
-  ipcMain.handle(
-    'isnet:run',
-    async (
-      _event: IpcMainInvokeEvent,
-      params: { rgba: Buffer; width: number; height: number },
-    ): Promise<{ mask: Buffer; width: number; height: number; provider: string }> => {
-      if (params.rgba.length !== params.width * params.height * 4) {
-        throw new Error(`rgba length ${params.rgba.length} ≠ ${params.width}×${params.height}×4`)
-      }
-      const sess = await loadSession()
-      const ort = getOrt()
-      const rgba = new Uint8Array(params.rgba.buffer, params.rgba.byteOffset, params.rgba.byteLength)
+export async function runIsnet(params: {
+  rgba: Uint8Array
+  width: number
+  height: number
+}): Promise<{ mask: Uint8Array; width: number; height: number; provider: string }> {
+  if (params.rgba.length !== params.width * params.height * 4) {
+    throw new Error(`rgba length ${params.rgba.length} ≠ ${params.width}×${params.height}×4`)
+  }
+  const sess = await loadSession()
+  const ort = getOrt()
+  const rgba = params.rgba
 
-      const chw = rgbaToChwNormalised(rgba, params.width, params.height, ISNET_INPUT, ISNET_INPUT)
-      const feeds: Record<string, OrtTensor> = {}
-      feeds[sess.inputNames[0]] = new ort.Tensor('float32', chw, [1, 3, ISNET_INPUT, ISNET_INPUT])
-      const outputs = await sess.run(feeds)
+  const chw = rgbaToChwNormalised(rgba, params.width, params.height, ISNET_INPUT, ISNET_INPUT)
+  const feeds: Record<string, OrtTensor> = {}
+  feeds[sess.inputNames[0]] = new ort.Tensor('float32', chw, [1, 3, ISNET_INPUT, ISNET_INPUT])
+  const outputs = await sess.run(feeds)
 
-      // ISNet exports often emit multiple side-outputs (1 high-res + 5 lower
-      // supervision maps). The full-resolution mask is the first output.
-      const maskTensor = outputs[sess.outputNames[0]]
-      const maskF32 = new Float32Array(maskTensor.data as Float32Array)
-      const maskH = maskTensor.dims[maskTensor.dims.length - 2]
-      const maskW = maskTensor.dims[maskTensor.dims.length - 1]
+  // ISNet exports often emit multiple side-outputs (1 high-res + 5 lower
+  // supervision maps). The full-resolution mask is the first output.
+  const maskTensor = outputs[sess.outputNames[0]]
+  const maskF32 = new Float32Array(maskTensor.data as Float32Array)
+  const maskH = maskTensor.dims[maskTensor.dims.length - 2]
+  const maskW = maskTensor.dims[maskTensor.dims.length - 1]
 
-      maybeSigmoid(maskF32)
+  maybeSigmoid(maskF32)
 
-      const upscaled = resizeMaskF32ToU8(maskF32, maskW, maskH, params.width, params.height)
-      return {
-        mask: Buffer.from(upscaled),
-        width: params.width,
-        height: params.height,
-        provider: sessionProvider,
-      }
-    },
-  )
+  const mask = resizeMaskF32ToU8(maskF32, maskW, maskH, params.width, params.height)
+  return { mask, width: params.width, height: params.height, provider: sessionProvider }
+}
 
-  ipcMain.handle('isnet:invalidate-session', (): void => {
-    session = null
-  })
+/** Drop the session and free its native memory. */
+export async function invalidateIsnetSession(): Promise<void> {
+  const pending = sessionPromise
+  sessionPromise = null
+  session = null
+  const s = await pending?.catch(() => null)
+  await s?.release?.()
 }

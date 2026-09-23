@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type {
   PaintDaubsEffectLayer,
   PaintDaubsBrushType,
@@ -25,7 +25,7 @@ export function PaintDaubsPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<PaintDaubsEffectLayer["params"]>): void => {
@@ -53,7 +53,9 @@ export function PaintDaubsPanel({
           step={1}
           value={Math.max(min, Math.min(max, value))}
           style={
-            { "--pct": String((value - min) / (max - min)) } as React.CSSProperties
+            {
+              "--pct": String((value - min) / (max - min)),
+            } as React.CSSProperties
           }
           onChange={(e) => onChange(Number(e.target.value))}
         />
@@ -76,7 +78,9 @@ export function PaintDaubsPanel({
 
   return (
     <div className={styles.content}>
-      {slider("Brush Size", p.brushSize, 1, 50, (v) => update({ brushSize: v }))}
+      {slider("Brush Size", p.brushSize, 1, 50, (v) =>
+        update({ brushSize: v }),
+      )}
       {slider("Sharpness", p.sharpness, 0, 40, (v) => update({ sharpness: v }))}
 
       <div className={styles.row}>

@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ShapeLayerState, ShapeType, RGBAColor } from "@/types";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import swatchStyles from "@/ux/widgets/ColorSwatch/ColorSwatch.module.scss";
@@ -488,12 +492,7 @@ function createShapeHandler(): ToolHandler {
         drawHandles(ctx.overlayCanvas, active, ctx.zoom);
       } else if (ctx.overlayCanvas) {
         const c2d = ctx.overlayCanvas.getContext("2d");
-        c2d?.clearRect(
-          0,
-          0,
-          ctx.overlayCanvas.width,
-          ctx.overlayCanvas.height,
-        );
+        c2d?.clearRect(0, 0, ctx.overlayCanvas.width, ctx.overlayCanvas.height);
       }
     },
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext): void {
@@ -755,7 +754,7 @@ function createShapeHandler(): ToolHandler {
           const dx = active.x2 - active.x1;
           const dy = active.y2 - active.y1;
           const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-          const a = (((angle % 180) + 180) % 180);
+          const a = ((angle % 180) + 180) % 180;
           if (a < 22.5 || a >= 157.5) cursor = "ew-resize";
           else if (a < 67.5) cursor = "nwse-resize";
           else if (a < 112.5) cursor = "ns-resize";
@@ -788,7 +787,20 @@ function ShapeOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      activeLayerId: s.activeLayerId,
+      activePaletteIndex: s.activePaletteIndex,
+      activeShape: s.activeShape,
+      layers: s.layers,
+      pixelFormat: s.pixelFormat,
+      primaryColor: s.primaryColor,
+      secondaryColor: s.secondaryColor,
+      swatches: s.swatches,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
 
   // If the active layer is a shape layer, read its values; otherwise use defaults.
   const activeShape =
@@ -931,9 +943,9 @@ function ShapeOptions({
 
   // ── Indexed8 palette picker (replaces the freeform EmbedColorPicker) ─────
   const isIndexed = state.pixelFormat === "indexed8";
-  const [pickerTarget, setPickerTarget] = useState<
-    null | "stroke" | "fill"
-  >(null);
+  const [pickerTarget, setPickerTarget] = useState<null | "stroke" | "fill">(
+    null,
+  );
   const [pickerAnchor, setPickerAnchor] = useState<{
     x: number;
     y: number;
@@ -1207,7 +1219,20 @@ function ShapeToolButton({
   styles,
   onActivate,
 }: ToolButtonRenderProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      activeLayerId: s.activeLayerId,
+      activePaletteIndex: s.activePaletteIndex,
+      activeShape: s.activeShape,
+      layers: s.layers,
+      pixelFormat: s.pixelFormat,
+      primaryColor: s.primaryColor,
+      secondaryColor: s.secondaryColor,
+      swatches: s.swatches,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
@@ -1293,7 +1318,7 @@ class ShapeTool implements ITool {
   readonly id = "shape";
   readonly label = "Shape";
   readonly shortcut = "U";
-  readonly icon = <SvgIcon src={shapeIconSvg} />;
+  readonly icon = (<SvgIcon src={shapeIconSvg} />);
   readonly placement = { group: ToolGroup.Type, row: 0, column: 1 } as const;
   readonly modifiesPixels = false;
   readonly skipAutoHistory = true;

@@ -17,8 +17,9 @@ npm run typecheck    # Type-check both main (Node) and renderer (web) processes
 
 Verve is an Electron app split into two processes that communicate over IPC:
 
-- **Main process** (`electron/main/`) — Node.js. Native file I/O, OS dialogs, IPC handlers, ML model inference (ISNet auto-mask, RVM matting, Real-ESRGAN upscale, LaMa inpainting). Never imported from the renderer.
-- **Preload** (`electron/preload/`) — Exposes a typed, sandboxed API to the renderer via `window.api`. The only bridge between processes.
+- **Main process** (`electron/main/`) — Node.js. Native file I/O, OS dialogs, IPC handlers. Never imported from the renderer. Keep its event loop free of long synchronous work (it drives every window's chrome): no sync image encode/decode, no sync fs on hot paths.
+- **ML worker** (`electron/main/mlWorker.ts`, driven by `electron/main/ml/`) — an Electron `utilityProcess` that runs all model inference (ISNet auto-mask, RVM matting, Real-ESRGAN upscale, LaMa inpainting). The model cores import no Electron modules; jobs are cancellable (`ml:cancel`).
+- **Preload** (`electron/preload/`) — Exposes a typed, sandboxed API to the renderer via `window.api` (the renderer runs with `sandbox: true`; the preload exposes only `api`). The only bridge between processes.
 - **Renderer** (`src/`) — React 19 app. All UI, canvas drawing, and tool logic lives here.
 
 ### Renderer structure
@@ -129,6 +130,7 @@ Defined in `src/core/tools/_shared/ITool.ts`. Each tool declares:
 - **Optional**: `customRender(props)` — replaces the default toolbar button entirely (Shape uses this for its caret + flyout).
 - **Shortcut cycling**: `shortcutCycle?` — id of the tool to advance to when this tool's shortcut is pressed while it's already active. Pairs (`lasso ↔ polygonal-selection`, `magic-wand ↔ auto-mask`) declare each other.
 - **Behaviour flags**: `modifiesPixels`, `skipAutoHistory`, `paintsOntoPixelLayer`, `worksOnAllLayers`, `pixelOnly`, `indexed8Unsupported`. The toolbar / Canvas read these to gate the tool.
+- **History**: a `modifiesPixels` tool gets one history entry per gesture from the pointer-up auto-capture. Don't also call `ctx.commitStroke` for the same gesture. A gesture that changes no pixels (e.g. alt-click to set a clone/heal source) or that committed its own entry returns `{ skipHistory: true }` from `onPointerUp`; async tools that always commit themselves set `skipAutoHistory`.
 - **Runtime**: `createHandler()` returns a fresh `ToolHandler` per activation; `Options` is the right-side options-bar component.
 
 ### Registry & toolbar
@@ -199,7 +201,14 @@ Shaders are auto-discovered by `src/core/effects/shaderLoader.ts` (`import.meta.
 
 Effects don't construct their own pipelines. One shared **`EffectRuntime`** (`src/graphics/webgpu/EffectRuntime.ts`) provides cached pipeline / sampler / scratch-texture / render-pass primitives that every effect uses. Effects access it via `engine.runtime` from their `encode` body.
 
-`EffectEncoder` is the dispatcher that owns the single `EffectRuntime` instance. Cross-frame texture caches (e.g. Bloom's downsampled glow buffers) are owned by the effect itself as module-level state and evicted via `onFrameEnd`.
+`EffectEncoder` is the dispatcher that owns the single `EffectRuntime` instance. Cross-frame texture caches (e.g. Bloom's downsampled glow buffers) are owned by the effect itself as module-level state — use `TextureSetCache` (`effects/_shared/textureSetCache.ts`) — and evicted via `onFrameEnd`.
+
+Runtime rules effects must follow:
+- **Per-frame resources.** `runtime.makeParamsBuf(...)` buffers are pooled and recycled after the frame is submitted — use them only within the current `encode`, never cache them. `makeMaskFlagsBuf` returns shared constant buffers. Transient textures go through `runtime.makeScratchTex` / `pendingDestroyTextures`.
+- **Match the document format.** Intermediates must use `runtime.makeScratchTex(w, h, dstTex)` and pipelines `runtime.selectPipeline(pair, dstTex)`. Hardcoded `rgba8unorm` scratch or `.s8` pipelines quantize and clip float documents.
+- **Colour space.** On `rgba16float`/`rgba32float` targets the pixels are scene-linear. User colours (sRGB 0–255) must go through `colorForTarget(color, dstTex.format)` (`effects/_shared/effectColor.ts`). Shaders tuned for perceptual input read `MaskFlags.inputIsLinear` (declare `struct MaskFlags { hasMask: u32, inputIsLinear: u32, _pad: vec2u }`) and encode/decode around their math. Values > 1 are valid HDR: don't clamp them or index fixed-size tables with them unless the effect defines HDR behaviour explicitly.
+- **Stable plan entries.** Render-op cache keys (`rendering/cacheKeys.ts`) are memoized by object identity. Treat everything in a plan entry as immutable, and derive expensive fields (palettes, LUTs) through a `WeakMap` keyed on the immutable source so identity is stable across frames.
+- Validate edited WGSL with naga (or run it) before shipping.
 
 ### Adding a new effect
 
@@ -211,7 +220,7 @@ Effects don't construct their own pipelines. One shared **`EffectRuntime`** (`sr
 6. Write `{Name}Panel.tsx` + `.module.scss` for the right-panel UI.
 7. Register the effect in `src/core/effects/index.ts` (one import line + one `effectRegistry.register(...)` line).
 
-The WGSL uniform struct must match the `Float32Array`/`Uint32Array` packed inside the effect's `encode` exactly (byte offsets, padding, total size).
+The WGSL uniform struct must match the `Float32Array`/`Uint32Array` packed inside the effect's `encode` exactly (byte offsets, padding, total size). Plan builders must receive the document `pixelFormat` (screen, merge, and rasterize plans alike) so output matches the screen.
 
 ### Unified Rasterization Pipeline
 
@@ -230,6 +239,14 @@ Global app state (active tool, colors, layers, swatches, selectedLayerIds, brush
 2. Add the reducer action to `src/core/store/AppContext.tsx`.
 3. Export `AppAction` so hooks outside `AppContext.tsx` can dispatch.
 
+**Subscribing to state.** The reducer runs in an external store (`AppProvider`). Components subscribe to the slice they render:
+- `useAppDispatch()` — stable dispatch; never causes a re-render. Use it alone in components that only dispatch.
+- `useAppSelector(selector, isEqual?)` — re-renders only when the selected value changes. Selectors that return a fresh object must pass `shallowEqual` (or `shallowEqual2` when a member is itself a picked sub-object, e.g. `canvas: { width, height }`).
+- `useGetAppState()` / `useAppStore().getState` — read live state inside event handlers and callbacks without subscribing.
+- `useAppContext()` is a whole-state subscription kept for compatibility. Don't use it in new code.
+
+The app shell (`AppContent`) subscribes to `AppShellState` (everything except `primaryColor`, `secondaryColor` and `canvas.zoom`). Its `stateRef.current` is a live view of the store. High-frequency updates such as colour-picker or eyedropper drags and zooming therefore re-render only the components that select those fields. Never pass whole-state objects down as props or into hooks: pass a `getState` function or the specific fields. Heavy chrome components are `React.memo`-wrapped, so keep their props stable (use `useCallback`, or read props through a ref as MainWindow does). The menu's `menuDeps` exposes handlers through stable proxies and changes only when a displayed value changes. Add new menu handlers to `menuHandlersNow` and new displayed values to the `menuDeps` memo.
+
 Tab state (multi-document) lives in `useTabs`. Canvas pixel data lives in WebGPU while a tab is active and is serialized to `savedLayerData` only when the tab is backgrounded. Operations that change canvas dimensions (resize, crop) must increment `canvasKey` on the tab record to force a Canvas remount with the new size.
 
 Avoid re-initializing canvas layers in effects that list `rendererRef.current` as a dependency — use a `hasInitializedRef` guard instead.
@@ -238,7 +255,7 @@ Avoid re-initializing canvas layers in effects that list `rendererRef.current` a
 
 There are two kinds of stores; they sit at different scopes.
 
-**Per-document stores (`DocumentScope`).** Each tab owns its own bundle of stateful stores: `selection`, `history`, `crop`, `transform`, `objectSelection`, `polygonalSelection`, `cloneStamp`, `adjustmentPreview`, `paletteCycle`. Defined in `src/core/store/scope.ts`. The active scope is the active tab's scope; `setActiveScope(tab.scope)` runs in `useTabs.switchToTab` — there's no copy-on-switch dance. Subscribers are kept at module scope inside each store file (not on the instance), so a component that subscribed to `selection` while Tab 1 was active still wakes up when Tab 2's selection mutates after a switch.
+**Per-document stores (`DocumentScope`).** Each tab owns its own bundle of stateful stores: `selection`, `history`, `crop`, `transform`, `polygonalSelection`, `inpaintMask`, `cloneStamp`, `adjustmentPreview`, `paletteCycle`, `brushOverrides`, `healingSource` (the last lives in the HealingBrush tool folder). Any tool state that belongs to a document (e.g. a source anchor) goes here, not in module state. Defined in `src/core/store/scope.ts`. History memory is capped globally across all tabs; closing tabs must go through `useTabs.closeTabs` so their history is disposed. The active scope is the active tab's scope; `setActiveScope(tab.scope)` runs in `useTabs.switchToTab` — there's no copy-on-switch dance. Subscribers are kept at module scope inside each store file (not on the instance), so a component that subscribed to `selection` while Tab 1 was active still wakes up when Tab 2's selection mutates after a switch.
 
 Read patterns:
 - **Tool handlers** (synchronous pointer-event path): `ctx.scope.selection.X` — `scope` is supplied through `ToolContext`, hot-path-friendly.
@@ -252,6 +269,8 @@ Read patterns:
 - `cursorStore` (live canvas-space cursor position) — `src/ux/main/Canvas/cursorStore.ts`
 - `measureStore` (last measure-tool result) — `src/core/tools/Measure/measureStore.ts`
 - `brushPanelStore`, `brushManagerStore` (brush UI state) — `src/core/tools/Brush/`
+
+`selection.setPending(...)` (the live drag preview) does **not** notify subscribers: the overlay rAF loop polls it, and subscribers depend on `mask` only. Pass the tool's live points array; don't copy it per move.
 
 **`selectedLayerIds`** is kept in `AppState` (not as local panel state) so hooks like `useLayers` can act on multi-layer selections. Any action that resets the layer stack (`SET_ACTIVE_LAYER`, `REORDER_LAYERS`, `RESTORE_LAYERS`, `NEW_CANVAS`, `OPEN_FILE`, `RESTORE_TAB`, `SWITCH_TAB`) also resets `selectedLayerIds` to `[]`.
 
@@ -341,6 +360,10 @@ import styles from './MyComponent.module.scss'
 
 Main → Renderer communication goes through `electron/main/ipc.ts` and the typed preload at `electron/preload/index.ts`. In the renderer, use `window.api.*`. Never import Electron modules directly in `src/`.
 
+- Move binary data as `Uint8Array` (structured clone), never base64 strings. The clipboard moves raw `nativeImage` bitmaps (premultiplied BGRA), converted in the renderer by `core/io/clipboardBitmap.ts`.
+- File writes go through `writeFileAtomic` (`electron/main/atomicWrite.ts`). Paths from the renderer are checked against the `fileAccess.ts` allowlist (`assertReadable` / `assertWritable`).
+- Surface failures to the user (`showOperationError`, `notificationStore`). Never swallow them silently.
+
 ### Top Menu
 
 Menu order: **File → Edit → Select → Layer → Adjustments → Effects → Filters → View → Help**
@@ -376,7 +399,9 @@ For tools with a custom cursor (brush, eraser), hide the native cursor (`cursor:
 
 ## WASM / C++ Layer
 
-CPU-intensive operations (flood fill, blur, resize, dithering, quantization, inpainting, segmentation, transforms) are implemented in C++17 under `wasm/src/` and compiled to WASM via Emscripten. The TypeScript side of this boundary is `src/wasm/index.ts`, which exposes a clean async API. Never import from `src/wasm/generated/` directly.
+CPU-intensive operations (flood fill, resize, palette quantization and matching, curves histogram, inpainting, GrabCut segmentation, affine/perspective transforms, brush stamping, EXR and DDS I/O, colour management via lcms2) are implemented in C++17 under `wasm/src/` and compiled to WASM via Emscripten. Image filters and blurs run as WebGPU effects, not in WASM. The TypeScript side of this boundary is `src/wasm/index.ts`, which exposes a clean async API. Never import from `src/wasm/generated/` directly. Every export must have a caller — remove dead exports instead of keeping them around.
+
+Long-running operations (Content-Aware Fill / inpaint, whole-image GrabCut, quantize) run off the UI thread in a dedicated worker with its own WASM instance: use `inpaintRegionOffThread` / `grabCutOffThread` / `quantizeOffThread` from `src/wasm/pixelopsWorkerClient.ts`.
 
 ### Adding a new operation
 1. Implement in a new `.h`/`.cpp` under `wasm/src/`.
@@ -387,7 +412,10 @@ CPU-intensive operations (flood fill, blur, resize, dithering, quantization, inp
 
 ### Memory rules
 - All WASM buffers are managed via `_malloc`/`_free` — the wrapper handles this automatically.
-- Re-read `module.HEAPU8` **after** any WASM call (memory may have been grown); the wrapper's `withInPlaceBuffer` does this correctly.
+- Re-read `module.HEAPU8` **after** any WASM call (memory may have been grown); the wrapper's `withInPlaceBuffer` does this correctly. Wrapped exports call `syncIfGrew` after every call so pinned `layer.data` views are re-bound.
+- The module is built with `MEMORY64=2`: pointers and `size_t` are 64-bit in C++ (BigInt at the JS boundary via `wrapPtrFn`). Structs read from JS must use `uint64_t` pointer fields; read them with `readPtr`.
+- Documents can exceed 2^31 bytes. Compute every pixel offset in 64 bits, promoting before the multiply: `static_cast<size_t>(y) * width + x`, never `(y * width + x) * 4` in `int`.
+- Report allocation failure as `WasmOutOfMemoryError` rather than letting it abort.
 - `src/wasm/generated/` is gitignored — run `build:wasm` on a fresh clone.
 
 ### Setting up Emscripten (first time)

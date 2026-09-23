@@ -1,7 +1,10 @@
 import type { AppAction } from "@/core/store/AppContext";
 import type { ClearHistoryOptions } from "@/core/store/historyStore";
 
-import { f32TransferStore } from "@/core/store/layerDataTransfer";
+import {
+  f32TransferStore,
+  u8TransferStore,
+} from "@/core/store/layerDataTransfer";
 import { preferencesStore } from "@/core/store/preferencesStore";
 import type { TabRecord } from "@/core/store/tabTypes";
 import type { AppState, RGBAColor } from "@/types";
@@ -183,61 +186,35 @@ export function useHistory({
         entry.canvasHeight !== currentH ||
         formatChanged
       ) {
+        // Hand the history buffers to the remounting canvas through the
+        // transfer stores (the init path copies them out, so sharing the
+        // history's buffers is safe). This used to PNG-encode every rgba8
+        // layer and mask through a 2D canvas: slow on big documents, and
+        // lossy, because the canvas premultiplies alpha.
         const encoded = new Map<string, string>();
+        const refPrefix = `${activeTabIdRef.current}:history:`;
         for (const [id, pixels] of entry.layerPixels) {
           const geo = entry.layerGeometry?.get(id);
           const lw = geo?.layerWidth ?? entry.canvasWidth;
           const lh = geo?.layerHeight ?? entry.canvasHeight;
+          const key = refPrefix + id;
           if ((pixels as unknown) instanceof Float32Array) {
-            f32TransferStore.set(id, pixels as unknown as Float32Array);
-            encoded.set(id, `data:raw/f32-ref;id=${id}`);
+            f32TransferStore.set(key, pixels as unknown as Float32Array);
+            encoded.set(id, `data:raw/f32-ref;id=${key}`);
           } else if (pixels.length === lw * lh) {
             // indexed8 — 1 byte/pixel
-            const u8 = pixels as Uint8Array;
-            const CHUNK = 65535;
-            let b64 = "";
-            for (let i = 0; i < u8.length; i += CHUNK) {
-              b64 += btoa(
-                String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))),
-              );
-            }
-            encoded.set(id, `data:raw/indexed8;base64,${b64}`);
+            u8TransferStore.set(key, pixels as Uint8Array);
+            encoded.set(id, `data:raw/indexed8-ref;id=${key}`);
           } else {
-            const tmp = document.createElement("canvas");
-            tmp.width = lw;
-            tmp.height = lh;
-            const ctx2d = tmp.getContext("2d")!;
-            ctx2d.putImageData(
-              new ImageData(
-                new Uint8ClampedArray(pixels.buffer as ArrayBuffer),
-                lw,
-                lh,
-              ),
-              0,
-              0,
-            );
-            encoded.set(id, tmp.toDataURL("image/png"));
+            u8TransferStore.set(key, pixels as Uint8Array);
+            encoded.set(id, `data:raw/rgba8-ref;id=${key}`);
           }
           if (geo) encoded.set(`${id}:geo`, JSON.stringify(geo));
         }
         for (const [layerId, maskPixels] of entry.adjustmentMasks) {
-          const maskCanvas = document.createElement("canvas");
-          maskCanvas.width = entry.canvasWidth;
-          maskCanvas.height = entry.canvasHeight;
-          const maskCtx2d = maskCanvas.getContext("2d")!;
-          maskCtx2d.putImageData(
-            new ImageData(
-              new Uint8ClampedArray(maskPixels.buffer as ArrayBuffer),
-              entry.canvasWidth,
-              entry.canvasHeight,
-            ),
-            0,
-            0,
-          );
-          encoded.set(
-            `${layerId}:adjustment-mask`,
-            maskCanvas.toDataURL("image/png"),
-          );
+          const key = `${refPrefix}${layerId}:mask`;
+          u8TransferStore.set(key, maskPixels);
+          encoded.set(`${layerId}:adjustment-mask`, `data:raw/rgba8-ref;id=${key}`);
         }
         suppressReadyCaptureRef.current = true;
         setPendingLayerData(encoded);

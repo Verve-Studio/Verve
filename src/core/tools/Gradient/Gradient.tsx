@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual2, useAppSelector } from "@/core/store/AppContext";
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -60,17 +60,39 @@ function floatColorToBytes(c: RGBAColor): RGBAColor {
 
 // ─── Colour interpolation ─────────────────────────────────────────────────────
 
-function lerpColor(
+const GRADIENT_LUT_SIZE = 4096;
+
+/**
+ * Gradient colour at GRADIENT_LUT_SIZE evenly spaced t, already in the
+ * layer's encoding: linear-light floats for rgba32f (decoded once per entry
+ * instead of 3 pow() per pixel), rounded sRGB bytes for rgba8. Alpha is
+ * 0–1 in both. The per-pixel loop then does one indexed read — no tuple
+ * allocation per pixel.
+ */
+function buildGradientLut(
   a: RGBAColor,
   b: RGBAColor,
-  t: number,
-): [number, number, number, number] {
-  return [
-    a.r + (b.r - a.r) * t,
-    a.g + (b.g - a.g) * t,
-    a.b + (b.b - a.b) * t,
-    a.a + (b.a - a.a) * t,
-  ];
+  linear: boolean,
+): Float32Array {
+  const lut = new Float32Array(GRADIENT_LUT_SIZE * 4);
+  for (let i = 0; i < GRADIENT_LUT_SIZE; i++) {
+    const t = i / (GRADIENT_LUT_SIZE - 1);
+    const r = a.r + (b.r - a.r) * t;
+    const g = a.g + (b.g - a.g) * t;
+    const bl = a.b + (b.b - a.b) * t;
+    const o = i * 4;
+    if (linear) {
+      lut[o] = srgbToLinearChannel(r);
+      lut[o + 1] = srgbToLinearChannel(g);
+      lut[o + 2] = srgbToLinearChannel(bl);
+    } else {
+      lut[o] = Math.round(Math.min(r, 1) * 255);
+      lut[o + 1] = Math.round(Math.min(g, 1) * 255);
+      lut[o + 2] = Math.round(Math.min(bl, 1) * 255);
+    }
+    lut[o + 3] = a.a + (b.a - a.a) * t;
+  }
+  return lut;
 }
 
 function applyRepeat(t: number, repeat: typeof gradientOptions.repeat): number {
@@ -273,6 +295,9 @@ function renderGradient(
   const len = Math.sqrt(lenSq);
 
   const alpha = opacity / 100;
+  const isF32 = layer.format === "rgba32f";
+  const lut = buildGradientLut(primaryColor, secondaryColor, isF32);
+  const lutMax = GRADIENT_LUT_SIZE - 1;
 
   for (let ly = 0; ly < layer.layerHeight; ly++) {
     for (let lx = 0; lx < layer.layerWidth; lx++) {
@@ -295,19 +320,18 @@ function renderGradient(
 
       t = applyRepeat(t, repeat);
 
-      const [gr, gg, gb, ga] = lerpColor(primaryColor, secondaryColor, t);
-      const srcA = ga * alpha;
+      const li = Math.round(t * lutMax) * 4;
+      const srcA = lut[li + 3] * alpha;
 
       if (srcA <= 0) continue;
 
       // Porter-Duff "over" composite onto existing pixel
       const i = (ly * layer.layerWidth + lx) * 4;
-      if (layer.format === "rgba32f") {
-        // gr/gg/gb are sRGB-encoded floats from primary/secondary; rgba32f
-        // layers store linear-light, so gamma-decode before compositing.
-        const sr = srgbToLinearChannel(gr);
-        const sg = srgbToLinearChannel(gg);
-        const sb = srgbToLinearChannel(gb);
+      if (isF32) {
+        // LUT entries are already linear-light for rgba32f layers.
+        const sr = lut[li];
+        const sg = lut[li + 1];
+        const sb = lut[li + 2];
         const dstR = layer.data[i],
           dstG = layer.data[i + 1],
           dstB = layer.data[i + 2];
@@ -326,10 +350,10 @@ function renderGradient(
           layer.data[i + 3] = outA;
         }
       } else {
-        // Convert float [0,1] to 0-255 for rgba8
-        const gr8 = Math.round(Math.min(gr, 1) * 255);
-        const gg8 = Math.round(Math.min(gg, 1) * 255);
-        const gb8 = Math.round(Math.min(gb, 1) * 255);
+        // LUT entries are sRGB bytes for rgba8 layers.
+        const gr8 = lut[li];
+        const gg8 = lut[li + 1];
+        const gb8 = lut[li + 2];
         const dstR = layer.data[i];
         const dstG = layer.data[i + 1];
         const dstB = layer.data[i + 2];
@@ -496,7 +520,7 @@ function createGradientHandler(): ToolHandler {
           ctx.updatePathLayer({ ...pth, fillGradient: grad });
         }
         ctx.commitStroke("Set gradient fill");
-        return;
+        return { skipHistory: true };
       }
 
       renderGradient(ctx, s.x, s.y, x, y);
@@ -511,7 +535,15 @@ function GradientOptions({
 }: {
   styles: ToolOptionsStyles;
 }): React.JSX.Element {
-  const { state } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      activeLayerId: s.activeLayerId,
+      layers: s.layers,
+      pixelFormat: s.pixelFormat,
+      swatchGroups: s.swatchGroups,
+    }),
+    shallowEqual2,
+  );
   const isIndexed = state.pixelFormat === "indexed8";
   // When the active layer is a shape or path, the tool writes a vector
   // `fillGradient` — Repeat / Opacity / indexed-palette controls don't
@@ -572,8 +604,7 @@ function GradientOptions({
       (g) => g.swatchIndices.length >= 2,
     );
     const selectValue =
-      paletteGroupId &&
-      eligibleGroups.some((g) => g.id === paletteGroupId)
+      paletteGroupId && eligibleGroups.some((g) => g.id === paletteGroupId)
         ? paletteGroupId
         : "";
     return (
@@ -682,7 +713,7 @@ class GradientTool implements ITool {
   readonly id = "gradient";
   readonly label = "Gradient";
   readonly shortcut = "G";
-  readonly icon = <SvgIcon src={gradientIconSvg} />;
+  readonly icon = (<SvgIcon src={gradientIconSvg} />);
   readonly placement = { group: ToolGroup.Fill, row: 0, column: 1 } as const;
   readonly modifiesPixels = true;
   readonly paintsOntoPixelLayer = true;

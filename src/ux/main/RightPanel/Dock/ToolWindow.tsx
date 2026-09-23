@@ -4,6 +4,7 @@ import type { FloatingWindow, PanelId } from "./types";
 import { PANEL_LABELS } from "./types";
 import { dockStore } from "./dockStore";
 import styles from "./ToolWindow.module.scss";
+import { useDocumentDrag } from "./useDocumentDrag";
 
 interface ToolWindowProps {
   win: FloatingWindow;
@@ -17,6 +18,7 @@ export function ToolWindow({
   const containerRef = useRef<HTMLDivElement>(null);
   const posRef = useRef({ x: win.x, y: win.y });
   const sizeRef = useRef({ w: win.width, h: win.height });
+  const startDrag = useDocumentDrag();
 
   // ── Title bar drag ─────────────────────────────────────────────────────────
 
@@ -38,14 +40,9 @@ export function ToolWindow({
       }
     };
 
-    const onUp = () => {
+    startDrag(onMove, () => {
       dockStore.moveFloatingWindow(win.id, posRef.current.x, posRef.current.y);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    });
   }
 
   // ── Resize handle ──────────────────────────────────────────────────────────
@@ -68,18 +65,13 @@ export function ToolWindow({
       }
     };
 
-    const onUp = () => {
+    startDrag(onMove, () => {
       dockStore.resizeFloatingWindow(
         win.id,
         sizeRef.current.w,
         sizeRef.current.h,
       );
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    });
   }
 
   const content = (

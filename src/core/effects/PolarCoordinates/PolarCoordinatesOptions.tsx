@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { PolarCoordinatesEffectLayer } from "@/core/effects/PolarCoordinates/PolarCoordinatesEffect";
 import { effectRegistry } from "@/core/effects";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
@@ -16,7 +16,8 @@ interface Props {
 }
 
 const getDefaultParams = (): PolarCoordinatesEffectLayer["params"] =>
-  effectRegistry.get("polar-coordinates")!.defaultParams as PolarCoordinatesEffectLayer["params"];
+  effectRegistry.get("polar-coordinates")!
+    .defaultParams as PolarCoordinatesEffectLayer["params"];
 
 const MODES: PolarCoordinatesEffectLayer["params"]["mode"][] = [
   "rect-to-polar",
@@ -35,7 +36,7 @@ export function PolarCoordinatesOptions({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
   const update = (
     patch: Partial<PolarCoordinatesEffectLayer["params"]>,

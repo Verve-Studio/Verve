@@ -4,6 +4,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { bresenham, wuLine } from "../_shared/primitives";
 import type { SelMask, TouchedBuffer } from "../_shared/primitives";
+import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 
 /**
  * Apply one erase pixel operation in canvas-space.
@@ -64,6 +65,29 @@ function erasePixelOp(
   }
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
+
+  if (layer.format === "rgba32f") {
+    // Native float range: alpha is 0–1 and colours are scene-linear, so no
+    // rounding (it would snap alpha to 0/1) and the 0–255 sRGB secondary
+    // colour must be gamma-decoded before lerping toward it.
+    if (alphaMode) {
+      renderer.drawPixel(layer, lx, ly, er, eg, eb, ea * (1 - incr));
+    } else {
+      const lr = srgbToLinearChannel(secR / 255);
+      const lg = srgbToLinearChannel(secG / 255);
+      const lb = srgbToLinearChannel(secB / 255);
+      renderer.drawPixel(
+        layer,
+        lx,
+        ly,
+        er + (lr - er) * incr,
+        eg + (lg - eg) * incr,
+        eb + (lb - eb) * incr,
+        ea,
+      );
+    }
+    return;
+  }
 
   if (alphaMode) {
     // Reduce alpha, keep RGB unchanged

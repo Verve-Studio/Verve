@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { totalmem } from 'node:os'
-import { readFile, writeFile } from 'node:fs/promises'
+import { copyFile, readFile } from 'node:fs/promises'
+import { writeFileAtomic } from './atomicWrite'
 import { join } from 'node:path'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -81,18 +82,29 @@ function mergeWithDefaults(partial: Partial<AppPreferences>): AppPreferences {
 
 export function registerPreferencesHandlers(): void {
   ipcMain.handle('prefs:load', async (): Promise<AppPreferences> => {
+    let raw: string
     try {
-      const raw = await readFile(prefsPath(), 'utf-8')
+      raw = await readFile(prefsPath(), 'utf-8')
+    } catch {
+      // First run — no preferences file yet.
+      return { ...DEFAULT_PREFERENCES }
+    }
+    try {
       const parsed = JSON.parse(raw) as Partial<AppPreferences>
       return mergeWithDefaults(parsed)
-    } catch {
+    } catch (err) {
+      // Unreadable file: keep a copy instead of silently overwriting the
+      // user's settings with defaults on the next save.
+      const backup = `${prefsPath()}.corrupt-${Date.now()}`
+      console.error(`[prefs] ${prefsPath()} is not valid JSON; kept a copy at ${backup}`, err)
+      await copyFile(prefsPath(), backup).catch(() => undefined)
       return { ...DEFAULT_PREFERENCES }
     }
   })
 
   ipcMain.handle('prefs:save', async (_event, prefs: AppPreferences): Promise<void> => {
     const merged = mergeWithDefaults(prefs)
-    await writeFile(prefsPath(), JSON.stringify(merged, null, 2), 'utf-8')
+    await writeFileAtomic(prefsPath(), JSON.stringify(merged, null, 2), 'utf-8')
   })
 
   // Lets the renderer cap the buffer-memory slider at the actual system RAM

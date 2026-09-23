@@ -17,6 +17,12 @@ export const f32TransferStore = {
   clear(): void {
     pending.clear();
   },
+  /** Drop every entry whose key starts with `prefix` (e.g. a closed tab's `${tabId}:`). */
+  dropPrefix(prefix: string): void {
+    for (const key of pending.keys()) {
+      if (key.startsWith(prefix)) pending.delete(key);
+    }
+  },
 };
 
 /**
@@ -37,5 +43,11 @@ export const u8TransferStore = {
   },
   clear(): void {
     pendingU8.clear();
+  },
+  /** Drop every entry whose key starts with `prefix` (e.g. a closed tab's `${tabId}:`). */
+  dropPrefix(prefix: string): void {
+    for (const key of pendingU8.keys()) {
+      if (key.startsWith(prefix)) pendingU8.delete(key);
+    }
   },
 };

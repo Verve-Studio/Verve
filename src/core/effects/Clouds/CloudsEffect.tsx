@@ -1,4 +1,5 @@
 import type { EffectLayerOf } from "@/types";
+import { isLinearTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -65,7 +66,7 @@ export const CloudsEffect: IPipelineEffect<CloudsEffectLayer, CloudsOp> = {
       bgColor,
       w,
       h,
-      0,
+      isLinearTarget(dstTex.format) ? 1 : 0,
     ]);
     const paramsBuf = rt.makeParamsBuf(paramsData);
     const perm = new Uint32Array(256);

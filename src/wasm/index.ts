@@ -18,6 +18,7 @@ import type {
   CurvesHistogramResult,
 } from "./types";
 import { syncIfGrew } from "./wasmHeapStorage";
+import { notificationStore } from "@/core/store/notificationStore";
 
 // ─── Module singleton ─────────────────────────────────────────────────────────
 
@@ -90,6 +91,40 @@ export async function getPixelOps(): Promise<PixelOpsModule> {
  *  before the call, and the return value is converted BigInt→Number when
  *  `ptrReturn` is true. `BigInt(undefined)` throws — coerce missing args to
  *  0 defensively (matches the C++ side's null-ptr semantics). */
+/** The module whose exports are being wrapped (set by installWasm64Wrappers). */
+let wrappedModule: PixelOpsModule | null = null;
+
+/** Thrown when the WASM heap can't satisfy an allocation. */
+export class WasmOutOfMemoryError extends Error {
+  constructor(public readonly requestedBytes: number) {
+    super(
+      `Out of memory: the image-processing engine could not allocate ` +
+        `${(requestedBytes / (1024 * 1024)).toFixed(1)} MB. ` +
+        `Close other documents or reduce the image size and try again.`,
+    );
+    this.name = "WasmOutOfMemoryError";
+  }
+}
+
+/**
+ * A C++ abort (e.g. std::bad_alloc) kills the module for good: every later
+ * call throws. It can't be transparently re-created, because pinned layer
+ * buffers live in the dead module's heap and freeing them through a new
+ * instance would corrupt it. Tell the user once so they can save and
+ * restart, instead of a string of unexplained failures.
+ */
+let abortReported = false;
+function reportAbort(err: unknown): void {
+  if (abortReported || !(err instanceof WebAssembly.RuntimeError)) return;
+  abortReported = true;
+  console.error("[wasm] Module aborted:", err);
+  notificationStore.error(
+    "The image-processing engine stopped working (" +
+      err.message +
+      "). Save your work and restart Verve.",
+  );
+}
+
 function wrapPtrFn<F extends (...args: never[]) => unknown>(
   fn: F,
   ptrArgs: readonly number[],
@@ -101,7 +136,19 @@ function wrapPtrFn<F extends (...args: never[]) => unknown>(
       const v = args[i];
       args[i] = typeof v === "bigint" ? v : BigInt((v as number | undefined) ?? 0);
     }
-    const r = raw(...args);
+    let r: unknown;
+    try {
+      r = raw(...args);
+    } catch (err) {
+      reportAbort(err);
+      throw err;
+    }
+    // C++ can grow the heap itself (std::vector in inpaint, grabcut, EXR,
+    // quantize…). Growth detaches every pinned `layer.data` view, and they
+    // used to stay detached until some later JS `_malloc` happened to call
+    // syncIfGrew. Re-bind right after every call — one identity compare
+    // when nothing grew.
+    if (wrappedModule) syncIfGrew(wrappedModule);
     return ptrReturn ? Number(r as bigint) : r;
   }) as unknown as F;
 }
@@ -110,6 +157,7 @@ function wrapPtrFn<F extends (...args: never[]) => unknown>(
  *  takes or returns an i64 (pointer or size_t). Called once, right after
  *  the Emscripten factory resolves. */
 function installWasm64Wrappers(m: PixelOpsModule): void {
+  wrappedModule = m;
   // _malloc: size_t arg + ptr return are both i64. Also triggers
   // `syncIfGrew` so any allocation that grew the heap rebinds the
   // typed-array views tracked by `wasmHeapStorage`. Without this, views
@@ -119,6 +167,12 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
   m._malloc = ((size: number): number => {
     const ptr = Number((origMalloc as unknown as (s: bigint) => bigint).call(m, BigInt(size)));
     syncIfGrew(m);
+    // With ALLOW_MEMORY_GROWTH Emscripten's malloc returns 0 on failure
+    // instead of aborting. Callers then wrote their input at address 0,
+    // silently corrupting static data and the stack. Fail loudly instead.
+    if (ptr === 0 && size > 0) {
+      throw new WasmOutOfMemoryError(size);
+    }
     return ptr;
   }) as typeof m._malloc;
 
@@ -126,10 +180,8 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
 
   m._pixelops_flood_fill = wrapPtrFn(m._pixelops_flood_fill, [0], false);
   m._pixelops_flood_fill_f32 = wrapPtrFn(m._pixelops_flood_fill_f32, [0], false);
-  m._pixelops_convolve = wrapPtrFn(m._pixelops_convolve, [0, 1, 4], false);
   m._pixelops_resize_bilinear = wrapPtrFn(m._pixelops_resize_bilinear, [0, 3], false);
   m._pixelops_resize_nearest = wrapPtrFn(m._pixelops_resize_nearest, [0, 3], false);
-  m._pixelops_dither_bayer = wrapPtrFn(m._pixelops_dither_bayer, [0], false);
   m._pixelops_quantize = wrapPtrFn(m._pixelops_quantize, [0, 2], false);
   m._pixelops_curves_histogram = wrapPtrFn(m._pixelops_curves_histogram, [0, 3], true);
   m._pixelops_affine_transform = wrapPtrFn(m._pixelops_affine_transform, [0, 3, 6], false);
@@ -145,7 +197,6 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
   m._pixelops_grabcut_update_gmms = wrapPtrFn(m._pixelops_grabcut_update_gmms, [0, 3, 5], false);
   m._pixelops_grabcut_mincut = wrapPtrFn(m._pixelops_grabcut_mincut, [0, 1, 2, 3, 4, 7], false);
   m._matchPaletteIndices = wrapPtrFn(m._matchPaletteIndices, [0, 2, 4], false);
-  m._floodFillIndexed = wrapPtrFn(m._floodFillIndexed, [0], false);
 
   m._loadExr = wrapPtrFn(m._loadExr, [0], true);
   m._freeExrResult = wrapPtrFn(m._freeExrResult, [0], false);
@@ -294,26 +345,6 @@ export async function floodFillF32(
   }
 }
 
-/** Generic 2-D convolution. kernelSize must be odd. src and dst are separate. */
-export async function convolve(
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-  kernel: Float32Array,
-): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  const kPtr = m._malloc(kernel.byteLength);
-  try {
-    m.HEAPF32.set(kernel, kPtr / 4); // float32 view offset
-    const kernelSize = Math.round(Math.sqrt(kernel.length));
-    return withSrcDstBuffers(m, pixels, pixels.byteLength, (src, dst) =>
-      m._pixelops_convolve(src, dst, width, height, kPtr, kernelSize),
-    );
-  } finally {
-    m._free(kPtr);
-  }
-}
-
 /** Bilinear resize — produces smooth edges (use for photographs). */
 export async function resizeBilinear(
   pixels: Uint8Array,
@@ -356,19 +387,6 @@ export async function resizeNearest(
   );
 }
 
-/** Ordered (Bayer) dithering. matrixSize: 2, 4, or 8. */
-export async function ditherBayer(
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-  matrixSize: 2 | 4 | 8 = 4,
-): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  return withInPlaceBuffer(m, pixels, (ptr) =>
-    m._pixelops_dither_bayer(ptr, width, height, matrixSize),
-  );
-}
-
 /** Median-cut palette quantisation.
  *  Returns an RGBA Uint8Array of `maxColors * 4` bytes
  *  and the actual count of palette entries. */
@@ -376,6 +394,7 @@ export async function quantize(
   pixels: Uint8Array,
   maxColors: number,
 ): Promise<{ palette: Uint8Array; count: number }> {
+  assertBytes("quantize", pixels);
   const m = await getPixelOps();
   const pixelCount = pixels.length / 4;
   const palBuf = new Uint8Array(maxColors * 4);
@@ -609,6 +628,50 @@ export async function inpaintRegion(
   mask: Uint8Array,
   sourceMask?: Uint8Array,
 ): Promise<Uint8Array> {
+  assertBytes("inpaintRegion", pixels);
+
+  // Run on a crop around the fill instead of the whole canvas. Level 0 of
+  // the PatchMatch pyramid copies every pixel plus ~20 bytes/pixel of
+  // bookkeeping, so filling a small area of an 8K document used to grow the
+  // WASM heap by >1.3 GB (and the heap never shrinks).
+  //  - With a source mask, patches can only come from it, so cropping to
+  //    fill ∪ source gives exactly the same result.
+  //  - Without one, keep a generous margin of surrounding context.
+  const fill = maskBounds(mask, width, height);
+  if (!fill) return pixels.slice();
+  let crop: MaskBounds;
+  if (sourceMask !== undefined) {
+    const src = maskBounds(sourceMask, width, height);
+    crop = src ? unionBounds(fill, src) : fill;
+  } else {
+    const margin = Math.max(256, 2 * Math.max(fill.x1 - fill.x0, fill.y1 - fill.y0));
+    crop = {
+      x0: Math.max(0, fill.x0 - margin),
+      y0: Math.max(0, fill.y0 - margin),
+      x1: Math.min(width, fill.x1 + margin),
+      y1: Math.min(height, fill.y1 + margin),
+    };
+  }
+  if (crop.x0 > 0 || crop.y0 > 0 || crop.x1 < width || crop.y1 < height) {
+    const cw = crop.x1 - crop.x0;
+    const ch = crop.y1 - crop.y0;
+    const cropped = await inpaintRegion(
+      cropRegion(pixels, width, crop, 4),
+      cw,
+      ch,
+      cropRegion(mask, width, crop, 1),
+      sourceMask !== undefined ? cropRegion(sourceMask, width, crop, 1) : undefined,
+    );
+    const out = pixels.slice();
+    for (let y = 0; y < ch; y++) {
+      out.set(
+        cropped.subarray(y * cw * 4, (y + 1) * cw * 4),
+        ((crop.y0 + y) * width + crop.x0) * 4,
+      );
+    }
+    return out;
+  }
+
   const m = await getPixelOps();
   const PATCH_SIZE = 4; // → 9×9 patches
   const byteLen = pixels.byteLength; // width * height * 4
@@ -641,6 +704,58 @@ export async function inpaintRegion(
     if (sourceMaskPtr !== 0) m._free(sourceMaskPtr);
     m._free(outPtr);
   }
+}
+
+interface MaskBounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Bounding box (exclusive right/bottom) of the non-zero pixels of a
+ *  1-byte-per-pixel mask, or null when it is empty. */
+function maskBounds(mask: Uint8Array, w: number, h: number): MaskBounds | null {
+  let x0 = w;
+  let y0 = h;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      if (mask[row + x] === 0) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
+}
+
+function unionBounds(a: MaskBounds, b: MaskBounds): MaskBounds {
+  return {
+    x0: Math.min(a.x0, b.x0),
+    y0: Math.min(a.y0, b.y0),
+    x1: Math.max(a.x1, b.x1),
+    y1: Math.max(a.y1, b.y1),
+  };
+}
+
+/** Copy a rectangle out of a row-major buffer with `bpp` bytes per pixel. */
+function cropRegion(
+  src: Uint8Array,
+  srcW: number,
+  r: MaskBounds,
+  bpp: number,
+): Uint8Array {
+  const cw = r.x1 - r.x0;
+  const out = new Uint8Array(cw * (r.y1 - r.y0) * bpp);
+  for (let y = r.y0; y < r.y1; y++) {
+    const from = (y * srcW + r.x0) * bpp;
+    out.set(src.subarray(from, from + cw * bpp), (y - r.y0) * cw * bpp);
+  }
+  return out;
 }
 
 /**
@@ -831,6 +946,7 @@ export async function matchPaletteIndices(
   palette: Array<{ r: number; g: number; b: number; a: number }>,
   transparentIdx = 255,
 ): Promise<Uint8Array> {
+  assertBytes("matchPaletteIndices", rgba);
   const palFlat = new Uint8Array(palette.length * 4);
   palette.forEach((c, i) => {
     palFlat[i * 4] = c.r;
@@ -865,33 +981,31 @@ export async function matchPaletteIndices(
   }
 }
 
+// ─── EXR I/O ─────────────────────────────────────────────────────────────────
+
 /**
- * BFS 4-connected flood fill on a 1-byte-per-pixel indexed layer buffer.
- * Replaces all pixels connected to (startX, startY) that share the same
- * starting index with fillIndex.  Operates in-place; the modified indices
- * are written back to the provided buffer.
+ * Read a pointer field from a C++ result struct. The module is built with
+ * MEMORY64, so pointers are 8 bytes; the C++ side stores them as uint64_t.
+ * Heap is capped at 16 GB, well inside Number's safe-integer range.
  */
-export async function floodFillIndexed(
-  indices: Uint8Array,
-  w: number,
-  h: number,
-  startX: number,
-  startY: number,
-  fillIndex: number,
-): Promise<void> {
-  const m = await getPixelOps();
-  const ptr = m._malloc(indices.byteLength);
-  try {
-    m.HEAPU8.set(indices, ptr);
-    m._floodFillIndexed(ptr, w, h, startX, startY, fillIndex);
-    // Re-read HEAPU8 in case WASM memory grew during the call
-    indices.set(m.HEAPU8.subarray(ptr, ptr + indices.byteLength));
-  } finally {
-    m._free(ptr);
-  }
+function readPtr(view: DataView, offset: number): number {
+  return Number(view.getBigUint64(offset, true));
 }
 
-// ─── EXR I/O ─────────────────────────────────────────────────────────────────
+/**
+ * Guard for wrappers that take 8-bit RGBA. rgba32f composites come back as
+ * Float32Array, and `HEAPU8.set(Float32Array)` silently truncates every
+ * value to 0 or 1 instead of failing — convert with `clampF32ToUint8` first.
+ */
+function assertBytes(fn: string, data: unknown): void {
+  if (!(data instanceof Uint8Array) && !(data instanceof Uint8ClampedArray)) {
+    throw new TypeError(
+      `${fn}: expected 8-bit RGBA (Uint8Array), got ${
+        (data as object)?.constructor?.name ?? typeof data
+      }`,
+    );
+  }
+}
 
 /** Decode an OpenEXR file. */
 export async function decodeExr(
@@ -904,9 +1018,10 @@ export async function decodeExr(
     const resultPtr = m._loadExr(srcPtr, bytes.byteLength);
     if (resultPtr === 0) throw new Error("EXR decode failed");
     const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+    // ExrResult { int32 width; int32 height; uint64 pixels; }
     const width = view.getInt32(resultPtr, true);
     const height = view.getInt32(resultPtr + 4, true);
-    const pxPtr = view.getInt32(resultPtr + 8, true);
+    const pxPtr = readPtr(view, resultPtr + 8);
     const count = width * height * 4;
     const pixels = new Float32Array(count);
     const heap = new Float32Array(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
@@ -937,8 +1052,9 @@ export async function encodeExr(
     const resultPtr = m._saveExr(srcPtr, width, height, compression, halfFloat);
     if (resultPtr === 0) throw new Error("EXR encode failed");
     const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
-    const bytesPtr = view.getInt32(resultPtr, true);
-    const outLen = view.getInt32(resultPtr + 4, true);
+    // ExrBytes { uint64 data; int32 size; int32 _pad; }
+    const bytesPtr = readPtr(view, resultPtr);
+    const outLen = view.getInt32(resultPtr + 8, true);
     const out = new Uint8Array(outLen);
     out.set(m.HEAPU8.subarray(bytesPtr, bytesPtr + outLen));
     m._freeExrBytes(resultPtr);
@@ -983,21 +1099,22 @@ export async function decodeExrLayers(
     if (resultPtr === 0) throw new Error("EXR multi-layer decode failed");
 
     const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
+    // ExrMultiResult { int32 w; int32 h; int32 numLayers; int32 _pad; uint64 layersPtr; }
     const canvasWidth = view.getInt32(resultPtr, true);
     const canvasHeight = view.getInt32(resultPtr + 4, true);
     const numLayers = view.getInt32(resultPtr + 8, true);
-    const layersPtr = view.getInt32(resultPtr + 12, true);
+    const layersPtr = readPtr(view, resultPtr + 16);
 
     const layers: ExrDecodedLayer[] = [];
-    const STRIDE = 24; // ExrLayerOut size
+    const STRIDE = 32; // sizeof(ExrLayerOut)
     for (let i = 0; i < numLayers; i++) {
       const base = layersPtr + i * STRIDE;
       const w = view.getInt32(base, true);
       const h = view.getInt32(base + 4, true);
       const offX = view.getInt32(base + 8, true);
       const offY = view.getInt32(base + 12, true);
-      const namePtr = view.getInt32(base + 16, true);
-      const pxPtr = view.getInt32(base + 20, true);
+      const namePtr = readPtr(view, base + 16);
+      const pxPtr = readPtr(view, base + 24);
       const name = readCString(m.HEAPU8, namePtr);
       const count = w * h * 4;
       const pixels = new Float32Array(count);
@@ -1080,8 +1197,9 @@ export async function encodeExrLayers(
     );
     if (resultPtr === 0) throw new Error("EXR multi-layer encode failed");
     const view = new DataView(m.HEAPU8.buffer, m.HEAPU8.byteOffset);
-    const bytesPtr = view.getInt32(resultPtr, true);
-    const outLen = view.getInt32(resultPtr + 4, true);
+    // ExrBytes { uint64 data; int32 size; int32 _pad; }
+    const bytesPtr = readPtr(view, resultPtr);
+    const outLen = view.getInt32(resultPtr + 8, true);
     const out = new Uint8Array(outLen);
     out.set(m.HEAPU8.subarray(bytesPtr, bytesPtr + outLen));
     return out;

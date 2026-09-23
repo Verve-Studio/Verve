@@ -27,7 +27,8 @@ struct MaskFlags {
 @group(0) @binding(1) var smp       : sampler;
 @group(0) @binding(2) var selMask   : texture_2d<f32>;
 @group(0) @binding(3) var<uniform> maskFlags  : MaskFlags;
-@group(0) @binding(4) var lutSampler : sampler;
+// binding 4 (a filtering sampler) is no longer used: the r32float LUTs are
+// read with textureLoad and interpolated by hand.
 @group(0) @binding(5) var rgbLut    : texture_2d<f32>;
 @group(0) @binding(6) var redLut    : texture_2d<f32>;
 @group(0) @binding(7) var greenLut  : texture_2d<f32>;
@@ -49,8 +50,22 @@ fn srgbDecodeF(c: f32) -> f32 {
 fn srgbEncode(rgb: vec3f) -> vec3f { return vec3f(srgbEncodeF(rgb.r), srgbEncodeF(rgb.g), srgbEncodeF(rgb.b)); }
 fn srgbDecode(rgb: vec3f) -> vec3f { return vec3f(srgbDecodeF(rgb.r), srgbDecodeF(rgb.g), srgbDecodeF(rgb.b)); }
 
+// Entry i is the output for input i/255: interpolate between texel centres
+// (input i/255 hits entry i exactly, so the identity curve is exact).
+// Inputs above 1 (HDR) continue along the curve's end slope instead of
+// clipping.
 fn sampleLut(lut: texture_2d<f32>, channelValue: f32) -> f32 {
-  return textureSampleLevel(lut, lutSampler, vec2f(clamp(channelValue, 0.0, 1.0), 0.5), 0.0).r;
+  let last = textureLoad(lut, vec2i(255, 0), 0).r;
+  if (channelValue > 1.0) {
+    let slope = (last - textureLoad(lut, vec2i(254, 0), 0).r) * 255.0;
+    return last + (channelValue - 1.0) * slope;
+  }
+  let x  = clamp(channelValue, 0.0, 1.0) * 255.0;
+  let i0 = min(u32(x), 254u);
+  let t  = x - f32(i0);
+  let a  = textureLoad(lut, vec2i(i32(i0), 0), 0).r;
+  let b  = textureLoad(lut, vec2i(i32(i0) + 1, 0), 0).r;
+  return mix(a, b, t);
 }
 
 @fragment

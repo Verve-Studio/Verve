@@ -1,8 +1,8 @@
+import type { AppShellState } from "@/core/store/AppContext";
 import { useCallback } from "react";
 import type { Dispatch } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type {
-  AppState,
   LayerColorSpace,
   PixelFormat,
   RGBAColor,
@@ -32,7 +32,7 @@ const INDEXED8_DISABLED_TOOLS = new Set<Tool>([
 
 interface UseColorModeOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
-  state: AppState;
+  state: AppShellState;
   dispatch: Dispatch<AppAction>;
   captureHistory: (label: string) => void;
   onFormatChangeRequiresRemount: (toFormat: PixelFormat) => void;

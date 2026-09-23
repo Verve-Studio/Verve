@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { floodFill, floodFillF32 } from "@/wasm";
+import { activeScope } from "@/core/store/scope";
+import { notificationStore } from "@/core/store/notificationStore";
+import { extractErrorMessage } from "@/utils/userFeedback";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,
@@ -13,6 +16,10 @@ import { SvgIcon } from "../_shared/SvgIcon";
 import paintBucketIconSvg from "./paint-bucket.svg?raw";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
+
+/** Bumped on every async fill so a slower, earlier fill can't overwrite a
+ *  later one when two clicks race. */
+let fillGeneration = 0;
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -253,7 +260,26 @@ function createFillHandler(): ToolHandler {
       }
 
       if (fillOptions.contiguous) {
-        // Async WASM flood fill (contiguous)
+        // Async WASM flood fill (contiguous). The result is applied after an
+        // await, so anything could have happened to the layer meanwhile (a
+        // second click, undo, another tool, a tab switch). Only apply it if
+        // the layer is exactly as it was when the fill was computed.
+        const gen = ++fillGeneration;
+        const startVersion = layer.contentVersion;
+        const startW = layer.layerWidth;
+        const startH = layer.layerHeight;
+        const startScope = ctx.scope;
+        const stillValid = (result: ArrayLike<number>): boolean =>
+          gen === fillGeneration &&
+          activeScope() === startScope &&
+          layer.contentVersion === startVersion &&
+          layer.layerWidth === startW &&
+          layer.layerHeight === startH &&
+          result.length === layer.data.length;
+        const reportFailure = (err: unknown): void => {
+          console.error("[Fill] WASM flood fill failed:", err);
+          notificationStore.error(`Fill failed: ${extractErrorMessage(err)}`);
+        };
         if (layer.format === "rgba32f") {
           // Float32 path: tolerance normalised to [0,1] space (slider is 0-255)
           const tolF32 = fillOptions.tolerance / 255;
@@ -270,15 +296,14 @@ function createFillHandler(): ToolHandler {
             tolF32,
           )
             .then((result) => {
+              if (!stillValid(result)) return;
               (layer.data as Float32Array).set(result);
               applySelectionMask();
               renderer.flushLayer(layer);
               render(layers);
               commitStroke("Fill");
             })
-            .catch((err) => {
-              console.error("[Fill] WASM f32 flood fill failed:", err);
-            });
+            .catch(reportFailure);
         } else {
           floodFill(
             layer.data.slice() as Uint8Array,
@@ -293,15 +318,14 @@ function createFillHandler(): ToolHandler {
             fillOptions.tolerance,
           )
             .then((result) => {
+              if (!stillValid(result)) return;
               layer.data.set(result);
               applySelectionMask();
               renderer.flushLayer(layer);
               render(layers);
               commitStroke("Fill");
             })
-            .catch((err) => {
-              console.error("[Fill] WASM flood fill failed:", err);
-            });
+            .catch(reportFailure);
         }
       } else {
         // Non-contiguous: fill all matching pixels synchronously

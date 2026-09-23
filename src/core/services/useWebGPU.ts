@@ -4,6 +4,7 @@ import {
   type GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { notificationStore } from "@/core/store/notificationStore";
 
 interface UseWebGPUOptions {
   pixelWidth: number;
@@ -56,8 +57,14 @@ export function useWebGPU({
           "[useWebGPU] Failed to initialize WebGPU renderer:",
           error,
         );
-        if (error instanceof WebGPUUnavailableError) {
-          onErrorRef.current?.(error);
+        if (error instanceof WebGPUUnavailableError && onErrorRef.current) {
+          onErrorRef.current(error);
+        } else {
+          // Without this the user gets a blank canvas and nothing but a
+          // console line (no caller currently passes onWebGPUError).
+          notificationStore.error(
+            `The canvas could not be initialized: ${error.message}`,
+          );
         }
       });
 

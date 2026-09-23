@@ -23,7 +23,7 @@ interface TopBarProps {
   tiledMode?: boolean;
 }
 
-export function TopBar({
+function TopBarImpl({
   deps,
   isMac,
   onDebug,
@@ -78,9 +78,13 @@ export function TopBar({
     return dockStore.subscribe(sync);
   }, []);
 
+  // On macOS the native menu replaces this bar (see useMacNativeMenu), so
+  // don't build a tree that would never be shown.
   const menus = useMemo(
     () =>
-      filterForTarget(
+      isMac
+        ? []
+        : filterForTarget(
         buildMenuTree({
           ...deps,
           luts,
@@ -95,6 +99,7 @@ export function TopBar({
         "app",
       ),
     [
+      isMac,
       deps,
       luts,
       activeViewLut,
@@ -166,3 +171,7 @@ export function TopBar({
     </div>
   );
 }
+
+// Memoized: `deps` (menuDeps) only changes when a displayed menu value does,
+// so the menu tree isn't rebuilt on unrelated app re-renders.
+export const TopBar = React.memo(TopBarImpl);

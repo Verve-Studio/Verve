@@ -25,6 +25,19 @@ interface Entry {
 }
 
 /**
+ * Content versions are drawn from one process-wide counter instead of a
+ * per-layer counter starting at 0. Every Canvas remount (resize, crop,
+ * rotate, tab switch) builds a new store and re-creates its layers; with
+ * per-store counters a re-created layer could get the same version it had
+ * before the remount with different pixels, and history de-dup (which
+ * shares buffers when versions match) would then record the old pixels.
+ */
+let versionCounter = 0;
+function nextVersion(): number {
+  return ++versionCounter;
+}
+
+/**
  * Owns the GPU texture, dirty rectangle, and content-version counter for every
  * {@link GpuLayer} in the document. The store is the single source of truth
  * for these — `GpuLayer.texture/dirtyRect/contentVersion` are deprecated mirrors
@@ -54,16 +67,17 @@ export class LayerTextureStore {
       null,
       strategy.gpuTextureFormat,
     );
+    const version = nextVersion();
     this.entries.set(layer.id, {
       texture,
       dirty: null,
-      version: 0,
+      version,
       width: layer.layerWidth,
       height: layer.layerHeight,
       format: layer.format,
     });
     layer.texture = texture;
-    layer.contentVersion = 0;
+    layer.contentVersion = version;
     return texture;
   }
 
@@ -91,6 +105,15 @@ export class LayerTextureStore {
     if (!layer) return null;
     const e = this.entries.get(layer.id);
     return e ? e.texture : null;
+  }
+
+  /** Assign the layer a fresh content version (e.g. after its texture was
+   *  replaced) and return it. */
+  bumpVersion(layerId: string): number {
+    const version = nextVersion();
+    const e = this.entries.get(layerId);
+    if (e) e.version = version;
+    return version;
   }
 
   /** Latest content version for the layer (0 if unregistered). */
@@ -152,16 +175,16 @@ export class LayerTextureStore {
         `LayerTextureStore: cannot flush unregistered layer ${layer.id}`,
       );
     }
-    e.version++;
+    e.version = nextVersion();
     layer.contentVersion = e.version;
     const strategy = getStrategy(layer.format);
 
-    // indexed8 always re-uploads the whole layer (palette dependency); rgba8
-    // and rgba32f patch-upload when a dirty rect is present.
-    if (e.dirty && layer.format !== "indexed8") {
+    // Patch-upload when a dirty rect is present. indexed8 can only patch
+    // while its palette is unchanged (see Indexed8Strategy.canPatch).
+    if (e.dirty && (strategy.canPatch?.(layer, palette) ?? true)) {
       const rect = e.dirty;
       e.dirty = null;
-      strategy.uploadPatch(this.device, e.texture, layer, rect);
+      strategy.uploadPatch(this.device, e.texture, layer, rect, palette);
       return {
         canvasX: layer.offsetX + rect.lx,
         canvasY: layer.offsetY + rect.ly,
@@ -191,15 +214,16 @@ export class LayerTextureStore {
     if (e) {
       destroyTrackedTexture(e.texture);
       e.texture = newTexture;
-      e.dirty = null;
+      // The new texture is empty: the next flush must upload everything.
+      e.dirty = { lx: 0, ly: 0, rx: newWidth, ry: newHeight };
       e.width = newWidth;
       e.height = newHeight;
       e.format = newFormat;
     } else {
       this.entries.set(layer.id, {
         texture: newTexture,
-        dirty: null,
-        version: 0,
+        dirty: { lx: 0, ly: 0, rx: newWidth, ry: newHeight },
+        version: nextVersion(),
         width: newWidth,
         height: newHeight,
         format: newFormat,

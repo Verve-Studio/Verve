@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { FrescoEffectLayer } from "./FrescoEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -13,7 +13,7 @@ export function FrescoPanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
 
   const update = (patch: Partial<FrescoEffectLayer["params"]>): void => {
@@ -41,7 +41,9 @@ export function FrescoPanel({
           step={1}
           value={Math.max(min, Math.min(max, value))}
           style={
-            { "--pct": String((value - min) / (max - min)) } as React.CSSProperties
+            {
+              "--pct": String((value - min) / (max - min)),
+            } as React.CSSProperties
           }
           onChange={(e) => onChange(Number(e.target.value))}
         />
@@ -64,7 +66,9 @@ export function FrescoPanel({
 
   return (
     <div className={styles.content}>
-      {slider("Brush Size", p.brushSize, 0, 10, (v) => update({ brushSize: v }))}
+      {slider("Brush Size", p.brushSize, 0, 10, (v) =>
+        update({ brushSize: v }),
+      )}
       {slider("Brush Detail", p.brushDetail, 0, 10, (v) =>
         update({ brushDetail: v }),
       )}

@@ -31,12 +31,15 @@ export interface UseTabsReturn {
   switchToTab: (toId: string, tabs_: TabRecord[]) => void;
   handleSwitchTab: (toId: string) => void;
   handleCloseTab: (tabId: string) => void;
+  closeTabs: (tabIds: readonly string[]) => void;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useTabs(
-  state: AppState,
+  /** Live app state (read at call time, so callbacks stay stable and never
+   *  capture a stale snapshot — e.g. the current zoom). */
+  getState: () => AppState,
   dispatch: Dispatch<AppAction>,
 ): UseTabsReturn {
   // Per-tab canvas handle map — avoids ref-null races on tab close/switch
@@ -102,8 +105,9 @@ export function useTabs(
     [],
   );
 
-  const captureActiveSnapshot = useCallback(
-    (): TabSnapshot => ({
+  const captureActiveSnapshot = useCallback((): TabSnapshot => {
+    const state = getState();
+    return {
       canvasWidth: state.canvas.width,
       canvasHeight: state.canvas.height,
       backgroundFill: state.canvas.backgroundFill,
@@ -119,9 +123,8 @@ export function useTabs(
       spritesheet: state.spritesheet,
       paletteAnimation: state.paletteAnimation,
       iccProfile: state.iccProfile,
-    }),
-    [state],
-  );
+    };
+  }, [getState]);
 
   /** Encode every active layer's pixel data into Map<layerId, dataURL> (+ geometry entries).
    *  Must be called while the active tab's Canvas is still mounted. Returns null if no data. */
@@ -155,16 +158,10 @@ export function useTabs(
         );
         result.set(id, `data:raw/f32-ref;id=${storeKey}`);
       } else if (pixels.length === lw * lh) {
-        // indexed8 layer — 1 byte/pixel palette indices, base64-encode
-        const u8 = pixels as Uint8Array;
-        const CHUNK = 65535;
-        let b64 = "";
-        for (let i = 0; i < u8.length; i += CHUNK) {
-          b64 += btoa(
-            String.fromCharCode(...Array.from(u8.subarray(i, i + CHUNK))),
-          );
-        }
-        result.set(id, `data:raw/indexed8;base64,${b64}`);
+        // indexed8 layer — 1 byte/pixel palette indices
+        const storeKey = `${tabId}:${id}`;
+        u8TransferStore.set(storeKey, (pixels as Uint8Array).slice());
+        result.set(id, `data:raw/indexed8-ref;id=${storeKey}`);
       } else {
         // rgba8 layer — use compound key to avoid cross-tab collisions
         const storeKey = `${tabId}:${id}`;
@@ -269,6 +266,7 @@ export function useTabs(
   const handleSwitchTab = useCallback(
     (toId: string): void => {
       if (toId === activeTabId) return;
+      const state = getState();
       const snapshot = captureActiveSnapshot();
       const savedLayerData = serializeActiveTabPixels();
       const updated = tabs.map((t) =>
@@ -292,23 +290,50 @@ export function useTabs(
     [
       activeTabId,
       tabs,
+      getState,
       captureActiveSnapshot,
       serializeActiveTabPixels,
       switchToTab,
     ],
   );
 
-  const handleCloseTab = useCallback(
-    (tabId: string): void => {
-      const idx = tabs.findIndex((t) => t.id === tabId);
-      const next = tabs.filter((t) => t.id !== tabId);
+  /**
+   * Close several tabs in one state update. Closing them one-by-one via
+   * `handleCloseTab` in a loop doesn't work: every call filters the same
+   * render-time `tabs` array, so only the last `setTabs` survives.
+   */
+  const closeTabs = useCallback(
+    (tabIds: readonly string[]): void => {
+      const current = tabsRef.current;
+      const closing = new Set(tabIds);
+      const closed = current.filter((t) => closing.has(t.id));
+      if (closed.length === 0) return;
+      const next = current.filter((t) => !closing.has(t.id));
       setTabs(next);
-      if (tabId === activeTabId && next.length > 0) {
-        const fallback = next[Math.min(idx, next.length - 1)];
+      const activeId = activeTabIdRef.current;
+      if (closing.has(activeId) && next.length > 0) {
+        // Fall back to the first surviving tab at or after the active tab's
+        // old position, else the last one.
+        const activeIdx = current.findIndex((t) => t.id === activeId);
+        const fallback =
+          current.slice(activeIdx).find((t) => !closing.has(t.id)) ??
+          next[next.length - 1];
         switchToTab(fallback.id, next);
       }
+      // Release what the closed tabs still hold: backgrounded pixel copies
+      // in the transfer stores and their undo history.
+      for (const tab of closed) {
+        f32TransferStore.dropPrefix(`${tab.id}:`);
+        u8TransferStore.dropPrefix(`${tab.id}:`);
+        tab.scope.history.dispose();
+      }
     },
-    [tabs, activeTabId, switchToTab],
+    [switchToTab],
+  );
+
+  const handleCloseTab = useCallback(
+    (tabId: string): void => closeTabs([tabId]),
+    [closeTabs],
   );
 
   return {
@@ -327,5 +352,6 @@ export function useTabs(
     switchToTab,
     handleSwitchTab,
     handleCloseTab,
+    closeTabs,
   };
 }

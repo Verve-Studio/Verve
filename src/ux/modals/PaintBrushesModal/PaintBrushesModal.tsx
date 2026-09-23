@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Brush } from "@/types";
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import {
   brushStore,
   serializeBrushFile,
@@ -59,7 +63,13 @@ function BrushRow({
       onClick={onSelect}
     >
       <div className={styles.rowSwatch} aria-hidden>
-        {brush.shape.kind === "bitmap" ? "◉" : brush.shape.kind === "square" ? "▣" : brush.shape.kind === "diamond" ? "◆" : "●"}
+        {brush.shape.kind === "bitmap"
+          ? "◉"
+          : brush.shape.kind === "square"
+            ? "▣"
+            : brush.shape.kind === "diamond"
+              ? "◆"
+              : "●"}
       </div>
       <div className={styles.rowMain}>
         {editing ? (
@@ -103,11 +113,7 @@ function BrushRow({
         >
           ✎
         </button>
-        <button
-          className={styles.iconBtn}
-          title="Delete"
-          onClick={onDelete}
-        >
+        <button className={styles.iconBtn} title="Delete" onClick={onDelete}>
           ✕
         </button>
       </div>
@@ -121,7 +127,11 @@ export function PaintBrushesModal({
   open,
   onClose,
 }: PaintBrushesModalProps): React.JSX.Element | null {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ activeBrushId: s.activeBrushId, brushes: s.brushes }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
   const [activeTab, setActiveTab] = useState<Tab>("user");
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -324,31 +334,35 @@ export function PaintBrushesModal({
           </div>
 
           <div className={styles.listWrap}>
-            {activeTab === "user"
-              ? userBrushes.length === 0
-                ? <div className={styles.empty}>No user-profile brushes yet</div>
-                : userBrushes.map((b) => (
-                    <BrushRow
-                      key={b.id}
-                      brush={b}
-                      selected={selectedUserId === b.id}
-                      onSelect={() => setSelectedUserId(b.id)}
-                      onRename={(name) => void handleRenameUser(b.id, name)}
-                      onDelete={() => void handleDeleteUser(b.id)}
-                    />
-                  ))
-              : docBrushes.length === 0
-                ? <div className={styles.empty}>No document brushes yet</div>
-                : docBrushes.map((b) => (
-                    <BrushRow
-                      key={b.id}
-                      brush={b}
-                      selected={selectedDocId === b.id}
-                      onSelect={() => setSelectedDocId(b.id)}
-                      onRename={(name) => handleRenameDoc(b.id, name)}
-                      onDelete={() => handleDeleteDoc(b.id)}
-                    />
-                  ))}
+            {activeTab === "user" ? (
+              userBrushes.length === 0 ? (
+                <div className={styles.empty}>No user-profile brushes yet</div>
+              ) : (
+                userBrushes.map((b) => (
+                  <BrushRow
+                    key={b.id}
+                    brush={b}
+                    selected={selectedUserId === b.id}
+                    onSelect={() => setSelectedUserId(b.id)}
+                    onRename={(name) => void handleRenameUser(b.id, name)}
+                    onDelete={() => void handleDeleteUser(b.id)}
+                  />
+                ))
+              )
+            ) : docBrushes.length === 0 ? (
+              <div className={styles.empty}>No document brushes yet</div>
+            ) : (
+              docBrushes.map((b) => (
+                <BrushRow
+                  key={b.id}
+                  brush={b}
+                  selected={selectedDocId === b.id}
+                  onSelect={() => setSelectedDocId(b.id)}
+                  onRename={(name) => handleRenameDoc(b.id, name)}
+                  onDelete={() => handleDeleteDoc(b.id)}
+                />
+              ))
+            )}
           </div>
 
           <div className={styles.transferRow}>
@@ -416,9 +430,6 @@ export function PaintBrushesModalMount(): React.JSX.Element {
     );
   }, []);
   return (
-    <PaintBrushesModal
-      open={open}
-      onClose={() => brushManagerStore.close()}
-    />
+    <PaintBrushesModal open={open} onClose={() => brushManagerStore.close()} />
   );
 }

@@ -1,4 +1,5 @@
 import type { EffectLayerOf, RGBAColor } from "@/types";
+import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GlowOptions } from "./GlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
@@ -74,11 +75,12 @@ export const GlowEffect: IPipelineEffect<GlowEffectLayer, GlowOp> = {
     const { color, opacity, spread, softness, blendMode, knockout } =
       entry.params;
     // Glow is drop-shadow with offsetX/offsetY = 0; shares texCache with DropShadow.
+    const col = colorForTarget(color, dstTex.format);
     encodeDropShadowPass(engine.runtime, encoder, srcTex, dstTex, {
-      colorR: color.r / 255,
-      colorG: color.g / 255,
-      colorB: color.b / 255,
-      colorA: color.a / 255,
+      colorR: col.r,
+      colorG: col.g,
+      colorB: col.b,
+      colorA: col.a,
       opacity: opacity / 100,
       offsetX: 0,
       offsetY: 0,

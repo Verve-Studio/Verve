@@ -4,8 +4,9 @@ import { BevelOptions } from "./BevelOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import {
   createTrackedTexture,
-  destroyTrackedTexture,
 } from "@/core/store/memoryStore";
+import { TextureSetCache } from "../_shared/textureSetCache";
+import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 
 
 export interface BevelParams {
@@ -23,42 +24,31 @@ export type BevelEffectLayer = EffectLayerOf<"bevel", BevelParams>;
 
 type BevelOp = Extract<EffectRenderOp, { kind: "bevel" }>;
 
-let texCache: {
-  tempA: GPUTexture;
-  tempB: GPUTexture;
-  format: GPUTextureFormat;
-} | null = null;
-let usedThisFrame = false;
+const texCache = new TextureSetCache<{ tempA: GPUTexture; tempB: GPUTexture }>();
 
 /** Scratch ping-pong for the bevel's erode+blur height-map. Allocated in
  *  the doc format so the height map keeps full precision on f32 documents
  *  (no banding in wide soft bevels). */
 function ensureTextures(
-  device: GPUDevice,
+  runtime: EffectRuntime,
   width: number,
   height: number,
   format: GPUTextureFormat,
 ): { tempA: GPUTexture; tempB: GPUTexture } {
-  usedThisFrame = true;
-  if (texCache && texCache.format === format) return texCache;
-  if (texCache) {
-    destroyTrackedTexture(texCache.tempA);
-    destroyTrackedTexture(texCache.tempB);
-    texCache = null;
-  }
   const usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.STORAGE_BINDING |
     GPUTextureUsage.COPY_DST |
     GPUTextureUsage.COPY_SRC;
   const make = (): GPUTexture =>
-    createTrackedTexture(device, {
+    createTrackedTexture(runtime.device, {
       size: { width, height },
       format,
       usage,
     });
-  texCache = { tempA: make(), tempB: make(), format };
-  return texCache;
+  return texCache.get(runtime, `${width}x${height}:${format}`, () => ({
+    tempA: make(), tempB: make(),
+  }));
 }
 
 export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
@@ -81,7 +71,7 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
     const { runtime } = engine;
     const { device, pixelWidth: w, pixelHeight: h } = runtime;
     // Scratch + every compute pipeline in this pass runs in the doc format.
-    const { tempA, tempB } = ensureTextures(device, w, h, dstTex.format);
+    const { tempA, tempB } = ensureTextures(runtime, w, h, dstTex.format);
     const erodeH = runtime.getComputePipelineForStorageFormat(
       "outline-erode-h",
       "cs_outline_erode_h",
@@ -189,20 +179,11 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
   },
 
   onFrameEnd() {
-    if (!usedThisFrame && texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      texCache = null;
-    }
-    usedThisFrame = false;
+    texCache.onFrameEnd();
   },
 
   onDestroy() {
-    if (texCache) {
-      destroyTrackedTexture(texCache.tempA);
-      destroyTrackedTexture(texCache.tempB);
-      texCache = null;
-    }
+    texCache.destroyAll();
   },
 
   Panel: BevelOptions,

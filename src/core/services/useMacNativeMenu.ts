@@ -86,6 +86,9 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
   }, []);
 
   const tree = useMemo(() => {
+    // Only macOS has a native application menu; elsewhere the in-app TopBar
+    // builds its own tree, so building it here too was pure waste.
+    if (!isMac) return [];
     const t = buildMenuTree({
       ...deps,
       luts,
@@ -99,6 +102,7 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
     });
     return filterForTarget(t, "mac");
   }, [
+    isMac,
     deps,
     luts,
     activeViewLut,

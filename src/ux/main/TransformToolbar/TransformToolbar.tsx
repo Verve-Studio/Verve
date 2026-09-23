@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 
-import { useAppContext } from "@/core/store/AppContext";
+import { shallowEqual2, useAppSelector } from "@/core/store/AppContext";
 import type { TransformHandleMode, TransformInterpolation } from "@/types";
 import styles from "./TransformToolbar.module.scss";
 import { activeScope } from "@/core/store/scope";
@@ -45,7 +45,10 @@ function LockIcon({ locked }: { locked: boolean }): React.JSX.Element {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function TransformToolbar(): React.JSX.Element {
-  const { state } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({ pixelFormat: s.pixelFormat }),
+    shallowEqual2,
+  );
   const isIndexed = state.pixelFormat === "indexed8";
   const [params, setParams] = useState(() => activeScope().transform.params);
   const [aspectLocked, setAspectLocked] = useState(false);
@@ -84,7 +87,10 @@ export function TransformToolbar(): React.JSX.Element {
     (raw: string): void => {
       const v = Math.max(1, parseFloat(raw) || 1);
       if (activeScope().transform.aspectLocked) {
-        activeScope().transform.updateParams({ w: v, h: Math.round(v / origAspect) });
+        activeScope().transform.updateParams({
+          w: v,
+          h: Math.round(v / origAspect),
+        });
       } else {
         activeScope().transform.updateParams({ w: v });
       }
@@ -96,7 +102,10 @@ export function TransformToolbar(): React.JSX.Element {
     (raw: string): void => {
       const v = Math.max(1, parseFloat(raw) || 1);
       if (activeScope().transform.aspectLocked) {
-        activeScope().transform.updateParams({ h: v, w: Math.round(v * origAspect) });
+        activeScope().transform.updateParams({
+          h: v,
+          w: Math.round(v * origAspect),
+        });
       } else {
         activeScope().transform.updateParams({ h: v });
       }
@@ -115,7 +124,8 @@ export function TransformToolbar(): React.JSX.Element {
   }, []);
 
   const toggleLock = useCallback((): void => {
-    activeScope().transform.aspectLocked = !activeScope().transform.aspectLocked;
+    activeScope().transform.aspectLocked =
+      !activeScope().transform.aspectLocked;
     activeScope().transform.notify();
   }, []);
 

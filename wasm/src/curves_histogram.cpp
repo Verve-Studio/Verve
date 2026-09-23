@@ -1,4 +1,5 @@
 #include "curves_histogram.h"
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 
@@ -9,12 +10,16 @@ float* computeCurvesHistogram(
     const uint32_t histogramSize = 4 * 256; // 4 channels × 256 bins
     float* histogram = static_cast<float*>(std::malloc(histogramSize * sizeof(float)));
     if (!histogram) return nullptr;
-    std::memset(histogram, 0, histogramSize * sizeof(float));
+    // Accumulate in double: a float accumulator stalls once a bin passes 2^24
+    // (adding 1.0 no longer changes the value), which undercounts large flat
+    // images. Converted to float only when writing the output below.
+    double acc[histogramSize];
+    std::memset(acc, 0, sizeof(acc));
 
-    const uint32_t pixelCount = width * height;
+    const size_t pixelCount = static_cast<size_t>(width) * height;
     
-    for (uint32_t i = 0; i < pixelCount; ++i) {
-        const uint32_t srcIdx = i * 4; // RGBA
+    for (size_t i = 0; i < pixelCount; ++i) {
+        const size_t srcIdx = i * 4; // RGBA
         const uint8_t r = inputPixelData[srcIdx];
         const uint8_t g = inputPixelData[srcIdx + 1];
         const uint8_t b = inputPixelData[srcIdx + 2];
@@ -37,12 +42,16 @@ float* computeCurvesHistogram(
         uint32_t blueBase = 768;
 
         // Increment histograms
-        histogram[rgbBase + r] += weight;
-        histogram[rgbBase + g] += weight;
-        histogram[rgbBase + b] += weight;
-        histogram[redBase + r] += weight;
-        histogram[greenBase + g] += weight;
-        histogram[blueBase + b] += weight;
+        acc[rgbBase + r] += weight;
+        acc[rgbBase + g] += weight;
+        acc[rgbBase + b] += weight;
+        acc[redBase + r] += weight;
+        acc[greenBase + g] += weight;
+        acc[blueBase + b] += weight;
+    }
+
+    for (uint32_t i = 0; i < histogramSize; ++i) {
+        histogram[i] = static_cast<float>(acc[i]);
     }
 
     return histogram;

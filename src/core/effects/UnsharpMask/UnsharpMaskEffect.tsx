@@ -46,7 +46,7 @@ export const UnsharpMaskEffect: IPipelineEffect<
     const gaussParamsBuf = rt.makeParamsBuf(
       new Uint32Array([radius, 0, 0, 0]),
     );
-    const blurredTex = rt.makeRgba8Tex(w, h);
+    const blurredTex = rt.makeScratchTex(w, h, dstTex);
     rt.encodeRenderPass(
       encoder,
       rt.selectPipeline(gaussH, rt.intermediate),
@@ -58,7 +58,7 @@ export const UnsharpMaskEffect: IPipelineEffect<
     );
     rt.encodeRenderPass(
       encoder,
-      gaussV.s8,
+      rt.selectPipeline(gaussV, dstTex),
       blurredTex,
       [
         { binding: 0, resource: rt.intermediate.createView() },

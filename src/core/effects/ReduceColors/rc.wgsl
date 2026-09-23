@@ -17,8 +17,11 @@ fn vs_adj(@builtin(vertex_index) vi: u32) -> AdjVertOut {
 
 
 struct MaskFlags {
-  hasMask : u32,
-  _pad    : vec3u,
+  hasMask       : u32,
+  // 1 when the source is scene-linear (rgba16f/32f docs): skip the sRGB
+  // decode on input and the encode on output.
+  inputIsLinear : u32,
+  _pad          : vec2u,
 }
 
 
@@ -80,7 +83,8 @@ fn fs_reduce_colors(in: AdjVertOut) -> @location(0) vec4<f32> {
     return src;
   }
 
-  let srcLinear = srgb_to_linear(src.rgb);
+  let isLin     = maskFlags.inputIsLinear != 0u;
+  let srcLinear = select(srgb_to_linear(src.rgb), src.rgb, isLin);
   let srcLab    = linear_srgb_to_oklab(srcLinear);
 
   var bestIdx  : u32 = 0u;
@@ -92,8 +96,8 @@ fn fs_reduce_colors(in: AdjVertOut) -> @location(0) vec4<f32> {
   }
 
   let bestLinear = oklab_to_linear_srgb(palette[bestIdx].xyz);
-  let bestSrgb   = linear_to_srgb(bestLinear);
-  let adjusted   = vec4f(bestSrgb, src.a);
+  let bestOut    = select(linear_to_srgb(bestLinear), bestLinear, isLin);
+  let adjusted   = vec4f(bestOut, src.a);
 
   var mask = 1.0f;
   if (maskFlags.hasMask != 0u) { mask = textureSampleLevel(selMask, smp, in.uv, 0.0).r; }

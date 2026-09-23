@@ -55,8 +55,8 @@ static float patchSSD(
         for (int dx = -hp; dx <= hp; dx++) {
             const int ax2 = ax + dx, bx2 = bx + dx;
             if (ax2 < 0 || ax2 >= width || bx2 < 0 || bx2 >= width) continue;
-            const uint8_t* pa = img + (ay2 * width + ax2) * 4;
-            const uint8_t* pb = img + (by2 * width + bx2) * 4;
+            const uint8_t* pa = img + (static_cast<size_t>(ay2) * width + ax2) * 4;
+            const uint8_t* pb = img + (static_cast<size_t>(by2) * width + bx2) * 4;
             const float dr = static_cast<float>(pa[0]) - static_cast<float>(pb[0]);
             const float dg = static_cast<float>(pa[1]) - static_cast<float>(pb[1]);
             const float db = static_cast<float>(pa[2]) - static_cast<float>(pb[2]);
@@ -83,7 +83,7 @@ static bool computeFillBBox(
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            if (!mask[y * width + x]) {
+            if (!mask[static_cast<size_t>(y) * width + x]) {
                 continue;
             }
             minX = std::min(minX, x);
@@ -113,7 +113,7 @@ static PyramidLevel downsampleLevel(const PyramidLevel& src) {
                 const int sy = clampI(y * 2 + oy, 0, src.height - 1);
                 for (int ox = 0; ox < 2; ++ox) {
                     const int sx = clampI(x * 2 + ox, 0, src.width - 1);
-                    const int sIdx = sy * src.width + sx;
+                    const size_t sIdx = static_cast<size_t>(sy) * src.width + sx;
                     const uint8_t* sp = src.pixels.data() + sIdx * 4;
                     sum[0] += sp[0];
                     sum[1] += sp[1];
@@ -124,7 +124,7 @@ static PyramidLevel downsampleLevel(const PyramidLevel& src) {
                 }
             }
 
-            const int dIdx = y * dst.width + x;
+            const size_t dIdx = static_cast<size_t>(y) * dst.width + x;
             uint8_t* dp = dst.pixels.data() + dIdx * 4;
             dp[0] = static_cast<uint8_t>(sum[0] / count);
             dp[1] = static_cast<uint8_t>(sum[1] / count);
@@ -143,10 +143,10 @@ static PyramidLevel downsampleLevel(const PyramidLevel& src) {
                     const int sy = clampI(y * 2 + oy, 0, src.height - 1);
                     for (int ox = 0; ox < 2 && !sm; ++ox) {
                         const int sx = clampI(x * 2 + ox, 0, src.width - 1);
-                        sm = static_cast<uint8_t>(sm | src.sourceMask[sy * src.width + sx]);
+                        sm = static_cast<uint8_t>(sm | src.sourceMask[static_cast<size_t>(sy) * src.width + sx]);
                     }
                 }
-                dst.sourceMask[y * dst.width + x] = sm;
+                dst.sourceMask[static_cast<size_t>(y) * dst.width + x] = sm;
             }
         }
     }
@@ -161,17 +161,17 @@ static void buildLevelBuffers(
     const uint8_t* sourceMask,
     LevelBuffers& buffers
 ) {
-    const int n = width * height;
-    buffers.isFill.assign(static_cast<size_t>(n), 0);
+    const size_t n = static_cast<size_t>(width) * height;
+    buffers.isFill.assign(n, 0);
     buffers.fillPixels.clear();
     buffers.sourcePixels.clear();
-    buffers.fillIndex.assign(static_cast<size_t>(n), -1);
-    buffers.dist.assign(static_cast<size_t>(n), std::numeric_limits<int>::max());
-    buffers.nearestSource.assign(static_cast<size_t>(n), -1);
+    buffers.fillIndex.assign(n, -1);
+    buffers.dist.assign(n, std::numeric_limits<int>::max());
+    buffers.nearestSource.assign(n, -1);
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            const int idx = y * width + x;
+            const size_t idx = static_cast<size_t>(y) * width + x;
             if (mask[idx]) {
                 buffers.isFill[idx] = 1;
                 buffers.fillPixels.emplace_back(x, y);
@@ -188,33 +188,33 @@ static void buildLevelBuffers(
     const int dx4[4] = {-1, 1, 0, 0};
     const int dy4[4] = {0, 0, -1, 1};
 
-    std::queue<int> q;
+    std::queue<size_t> q;
     for (const auto& p : buffers.fillPixels) {
         const int x = p.first;
         const int y = p.second;
-        const int idx = y * width + x;
+        const size_t idx = static_cast<size_t>(y) * width + x;
         for (int d = 0; d < 4; ++d) {
             const int nx = x + dx4[d];
             const int ny = y + dy4[d];
             if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
                 continue;
             }
-            const int ni = ny * width + nx;
+            const size_t ni = static_cast<size_t>(ny) * width + nx;
             if (mask[ni]) {
                 continue;
             }
             buffers.dist[idx] = 1;
-            buffers.nearestSource[idx] = ni;
+            buffers.nearestSource[idx] = static_cast<int>(ni);
             q.push(idx);
             break;
         }
     }
 
     while (!q.empty()) {
-        const int cur = q.front();
+        const size_t cur = q.front();
         q.pop();
-        const int cx = cur % width;
-        const int cy = cur / width;
+        const int cx = static_cast<int>(cur % static_cast<size_t>(width));
+        const int cy = static_cast<int>(cur / static_cast<size_t>(width));
 
         for (int d = 0; d < 4; ++d) {
             const int nx = cx + dx4[d];
@@ -222,7 +222,7 @@ static void buildLevelBuffers(
             if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
                 continue;
             }
-            const int ni = ny * width + nx;
+            const size_t ni = static_cast<size_t>(ny) * width + nx;
             if (!buffers.isFill[ni] || buffers.dist[ni] != std::numeric_limits<int>::max()) {
                 continue;
             }
@@ -236,8 +236,8 @@ static void buildLevelBuffers(
         buffers.fillPixels.begin(),
         buffers.fillPixels.end(),
         [&](const std::pair<int, int>& a, const std::pair<int, int>& b) {
-            const int da = buffers.dist[a.second * width + a.first];
-            const int db = buffers.dist[b.second * width + b.first];
+            const int da = buffers.dist[static_cast<size_t>(a.second) * width + a.first];
+            const int db = buffers.dist[static_cast<size_t>(b.second) * width + b.first];
             return da < db;
         }
     );
@@ -245,7 +245,7 @@ static void buildLevelBuffers(
     for (int i = 0; i < static_cast<int>(buffers.fillPixels.size()); ++i) {
         const int x = buffers.fillPixels[i].first;
         const int y = buffers.fillPixels[i].second;
-        buffers.fillIndex[y * width + x] = i;
+        buffers.fillIndex[static_cast<size_t>(y) * width + x] = i;
     }
 }
 
@@ -255,8 +255,8 @@ void inpaint(
     const uint8_t* sourceMask,
     uint8_t* out
 ) {
-    const int n = width * height;
-    std::memcpy(out, pixels, static_cast<size_t>(n) * 4);
+    const size_t n = static_cast<size_t>(width) * height;
+    std::memcpy(out, pixels, n * 4);
     if (width <= 0 || height <= 0 || patchSize < 0) {
         return;
     }
@@ -264,10 +264,10 @@ void inpaint(
     PyramidLevel level0;
     level0.width = width;
     level0.height = height;
-    level0.pixels.assign(pixels, pixels + static_cast<size_t>(n) * 4);
-    level0.mask.assign(mask, mask + static_cast<size_t>(n));
+    level0.pixels.assign(pixels, pixels + n * 4);
+    level0.mask.assign(mask, mask + n);
     if (sourceMask != nullptr) {
-        level0.sourceMask.assign(sourceMask, sourceMask + static_cast<size_t>(n));
+        level0.sourceMask.assign(sourceMask, sourceMask + n);
     }
 
     std::vector<PyramidLevel> levels;
@@ -303,7 +303,7 @@ void inpaint(
         PyramidLevel& level = levels[levelIdx];
         const int w = level.width;
         const int h = level.height;
-        const int levelN = w * h;
+        const size_t levelN = static_cast<size_t>(w) * h;
 
         LevelBuffers buffers;
         const uint8_t* levelSourceMask = level.sourceMask.empty() ? nullptr : level.sourceMask.data();
@@ -337,7 +337,7 @@ void inpaint(
                 const int fy = buffers.fillPixels[i].second;
                 const int px = clampI(fx / 2, 0, prevW - 1);
                 const int py = clampI(fy / 2, 0, prevH - 1);
-                const int pIdx = prevFillIndex[py * prevW + px];
+                const int pIdx = prevFillIndex[static_cast<size_t>(py) * prevW + px];
                 if (pIdx < 0 || pIdx >= static_cast<int>(prevNnf.size())) {
                     continue;
                 }
@@ -347,10 +347,10 @@ void inpaint(
                 if (candSx < 0 || candSx >= w || candSy < 0 || candSy >= h) {
                     continue;
                 }
-                if (level.mask[candSy * w + candSx]) {
+                if (level.mask[static_cast<size_t>(candSy) * w + candSx]) {
                     continue;
                 }
-                if (!level.sourceMask.empty() && !level.sourceMask[candSy * w + candSx]) {
+                if (!level.sourceMask.empty() && !level.sourceMask[static_cast<size_t>(candSy) * w + candSx]) {
                     continue;
                 }
 
@@ -366,13 +366,13 @@ void inpaint(
             }
             const int fx = buffers.fillPixels[i].first;
             const int fy = buffers.fillPixels[i].second;
-            const int idx = fy * w + fx;
+            const size_t idx = static_cast<size_t>(fy) * w + fx;
             const int nearest = buffers.nearestSource[idx];
             if (nearest < 0) {
                 continue;
             }
-            const int sx = nearest % w;
-            const int sy = nearest / w;
+            const int sx = static_cast<int>(static_cast<size_t>(nearest) % static_cast<size_t>(w));
+            const int sy = static_cast<int>(static_cast<size_t>(nearest) / static_cast<size_t>(w));
             nnf[i] = {sx - fx, sy - fy};
             hasNnf[i] = 1;
             seededAny = true;
@@ -394,11 +394,11 @@ void inpaint(
             const int fy = buffers.fillPixels[i].second;
             const int sx = clampI(fx + nnf[i].dx, 0, w - 1);
             const int sy = clampI(fy + nnf[i].dy, 0, h - 1);
-            if (level.mask[sy * w + sx]) {
+            if (level.mask[static_cast<size_t>(sy) * w + sx]) {
                 continue;
             }
-            const uint8_t* srcPx = level.pixels.data() + (sy * w + sx) * 4;
-            uint8_t* dstPx = working.data() + (fy * w + fx) * 4;
+            const uint8_t* srcPx = level.pixels.data() + (static_cast<size_t>(sy) * w + sx) * 4;
+            uint8_t* dstPx = working.data() + (static_cast<size_t>(fy) * w + fx) * 4;
             dstPx[0] = srcPx[0];
             dstPx[1] = srcPx[1];
             dstPx[2] = srcPx[2];
@@ -413,7 +413,7 @@ void inpaint(
             const int fy = buffers.fillPixels[i].second;
             const int sx = fx + nnf[i].dx;
             const int sy = fy + nnf[i].dy;
-            if (sx < 0 || sx >= w || sy < 0 || sy >= h || level.mask[sy * w + sx]) {
+            if (sx < 0 || sx >= w || sy < 0 || sy >= h || level.mask[static_cast<size_t>(sy) * w + sx]) {
                 nnfCost[i] = 1e30f;
                 continue;
             }
@@ -450,7 +450,7 @@ void inpaint(
                             continue;
                         }
 
-                        const int nIdx = ny * w + nx;
+                        const size_t nIdx = static_cast<size_t>(ny) * w + nx;
                         int candSx = -1;
                         int candSy = -1;
 
@@ -469,10 +469,10 @@ void inpaint(
                         if (candSx < 0 || candSx >= w || candSy < 0 || candSy >= h) {
                             continue;
                         }
-                        if (level.mask[candSy * w + candSx]) {
+                        if (level.mask[static_cast<size_t>(candSy) * w + candSx]) {
                             continue;
                         }
-                        if (!level.sourceMask.empty() && !level.sourceMask[candSy * w + candSx]) {
+                        if (!level.sourceMask.empty() && !level.sourceMask[static_cast<size_t>(candSy) * w + candSx]) {
                             continue;
                         }
 
@@ -492,7 +492,7 @@ void inpaint(
                         std::uniform_real_distribution<float> distR(-radius, radius);
                         const int candSx = clampI(static_cast<int>(baseSx + distR(rng)), 0, w - 1);
                         const int candSy = clampI(static_cast<int>(baseSy + distR(rng)), 0, h - 1);
-                        if (!level.mask[candSy * w + candSx] && (level.sourceMask.empty() || level.sourceMask[candSy * w + candSx])) {
+                        if (!level.mask[static_cast<size_t>(candSy) * w + candSx] && (level.sourceMask.empty() || level.sourceMask[static_cast<size_t>(candSy) * w + candSx])) {
                             const float candCost = patchSSD(working.data(), w, h, fx, fy, candSx, candSy, patchSize);
                             if (candCost < nnfCost[i]) {
                                 nnfCost[i] = candCost;
@@ -507,10 +507,10 @@ void inpaint(
                 }
             }
 
-            std::vector<float> accR(static_cast<size_t>(levelN), 0.0f);
-            std::vector<float> accG(static_cast<size_t>(levelN), 0.0f);
-            std::vector<float> accB(static_cast<size_t>(levelN), 0.0f);
-            std::vector<float> accW(static_cast<size_t>(levelN), 0.0f);
+            std::vector<float> accR(levelN, 0.0f);
+            std::vector<float> accG(levelN, 0.0f);
+            std::vector<float> accB(levelN, 0.0f);
+            std::vector<float> accW(levelN, 0.0f);
 
             for (int i = 0; i < fillCount; ++i) {
                 if (!hasNnf[i]) {
@@ -520,7 +520,7 @@ void inpaint(
                 const int fy = buffers.fillPixels[i].second;
                 const int sx0 = fx + nnf[i].dx;
                 const int sy0 = fy + nnf[i].dy;
-                if (sx0 < 0 || sx0 >= w || sy0 < 0 || sy0 >= h || level.mask[sy0 * w + sx0]) {
+                if (sx0 < 0 || sx0 >= w || sy0 < 0 || sy0 >= h || level.mask[static_cast<size_t>(sy0) * w + sx0]) {
                     continue;
                 }
 
@@ -543,18 +543,18 @@ void inpaint(
                             continue;
                         }
 
-                        const int fi = fy2 * w + fx2;
+                        const size_t fi = static_cast<size_t>(fy2) * w + fx2;
                         if (!buffers.isFill[fi]) {
                             continue;
                         }
-                        if (level.mask[sy2 * w + sx2]) {
+                        if (level.mask[static_cast<size_t>(sy2) * w + sx2]) {
                             continue;
                         }
-                        if (!level.sourceMask.empty() && !level.sourceMask[sy2 * w + sx2]) {
+                        if (!level.sourceMask.empty() && !level.sourceMask[static_cast<size_t>(sy2) * w + sx2]) {
                             continue;
                         }
 
-                        const uint8_t* sp = working.data() + (sy2 * w + sx2) * 4;
+                        const uint8_t* sp = working.data() + (static_cast<size_t>(sy2) * w + sx2) * 4;
                         accR[fi] += weight * static_cast<float>(sp[0]);
                         accG[fi] += weight * static_cast<float>(sp[1]);
                         accB[fi] += weight * static_cast<float>(sp[2]);
@@ -566,7 +566,7 @@ void inpaint(
             for (const auto& p : buffers.fillPixels) {
                 const int fx = p.first;
                 const int fy = p.second;
-                const int idx = fy * w + fx;
+                const size_t idx = static_cast<size_t>(fy) * w + fx;
                 if (accW[idx] <= 0.0f) {
                     continue;
                 }
@@ -587,7 +587,7 @@ void inpaint(
                 const int fy = buffers.fillPixels[i].second;
                 const int sx = fx + nnf[i].dx;
                 const int sy = fy + nnf[i].dy;
-                if (sx < 0 || sx >= w || sy < 0 || sy >= h || level.mask[sy * w + sx]) {
+                if (sx < 0 || sx >= w || sy < 0 || sy >= h || level.mask[static_cast<size_t>(sy) * w + sx]) {
                     nnfCost[i] = 1e30f;
                     continue;
                 }
@@ -607,12 +607,12 @@ void inpaint(
             for (int y = 0; y < finer.height; ++y) {
                 const int cy = clampI(y / 2, 0, h - 1);
                 for (int x = 0; x < finer.width; ++x) {
-                    const int fi = y * finer.width + x;
+                    const size_t fi = static_cast<size_t>(y) * finer.width + x;
                     if (!finer.mask[fi]) {
                         continue;
                     }
                     const int cx = clampI(x / 2, 0, w - 1);
-                    const uint8_t* sp = level.pixels.data() + (cy * w + cx) * 4;
+                    const uint8_t* sp = level.pixels.data() + (static_cast<size_t>(cy) * w + cx) * 4;
                     uint8_t* dp = finer.pixels.data() + fi * 4;
                     dp[0] = sp[0];
                     dp[1] = sp[1];
@@ -623,5 +623,5 @@ void inpaint(
         }
     }
 
-    std::memcpy(out, levels[0].pixels.data(), static_cast<size_t>(n) * 4);
+    std::memcpy(out, levels[0].pixels.data(), n * 4);
 }

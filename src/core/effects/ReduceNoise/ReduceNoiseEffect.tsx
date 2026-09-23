@@ -58,13 +58,13 @@ export const ReduceNoiseEffect: IPipelineEffect<
     );
 
     if (sharpenDetails > 0) {
-      const tempTex = rt.makeRgba8Tex(w, h);
+      const tempTex = rt.makeScratchTex(w, h, dstTex);
       const rndParamsBuf = rt.makeParamsBuf(
         new Uint32Array([strength, preserveDetails, reduceColorNoise, 0]),
       );
       rt.encodeRenderPass(
         encoder,
-        reducePair.s8,
+        rt.selectPipeline(reducePair, dstTex),
         tempTex,
         [
           { binding: 0, resource: srcTex.createView() },
@@ -72,7 +72,7 @@ export const ReduceNoiseEffect: IPipelineEffect<
         ],
       );
       const gaussParamsBuf = rt.makeParamsBuf(new Uint32Array([1, 0, 0, 0]));
-      const blurredTex = rt.makeRgba8Tex(w, h);
+      const blurredTex = rt.makeScratchTex(w, h, dstTex);
       rt.encodeRenderPass(
         encoder,
         rt.selectPipeline(gaussH, rt.intermediate),
@@ -84,7 +84,7 @@ export const ReduceNoiseEffect: IPipelineEffect<
       );
       rt.encodeRenderPass(
         encoder,
-        gaussV.s8,
+        rt.selectPipeline(gaussV, dstTex),
         blurredTex,
         [
           { binding: 0, resource: rt.intermediate.createView() },

@@ -122,8 +122,12 @@ function createCloneStampHandler(): ToolHandler {
           const lx = Math.round(x) - l.offsetX;
           const ly = Math.round(y) - l.offsetY;
           if (lx >= 0 && ly >= 0 && lx < l.layerWidth && ly < l.layerHeight) {
-            const idx = (ly * l.layerWidth + lx) * 4;
-            if (l.data[idx + 3] > 0) {
+            const px = ly * l.layerWidth + lx;
+            const opaque =
+              l.format === "indexed8"
+                ? l.data[px] !== 255
+                : l.data[px * 4 + 3] > 0;
+            if (opaque) {
               hitLayerId = l.id;
               break;
             }
@@ -197,6 +201,9 @@ function createCloneStampHandler(): ToolHandler {
     },
 
     onPointerUp({ x, y }: ToolPointerPos, ctx: ToolContext) {
+      // Alt-click (source pick) or a click with no source set: no stroke was
+      // started, so there is nothing to record.
+      if (!lastPos) return { skipHistory: true };
       if (isStrokeReady && lastPos && sourceBuffer) {
         paintSegment(lastPos.x, lastPos.y, x, y, ctx);
       }

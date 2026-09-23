@@ -450,21 +450,9 @@ export function useSpritesheetAnimationOps({
             height: gifH,
             fps: settings.gifFps,
           });
-          // exportImage expects base64; build it from the raw bytes, chunked
-          // to avoid `Maximum call stack size exceeded` from
-          // String.fromCharCode(...largeArray).
-          let bin = "";
-          const CHUNK = 8192;
-          for (let i = 0; i < bytes.length; i += CHUNK) {
-            bin += String.fromCharCode.apply(
-              null,
-              Array.from(bytes.subarray(i, i + CHUNK)),
-            );
-          }
-          const base64 = btoa(bin);
           const filename = `${settings.baseName}${ext}`;
           const filePath = `${settings.folder}${sep}${filename}`;
-          await window.api.exportImage(filePath, base64);
+          await window.api.exportImage(filePath, bytes);
         }
       } catch (err) {
         console.error("[handleExportAnimationFrames]", err);

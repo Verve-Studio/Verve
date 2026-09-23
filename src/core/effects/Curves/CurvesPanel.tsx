@@ -5,7 +5,11 @@ import {
   setAdjustmentClipboardData,
 } from "@/core/store/adjustmentClipboardStore";
 
-import { useAppContext } from "@/core/store/AppContext";
+import {
+  shallowEqual2,
+  useAppDispatch,
+  useAppSelector,
+} from "@/core/store/AppContext";
 import type { CurvesChannel, CurvesControlPoint } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { CurvesGraph } from "@/ux/widgets/CurvesGraph/CurvesGraph";
@@ -25,10 +29,7 @@ import {
   withDirtyPresetRef,
 } from "./curves";
 import styles from "./CurvesPanel.module.scss";
-import {
-  BUILTIN_CURVES_PRESETS,
-  clonePresetChannels,
-} from "./curvesPresets";
+import { BUILTIN_CURVES_PRESETS, clonePresetChannels } from "./curvesPresets";
 import { activeScope } from "@/core/store/scope";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,14 @@ export function CurvesPanel({
   parentLayerName,
   canvasHandleRef,
 }: CurvesPanelProps): React.JSX.Element {
-  const { state, dispatch } = useAppContext();
+  const state = useAppSelector(
+    (s) => ({
+      canvas: { height: s.canvas.height, width: s.canvas.width },
+      layers: s.layers,
+    }),
+    shallowEqual2,
+  );
+  const dispatch = useAppDispatch();
 
   const params = layer.params;
   const ch = params.ui.selectedChannel;

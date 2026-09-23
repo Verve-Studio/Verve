@@ -11,9 +11,13 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import sharpenIconSvg from "./sharpen.svg?raw";
 import {
+  brushSelection,
+  copyLayerRect,
+  flushStamps,
   forEachBrushPixel,
   forEachStamp,
   markBrushDirty,
+  scratchBuffer,
 } from "../_shared/localBrush";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
@@ -67,19 +71,8 @@ function sharpenStamp(
 
   // Snapshot footprint (so 3×3 reads aren't polluted by writes within this
   // stamp). Use this as the "original" for the unsharp-mask formula.
-  const original = isFloat
-    ? new Float32Array(bw * bh * 4)
-    : new Uint8Array(bw * bh * 4);
-  for (let y = 0; y < bh; y++) {
-    for (let x = 0; x < bw; x++) {
-      const li = ((minLy + y) * W + (minLx + x)) * 4;
-      const di = (y * bw + x) * 4;
-      original[di] = data[li];
-      original[di + 1] = data[li + 1];
-      original[di + 2] = data[li + 2];
-      original[di + 3] = data[li + 3];
-    }
-  }
+  const original = scratchBuffer(0, isFloat, bw * bh * 4);
+  copyLayerRect(data, W, minLx, minLy, bw, bh, original);
 
   const max = isFloat ? 1 : 255;
   const half = max / 2;
@@ -87,7 +80,7 @@ function sharpenStamp(
   forEachBrushPixel(
     W,
     H,
-    { cxL, cyL, radius, hardness01, strength01 },
+    { cxL, cyL, radius, hardness01, strength01, selection: brushSelection(ctx) },
     (lx, ly, w) => {
       const bx = lx - minLx;
       const by = ly - minLy;
@@ -96,27 +89,34 @@ function sharpenStamp(
       const x1 = Math.min(bw - 1, bx + 1);
       const y0 = Math.max(0, by - 1);
       const y1 = Math.min(bh - 1, by + 1);
+      // Alpha-weighted (premultiplied) average: transparent neighbours
+      // must not pull their (usually black) colour into the blur, or the
+      // unsharp mask brightens/darkens edges against transparency.
       let r = 0,
         g = 0,
         b = 0,
-        a = 0,
-        n = 0;
+        a = 0;
       for (let yy = y0; yy <= y1; yy++) {
         for (let xx = x0; xx <= x1; xx++) {
           const i = (yy * bw + xx) * 4;
-          r += original[i];
-          g += original[i + 1];
-          b += original[i + 2];
-          a += original[i + 3];
-          n++;
+          const al = original[i + 3];
+          r += original[i] * al;
+          g += original[i + 1] * al;
+          b += original[i + 2] * al;
+          a += al;
         }
       }
-      r /= n;
-      g /= n;
-      b /= n;
-      a /= n;
-
       const oi = (by * bw + bx) * 4;
+      if (a > 0) {
+        r /= a;
+        g /= a;
+        b /= a;
+      } else {
+        r = original[oi];
+        g = original[oi + 1];
+        b = original[oi + 2];
+      }
+
       let dR = original[oi] - r;
       let dG = original[oi + 1] - g;
       let dB = original[oi + 2] - b;
@@ -175,9 +175,9 @@ function createSharpenHandler(): ToolHandler {
       isDown = true;
       prevX = pos.x;
       prevY = pos.y;
+      ctx.renderer.strokeStart();
       sharpenStamp(ctx, pos.x, pos.y, pos.pressure);
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      flushStamps(ctx);
     },
     onPointerMove(pos: ToolPointerPos, ctx: ToolContext): void {
       if (!isDown) return;
@@ -187,11 +187,12 @@ function createSharpenHandler(): ToolHandler {
       });
       prevX = pos.x;
       prevY = pos.y;
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      flushStamps(ctx);
     },
-    onPointerUp(_pos: ToolPointerPos, _ctx: ToolContext): void {
+    onPointerUp(_pos: ToolPointerPos, ctx: ToolContext): void {
+      if (!isDown) return;
       isDown = false;
+      ctx.renderer.strokeEnd();
     },
   };
 }

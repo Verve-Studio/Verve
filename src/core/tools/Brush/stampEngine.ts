@@ -68,7 +68,10 @@ let brushStampBatchOpen = false;
 // of falling back to the JS path (which would silently bypass the open
 // batch and tank perf).
 let brushStampBatchIsBitmap = false;
-import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
+import {
+  linearToSrgbChannel,
+  srgbToLinearChannel,
+} from "@/utils/pixelFormatConvert";
 import { getCachedTipSampler, type TipSampler } from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
 import {
@@ -234,7 +237,7 @@ function stepDirection(
 }
 
 /**
- * Read a single layer pixel and normalise to floats in [0, 1+]. Returns null
+ * Read a single layer pixel as sRGB-encoded floats in [0, 1+]. Returns null
  * for indexed layers (palette-based, no meaningful smudge), and a fully
  * transparent value for out-of-layer reads (so smudging off the edge fades).
  */
@@ -254,7 +257,15 @@ function sampleOneLayerFloat(
   if (layer.format === "rgba8") {
     return { r: r / 255, g: g / 255, b: b / 255, a: a / 255 };
   }
-  return { r, g, b, a };
+  // rgba32f is linear-light; the carry colour is mixed in OKLab as sRGB and
+  // decoded back to linear when stamped, so encode here. (Returning linear
+  // values decoded them twice, darkening the layer with every smudge.)
+  return {
+    r: linearToSrgbChannel(r),
+    g: linearToSrgbChannel(g),
+    b: linearToSrgbChannel(b),
+    a,
+  };
 }
 
 /**

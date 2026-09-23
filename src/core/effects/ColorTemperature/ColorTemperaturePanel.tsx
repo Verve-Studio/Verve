@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { ColorTemperatureEffectLayer } from "@/core/effects/ColorTemperature/ColorTemperatureEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "./ColorTemperaturePanel.module.scss";
@@ -13,7 +13,7 @@ export function ColorTemperaturePanel({
   layer,
   parentLayerName,
 }: ColorTemperaturePanelProps): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const { temperature, tint } = layer.params;
 
   const pct = (v: number, min: number, max: number): string =>

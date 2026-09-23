@@ -1,5 +1,5 @@
 import React from "react";
-import { useAppContext } from "@/core/store/AppContext";
+import { useAppDispatch } from "@/core/store/AppContext";
 import type { SeamlessTextureEffectLayer } from "@/core/effects/SeamlessTexture/SeamlessTextureEffect";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
@@ -13,7 +13,7 @@ export function SeamlessTexturePanel({
   layer,
   parentLayerName,
 }: Props): React.JSX.Element {
-  const { dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
   const p = layer.params;
   const up = (patch: Partial<typeof p>): void =>
     dispatch({
@@ -150,15 +150,19 @@ export function SeamlessTexturePanel({
         const linked = p.linkBorderRadius ?? true;
         const setX = (v: number): void => {
           const clamped = Math.min(256, Math.max(0, Math.round(v)));
-          up(linked
-            ? { borderRadiusX: clamped, borderRadiusY: clamped }
-            : { borderRadiusX: clamped });
+          up(
+            linked
+              ? { borderRadiusX: clamped, borderRadiusY: clamped }
+              : { borderRadiusX: clamped },
+          );
         };
         const setY = (v: number): void => {
           const clamped = Math.min(256, Math.max(0, Math.round(v)));
-          up(linked
-            ? { borderRadiusX: clamped, borderRadiusY: clamped }
-            : { borderRadiusY: clamped });
+          up(
+            linked
+              ? { borderRadiusX: clamped, borderRadiusY: clamped }
+              : { borderRadiusY: clamped },
+          );
         };
         const toggleLink = (): void => {
           // When re-linking, snap Y to X so the values match before linked
@@ -206,12 +210,27 @@ export function SeamlessTexturePanel({
               >
                 {linked ? (
                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                    <path d="M6.5 9.5l3-3M6 6.5h-1a2.5 2.5 0 100 5h1m4-5h1a2.5 2.5 0 110 5h-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    <path
+                      d="M6.5 9.5l3-3M6 6.5h-1a2.5 2.5 0 100 5h1m4-5h1a2.5 2.5 0 110 5h-1"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 ) : (
                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                    <path d="M6 6.5h-1a2.5 2.5 0 100 5h1m4-5h1a2.5 2.5 0 110 5h-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                    <path d="M2 2l12 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    <path
+                      d="M6 6.5h-1a2.5 2.5 0 100 5h1m4-5h1a2.5 2.5 0 110 5h-1"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M2 2l12 12"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 )}
               </button>
@@ -261,7 +280,11 @@ export function SeamlessTexturePanel({
                       max={100}
                       step={1}
                       value={strengthPct}
-                      style={{ "--pct": String(strengthPct / 100) } as React.CSSProperties}
+                      style={
+                        {
+                          "--pct": String(strengthPct / 100),
+                        } as React.CSSProperties
+                      }
                       onChange={(e) => setStrength(Number(e.target.value))}
                     />
                   </div>

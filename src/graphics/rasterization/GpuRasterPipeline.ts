@@ -1,4 +1,5 @@
 import {
+  RasterizationExecutionError,
   RasterizationUnavailableError,
   type RasterizeDocumentRequest,
   type RasterizeDocumentResult,
@@ -14,7 +15,16 @@ export async function rasterizeWithGpu(
     );
   }
 
-  const data = await renderer.readFlattenedPlan(request.plan);
+  let data: Uint8Array | Float32Array;
+  try {
+    data = await renderer.readFlattenedPlan(request.plan);
+  } catch (err) {
+    throw new RasterizationExecutionError(
+      `GPU rasterization failed (${request.reason}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 
   return {
     data,

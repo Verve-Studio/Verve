@@ -99,6 +99,8 @@ function buildBGL(
 
 // ─── EffectRuntime ───────────────────────────────────────────────────────────
 
+const MAX_POOLED_PER_SIZE = 128;
+
 /**
  * Generic per-frame service shared by every effect (adjustment, real-time
  * effect, and filter). Owns lazy pipeline / module caches, samplers, a shared
@@ -119,6 +121,17 @@ export class EffectRuntime {
   pendingDestroyBuffers: GPUBuffer[] = [];
   /** Textures accumulated during command encoding; flushed after submit. */
   pendingDestroyTextures: GPUTexture[] = [];
+
+  // Per-encode uniform buffers are recycled instead of created + destroyed
+  // every frame. A buffer handed out by `makeParamsBuf` is returned to the
+  // free list in `flushPendingDestroys`, i.e. after the frame that used it
+  // was submitted — `queue.writeBuffer` is ordered after earlier submits,
+  // so rewriting it for a later frame can't affect the earlier one.
+  private readonly uniformPool = new Map<number, GPUBuffer[]>();
+  private pendingPooled: GPUBuffer[] = [];
+  /** The mask-flags uniform has only four possible contents: one constant
+   *  buffer each, keyed by `present | linear << 1`. */
+  private readonly maskFlagsBufs = new Map<number, GPUBuffer>();
 
   private readonly modules = new Map<string, GPUShaderModule>();
   private readonly pairs = new Map<string, EffectPipelinePair>();
@@ -169,6 +182,13 @@ export class EffectRuntime {
     this.singlesAuto.clear();
     this.computes.clear();
     destroyTrackedTexture(this.intermediate);
+    for (const list of this.uniformPool.values())
+      for (const buf of list) buf.destroy();
+    this.uniformPool.clear();
+    for (const buf of this.pendingPooled) buf.destroy();
+    this.pendingPooled = [];
+    for (const buf of this.maskFlagsBufs.values()) buf.destroy();
+    this.maskFlagsBufs.clear();
   }
 
   // ─── Module / pipeline cache ──────────────────────────────────────────────
@@ -376,20 +396,23 @@ export class EffectRuntime {
 
   // ─── Buffer helpers ──────────────────────────────────────────────────────
 
-  /** One-shot uniform buffer; auto-tracked for destroy at end-of-frame. */
+  /** Uniform buffer valid for the current frame only (recycled after
+   *  submit — don't keep it across frames). */
   makeParamsBuf(data: Uint32Array | Float32Array | ArrayBuffer): GPUBuffer {
     const byteLen =
       data instanceof ArrayBuffer
         ? data.byteLength
         : (data as Uint32Array).byteLength;
     const aligned = Math.max(16, Math.ceil(byteLen / 16) * 16);
-    const buf = createUniformBuffer(this.device, aligned);
+    const buf =
+      this.uniformPool.get(aligned)?.pop() ??
+      createUniformBuffer(this.device, aligned);
     if (data instanceof ArrayBuffer) {
       this.device.queue.writeBuffer(buf, 0, data);
     } else {
       writeUniformBuffer(this.device, buf, data);
     }
-    this.pendingDestroyBuffers.push(buf);
+    this.pendingPooled.push(buf);
     return buf;
   }
 
@@ -408,12 +431,16 @@ export class EffectRuntime {
    * rgba8 docs (the historical default).
    */
   makeMaskFlagsBuf(present: boolean, linear?: boolean): GPUBuffer {
-    const data = new Uint32Array(8);
-    data[0] = present ? 1 : 0;
-    data[1] = linear ? 1 : 0;
-    const buf = createUniformBuffer(this.device, 32);
-    writeUniformBuffer(this.device, buf, data);
-    this.pendingDestroyBuffers.push(buf);
+    const key = (present ? 1 : 0) | (linear ? 2 : 0);
+    let buf = this.maskFlagsBufs.get(key);
+    if (!buf) {
+      const data = new Uint32Array(8);
+      data[0] = present ? 1 : 0;
+      data[1] = linear ? 1 : 0;
+      buf = createUniformBuffer(this.device, 32);
+      writeUniformBuffer(this.device, buf, data);
+      this.maskFlagsBufs.set(key, buf);
+    }
     return buf;
   }
 
@@ -422,6 +449,29 @@ export class EffectRuntime {
     const tex = createTrackedTexture(this.device, {
       size: { width: w, height: h },
       format: "rgba8unorm",
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.pendingDestroyTextures.push(tex);
+    return tex;
+  }
+
+  /**
+   * Auto-tracked transient render target in the same format as `like` (the
+   * pass's destination texture or its format): rgba32float on f32 documents,
+   * rgba8unorm otherwise. Use this for intermediates so f32 documents don't
+   * get clipped to [0,1] and quantized to 8 bits mid-effect; pair it with
+   * `selectPipeline(pair, tex)`.
+   */
+  makeScratchTex(
+    w: number,
+    h: number,
+    like: GPUTexture | GPUTextureFormat,
+  ): GPUTexture {
+    const format = typeof like === "string" ? like : like.format;
+    const tex = createTrackedTexture(this.device, {
+      size: { width: w, height: h },
+      format: format === "rgba32float" ? "rgba32float" : "rgba8unorm",
       usage:
         GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     });
@@ -510,6 +560,17 @@ export class EffectRuntime {
   flushPendingDestroys(): void {
     for (const buf of this.pendingDestroyBuffers) buf.destroy();
     this.pendingDestroyBuffers = [];
+    for (const buf of this.pendingPooled) {
+      let list = this.uniformPool.get(buf.size);
+      if (!list) {
+        list = [];
+        this.uniformPool.set(buf.size, list);
+      }
+      // Bounded: a frame rarely uses more than a few dozen per size.
+      if (list.length < MAX_POOLED_PER_SIZE) list.push(buf);
+      else buf.destroy();
+    }
+    this.pendingPooled = [];
     for (const tex of this.pendingDestroyTextures) destroyTrackedTexture(tex);
     this.pendingDestroyTextures = [];
   }

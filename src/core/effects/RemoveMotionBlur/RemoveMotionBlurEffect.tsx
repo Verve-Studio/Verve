@@ -2,6 +2,20 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RemoveMotionBlurPanel } from "./RemoveMotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { TextureSetCache } from "../_shared/textureSetCache";
+import { createTrackedTexture } from "@/core/store/memoryStore";
+
+/** Max PSF samples per pass; longer PSFs are sampled with a stride. */
+const MAX_PSF_TAPS = 32;
+
+/** Four full-resolution rgba16float intermediates, reused across frames
+ *  instead of allocated (~512 MB at 16 MP) on every encode. */
+const texCache = new TextureSetCache<{
+  estA: GPUTexture;
+  estB: GPUTexture;
+  temp: GPUTexture;
+  ratio: GPUTexture;
+}>();
 
 
 export interface RemoveMotionBlurParams {
@@ -65,7 +79,7 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
     const dv = new DataView(buf);
     dv.setFloat32(0, angle, true);
     dv.setUint32(4, distance, true);
-    dv.setUint32(8, 0, true);
+    dv.setUint32(8, Math.max(1, Math.min(distance, MAX_PSF_TAPS)), true);
     dv.setUint32(12, 0, true);
     const psfParamsBuf = rt.makeParamsBuf(buf);
 
@@ -74,10 +88,16 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
     fdv.setFloat32(0, blendBack, true);
     const finalParamsBuf = rt.makeParamsBuf(finalBuf);
 
-    const estA = rt.makeRgba16FloatTex(w, h);
-    const estB = rt.makeRgba16FloatTex(w, h);
-    const temp = rt.makeRgba16FloatTex(w, h);
-    const ratio = rt.makeRgba16FloatTex(w, h);
+    const { estA, estB, temp, ratio } = texCache.get(rt, `${w}x${h}`, () => {
+      const make = (): GPUTexture =>
+        createTrackedTexture(rt.device, {
+          size: { width: w, height: h },
+          format: "rgba16float",
+          usage:
+            GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+      return { estA: make(), estB: make(), temp: make(), ratio: make() };
+    });
 
     let curEst: GPUTexture = srcTex;
 
@@ -137,6 +157,14 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
         { binding: 2, resource: { buffer: finalParamsBuf } },
       ],
     );
+  },
+
+  onFrameEnd() {
+    texCache.onFrameEnd();
+  },
+
+  onDestroy() {
+    texCache.destroyAll();
   },
 
   Panel: RemoveMotionBlurPanel,

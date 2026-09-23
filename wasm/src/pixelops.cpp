@@ -16,10 +16,8 @@
 #include <vector>
 
 #include "fill.h"
-#include "filters.h"
 #include "quantize.h"
 #include "resize.h"
-#include "dither.h"
 #include "curves_histogram.h"
 #include "transform.h"
 #include "inpaint.h"
@@ -53,17 +51,6 @@ void pixelops_flood_fill_f32(
                    fillR, fillG, fillB, fillA, tolerance);
 }
 
-// ─── Generic Convolution (src → dst) ─────────────────────────────────────────
-
-EMSCRIPTEN_KEEPALIVE
-void pixelops_convolve(
-    const uint8_t* src, uint8_t* dst,
-    int width, int height,
-    const float* kernel, int kernelSize
-) {
-    filters_convolve(src, dst, width, height, kernel, kernelSize);
-}
-
 // ─── Bilinear Resize ─────────────────────────────────────────────────────────
 
 EMSCRIPTEN_KEEPALIVE
@@ -84,15 +71,6 @@ void pixelops_resize_nearest(
     resize_nearest(src, srcWidth, srcHeight, dst, dstWidth, dstHeight);
 }
 
-
-// ─── Bayer Ordered Dithering ─────────────────────────────────────────────────
-
-EMSCRIPTEN_KEEPALIVE
-void pixelops_dither_bayer(
-    uint8_t* pixels, int width, int height, int matrixSize
-) {
-    dither_bayer(pixels, width, height, matrixSize);
-}
 
 // ─── Median-Cut Palette Quantisation ─────────────────────────────────────────
 
@@ -253,54 +231,49 @@ void matchPaletteIndices(
   uint8_t* out,              // output: pixelCount bytes of palette indices
   int transparentIdx         // index to write when alpha == 0 or palette is empty
 ) {
-  for (int i = 0; i < pixelCount; i++) {
+  // Images have far fewer distinct colours than pixels, and the brute-force
+  // search is up to 255 distance checks per pixel (this runs on every
+  // indexed merge, transform and colour-mode conversion). Cache results in a
+  // direct-mapped table keyed by the packed RGBA value, plus a fast path for
+  // runs of identical pixels.
+  constexpr size_t CACHE_BITS = 16;
+  std::vector<uint32_t> cacheKey(size_t(1) << CACHE_BITS, 0);  // key + 1; 0 = empty
+  std::vector<uint8_t>  cacheIdx(size_t(1) << CACHE_BITS, 0);
+  uint32_t prevKey = 0;
+  uint8_t  prevIdx = 0;
+  bool     havePrev = false;
+  for (size_t i = 0; i < (size_t)pixelCount; i++) {
     const uint8_t r = rgba[i*4], g = rgba[i*4+1], b = rgba[i*4+2], a = rgba[i*4+3];
     if (a == 0 || paletteSize == 0) { out[i] = (uint8_t)transparentIdx; continue; }
-    int bestIdx = 0;
-    long bestDist = LONG_MAX;
-    for (int j = 0; j < paletteSize; j++) {
-      int dr = (int)r - palette[j*4];
-      int dg = (int)g - palette[j*4+1];
-      int db = (int)b - palette[j*4+2];
-      int da = (int)a - palette[j*4+3];
-      long d = (long)dr*dr + (long)dg*dg + (long)db*db + (long)da*da;
-      if (d < bestDist) { bestDist = d; bestIdx = j; }
+    const uint32_t key = (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)a << 24);
+    if (havePrev && key == prevKey) { out[i] = prevIdx; continue; }
+    const size_t slot = (size_t)((key * 2654435761u) >> (32 - CACHE_BITS));
+    uint8_t bestIdx;
+    if (cacheKey[slot] == key + 1u && key != 0xFFFFFFFFu) {
+      bestIdx = cacheIdx[slot];
+    } else {
+      int best = 0;
+      long bestDist = LONG_MAX;
+      for (int j = 0; j < paletteSize; j++) {
+        int dr = (int)r - palette[j*4];
+        int dg = (int)g - palette[j*4+1];
+        int db = (int)b - palette[j*4+2];
+        int da = (int)a - palette[j*4+3];
+        long d = (long)dr*dr + (long)dg*dg + (long)db*db + (long)da*da;
+        if (d < bestDist) { bestDist = d; best = j; }
+      }
+      bestIdx = (uint8_t)best;
+      cacheKey[slot] = key + 1u;
+      cacheIdx[slot] = bestIdx;
     }
-    out[i] = (uint8_t)bestIdx;
+    out[i] = bestIdx;
+    prevKey = key;
+    prevIdx = bestIdx;
+    havePrev = true;
   }
 }
 
 } // extern "C"
-
-// ─── Indexed-8 Flood Fill ────────────────────────────────────────────────────
-
-extern "C" EMSCRIPTEN_KEEPALIVE
-void floodFillIndexed(
-  uint8_t* indices,    // layer-local 1 byte/pixel buffer, modified in-place
-  int w, int h,
-  int startX, int startY,
-  uint8_t fillIndex    // index to write (0-254); 255 = void
-) {
-  if (startX < 0 || startX >= w || startY < 0 || startY >= h) return;
-  const uint8_t targetIndex = indices[startY * w + startX];
-  if (targetIndex == fillIndex) return;
-
-  // BFS 4-connected flood fill
-  std::vector<int> stack;
-  stack.reserve(w * h / 4);
-  stack.push_back(startY * w + startX);
-  while (!stack.empty()) {
-    int pos = stack.back();
-    stack.pop_back();
-    if (indices[pos] != targetIndex) continue;
-    indices[pos] = fillIndex;
-    int x = pos % w, y = pos / w;
-    if (x > 0)     stack.push_back(pos - 1);
-    if (x < w - 1) stack.push_back(pos + 1);
-    if (y > 0)     stack.push_back(pos - w);
-    if (y < h - 1) stack.push_back(pos + w);
-  }
-}
 
 // ─── DDS I/O ──────────────────────────────────────────────────────────────────
 

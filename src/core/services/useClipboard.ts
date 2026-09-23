@@ -1,20 +1,24 @@
+import type { AppShellState } from "@/core/store/AppContext";
 import type { AppAction } from "@/core/store/AppContext";
 import type { ClipboardData } from "@/core/store/clipboardStore";
 import { clipboardStore } from "@/core/store/clipboardStore";
 
 import { makeTabId } from "@/core/store/tabTypes";
 import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
-import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback } from "react";
 import { activeScope } from "@/core/store/scope";
+import {
+  bgraPremulToRgba,
+  rgbaToBgraPremul,
+} from "@/core/io/clipboardBitmap";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface UseClipboardOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
-  state: AppState;
+  state: AppShellState;
   dispatch: Dispatch<AppAction>;
   captureHistory: (label: string) => void;
   pendingLayerLabelRef: MutableRefObject<string | null>;
@@ -30,28 +34,6 @@ export interface UseClipboardReturn {
 }
 
 // ─── System clipboard helpers ─────────────────────────────────────────────────
-
-/** Encode an RGBA Uint8Array as a base64 PNG string using an OffscreenCanvas. */
-async function encodePng(
-  data: Uint8Array,
-  width: number,
-  height: number,
-): Promise<string> {
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext("2d")!;
-  ctx.putImageData(
-    new ImageData(new Uint8ClampedArray(data), width, height),
-    0,
-    0,
-  );
-  const blob = await canvas.convertToBlob({ type: "image/png" });
-  const ab = await blob.arrayBuffer();
-  const bytes = new Uint8Array(ab);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++)
-    binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
 
 /** Return the bounding box (top-left x/y) of non-zero pixels in a canvas-sized selection mask. */
 function selectionBounds(
@@ -76,29 +58,19 @@ function selectionBounds(
   return maxX >= 0 ? { x: minX, y: minY } : null;
 }
 
-/** Decode a base64 PNG string to an RGBA Uint8Array. */
-async function decodePng(
-  base64: string,
-): Promise<{ data: Uint8Array; width: number; height: number } | null> {
-  try {
-    const binaryStr = atob(base64);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++)
-      bytes[i] = binaryStr.charCodeAt(i);
-    const blob = new Blob([bytes], { type: "image/png" });
-    const bitmap = await createImageBitmap(blob);
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(bitmap, 0, 0);
-    const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-    return {
-      data: new Uint8Array(imageData.data.buffer),
-      width: bitmap.width,
-      height: bitmap.height,
-    };
-  } catch {
-    return null;
-  }
+/** The system clipboard image as straight RGBA, or null. */
+async function readSystemClipboardImage(): Promise<{
+  data: Uint8Array;
+  width: number;
+  height: number;
+} | null> {
+  const bmp = await window.api.clipboardReadImage();
+  if (!bmp || bmp.data.byteLength !== bmp.width * bmp.height * 4) return null;
+  return {
+    data: bgraPremulToRgba(bmp.data),
+    width: bmp.width,
+    height: bmp.height,
+  };
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -145,8 +117,8 @@ function writeToClipboard(
     offsetX: minX,
     offsetY: minY,
   };
-  void encodePng(bboxData, bboxW, bboxH)
-    .then((b64) => window.api.clipboardWriteImage(b64))
+  void window.api
+    .clipboardWriteImage(rgbaToBgraPremul(bboxData), bboxW, bboxH)
     .catch(() => {
       /* system clipboard write is best-effort */
     });
@@ -222,9 +194,8 @@ export function useClipboard({
       // Prefer the system clipboard so images copied from other apps can be pasted.
       let clipData: ClipboardData | null = null;
       try {
-        const pngBase64 = await window.api.clipboardReadImage();
-        if (pngBase64) {
-          const decoded = await decodePng(pngBase64);
+        {
+          const decoded = await readSystemClipboardImage();
           if (decoded) {
             const { data, width: srcW, height: srcH } = decoded;
             const internal = clipboardStore.current;
@@ -323,9 +294,8 @@ export function useClipboard({
       // Resolve clipboard — same logic as handlePaste
       let clipData: ClipboardData | null = null;
       try {
-        const pngBase64 = await window.api.clipboardReadImage();
-        if (pngBase64) {
-          const decoded = await decodePng(pngBase64);
+        {
+          const decoded = await readSystemClipboardImage();
           if (decoded) {
             const { data, width: srcW, height: srcH } = decoded;
             const internal = clipboardStore.current;

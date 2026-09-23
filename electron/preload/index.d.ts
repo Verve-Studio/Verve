@@ -1,8 +1,5 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
-
 declare global {
   interface Window {
-    electron: ElectronAPI
     api: {
       openDevTools: () => Promise<void>
       openFile: () => Promise<string | null>
@@ -14,11 +11,11 @@ declare global {
       pickCubeLutFiles: () => Promise<Array<{ name: string; text: string }> | null>
       writeJsonFile: (path: string, data: string) => Promise<void>
       saveverveDialog: (defaultPath?: string) => Promise<string | null>
-      openverveFile: (path: string) => Promise<string>
-      saveverveFile: (path: string, data: string) => Promise<void>
+      openverveFile: (path: string) => Promise<Uint8Array>
+      saveverveFile: (path: string, data: Uint8Array) => Promise<void>
       exportBrowse: (ext: string) => Promise<string | null>
-      exportImage: (path: string, base64: string) => Promise<void>
-      readFileBase64: (path: string) => Promise<string>
+      exportImage: (path: string, data: Uint8Array | string) => Promise<void>
+      readFile: (path: string) => Promise<Uint8Array>
       loadCurvesPresets: () => Promise<CurvesPreset[]>
       saveCurvesPresets: (presets: CurvesPreset[]) => Promise<void>
       openPaletteDialog: () => Promise<string | null>
@@ -37,8 +34,11 @@ declare global {
       } | null>
       cmsDeleteUserProfile: (id: string) => Promise<boolean>
       writePaletteFile: (path: string, data: string) => Promise<void>
-      clipboardWriteImage: (pngBase64: string) => Promise<void>
-      clipboardReadImage: () => Promise<string | null>
+      /** Premultiplied BGRA (nativeImage raw bitmap order). */
+      clipboardWriteImage: (bgraPremul: Uint8Array, width: number, height: number) => Promise<void>
+      /** Raw premultiplied BGRA bitmap of the clipboard image, or null. */
+      clipboardReadImage: () => Promise<{ width: number; height: number; data: Uint8Array } | null>
+      clipboardImageSize: () => Promise<{ width: number; height: number } | null>
       // Recent files
       getRecentFiles: () => Promise<string[]>
       addRecentFile: (path: string) => Promise<string[]>
@@ -129,6 +129,11 @@ declare global {
         }) => Promise<{ mask: Uint8Array; width: number; height: number; provider: string }>
         invalidateSession: () => Promise<void>
       }
+      setUnsavedDocuments: (titles: string[]) => void
+      // AI jobs (all models)
+      ml: {
+        cancel: () => Promise<void>
+      }
       // AI Upscale (Rescale Image)
       upscale: {
         listModels: () => Promise<Array<{ id: string; label: string; scale: number }>>
@@ -215,3 +220,6 @@ declare global {
     channels: Record<CurvesChannel, CurvesChannelCurve>
   }
 }
+
+// Keeps this file a module so `declare global` applies.
+export {}

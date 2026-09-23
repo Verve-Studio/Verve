@@ -1,11 +1,9 @@
-import { ipcMain, app, BrowserWindow } from 'electron'
+import { mlPaths } from './ml/paths'
 import { join, dirname } from 'node:path'
 import { access, mkdir, rename, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
 import { request } from 'node:https'
-import type { IpcMainInvokeEvent } from 'electron'
 import type { IncomingMessage } from 'node:http'
 
 // ─── ORT type stubs (mirror of sam.ts) ───────────────────────────────────────
@@ -23,6 +21,8 @@ interface OrtInferenceSession {
   readonly inputNames: readonly string[]
   readonly outputNames: readonly string[]
   run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>
+  /** Frees the native session (model weights, DirectML/CoreML buffers). */
+  release?(): Promise<void>
 }
 
 interface OrtModule {
@@ -45,22 +45,22 @@ function getOrt(): OrtModule {
 // ─── Model location ──────────────────────────────────────────────────────────
 // Dev:  <root>/resources/models/rvm/rvm_mobilenetv3_fp32.onnx
 // Prod: process.resourcesPath/models/rvm/rvm_mobilenetv3_fp32.onnx
-// Downloaded copies live in app.getPath('userData')/models/rvm/ and are
+// Downloaded copies live in mlPaths().userData/models/rvm/ and are
 // preferred over the bundled location (so users can update without reinstall).
 
 const MODEL_FILE = 'rvm_mobilenetv3_fp32.onnx'
 const MODEL_URL = 'https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx'
 
 function getBundledModelPath(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'models', 'rvm', MODEL_FILE)
+  if (mlPaths().isPackaged) {
+    return join(mlPaths().resourcesPath, 'models', 'rvm', MODEL_FILE)
   }
-  const devRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const devRoot = mlPaths().appRoot
   return join(devRoot, 'resources', 'models', 'rvm', MODEL_FILE)
 }
 
 function getUserDataModelPath(): string {
-  return join(app.getPath('userData'), 'models', 'rvm', MODEL_FILE)
+  return join(mlPaths().userData, 'models', 'rvm', MODEL_FILE)
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -78,10 +78,19 @@ async function resolveModelPath(): Promise<string | null> {
 // ─── Session ─────────────────────────────────────────────────────────────────
 
 let session: OrtInferenceSession | null = null
+let sessionPromise: Promise<void> | null = null
 let sessionLogged = false
 
-async function loadSession(): Promise<void> {
-  if (session) return
+/** Shared in-flight load: concurrent runs must not each create a session. */
+function loadSession(): Promise<void> {
+  sessionPromise ??= createSession().catch((err) => {
+    sessionPromise = null
+    throw err
+  })
+  return sessionPromise
+}
+
+async function createSession(): Promise<void> {
   const path = await resolveModelPath()
   if (!path) throw new Error('RVM model file not found')
   const ort = getOrt()
@@ -158,17 +167,17 @@ async function downloadModelFile(onProgress: (loaded: number, total: number) => 
 
 // ─── Refinement ──────────────────────────────────────────────────────────────
 
-interface RefineParams {
-  imageRgba: Buffer        // RGBA crop, length = width*height*4
+export interface RefineParams {
+  imageRgba: Uint8Array    // RGBA crop, length = width*height*4
   width: number
   height: number
-  selectionMask: Buffer    // 0–255, length = width*height (cropped to same region)
+  selectionMask: Uint8Array // 0–255, length = width*height (cropped to same region)
   bandRadius: number       // pixels — width of the "unknown" band around selection edge
   mode: 'hair' | 'object' // hair → RVM neural matting; object → guided-filter
 }
 
-interface RefineResult {
-  alpha: Buffer            // 0–255, length = width*height
+export interface RefineResult {
+  alpha: Uint8Array        // 0–255, length = width*height
 }
 
 /** Pad a value up to the next multiple of `mult`. */
@@ -182,7 +191,7 @@ function ceilTo(v: number, mult: number): number {
  * dimensions divisible by 4).
  */
 function rgbaToChwPadded(
-  rgba: Buffer, w: number, h: number,
+  rgba: Uint8Array, w: number, h: number,
 ): { tensor: Float32Array; pw: number; ph: number } {
   const pw = ceilTo(w, 4)
   const ph = ceilTo(h, 4)
@@ -247,7 +256,7 @@ function erode(mask: Uint8Array, w: number, h: number, r: number, threshold = 12
   return out
 }
 
-async function runRvm(rgba: Buffer, width: number, height: number): Promise<Float32Array> {
+async function runRvm(rgba: Uint8Array, width: number, height: number): Promise<Float32Array> {
   await loadSession()
   const ort = getOrt()
   const { tensor: src, pw, ph } = rgbaToChwPadded(rgba, width, height)
@@ -320,79 +329,69 @@ async function runRvm(rgba: Buffer, width: number, height: number): Promise<Floa
   return cropped
 }
 
-// ─── IPC handler registration ────────────────────────────────────────────────
+// ─── Public API (used by the ML worker and the IPC layer) ───────────────────
 
-export function registerMattingHandlers(): void {
-  ipcMain.handle('matting:check-model', async (): Promise<{ ready: boolean; path: string | null }> => {
-    const path = await resolveModelPath()
-    return { ready: path !== null, path }
-  })
+export async function checkMattingModel(): Promise<{ ready: boolean; path: string | null }> {
+  const path = await resolveModelPath()
+  return { ready: path !== null, path }
+}
 
-  ipcMain.handle('matting:download-model', async (event: IpcMainInvokeEvent): Promise<{ success: true } | { error: string }> => {
-    const sender = BrowserWindow.fromWebContents(event.sender)
-    const emit = (loaded: number, total: number): void => {
-      sender?.webContents.send('matting:download-progress', {
-        progress: total > 0 ? loaded / total : 0,
-        loaded,
-        total,
-      })
+/** Download the RVM model into userData. Runs in the main process (network
+ *  I/O only); the worker's session is invalidated afterwards by the caller. */
+export async function downloadMattingModel(
+  onProgress: (loaded: number, total: number) => void,
+): Promise<void> {
+  await downloadModelFile(onProgress)
+}
+
+export async function refineMatting(params: RefineParams): Promise<RefineResult> {
+  const { width, height, bandRadius } = params
+  if (params.imageRgba.length !== width * height * 4) {
+    throw new Error(`imageRgba length ${params.imageRgba.length} ≠ ${width}×${height}×4`)
+  }
+  if (params.selectionMask.length !== width * height) {
+    throw new Error(`selectionMask length ${params.selectionMask.length} ≠ ${width}×${height}`)
+  }
+
+  // Build trimap from selection mask:
+  //   inner  = erode(selection, bandRadius)   → definitely foreground
+  //   outer  = dilate(selection, bandRadius)  → outside this is definitely bg
+  //   band   = outer & ¬inner                 → unknown, take alpha from RVM
+  const sel = params.selectionMask
+  const inner = erode(sel, width, height, bandRadius)
+  const outer = dilate(sel, width, height, bandRadius)
+
+  // Hair / fur mode: RVM neural alpha matting.
+  const rvmAlpha = await runRvm(params.imageRgba, width, height)
+
+  let nInner = 0, nOuter = 0, nBand = 0
+  const out = new Uint8Array(width * height)
+  for (let i = 0; i < out.length; i++) {
+    if (inner[i] >= 128) {
+      out[i] = 255
+      nInner++
+    } else if (outer[i] < 128) {
+      out[i] = 0
+    } else {
+      out[i] = Math.max(0, Math.min(255, Math.round(rvmAlpha[i] * 255)))
+      nBand++
     }
-    try {
-      await downloadModelFile(emit)
-      // Reset session so next refine call loads the freshly downloaded model.
-      session = null
-      return { success: true }
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) }
-    }
-  })
-
-  ipcMain.handle(
-    'matting:refine',
-    async (_event: IpcMainInvokeEvent, params: RefineParams): Promise<RefineResult> => {
-      const { width, height, bandRadius } = params
-      if (params.imageRgba.length !== width * height * 4) {
-        throw new Error(`imageRgba length ${params.imageRgba.length} ≠ ${width}×${height}×4`)
-      }
-      if (params.selectionMask.length !== width * height) {
-        throw new Error(`selectionMask length ${params.selectionMask.length} ≠ ${width}×${height}`)
-      }
-
-      // Build trimap from selection mask:
-      //   inner  = erode(selection, bandRadius)   → definitely foreground
-      //   outer  = dilate(selection, bandRadius)  → outside this is definitely bg
-      //   band   = outer & ¬inner                 → unknown, take alpha from RVM
-      const sel = new Uint8Array(params.selectionMask.buffer, params.selectionMask.byteOffset, params.selectionMask.byteLength)
-      const inner = erode(sel, width, height, bandRadius)
-      const outer = dilate(sel, width, height, bandRadius)
-
-      // Hair / fur mode: RVM neural alpha matting.
-      const rvmAlpha = await runRvm(params.imageRgba, width, height)
-
-      let nInner = 0, nOuter = 0, nBand = 0
-      const out = new Uint8Array(width * height)
-      for (let i = 0; i < out.length; i++) {
-        if (inner[i] >= 128) {
-          out[i] = 255
-          nInner++
-        } else if (outer[i] < 128) {
-          out[i] = 0
-        } else {
-          out[i] = Math.max(0, Math.min(255, Math.round(rvmAlpha[i] * 255)))
-          nBand++
-        }
-        if (outer[i] >= 128) nOuter++
-      }
-      // eslint-disable-next-line no-console
-      console.log(
-        `[matting] trimap band=${bandRadius}px innerFG=${nInner}px bandUnknown=${nBand}px totalOuter=${nOuter}px (of ${width * height})`,
-      )
-
-      return { alpha: Buffer.from(out) }
-    },
+    if (outer[i] >= 128) nOuter++
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[matting] trimap band=${bandRadius}px innerFG=${nInner}px bandUnknown=${nBand}px totalOuter=${nOuter}px (of ${width * height})`,
   )
 
-  ipcMain.handle('matting:invalidate-session', (): void => {
-    session = null
-  })
+  return { alpha: out }
+}
+
+/** Drop the session and free its native memory. */
+export async function invalidateMattingSession(): Promise<void> {
+  const pending = sessionPromise
+  sessionPromise = null
+  const s = session
+  session = null
+  await pending?.catch(() => undefined)
+  await s?.release?.()
 }
