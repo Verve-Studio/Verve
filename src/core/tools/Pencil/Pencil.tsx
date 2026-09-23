@@ -8,13 +8,15 @@ import {
   shallowEqual,
   useAppDispatch,
   useAppSelector,
+  useGetAppState,
 } from "@/core/store/AppContext";
+import { linearToSrgbChannel } from "@/utils/pixelFormatConvert";
 import type { AppAction } from "@/core/store/AppContext";
 
 import { pixelBrushStore } from "@/core/store/pixelBrushStore";
 import { PixelBrushGallery } from "@/ux/widgets/PixelBrushGallery/PixelBrushGallery";
 import { PixelBrushesModal } from "@/ux/modals/PixelBrushesModal/PixelBrushesModal";
-import type { PixelBrush } from "@/types";
+import type { PixelBrush, RGBAColor } from "@/types";
 import type { WebGPURenderer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
@@ -27,6 +29,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import pencilIconSvg from "./pencil.svg?raw";
+import { inPencilFootprint } from "./pencilFootprint";
 import {
   resolveNearestPaletteIndex,
   writeIndexToLayer,
@@ -42,7 +45,10 @@ export const pencilOptions = {
   pixelPerfect: false, // Aseprite-style: remove L-corner pixels for clean diagonals
   antiAlias: true,
   smoothing: 20, // 0 = raw coords, 100 = maximum stabilizer (size > 1 only)
-  motionBlur: 5, // 0 = round dabs, 100 = dabs elongated along stroke direction (size > 1)
+  // 0 = exact pixel footprints (the pencil's job), 100 = dabs elongated
+  // along the stroke (size > 1). Off by default: any stretch turns every
+  // dab into a sub-pixel capsule whose footprint varies from dab to dab.
+  motionBlur: 0,
   /** The currently active pixel brush. null = use the standard shape-based pencil. */
   pixelBrush: null as PixelBrush | null,
   /**
@@ -73,9 +79,18 @@ const brushPixelCache = new Map<string, Uint8ClampedArray>();
 
 function getBrushPixels(brush: PixelBrush): Uint8ClampedArray {
   if (brushPixelCache.has(brush.id)) return brushPixelCache.get(brush.id)!;
-  const bin = atob(brush.rgba);
-  const bytes = new Uint8ClampedArray(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  let bin = "";
+  try {
+    bin = atob(brush.rgba);
+  } catch {
+    /* malformed payload → fully transparent brush */
+  }
+  // Always exactly width × height × 4 so reads never index past the end.
+  const bytes = new Uint8ClampedArray(
+    Math.max(1, brush.width) * Math.max(1, brush.height) * 4,
+  );
+  const n = Math.min(bin.length, bytes.length);
+  for (let i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
   brushPixelCache.set(brush.id, bytes);
   return bytes;
 }
@@ -166,15 +181,8 @@ export function getPencilBrushPreviewDataUrl(
       const dy = j - half;
       const ox = dx - (radius - half);
       const oy = dy - (radius - half);
-      let inside: boolean;
-      if (shape === "square") {
-        inside = true;
-      } else if (shape === "diamond") {
-        inside = (Math.abs(ox) + Math.abs(oy)) / Math.SQRT2 <= radius;
-      } else {
-        inside = ox * ox + oy * oy <= radius * radius;
-      }
-      if (!inside) continue;
+      // Shared footprint rule (pencilFootprint.ts) — preview == paint.
+      if (!inPencilFootprint(ox, oy, size, shape)) continue;
       const bx = ((i % brush.width) + brush.width) % brush.width;
       const by = ((j % brush.height) + brush.height) % brush.height;
       const brushA = pixels[(by * brush.width + bx) * 4 + 3];
@@ -268,15 +276,8 @@ export function getPencilShapePreviewDataUrl(
       const dy = j - half;
       const ox = dx - (radius - half);
       const oy = dy - (radius - half);
-      let inside: boolean;
-      if (shape === "square") {
-        inside = true;
-      } else if (shape === "diamond") {
-        inside = (Math.abs(ox) + Math.abs(oy)) / Math.SQRT2 <= radius;
-      } else {
-        inside = ox * ox + oy * oy <= radius * radius;
-      }
-      if (!inside) continue;
+      // Shared footprint rule (pencilFootprint.ts) — preview == paint.
+      if (!inPencilFootprint(ox, oy, size, shape)) continue;
       const idx = (j * size + i) * 4;
       d[idx] = r;
       d[idx + 1] = g;
@@ -402,6 +403,8 @@ function paintBrushPixel(
   sel?: { mask: Uint8Array; width: number } | null,
   tiledW?: number,
   tiledH?: number,
+  /** Linear colour for rgba32f layers (keeps HDR primaries unclamped). */
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   const bx = ((canvasX % brush.width) + brush.width) % brush.width;
   const by = ((canvasY % brush.height) + brush.height) % brush.height;
@@ -420,6 +423,7 @@ function paintBrushPixel(
     sel ?? undefined,
     tiledW,
     tiledH,
+    srcFloat,
   );
 }
 
@@ -487,6 +491,7 @@ function paintBrushStamp(
   sel?: { mask: Uint8Array; width: number } | null,
   tiledW?: number,
   tiledH?: number,
+  srcFloat?: readonly [number, number, number, number],
 ): void {
   const pixels = getBrushPixels(brush);
   if (size <= 1) {
@@ -506,6 +511,7 @@ function paintBrushStamp(
       sel,
       tiledW,
       tiledH,
+      srcFloat,
     );
     return;
   }
@@ -520,15 +526,8 @@ function paintBrushStamp(
       // Offsets relative to the geometric centre, used by round/diamond tests.
       const ox = dx - (radius - half); // = i - radius
       const oy = dy - (radius - half); // = j - radius
-      let inside: boolean;
-      if (shape === "square") {
-        inside = true;
-      } else if (shape === "diamond") {
-        inside = (Math.abs(ox) + Math.abs(oy)) / Math.SQRT2 <= radius;
-      } else {
-        inside = ox * ox + oy * oy <= radius * radius;
-      }
-      if (!inside) continue;
+      // Shared footprint rule (pencilFootprint.ts) — preview == paint.
+      if (!inPencilFootprint(ox, oy, size, shape)) continue;
       paintBrushPixel(
         renderer,
         layer,
@@ -545,6 +544,7 @@ function paintBrushStamp(
         sel,
         tiledW,
         tiledH,
+        srcFloat,
       );
     }
   }
@@ -561,7 +561,8 @@ function createPencilHandler(): ToolHandler {
 
   // ── indexed8 stroke state ──
   let strokeIndex: number | null = null;
-  let indexedTouched: Map<number, true> | null = null;
+  // True while an indexed8 stroke is in progress.
+  let indexedStroke = false;
 
   // ── State for 1px Bresenham path ──
   // lastPx:    last Bresenham pixel emitted (end of previous segment)
@@ -586,6 +587,21 @@ function createPencilHandler(): ToolHandler {
     // Only this pixel changed; without marking it the next flush uploads
     // the whole layer (e.g. the pending pixel-perfect pixel at stroke end).
     markCanvasBoxDirty(renderer, layer, px, py, px, py, ctx.tiledMode);
+    if (layer.format === "indexed8") {
+      if (strokeIndex === null) return;
+      writeIndexToLayer(
+        layer,
+        px,
+        py,
+        strokeIndex,
+        selectionMask
+          ? { mask: selectionMask, width: renderer.pixelWidth }
+          : undefined,
+        ctx.tiledMode ? renderer.pixelWidth : undefined,
+        ctx.tiledMode ? renderer.pixelHeight : undefined,
+      );
+      return;
+    }
     // growLayerToFit is NOT called here — callers must pre-grow before entering
     // the per-pixel loop so we don't pay the bounds check on every Bresenham pixel.
     const sel = selectionMask
@@ -734,7 +750,13 @@ function createPencilHandler(): ToolHandler {
       layer.format === "rgba32f"
         ? srgbColorToLinearF32(primaryColor)
         : undefined;
-    const padR = Math.ceil(pencilOptions.size / 2) + 2;
+    // Dabs are capsules stretched by size x motionBlur / 2 along the
+    // stroke: the growth / dirty pad must include that stretch.
+    const padR =
+      Math.ceil(
+        pencilOptions.size / 2 +
+          (pencilOptions.size * pencilOptions.motionBlur) / 200,
+      ) + 2;
     // Skip entirely off-canvas arcs (see brush.tsx for rationale).
     if (!ctx.tiledMode) {
       const minX = Math.min(p0x, cpx, p1x) - padR;
@@ -850,7 +872,7 @@ function createPencilHandler(): ToolHandler {
             });
           }
         }
-        indexedTouched = new Map();
+        indexedStroke = true;
         const px = Math.round(x),
           py = Math.round(y);
         const sel = selectionMask
@@ -870,7 +892,6 @@ function createPencilHandler(): ToolHandler {
             strokeIndex,
             pencilOptions.size,
             pencilOptions.shape,
-            indexedTouched,
             sel,
             tiledW,
             tiledH,
@@ -931,6 +952,9 @@ function createPencilHandler(): ToolHandler {
             sel ?? null,
             ctx.tiledMode ? renderer.pixelWidth : undefined,
             ctx.tiledMode ? renderer.pixelHeight : undefined,
+            ctx.layer.format === "rgba32f"
+              ? srgbColorToLinearF32(ctx.primaryColor)
+              : undefined,
           );
         } else {
           growLayerToFit(px, py, 2);
@@ -950,6 +974,11 @@ function createPencilHandler(): ToolHandler {
             sel,
             tiledW,
             tiledH,
+            // Linear colour for rgba32f: the byte path clamped HDR primaries
+            // on the first pixel while the rest of the stroke kept them.
+            layer.format === "rgba32f"
+              ? srgbColorToLinearF32(primaryColor)
+              : undefined,
           );
           // Single-pixel dot: mark a 1×1 patch in layer-local coords dirty.
           if (!ctx.tiledMode) {
@@ -989,7 +1018,13 @@ function createPencilHandler(): ToolHandler {
           layer.format === "rgba32f"
             ? srgbColorToLinearF32(primaryColor)
             : undefined;
-        const padR = Math.ceil(pencilOptions.size / 2) + 2;
+        // Dabs are capsules stretched by size x motionBlur / 2 along the
+        // stroke: the growth / dirty pad must include that stretch.
+        const padR =
+          Math.ceil(
+            pencilOptions.size / 2 +
+              (pencilOptions.size * pencilOptions.motionBlur) / 200,
+          ) + 2;
         growLayerToFit(x, y, padR);
         const sel = selectionMask
           ? { mask: selectionMask, width: renderer.pixelWidth }
@@ -1010,8 +1045,8 @@ function createPencilHandler(): ToolHandler {
           pencilOptions.antiAlias,
           touched ?? undefined,
           sel,
-          undefined,
-          undefined,
+          ctx.tiledMode ? renderer.pixelWidth : undefined,
+          ctx.tiledMode ? renderer.pixelHeight : undefined,
           srcFloat,
         );
         markCanvasBoxDirty(renderer, layer, x - padR, y - padR, x + padR, y + padR, ctx.tiledMode);
@@ -1026,7 +1061,7 @@ function createPencilHandler(): ToolHandler {
 
       // ── indexed8 path ──────────────────────────────────────────────────────
       if (ctx.layer.format === "indexed8") {
-        if (strokeIndex === null || !indexedTouched || !lastPx) return;
+        if (strokeIndex === null || !indexedStroke || !lastPx) return;
         const x1 = Math.round(x),
           y1 = Math.round(y);
         if (lastPx.x === x1 && lastPx.y === y1) return;
@@ -1045,10 +1080,9 @@ function createPencilHandler(): ToolHandler {
         const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined;
         const pad = Math.max(2, Math.ceil(pencilOptions.size / 2) + 2);
         if (pencilOptions.size <= 1) {
-          bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
-            growLayerToFit(px, py, 2);
-            writeIndexToLayer(layer, px, py, strokeIndex!, sel, tiledW, tiledH);
-          });
+          // Same 1 px pipeline as rgba, so Pixel Perfect works on indexed
+          // documents too (paintOnePixel writes the palette index).
+          draw1pxSegment(x1, y1, ctx);
         } else {
           bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
             growLayerToFit(px, py, pad);
@@ -1059,7 +1093,6 @@ function createPencilHandler(): ToolHandler {
               strokeIndex!,
               pencilOptions.size,
               pencilOptions.shape,
-              indexedTouched!,
               sel,
               tiledW,
               tiledH,
@@ -1110,6 +1143,10 @@ function createPencilHandler(): ToolHandler {
           const segMaxY = Math.max(lastPx.y, y1) + pad;
           const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined;
           const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined;
+          const brushSrcFloat =
+            layer.format === "rgba32f"
+              ? srgbColorToLinearF32(ctx.primaryColor)
+              : undefined;
           bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
             growLayerToFit(px, py, pad);
             paintBrushStamp(
@@ -1129,6 +1166,7 @@ function createPencilHandler(): ToolHandler {
               sel ?? null,
               tiledW,
               tiledH,
+              brushSrcFloat,
             );
           });
           // Mark after the loop: growLayerToFit may have moved the layer.
@@ -1169,13 +1207,14 @@ function createPencilHandler(): ToolHandler {
 
     onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
       if (ctx.layer.format === "indexed8") {
+        if (pencilOptions.size <= 1) flushPPPending(ctx);
         // History is captured by the pointer-up auto-capture, like the
         // other formats (an explicit commit here added a second entry).
         const { renderer, layer, layers, render } = ctx;
         renderer.flushLayer(layer, ctx.swatches);
         render(layers);
         strokeIndex = null;
-        indexedTouched = null;
+        indexedStroke = false;
         lastPx = null;
         ppPrev = null;
         ppPending = null;
@@ -1226,13 +1265,24 @@ function createPencilHandler(): ToolHandler {
  */
 function captureSelectionAsBrush(
   dispatch: React.Dispatch<AppAction>,
+  activeLayerId: string | null,
+  swatches: readonly RGBAColor[],
 ): void {
+  // `_renderer` / `_layer` are remembered from the last pointer event; they
+  // may belong to another tab or a destroyed layer — only use them when they
+  // still describe the active layer of this document.
   if (!_renderer || !_layer) return;
+  if (!_renderer.isLayerLive(_layer) || _layer.id !== activeLayerId) {
+    _renderer = null;
+    _layer = null;
+    return;
+  }
   const mask = activeScope().selection.mask;
   if (!mask) return;
 
   const cw = _renderer.pixelWidth;
   const ch = _renderer.pixelHeight;
+  if (mask.length !== cw * ch) return;
 
   // Find bounding rect of the selection mask
   let minX = cw,
@@ -1255,10 +1305,17 @@ function captureSelectionAsBrush(
   const bh = maxY - minY + 1;
   const rgba = new Uint8ClampedArray(bw * bh * 4);
 
-  const layerData = _layer.data;
-  const lw = _layer.layerWidth;
-  const ox = _layer.offsetX;
-  const oy = _layer.offsetY;
+  const layer = _layer;
+  const layerData = layer.data;
+  const lw = layer.layerWidth;
+  const ox = layer.offsetX;
+  const oy = layer.offsetY;
+  // Brushes store sRGB RGBA8: convert per layer format (float layers are
+  // linear light; indexed layers hold palette indices, 255 = transparent).
+  const toByte = (v: number): number => {
+    const e = linearToSrgbChannel(v);
+    return e <= 0 ? 0 : e >= 1 ? 255 : Math.round(e * 255);
+  };
 
   for (let y = 0; y < bh; y++) {
     for (let x = 0; x < bw; x++) {
@@ -1269,13 +1326,31 @@ function captureSelectionAsBrush(
       // Sample layer-local pixel
       const lx = cx - ox;
       const ly = cy - oy;
-      if (lx < 0 || ly < 0 || lx >= lw || ly >= _layer.layerHeight) continue;
-      const src = (ly * lw + lx) * 4;
+      if (lx < 0 || ly < 0 || lx >= lw || ly >= layer.layerHeight) continue;
       const dst = (y * bw + x) * 4;
-      rgba[dst] = layerData[src];
-      rgba[dst + 1] = layerData[src + 1];
-      rgba[dst + 2] = layerData[src + 2];
-      rgba[dst + 3] = layerData[src + 3];
+      if (layer.format === "indexed8") {
+        const idx = layerData[ly * lw + lx];
+        const c = idx === 255 ? undefined : swatches[idx];
+        if (!c) continue;
+        rgba[dst] = c.r;
+        rgba[dst + 1] = c.g;
+        rgba[dst + 2] = c.b;
+        rgba[dst + 3] = c.a;
+        continue;
+      }
+      const src = (ly * lw + lx) * 4;
+      if (layer.format === "rgba32f") {
+        rgba[dst] = toByte(layerData[src]);
+        rgba[dst + 1] = toByte(layerData[src + 1]);
+        rgba[dst + 2] = toByte(layerData[src + 2]);
+        const a = layerData[src + 3];
+        rgba[dst + 3] = a <= 0 ? 0 : a >= 1 ? 255 : Math.round(a * 255);
+      } else {
+        rgba[dst] = layerData[src];
+        rgba[dst + 1] = layerData[src + 1];
+        rgba[dst + 2] = layerData[src + 2];
+        rgba[dst + 3] = layerData[src + 3];
+      }
     }
   }
 
@@ -1458,7 +1533,11 @@ function PencilOptions({
   const [antiAlias, setAA] = useState(pencilOptions.antiAlias);
   const [smoothing, setSmoothing] = useState(pencilOptions.smoothing);
   const [motionBlur, setMotionBlur] = useState(pencilOptions.motionBlur);
-  const [activeBrush, setActiveBrush] = useState<PixelBrush | null>(null);
+  // Start from the brush that actually paints (module state survives tool
+  // switches; the UI used to reset to "none" while painting with it).
+  const [activeBrush, setActiveBrush] = useState<PixelBrush | null>(
+    () => pencilOptions.pixelBrush,
+  );
   const [snapToBrush, setSnapToBrush] = useState(pencilOptions.snapToBrush);
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -1522,9 +1601,27 @@ function PencilOptions({
     [state.pixelBrushes, userBrushes],
   );
 
+  // Drop the painting brush when it no longer exists (removed, or the
+  // document with that brush was switched away) — the pencil kept painting
+  // with a stale brush otherwise.
+  useEffect(() => {
+    const current = pencilOptions.pixelBrush;
+    if (!current) return;
+    const stillThere =
+      state.pixelBrushes.some((b) => b.id === current.id) ||
+      userBrushes.some((b) => b.id === current.id);
+    if (!stillThere) {
+      pencilOptions.pixelBrush = null;
+      invalidatePencilBrushPreview();
+      setActiveBrush(null);
+    }
+  }, [state.pixelBrushes, userBrushes]);
+
+  const getAppState = useGetAppState();
   const handleCapture = useCallback((): void => {
-    captureSelectionAsBrush(dispatch);
-  }, [dispatch]);
+    const s = getAppState();
+    captureSelectionAsBrush(dispatch, s.activeLayerId, s.swatches);
+  }, [dispatch, getAppState]);
 
   const shades = getColorShades(
     Math.round(Math.min(primaryColor.r, 1) * 255),

@@ -125,10 +125,41 @@ class LiquifyStroke {
     }
   }
 
-  /** Displacement tile + offset for a prepared pixel. */
-  dispAt(lx: number, ly: number): { tile: Float32Array; i: number } {
-    const tile = this.dispTiles[(ly >> 6) * this.tilesX + (lx >> 6)]!;
-    return { tile, i: (((ly & 63) << 6) + (lx & 63)) * 2 };
+  /** Displacement tile for a prepared pixel (see `dispIndex`). Split in
+   *  two calls so the hot loop allocates nothing per pixel. */
+  dispTile(lx: number, ly: number): Float32Array {
+    return this.dispTiles[(ly >> 6) * this.tilesX + (lx >> 6)]!;
+  }
+
+  /** Offset of a pixel's displacement pair within its tile. */
+  dispIndex(lx: number, ly: number): number {
+    return (((ly & 63) << 6) + (lx & 63)) * 2;
+  }
+
+  // Scratch for the four bilinear taps (rgba each).
+  private readonly taps = new Float64Array(16);
+
+  /** Pre-stroke rgba at integer (x, y) into `taps[o..o+3]`; 0 outside. */
+  private tap(x: number, y: number, o: number): void {
+    const t = this.taps;
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) {
+      t[o] = t[o + 1] = t[o + 2] = t[o + 3] = 0;
+      return;
+    }
+    const tile = this.snapTiles[(y >> 6) * this.tilesX + (x >> 6)];
+    let src: ArrayLike<number>;
+    let i: number;
+    if (tile) {
+      src = tile;
+      i = (((y & 63) << 6) + (x & 63)) * 4;
+    } else {
+      src = this.layer.data;
+      i = (y * this.width + x) * 4;
+    }
+    t[o] = src[i];
+    t[o + 1] = src[i + 1];
+    t[o + 2] = src[i + 2];
+    t[o + 3] = src[i + 3];
   }
 
   /** Pre-stroke value of channel `ch` at integer (x, y); 0 outside. */
@@ -160,13 +191,29 @@ class LiquifyStroke {
     const w10 = fx * (1 - fy);
     const w01 = (1 - fx) * fy;
     const w11 = fx * fy;
-    for (let ch = 0; ch < 4; ch++) {
-      out[ch] =
-        this.src(x0, y0, ch) * w00 +
-        this.src(x0 + 1, y0, ch) * w10 +
-        this.src(x0, y0 + 1, ch) * w01 +
-        this.src(x0 + 1, y0 + 1, ch) * w11;
+    // Each tap fetched once (not once per channel), and colour interpolated
+    // premultiplied: straight-alpha interpolation mixed the RGB of
+    // transparent neighbours (usually black) into edge colours, leaving
+    // dark fringes on cut-outs.
+    this.tap(x0, y0, 0);
+    this.tap(x0 + 1, y0, 4);
+    this.tap(x0, y0 + 1, 8);
+    this.tap(x0 + 1, y0 + 1, 12);
+    const t = this.taps;
+    const a0 = t[3] * w00;
+    const a1 = t[7] * w10;
+    const a2 = t[11] * w01;
+    const a3 = t[15] * w11;
+    const aSum = a0 + a1 + a2 + a3;
+    out[3] = aSum;
+    if (aSum <= 0) {
+      out[0] = out[1] = out[2] = 0;
+      return;
     }
+    const inv = 1 / aSum;
+    out[0] = (t[0] * a0 + t[4] * a1 + t[8] * a2 + t[12] * a3) * inv;
+    out[1] = (t[1] * a0 + t[5] * a1 + t[9] * a2 + t[13] * a3) * inv;
+    out[2] = (t[2] * a0 + t[6] * a1 + t[10] * a2 + t[14] * a3) * inv;
   }
 }
 
@@ -278,7 +325,8 @@ function createLiquifyHandler(): ToolHandler {
         if (selection) f *= selectionWeight(selection, lx, ly);
         if (f <= 0) continue;
 
-        const { tile: dispMap, i: idx2 } = stroke.dispAt(lx, ly);
+        const dispMap = stroke.dispTile(lx, ly);
+        const idx2 = stroke.dispIndex(lx, ly);
 
         if (mode === "push") {
           // Forward warp: pixels travel with the brush. Sampling at

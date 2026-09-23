@@ -1,3 +1,9 @@
+import type { TiledLayerSnapshot } from "@/core/store/tiledSnapshot";
+import {
+  materializeLayerPixels,
+  snapshotFull,
+  snapshotIncremental,
+} from "@/core/store/tiledSnapshot";
 import type { AppAction } from "@/core/store/AppContext";
 import type { ClearHistoryOptions } from "@/core/store/historyStore";
 
@@ -72,9 +78,12 @@ export function useHistory({
       const layerGeometry = handle.captureAllLayerGeometry();
       const adjustmentMasks = handle.captureAllAdjustmentMasks();
       const contentVersions = handle.captureAllLayerContentVersions();
+      // What changed in each layer since the previous capture (union of the
+      // rects uploaded to the GPU, or "all" after a wholesale replace).
+      const changes = handle.takeAllLayerHistoryChanges();
 
       const prev = activeScope().history.entries[activeScope().history.currentIndex];
-      const layerPixels = new Map<string, Uint8Array | Float32Array>();
+      const layerPixels = new Map<string, TiledLayerSnapshot>();
       for (const [id, liveBuf] of liveBufs) {
         const prevVer = prev?.layerContentVersions?.get(id);
         const currVer = contentVersions.get(id);
@@ -90,17 +99,28 @@ export function useHistory({
           prevGeo.layerHeight === currGeo.layerHeight &&
           prevGeo.offsetX === currGeo.offsetX &&
           prevGeo.offsetY === currGeo.offsetY;
-        if (
-          prevBuf &&
-          sameVer &&
+        const geo = currGeo ?? prevGeo;
+        const lw = geo?.layerWidth ?? 0;
+        const lh = geo?.layerHeight ?? 0;
+        const channels: 1 | 4 = lw * lh > 0 && liveBuf.length === lw * lh ? 1 : 4;
+        const sameShape =
+          !!prevBuf &&
           sameGeo &&
-          prevBuf.length === liveBuf.length
-        ) {
+          prevBuf.width === lw &&
+          prevBuf.height === lh &&
+          prevBuf.channels === channels &&
+          prevBuf.float === liveBuf instanceof Float32Array;
+        const change = changes.get(id) ?? { kind: "all" as const };
+        if (prevBuf && sameShape && change.kind === "rect") {
+          // Only the tiles touched since the previous capture are copied
+          // (includes marked-but-unflushed edits); the rest are shared.
+          layerPixels.set(id, snapshotIncremental(prevBuf, liveBuf, change.rect));
+        } else if (prevBuf && sameShape && change.kind === "none" && sameVer) {
+          // Unchanged layer: share the previous snapshot entirely.
           layerPixels.set(id, prevBuf);
-        } else {
-          // Layer changed (or first capture) — must clone the live buffer; the
-          // live `layer.data` reference is mutated by subsequent paints.
-          layerPixels.set(id, liveBuf.slice() as Uint8Array | Float32Array);
+        } else if (lw * lh > 0) {
+          // New layer, geometry/format change, restore, or untracked change.
+          layerPixels.set(id, snapshotFull(liveBuf, lw, lh, channels));
         }
       }
 
@@ -141,7 +161,7 @@ export function useHistory({
         return;
       isRestoringRef.current = true;
       canvasHandleRef.current?.restoreAllLayerPixels(
-        entry.layerPixels,
+        materializeLayerPixels(entry.layerPixels),
         entry.layerGeometry,
         entry.layerState,
       );
@@ -193,7 +213,7 @@ export function useHistory({
         // lossy, because the canvas premultiplies alpha.
         const encoded = new Map<string, string>();
         const refPrefix = `${activeTabIdRef.current}:history:`;
-        for (const [id, pixels] of entry.layerPixels) {
+        for (const [id, pixels] of materializeLayerPixels(entry.layerPixels)) {
           const geo = entry.layerGeometry?.get(id);
           const lw = geo?.layerWidth ?? entry.canvasWidth;
           const lh = geo?.layerHeight ?? entry.canvasHeight;
@@ -256,7 +276,7 @@ export function useHistory({
         }
       } else {
         canvasHandleRef.current?.restoreAllLayerPixels(
-          entry.layerPixels,
+          materializeLayerPixels(entry.layerPixels),
           entry.layerGeometry,
           entry.layerState,
         );

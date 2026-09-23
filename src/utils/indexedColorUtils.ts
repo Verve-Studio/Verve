@@ -1,5 +1,10 @@
 import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { RGBAColor } from "@/types";
+import {
+  footprintCentreOffset,
+  footprintStart,
+  inPencilFootprint,
+} from "@/core/tools/Pencil/pencilFootprint";
 
 // ─── Palette resolution ───────────────────────────────────────────────────────
 
@@ -54,7 +59,13 @@ export function writeIndexToLayer(
     canvasY = ((canvasY % tiledH) + tiledH) % tiledH;
   }
   if (canvasX < 0 || canvasY < 0) return false;
-  if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return false;
+  if (sel) {
+    // Bounds first: a layer can extend past the canvas, and an unchecked
+    // index read the next row (or undefined → bypassing the selection).
+    if (canvasX >= sel.width) return false;
+    const si = canvasY * sel.width + canvasX;
+    if (si >= sel.mask.length || sel.mask[si] === 0) return false;
+  }
   const lx = canvasX - layer.offsetX;
   const ly = canvasY - layer.offsetY;
   if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)
@@ -64,12 +75,10 @@ export function writeIndexToLayer(
 }
 
 /**
- * Stamp a size×size footprint at canvas (cx, cy) using the given shape.
- * Calls writeIndexToLayer for each pixel inside the shape boundary.
- * Write-once semantics: each canvas pixel is written at most once per stroke
- * (tracked via the `touched` map; key = canvasY * canvasWidth + canvasX, but
- * since we don't have canvasWidth here, key = canvasY * 65536 + canvasX which
- * is sufficient for typical canvas sizes ≤ 65535).
+ * Stamp a size×size footprint at canvas (cx, cy) using the given shape — the
+ * shared pencil footprint rule (see `pencilFootprint.ts`), identical to the
+ * cursor preview. Writing an index is idempotent, so overlapping stamps need
+ * no per-stroke coverage tracking.
  */
 export function stampIndexedShape(
   layer: GpuLayer,
@@ -78,45 +87,19 @@ export function stampIndexedShape(
   index: number,
   size: number,
   shape: "round" | "square" | "diamond",
-  touched: Map<number, true>,
   sel?: { mask: Uint8Array; width: number },
   tiledW?: number,
   tiledH?: number,
 ): void {
-  const half = (size - 1) / 2;
-  const x0 = Math.floor(cx - half);
-  const x1 = Math.floor(cx + half);
-  const y0 = Math.floor(cy - half);
-  const y1 = Math.floor(cy + half);
-
-  for (let py = y0; py <= y1; py++) {
-    for (let px = x0; px <= x1; px++) {
-      let inside = false;
-      if (shape === "square") {
-        inside = true;
-      } else if (shape === "round") {
-        const dx = px - cx + 0.5,
-          dy = py - cy + 0.5;
-        inside = dx * dx + dy * dy <= half * half + half + 0.25;
-      } else {
-        // diamond: Manhattan distance
-        const dx = Math.abs(px - cx + 0.5),
-          dy = Math.abs(py - cy + 0.5);
-        inside = dx + dy <= half + 0.5;
-      }
-      if (!inside) continue;
-
-      let tx = px,
-        ty = py;
-      if (tiledW !== undefined && tiledH !== undefined) {
-        tx = ((tx % tiledW) + tiledW) % tiledW;
-        ty = ((ty % tiledH) + tiledH) % tiledH;
-      }
-      const key = ty * 65536 + tx;
-      if (touched.has(key)) continue;
-      if (writeIndexToLayer(layer, px, py, index, sel, tiledW, tiledH)) {
-        touched.set(key, true);
-      }
+  const n = Math.max(1, Math.round(size));
+  const start = footprintStart(n);
+  const centre = footprintCentreOffset(n);
+  for (let j = 0; j < n; j++) {
+    const oy = start + j - centre;
+    for (let i = 0; i < n; i++) {
+      const ox = start + i - centre;
+      if (!inPencilFootprint(ox, oy, n, shape)) continue;
+      writeIndexToLayer(layer, cx + start + i, cy + start + j, index, sel, tiledW, tiledH);
     }
   }
 }

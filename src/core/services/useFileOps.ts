@@ -1,3 +1,4 @@
+import { isValidPixelBrush } from "@/core/store/pixelBrushStore";
 import type { AppShellState } from "@/core/store/AppContext";
 import { useCallback, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
@@ -1081,7 +1082,10 @@ export function useFileOps({
           iccProfile: docIccProfile,
         },
       });
-      dispatch({ type: "SET_PIXEL_BRUSHES", payload: docPixelBrushes });
+      dispatch({
+        type: "SET_PIXEL_BRUSHES",
+        payload: docPixelBrushes.filter(isValidPixelBrush),
+      });
       if (docSpritesheet) {
         dispatch({ type: "SET_SPRITESHEET", payload: docSpritesheet });
       }

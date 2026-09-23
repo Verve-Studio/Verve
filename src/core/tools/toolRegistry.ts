@@ -3,6 +3,9 @@ import type { ITool, ToolPlacement } from "./_shared/ITool";
 
 const tools = new Map<Tool, ITool>();
 
+/** The tool Escape returns to from tools with `releaseOnEscape`. */
+export const DEFAULT_TOOL: Tool = "select";
+
 /**
  * One row in the toolbar = up to two tools (left + right cell). `null` is a
  * blank cell, used when a row is half-full (e.g. eraser sits alone in the

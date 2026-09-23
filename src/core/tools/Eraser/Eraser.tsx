@@ -22,7 +22,9 @@ export const eraserOptions = {
   softness: 0,
   smoothing: 50, // 0 = raw coords, 100 = maximum stabilizer (mirrors brush)
   antiAlias: true,
-  alphaMode: false,
+  // true = erase to transparency (the expected default); false = paint the
+  // secondary (background) colour while keeping alpha.
+  alphaMode: true,
 };
 
 // Same EMA mapping the brush uses — keeps stroke feel consistent.
@@ -63,7 +65,6 @@ function createEraserHandler(): ToolHandler {
       secondaryColor,
       selectionMask,
       render,
-      growLayerToFit,
     } = ctx;
     const secR = Math.round(Math.min(secondaryColor.r, 1) * 255);
     const secG = Math.round(Math.min(secondaryColor.g, 1) * 255);
@@ -86,9 +87,9 @@ function createEraserHandler(): ToolHandler {
         return;
     }
 
-    growLayerToFit(Math.round(p0x), Math.round(p0y), padR);
-    growLayerToFit(Math.round(cpx), Math.round(cpy), padR);
-    growLayerToFit(Math.round(p1x), Math.round(p1y), padR);
+    // No layer growth: outside the layer every pixel is already fully
+    // transparent, so erasing there changes nothing — growing only
+    // reallocated and re-uploaded the layer (inflating small layers).
 
     const sel = selectionMask
       ? { mask: selectionMask, width: renderer.pixelWidth }
@@ -99,7 +100,6 @@ function createEraserHandler(): ToolHandler {
     // Indexed8 layers: keep simple straight Bresenham stamping — the indexed
     // pipeline doesn't have a Bézier walker.
     if (layer.format === "indexed8") {
-      const indexedTouched = new Map<number, true>();
       const x0r = Math.round(p0x),
         y0r = Math.round(p0y);
       const x1r = Math.round(p1x),
@@ -112,7 +112,6 @@ function createEraserHandler(): ToolHandler {
           255,
           eraserOptions.size,
           "round",
-          indexedTouched,
           sel,
           tiledW,
           tiledH,

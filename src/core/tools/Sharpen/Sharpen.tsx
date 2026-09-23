@@ -1,3 +1,7 @@
+import {
+  linearToSrgbChannel,
+  srgbToLinearChannel,
+} from "@/utils/pixelFormatConvert";
 import React, { useState } from "react";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
@@ -73,6 +77,16 @@ function sharpenStamp(
   // stamp). Use this as the "original" for the unsharp-mask formula.
   const original = scratchBuffer(0, isFloat, bw * bh * 4);
   copyLayerRect(data, W, minLx, minLy, bw, bh, original);
+  if (isFloat) {
+    // Sharpen in sRGB-encoded space on float layers too, so halo strength
+    // and "protect detail" (mid-grey centred) match 8-bit documents; the
+    // power-law extension keeps values > 1 (decoded back on write).
+    for (let i = 0; i < original.length; i += 4) {
+      original[i] = linearToSrgbChannel(original[i]);
+      original[i + 1] = linearToSrgbChannel(original[i + 1]);
+      original[i + 2] = linearToSrgbChannel(original[i + 2]);
+    }
+  }
 
   const max = isFloat ? 1 : 255;
   const half = max / 2;
@@ -140,9 +154,10 @@ function sharpenStamp(
       const li = (ly * W + lx) * 4;
       if (isFloat) {
         const arr = data as Float32Array;
-        arr[li] = Math.max(0, Math.min(max, original[oi] + dR * w));
-        arr[li + 1] = Math.max(0, Math.min(max, original[oi + 1] + dG * w));
-        arr[li + 2] = Math.max(0, Math.min(max, original[oi + 2] + dB * w));
+        // Back to linear light; clamp below only — values > 1 are valid HDR.
+        arr[li] = srgbToLinearChannel(Math.max(0, original[oi] + dR * w));
+        arr[li + 1] = srgbToLinearChannel(Math.max(0, original[oi + 1] + dG * w));
+        arr[li + 2] = srgbToLinearChannel(Math.max(0, original[oi + 2] + dB * w));
         arr[li + 3] = original[oi + 3];
       } else {
         const arr = data as Uint8Array;

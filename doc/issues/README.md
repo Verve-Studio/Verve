@@ -105,3 +105,48 @@ Issues from the stability and performance code review of September 2026. The det
 | 095 | [A print job can leak its window and temp directory](095-print-job-leak.md) | P4 | Fixed |
 | 096 | [Dead WASM exports and unused C++ filters](096-wasm-dead-code.md) | P4 | Fixed |
 | 097 | [Check WebGPU enablement on Linux builds](097-linux-webgpu-flags.md) | P4 | Fixed |
+
+## Painting system review (September 2026)
+
+| ID | Issue | Priority | Status |
+|---|---|---|---|
+| 098 | [Eraser with Anti-alias off freezes the app](098-eraser-bresenham-hang.md) | P0 | Fixed |
+| 099 | [Brush WASM path clips to a stale selection mask](099-brush-stale-wasm-selection.md) | P0 | Fixed |
+| 100 | [Tiled mode: Brush strokes with a mouse are never uploaded](100-tiled-brush-no-upload.md) | P0 | Fixed |
+| 101 | [Pen batches upload the full active layer every frame](101-pen-batch-full-upload.md) | P0 | Fixed |
+| 102 | [A stroke can get stuck (no pointer-up, timers, strokeActive)](102-stroke-not-guaranteed-to-end.md) | P1 | Fixed |
+| 103 | [Incremental composite is disabled during every stroke](103-stroke-full-recomposite.md) | P2 | Fixed |
+| 104 | [Each stroke's undo entry is a full-layer copy](104-history-full-layer-copy.md) | P2 | Fixed |
+| 105 | [Mouse input paints at half pressure](105-mouse-pressure-half.md) | P1 | Fixed |
+| 106 | [Sharpen clips HDR; Healing ignores the selection; hard selections in Clone/Dodge](106-retouch-hdr-selection.md) | P1 | Fixed |
+| 107 | [Brush stamp bounding box ignores angle, square tips and shear](107-brush-stamp-bbox.md) | P1 | Fixed |
+| 108 | [Brush motion blur disables the WASM batch and flips render paths](108-brush-motion-blur-gating.md) | P2 | Fixed |
+| 109 | [Bitmap stamp path snaps stamp centres to whole pixels](109-brush-bitmap-pixel-snap.md) | P3 | Fixed |
+| 110 | [Brush scatter sub-stamps share one scatter distance](110-brush-scatter-count.md) | P3 | Fixed |
+| 111 | [Brush direction dynamics: dead half-range and 0° seed](111-brush-direction-dynamics.md) | P3 | Fixed |
+| 112 | [Brush build-up breaks wet edges](112-brush-buildup-wet-edges.md) | P3 | Fixed |
+| 113 | [Brush colour pipeline clamps / mis-encodes HDR](113-brush-hdr-colour.md) | P3 | Fixed |
+| 114 | [Smudge / Liquify / Healing pull black from transparent pixels](114-smudge-dark-fringes.md) | P3 | Fixed |
+| 115 | [Brush layer growth padding ignores scatter and shear](115-brush-scatter-growth.md) | P3 | Fixed |
+| 116 | [Tiled mode leaves stale coverage in `touched`](116-tiled-touched-stale.md) | P3 | Fixed |
+| 117 | [Pencil capture-selection-as-brush is wrong for rgba32f/indexed8 and reads stale state](117-pencil-capture-brush.md) | P3 | Fixed |
+| 118 | [Pencil pixel-brush selection desyncs from the UI](118-pencil-pixel-brush-state.md) | P3 | Fixed |
+| 119 | [Pencil motion blur paints outside the dirty/growth pad](119-pencil-motion-blur-pad.md) | P3 | Fixed |
+| 120 | [Pencil sizes don't match preview / indexed stamps](120-pencil-size-mismatch.md) | P3 | Fixed |
+| 121 | [1 px anti-aliased eraser leaves partially erased beads](121-eraser-aa-beads.md) | P3 | Fixed |
+| 122 | [Eraser defaults to painting the background colour; indexed8 ignores strength](122-eraser-default-mode.md) | P3 | Fixed |
+| 123 | [Indexed8 pencil: no pixel-perfect, selection OOB, first-dab tiling, Map coverage](123-indexed-pencil-gaps.md) | P3 | Fixed |
+| 124 | [Quick Select leaves seams and drops stamps](124-quickselect-seams.md) | P3 | Fixed |
+| 125 | [Clone Stamp Sample All Layers: taps paint nothing; masks/adjustments ignored](125-clonestamp-sample-all.md) | P3 | Fixed |
+| 126 | [Smudge and Blur can't extend beyond the layer rect](126-smudge-blur-growth.md) | P3 | Fixed |
+| 127 | [No pointerId tracking or pointercancel handling](127-pointer-multi-cancel.md) | P3 | Fixed |
+| 128 | [Airbrush build-up doesn't render with a pen](128-pen-buildup-no-render.md) | P3 | Fixed |
+| 129 | [Full ToolContext built per coalesced sample; every sample replayed into all tools](129-per-sample-context.md) | P2 | Fixed |
+| 130 | [Healing: full-layer uploads, no stroke throttle; Clone/Heal full copies per stroke](130-healing-perf.md) | P2 | Fixed |
+| 131 | [Dodge/Burn allocates per pixel and grows the layer needlessly](131-dodge-perf.md) | P2 | Fixed |
+| 132 | [Per-pixel allocation in samplePixel/blendPixelOver and pencil/eraser overdraw](132-pixel-write-overhead.md) | P2 | Fixed |
+| 133 | [Mid-stroke thumbnail refresh, double upload on grow, zoom scans mask](133-stroke-misc-perf.md) | P2 | Fixed |
+| 134 | [Brush allocates dozens of objects per stamp](134-brush-alloc-per-stamp.md) | P2 | Fixed |
+| 135 | [Brush low-severity: spacing carry, tilt wrap, wet-edge format, SDF leak, batch flags](135-brush-low-misc.md) | P4 | Fixed |
+| 136 | [Retouching low-severity: blur margin, sharpen space, liquify loop, object-removal scan, scope use](136-retouch-low-misc.md) | P4 | Fixed |
+| 137 | [Dead painting code (unused primitives, newPixelLayerRef)](137-painting-dead-code.md) | P4 | Fixed |

@@ -172,17 +172,15 @@
   opacity: 0.85;
 }
 
-.gridOverlay {
+// Normal grid — viewport-level canvas drawn by useGridOverlay. Above the
+// image, below guides (6) and the marching ants (10).
+.gridCanvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  background-image:
-    linear-gradient(to right,  var(--grid-color, rgba(128,128,128,0.5)) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--grid-color, rgba(128,128,128,0.5)) 1px, transparent 1px);
-  background-size: var(--grid-size, 16px) var(--grid-size, 16px);
   z-index: 2;
 }
 
@@ -246,74 +244,107 @@
   }
 }
 
-.textEditorRoot {
-  box-sizing: content-box;
-  border: 2px dashed #0078ff;
-  box-shadow: 0 0 0 1px rgba(0, 120, 255, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
-  z-index: 9999;
+// ── Inline text editing ─────────────────────────────────────────────────────
+// The text itself is drawn by the layer; these only draw the chrome on top.
+.textEditLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  z-index: 20;
+}
+
+.textEditMoveRing {
+  position: absolute;
+  cursor: move;
   pointer-events: auto;
+}
 
-  // Resize handles
-  $hs: 8px; // handle size
-  $ho: -5px; // handle offset from edge (negative = outside)
+.textEditFrame {
+  position: absolute;
+  box-sizing: border-box;
+  cursor: text;
+  pointer-events: auto;
+  outline: 1px dashed rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
 
-  .resizeHandle {
-    position: absolute;
-    width: $hs;
-    height: $hs;
-    background: #fff;
-    border: 1px solid #0078ff;
-    border-radius: 1px;
-    z-index: 10000;
-    pointer-events: all;
-
-    // Corners
-    &.handle-nw { left: $ho; top: $ho; }
-    &.handle-ne { right: $ho; top: $ho; }
-    &.handle-se { right: $ho; bottom: $ho; }
-    &.handle-sw { left: $ho; bottom: $ho; }
-    // Edges — centered
-    &.handle-n  { left: calc(50% - #{$hs * 0.5}); top: $ho; }
-    &.handle-s  { left: calc(50% - #{$hs * 0.5}); bottom: $ho; }
-    &.handle-w  { top: calc(50% - #{$hs * 0.5}); left: $ho; }
-    &.handle-e  { top: calc(50% - #{$hs * 0.5}); right: $ho; }
+  &.textEditFramePoint {
+    outline-color: rgba(255, 255, 255, 0.6);
   }
 }
 
-.textEditor {
-  display: block;
+.textEditGlyphs {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.textEditSelection {
+  position: absolute;
+  background: rgba(0, 120, 255, 0.4);
+  mix-blend-mode: normal;
+
+  &.textEditSelectionBlurred {
+    background: rgba(128, 128, 128, 0.35);
+  }
+}
+
+@keyframes textCaretBlink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+// Two-tone (dark core, light rim) so the caret reads on any artwork. Blend
+// modes can't be used: the editor overlay is its own stacking context, so a
+// `difference` caret would blend with nothing and end up plain white.
+// Re-keyed on every caret move / keystroke, which restarts the blink solid.
+.textEditCaret {
+  position: absolute;
+  background: #111;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 2px 1px rgba(0, 0, 0, 0.35);
+  animation: textCaretBlink 1.06s linear infinite;
+}
+
+.textEditHandle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.15);
-  border: none;
-  outline: none;
-  resize: none;
+  background: #fff;
+  border: 1px solid #0078ff;
+  border-radius: 1px;
+  pointer-events: auto;
+
+  &.textEditHandleOverflow {
+    background: #e5484d;
+    border-color: #fff;
+  }
+}
+
+// Invisible input sink: receives keys / IME / clipboard for the edited text.
+.textEditInput {
+  position: absolute;
+  width: 1px;
   padding: 0;
   margin: 0;
+  border: 0;
+  outline: none;
+  resize: none;
   overflow: hidden;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  z-index: 9999;
-  pointer-events: auto;
-  caret-color: currentColor;
-
-  // Per-paragraph rendering rules. Each direct `<div>` child of the editor
-  // represents one paragraph; the CSS custom properties on `.textEditor`
-  // (set inline from the TextLayerState fields) drive paragraph-level
-  // spacing, first-line indent, etc., so the editor preview matches the
-  // rasteriser's per-paragraph composition exactly.
-  > div {
-    margin: 0;
-    padding: 0;
-    text-indent: var(--text-first-line-indent, 0);
-    // `spaceBefore` is added between paragraphs (not before the first),
-    // matching the rasteriser's `if (wl.isFirstOfPara && i > 0)` guard.
-    &:not(:first-child) {
-      margin-top: var(--text-space-before, 0);
-    }
-    // `spaceAfter` after every paragraph — matches the rasteriser's
-    // `if (wl.isLastOfPara) cursorY += spaceAfter`.
-    margin-bottom: var(--text-space-after, 0);
-  }
+  white-space: pre;
+  opacity: 0;
+  color: transparent;
+  caret-color: transparent;
+  background: transparent;
+  pointer-events: none;
 }
 

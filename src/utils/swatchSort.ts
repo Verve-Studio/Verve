@@ -1,4 +1,4 @@
-import { RGBAColor } from "@/types";
+import type { RGBAColor, SwatchGroup } from "@/types";
 
 export function rgbaToHsl(c: RGBAColor): { h: number; s: number; l: number } {
   const r = c.r / 255;
@@ -165,6 +165,43 @@ export function mergeNearbySwatches(
     }
     if (!merged) out.push(c);
   }
+  return out;
+}
+
+/**
+ * Swatch panel order: every ramp group (e.g. a Time of Day gradient) first,
+ * each on its own row in its stored order, then the remaining swatches
+ * hue-sorted. `rowStart` marks entries that begin a new row.
+ */
+export function swatchDisplayOrder(
+  swatches: RGBAColor[],
+  groups: readonly SwatchGroup[],
+): Array<{ color: RGBAColor; canonicalIndex: number; rowStart: boolean }> {
+  const out: Array<{ color: RGBAColor; canonicalIndex: number; rowStart: boolean }> = [];
+  const placed = new Set<number>();
+  for (const g of groups) {
+    if (!g.ramp) continue;
+    let first = true;
+    for (const idx of g.swatchIndices) {
+      if (idx < 0 || idx >= swatches.length || placed.has(idx)) continue;
+      placed.add(idx);
+      out.push({ color: swatches[idx], canonicalIndex: idx, rowStart: first });
+      first = false;
+    }
+  }
+  if (placed.size === 0) {
+    return sortSwatchesByHue(swatches).map((e) => ({ ...e, rowStart: false }));
+  }
+  const rest = swatches
+    .map((color, canonicalIndex) => ({ color, canonicalIndex }))
+    .filter((e) => !placed.has(e.canonicalIndex));
+  sortSwatchesByHue(rest.map((e) => e.color)).forEach((e, i) => {
+    out.push({
+      color: e.color,
+      canonicalIndex: rest[e.canonicalIndex].canonicalIndex,
+      rowStart: i === 0,
+    });
+  });
   return out;
 }
 

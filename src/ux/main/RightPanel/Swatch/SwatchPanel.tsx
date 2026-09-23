@@ -12,7 +12,7 @@ import {
   useAppSelector,
 } from "@/core/store/AppContext";
 import { usePaletteFileOps } from "@/core/services/usePaletteFileOps";
-import { sortSwatchesByHue } from "@/utils/swatchSort";
+import { swatchDisplayOrder } from "@/utils/swatchSort";
 import { ModalDialog } from "@/ux/modals/ModalDialog/ModalDialog";
 import { DialogButton } from "@/ux/widgets/DialogButton/DialogButton";
 import { showOperationError } from "@/utils/userFeedback";
@@ -145,9 +145,11 @@ export function SwatchPanel({
     setMenuOpen((o) => !o);
   }
 
+  // Ramp groups (Time of Day gradients) keep their order, one per row;
+  // everything else is hue-sorted after them.
   const displayEntries = useMemo(
-    () => sortSwatchesByHue(state.swatches),
-    [state.swatches],
+    () => swatchDisplayOrder(state.swatches, state.swatchGroups),
+    [state.swatches, state.swatchGroups],
   );
 
   const highlightedCanonicalIndices = useMemo<Set<number>>(() => {
@@ -404,7 +406,7 @@ export function SwatchPanel({
       )}
       <div className={styles.swatchGrid}>
         {displayEntries.map((entry, displayIndex) => {
-          const { color, canonicalIndex } = entry;
+          const { color, canonicalIndex, rowStart } = entry;
           const hex = `#${[color.r, color.g, color.b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
           // Swatches are 0-255; primaryColor is float [0,1]. Compare in 0-255 space.
           const isActive =
@@ -424,8 +426,13 @@ export function SwatchPanel({
             .filter(Boolean)
             .join(" ");
           return (
-            <button
+            <React.Fragment
               key={`${canonicalIndex}-${color.r}-${color.g}-${color.b}-${color.a}`}
+            >
+            {rowStart && displayIndex > 0 && (
+              <div className={styles.swatchRowBreak} aria-hidden />
+            )}
+            <button
               className={cellClass}
               style={{ background: hex }}
               title={hex.toUpperCase()}
@@ -435,6 +442,7 @@ export function SwatchPanel({
               }
               onContextMenu={(e) => handleContextMenu(e, canonicalIndex)}
             />
+            </React.Fragment>
           );
         })}
         {state.swatches.length === 0 && (

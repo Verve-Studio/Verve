@@ -1,7 +1,10 @@
 import { createGpuTexture } from "../utils";
 import { GpuDevice } from "../device/GpuDevice";
 import { ResourceCache } from "../resources/ResourceCache";
-import { LayerTextureStore } from "../layers/LayerTextureStore";
+import {
+  LayerTextureStore,
+  type LayerHistoryChange,
+} from "../layers/LayerTextureStore";
 import { getStrategy } from "../layers/formats";
 import { RenderCache } from "../frame/RenderCache";
 import { DisplayPresenter } from "../frame/DisplayPresenter";
@@ -14,6 +17,7 @@ import { encodeClearTexture } from "./copyEncoders";
 import {
   makeTouchedBuffer,
   clearTouchedBuffer,
+  resetTouchedWrites,
   type TouchedBuffer,
 } from "@/core/tools/_shared/primitives";
 import {
@@ -110,6 +114,17 @@ export class WebGPURenderer {
     this.executor.strokeEnd();
   }
 
+  /** Whether a painting stroke is open (strokeStart without strokeEnd). */
+  get isStrokeActive(): boolean {
+    return this.executor.strokeActive;
+  }
+
+  /** Whether `layer` is still alive in this renderer (not destroyed or
+   *  replaced by a re-created GpuLayer). */
+  isLayerLive(layer: GpuLayer): boolean {
+    return this.liveLayers.has(layer);
+  }
+
   /** Toggle preview mode (drag). Standalone effects (bloom, halation, etc.)
    *  are skipped while on; restored on pointer-up. */
   setPreviewMode(enabled: boolean): void {
@@ -162,7 +177,14 @@ export class WebGPURenderer {
   readonly pixelWidth: number;
   readonly pixelHeight: number;
   private readonly internalFormat: GPUTextureFormat;
+  /** While true, `flushLayer` only records the layer; `endDeferFlush`
+   *  uploads each recorded layer once. Used for coalesced pen batches. */
   deferFlush = false;
+  /** Layers whose flush was deferred, with the palette the caller passed. */
+  private readonly deferredFlushes = new Map<
+    GpuLayer,
+    readonly RGBAColor[] | undefined
+  >();
   /** Lazily-allocated per-stroke max-coverage buffer, shared across tools.
    *  See {@link acquireTouchedBuffer}. */
   private touchedBuffer: TouchedBuffer | null = null;
@@ -200,35 +222,56 @@ export class WebGPURenderer {
           buf.data = newView as Uint8Array;
         });
         if (got) {
+          // `_malloc` returns recycled heap memory (freed decode buffers,
+          // old layer pixels…), not zeroes. Uninitialised coverage made
+          // every tool skip pixels wherever the garbage exceeded the stamp
+          // coverage — dotted / striped holes in the first strokes.
+          got.view.fill(0);
           buf.data = got.view;
           buf.wasmPtr = got.ptr;
         }
       }
-      // Fresh buffer is already zeroed by `new Uint8Array`; nothing to clear.
+      // Fresh buffer is zeroed (JS allocation, or the pinned view above).
     } else {
-      // Reuse the existing buffer. If the previous tool recorded the bbox
-      // it painted into, clear ONLY that region — for a 500-px brush on
-      // A1 that's 250 KB instead of 70 MB. Tools that don't record (e.g.
-      // pencil, eraser) leave `lastDirtyRect` undefined and we fall back
-      // to the canvas-sized fill.
+      // Reuse the existing buffer: clear only what the previous stroke
+      // wrote — the union of the tool's `lastDirtyRect` (the WASM brush
+      // path) and the write box recorded by the shared JS writers. Only
+      // when something wrote untracked and no rect covers it do we fall
+      // back to clearing the whole canvas-sized buffer.
       const buf = this.touchedBuffer;
       const rect = buf.lastDirtyRect;
-      if (rect) {
-        const lx = Math.max(0, Math.floor(rect.lx));
-        const ly = Math.max(0, Math.floor(rect.ly));
-        const rx = Math.min(buf.width, Math.ceil(rect.rx));
-        const ry = Math.min(buf.height, Math.ceil(rect.ry));
-        if (rx > lx && ry > ly) {
-          const w = rx - lx;
+      if (buf.untracked && !rect) {
+        clearTouchedBuffer(buf);
+      } else {
+        let lx = Infinity,
+          ly = Infinity,
+          rx = -Infinity,
+          ry = -Infinity;
+        if (rect) {
+          lx = rect.lx;
+          ly = rect.ly;
+          rx = rect.rx;
+          ry = rect.ry;
+        }
+        if (buf.wx1 >= buf.wx0) {
+          lx = Math.min(lx, buf.wx0);
+          ly = Math.min(ly, buf.wy0);
+          rx = Math.max(rx, buf.wx1 + 1);
+          ry = Math.max(ry, buf.wy1 + 1);
+        }
+        const x0 = Math.max(0, Math.floor(lx));
+        const y0 = Math.max(0, Math.floor(ly));
+        const x1 = Math.min(buf.width, Math.ceil(rx));
+        const y1 = Math.min(buf.height, Math.ceil(ry));
+        if (x1 > x0 && y1 > y0) {
           const data = buf.data;
-          for (let y = ly; y < ry; y++) {
-            data.fill(0, y * buf.width + lx, y * buf.width + lx + w);
+          for (let y = y0; y < y1; y++) {
+            data.fill(0, y * buf.width + x0, y * buf.width + x1);
           }
         }
-        buf.lastDirtyRect = undefined;
-      } else {
-        clearTouchedBuffer(buf);
       }
+      buf.lastDirtyRect = undefined;
+      resetTouchedWrites(buf);
     }
     return this.touchedBuffer;
   }
@@ -390,9 +433,36 @@ export class WebGPURenderer {
    *                colour table used to expand indices into RGBA before upload.
    */
   flushLayer(layer: GpuLayer, palette?: readonly RGBAColor[]): void {
-    if (this.deferFlush) return;
+    if (this.deferFlush) {
+      this.deferredFlushes.set(
+        layer,
+        palette ?? this.deferredFlushes.get(layer),
+      );
+      return;
+    }
     const rect = this.layerTextures.flush(layer, palette);
     this.executor.unionFrameDirty(rect.canvasX, rect.canvasY, rect.w, rect.h);
+  }
+
+  /**
+   * End a deferred-flush batch: upload exactly the layers that tools asked
+   * to flush during it (only their dirty patches), each once. Layers nobody
+   * flushed (e.g. Hand / Select / Lasso drags) upload nothing — the batch
+   * used to force a full-layer upload of the active layer every frame.
+   * `fallbackPalette` is used for indexed8 layers flushed without one.
+   */
+  endDeferFlush(fallbackPalette?: readonly RGBAColor[]): void {
+    this.deferFlush = false;
+    if (this.deferredFlushes.size === 0) return;
+    const pending = [...this.deferredFlushes];
+    this.deferredFlushes.clear();
+    for (const [layer, palette] of pending) {
+      if (!this.liveLayers.has(layer)) continue;
+      this.flushLayer(
+        layer,
+        palette ?? (layer.format === "indexed8" ? fallbackPalette : undefined),
+      );
+    }
   }
 
   /** Expand the layer's pending dirty region by the given layer-local rect.
@@ -406,6 +476,11 @@ export class WebGPURenderer {
     ry: number,
   ): void {
     this.layerTextures.markDirty(layer, lx, ly, rx, ry);
+  }
+
+  /** What changed in a layer since the previous call (history capture). */
+  takeLayerHistoryChange(layer: GpuLayer): LayerHistoryChange {
+    return this.layerTextures.takeHistoryChange(layer.id);
   }
 
   /** Whether the layer has CPU-side changes not yet uploaded to its texture. */
@@ -603,7 +678,16 @@ export class WebGPURenderer {
     layer.offsetX = newX;
     layer.offsetY = newY;
     pinLayerToWasm(layer);
-    this.layerTextures.replaceTexture(layer, newTex, newW, newH, layer.format);
+    // rgba8 / rgba32f uploaded the grown buffer above (uploadAfterGrow);
+    // indexed8 skips that upload and still needs the full flush.
+    this.layerTextures.replaceTexture(
+      layer,
+      newTex,
+      newW,
+      newH,
+      layer.format,
+      layer.format !== "indexed8",
+    );
     // Bump version since texture content changed.
     layer.contentVersion = this.layerTextures.bumpVersion(layer.id);
     // The incremental composite (`stableTex`) was captured against the

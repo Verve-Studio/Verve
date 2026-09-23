@@ -37,8 +37,12 @@ import type { AppAction } from "@/core/store/AppContext";
 import type {
   GpuLayer,
   WebGPURenderer,
+  RenderPlanEntry,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { rasterizeTextToLayer } from "@/ux/main/Canvas/textRasterizer";
+import {
+  markTextLayerBlank,
+  rasterizeTextToLayer,
+} from "@/ux/main/Canvas/textRasterizer";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
 import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import { rasterizeFrameToLayer } from "@/ux/main/Canvas/frameRasterizer";
@@ -69,11 +73,6 @@ export interface ToolContextDeps {
   dispatch: React.Dispatch<AppAction>;
   rendererRef: React.RefObject<WebGPURenderer | null>;
   glLayersRef: React.RefObject<Map<string, GpuLayer>>;
-  /** Pending new pixel layer — when a paint tool first stamps on a
-   *  parametric layer (text/shape) it auto-creates a pixel layer and
-   *  parks it here so buildCtx can target it before React re-renders
-   *  with the new layer in state. */
-  newPixelLayerRef: React.RefObject<GpuLayer | null>;
   toolOverlayRef: React.RefObject<HTMLCanvasElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   viewportRef: React.RefObject<HTMLDivElement | null>;
@@ -86,13 +85,15 @@ export interface ToolContextDeps {
    *  here and by the render-plan builder). */
   buildMaskMap: () => Map<string, GpuLayer>;
   buildOrderedGLLayers: () => GpuLayer[];
+  /** Output render plan (no preview-only state) for composite reads. */
+  buildOutputPlan: () => RenderPlanEntry[];
   /** Render trigger. */
   doRender: () => void;
   /** Stroke commit callback. */
   onStrokeEndRef: React.RefObject<((label: string) => void) | undefined>;
-  /** UI state setter for opening the inline text editor on a new text
-   *  layer. */
-  setEditingLayerId: (id: string | null) => void;
+  /** Open the inline text editor on a text layer, optionally placing the
+   *  caret at a canvas-space point. */
+  openTextEditor: (id: string, at?: { x: number; y: number }) => void;
 }
 
 /** Convert primary/secondary colour into a grayscale value for mask-layer
@@ -194,24 +195,26 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
       commitStroke: (label: string) => {
         d.onStrokeEndRef.current?.(label);
       },
+      readCompositePixels: () =>
+        renderer.readFlattenedPlan(depsRef.current.buildOutputPlan()),
       overlayCanvas: d.toolOverlayRef.current,
       addTextLayer: (ls) => {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
-        rasterizeTextToLayer(ls, gl);
-        renderer.flushLayer(gl);
+        markTextLayerBlank(gl);
+        rasterizeTextToLayer(ls, gl, renderer);
         d.glLayersRef.current.set(ls.id, gl);
         d.doRender();
         dispatch({ type: "ADD_TEXT_LAYER", payload: ls });
-        d.setEditingLayerId(ls.id);
+        d.openTextEditor(ls.id);
       },
       updateTextLayer: (ls) => {
         dispatch({ type: "UPDATE_TEXT_LAYER", payload: ls });
       },
-      openTextLayerEditor: (id) => {
+      openTextLayerEditor: (id, at) => {
         dispatch({ type: "SET_ACTIVE_LAYER", payload: id });
-        d.setEditingLayerId(id);
+        d.openTextEditor(id, at);
       },
       textLayers: state.layers.filter(
         (l): l is TextLayerState => "type" in l && l.type === "text",
@@ -219,8 +222,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
       previewTextAt: (ls, x, y) => {
         const gl = d.glLayersRef.current.get(ls.id);
         if (!gl) return;
-        rasterizeTextToLayer({ ...ls, x, y }, gl);
-        renderer.flushLayer(gl);
+        rasterizeTextToLayer({ ...ls, x, y }, gl, renderer);
         d.doRender();
       },
       addShapeLayer: (ls) => {

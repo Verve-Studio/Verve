@@ -44,6 +44,37 @@ export interface TouchedBuffer {
    * end. Tools that don't update it cause a full fill — same as before.
    */
   lastDirtyRect?: { lx: number; ly: number; rx: number; ry: number };
+  /**
+   * Bounding box (canvas space, inclusive) of every write made through the
+   * shared JS writers (`noteTouchedWrite`) since the last acquire, so the
+   * next stroke clears only that region — pencil / eraser / dodge used to
+   * force a full canvas-sized clear on every stroke start.
+   */
+  wx0: number;
+  wy0: number;
+  wx1: number;
+  wy1: number;
+  /** Set when something wrote without recording a box (the WASM brush
+   *  kernel); unless `lastDirtyRect` covers it, the next acquire clears the
+   *  whole buffer. */
+  untracked: boolean;
+}
+
+/** Record a write at canvas (x, y) into the buffer's write box. */
+export function noteTouchedWrite(buf: TouchedBuffer, x: number, y: number): void {
+  if (x < buf.wx0) buf.wx0 = x;
+  if (x > buf.wx1) buf.wx1 = x;
+  if (y < buf.wy0) buf.wy0 = y;
+  if (y > buf.wy1) buf.wy1 = y;
+}
+
+/** Reset the write box / untracked flag (after the buffer was cleared). */
+export function resetTouchedWrites(buf: TouchedBuffer): void {
+  buf.wx0 = Infinity;
+  buf.wy0 = Infinity;
+  buf.wx1 = -1;
+  buf.wy1 = -1;
+  buf.untracked = false;
 }
 
 export function makeTouchedBuffer(
@@ -56,7 +87,16 @@ export function makeTouchedBuffer(
   // — leaving it untracked under-reports total RAM use whether or not the
   // buffer subsequently gets pinned to the WASM heap (the WASM pin
   // tracks separately and balances out when the JS array is GC'd).
-  return { data: allocUint8(width * height), width, height };
+  return {
+    data: allocUint8(width * height),
+    width,
+    height,
+    wx0: Infinity,
+    wy0: Infinity,
+    wx1: -1,
+    wy1: -1,
+    untracked: false,
+  };
 }
 
 export function clearTouchedBuffer(buf: TouchedBuffer): void {
@@ -98,6 +138,20 @@ export function bresenham(
   y1: number,
   plot: (x: number, y: number) => void,
 ): void {
+  // Integer grid only. Fractional endpoints (e.g. smoothed-curve midpoints)
+  // used to make the exact-equality exit unreachable — an infinite loop
+  // that froze the app — and NaN (degenerate brush data) did the same.
+  if (
+    !Number.isFinite(x0) ||
+    !Number.isFinite(y0) ||
+    !Number.isFinite(x1) ||
+    !Number.isFinite(y1)
+  )
+    return;
+  x0 = Math.round(x0);
+  y0 = Math.round(y0);
+  x1 = Math.round(x1);
+  y1 = Math.round(y1);
   const dx = Math.abs(x1 - x0),
     sx = x0 < x1 ? 1 : -1;
   const dy = -Math.abs(y1 - y0),
@@ -105,8 +159,10 @@ export function bresenham(
   let err = dx + dy,
     x = x0,
     y = y0;
+  // A Bresenham line visits exactly max(|dx|,|dy|)+1 pixels.
+  let steps = Math.max(dx, -dy) + 1;
 
-  while (true) {
+  while (steps-- > 0) {
     plot(x, y);
     if (x === x1 && y === y1) break;
     const e2 = 2 * err;
@@ -119,25 +175,6 @@ export function bresenham(
       y += sy;
     }
   }
-}
-
-/** Convenience: draw a filled line segment on a layer.
- * Coordinates are CANVAS-SPACE; translates to layer-local internally. */
-export function drawLine(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-): void {
-  bresenham(x0, y0, x1, y1, (x, y) =>
-    renderer.drawCanvasPixel(layer, x, y, r, g, b, a),
-  );
 }
 
 /**
@@ -216,15 +253,22 @@ export function blendPixelOver(
     canvasY >= renderer.pixelHeight
   )
     return;
-  if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return;
+  // Soft (feathered) selections scale the deposit and the stroke cap, like
+  // the WASM stamp kernels do; 0 = outside.
+  let selW = 1;
+  if (sel) {
+    const v = sel.mask[canvasY * sel.width + canvasX];
+    if (v === 0) return;
+    if (v !== 255) selW = v / 255;
+  }
   const lx = canvasX - layer.offsetX;
   const ly = canvasY - layer.offsetY;
   if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)
     return;
   const srcA =
-    srcFloat !== undefined && layer.format === "rgba32f"
+    (srcFloat !== undefined && layer.format === "rgba32f"
       ? srcFloat[3] * (opacity / 100)
-      : (a / 255) * (opacity / 100);
+      : (a / 255) * (opacity / 100)) * selW;
   if (srcA <= 0) return;
 
   let blendA = srcA;
@@ -244,62 +288,37 @@ export function blendPixelOver(
       // gets a clean stroke shape — otherwise a smudged stroke whose carried
       // alpha varies stamp-to-stamp produces noisy silhouette values and a
       // patchy rim.
-      const geomByte = (opacity * 2.55 + 0.5) | 0;
+      const geomByte = (opacity * selW * 2.55 + 0.5) | 0;
       if (geomByte > existingByte) tdata[key] = geomByte;
+      noteTouchedWrite(touched, canvasX, canvasY);
     } else if (capOpacity !== undefined) {
       // Flow path: srcA = per-stamp deposit, capA = per-stroke ceiling.
       // Each stamp deposits `min(srcA, upgrade-to-cap)`; the resulting
       // accumulated alpha (existing + blendA*(1-existing)) approaches
       // capA asymptotically, so overlapping stamps build up gradually.
       const capA =
-        srcFloat !== undefined && layer.format === "rgba32f"
+        (srcFloat !== undefined && layer.format === "rgba32f"
           ? srcFloat[3] * (capOpacity / 100)
-          : (a / 255) * (capOpacity / 100);
+          : (a / 255) * (capOpacity / 100)) * selW;
       if (existingA >= capA) return;
       const upgrade = existingA < 1 ? (capA - existingA) / (1 - existingA) : 0;
       blendA = srcA < upgrade ? srcA : upgrade;
       if (blendA <= 0) return;
       const newA = existingA + blendA * (1 - existingA);
       tdata[key] = (newA * 255 + 0.5) | 0;
+      noteTouchedWrite(touched, canvasX, canvasY);
     } else {
       if (srcA <= existingA) return;
       blendA = existingA < 1 ? (srcA - existingA) / (1 - existingA) : 0;
       if (blendA <= 0) return;
       tdata[key] = (srcA * 255 + 0.5) | 0;
+      noteTouchedWrite(touched, canvasX, canvasY);
     }
   }
 
-  const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
-  if (layer.format === "rgba32f") {
-    // rgba32f layers store linear-light values; samplePixel / drawPixel
-    // operate in linear `[0.0, ∞)`. When srcFloat is provided the caller
-    // is responsible for already having gamma-decoded sRGB inputs (so we
-    // use it as-is — no precision loss from a 0–255 round-trip). When
-    // only the byte path is supplied, those bytes are sRGB-encoded and
-    // must be gamma-decoded before they enter the linear blend.
-    const sr =
-      srcFloat !== undefined ? srcFloat[0] : srgbToLinearChannel(r / 255);
-    const sg =
-      srcFloat !== undefined ? srcFloat[1] : srgbToLinearChannel(g / 255);
-    const sb =
-      srcFloat !== undefined ? srcFloat[2] : srgbToLinearChannel(b / 255);
-    const dstA = ea; // already 0.0-1.0
-    const outA = blendA + dstA * (1 - blendA);
-    if (outA <= 0) {
-      renderer.drawPixel(layer, lx, ly, 0, 0, 0, 0);
-    } else {
-      const dstBlend = dstA * (1 - blendA);
-      renderer.drawPixel(
-        layer,
-        lx,
-        ly,
-        (sr * blendA + er * dstBlend) / outA,
-        (sg * blendA + eg * dstBlend) / outA,
-        (sb * blendA + eb * dstBlend) / outA,
-        outA,
-      );
-    }
-  } else {
+  if (layer.format === "indexed8") {
+    // Palette layers go through the renderer's format strategy.
+    const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
     const dstA = ea / 255;
     const outA = blendA + dstA * (1 - blendA);
     if (outA <= 0) {
@@ -315,6 +334,51 @@ export function blendPixelOver(
         Math.round((b * blendA + eb * dstBlend) / outA),
         Math.round(outA * 255),
       );
+    }
+    return;
+  }
+
+  // rgba8 / rgba32f: read and write `layer.data` directly. The per-pixel
+  // samplePixel / drawPixel round trip allocated a 4-tuple for every pixel
+  // of every stamp.
+  const d = layer.data;
+  const i = (ly * layer.layerWidth + lx) * 4;
+  const er = d[i];
+  const eg = d[i + 1];
+  const eb = d[i + 2];
+  const ea = d[i + 3];
+  if (layer.format === "rgba32f") {
+    // rgba32f layers store linear-light values. When srcFloat is provided
+    // the caller has already gamma-decoded its sRGB inputs (no 0–255 round
+    // trip); byte inputs are sRGB-encoded and are decoded here.
+    const sr =
+      srcFloat !== undefined ? srcFloat[0] : srgbToLinearChannel(r / 255);
+    const sg =
+      srcFloat !== undefined ? srcFloat[1] : srgbToLinearChannel(g / 255);
+    const sb =
+      srcFloat !== undefined ? srcFloat[2] : srgbToLinearChannel(b / 255);
+    const dstA = ea; // already 0.0-1.0
+    const outA = blendA + dstA * (1 - blendA);
+    if (outA <= 0) {
+      d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
+    } else {
+      const dstBlend = dstA * (1 - blendA);
+      d[i] = (sr * blendA + er * dstBlend) / outA;
+      d[i + 1] = (sg * blendA + eg * dstBlend) / outA;
+      d[i + 2] = (sb * blendA + eb * dstBlend) / outA;
+      d[i + 3] = outA;
+    }
+  } else {
+    const dstA = ea / 255;
+    const outA = blendA + dstA * (1 - blendA);
+    if (outA <= 0) {
+      d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
+    } else {
+      const dstBlend = dstA * (1 - blendA);
+      d[i] = Math.round((r * blendA + er * dstBlend) / outA);
+      d[i + 1] = Math.round((g * blendA + eg * dstBlend) / outA);
+      d[i + 2] = Math.round((b * blendA + eb * dstBlend) / outA);
+      d[i + 3] = Math.round(outA * 255);
     }
   }
 }
@@ -381,256 +445,5 @@ export function wuLine(
     emit(x, ipart(intery), rfpart(intery));
     emit(x, ipart(intery) + 1, fpart(intery));
     intery += gradient;
-  }
-}
-
-/**
- * Anti-aliased 1-pixel line using Xiaolin Wu's algorithm.
- * Composites at `opacity` (0-100) × per-pixel coverage over existing pixel data.
- */
-export function drawAALine(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-  opacity = 100,
-  touched?: TouchedBuffer,
-): void {
-  wuLine(x0, y0, x1, y1, (x, y, coverage) => {
-    blendPixelOver(
-      renderer,
-      layer,
-      x,
-      y,
-      r,
-      g,
-      b,
-      a,
-      opacity * coverage,
-      touched,
-    );
-  });
-}
-
-/** Convenience: erase a filled line segment on a layer.
- * Coordinates are CANVAS-SPACE; translates to layer-local internally. */
-export function eraseLine(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): void {
-  bresenham(x0, y0, x1, y1, (x, y) => {
-    const lx = x - layer.offsetX;
-    const ly = y - layer.offsetY;
-    if (lx >= 0 && ly >= 0 && lx < layer.layerWidth && ly < layer.layerHeight) {
-      renderer.erasePixel(layer, lx, ly);
-    }
-  });
-}
-
-/**
- * Stamps a hard-edged circular brush of radius `size/2` centered at (cx, cy).
- */
-function stampCircle(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  cx: number,
-  cy: number,
-  size: number,
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-  opacity: number,
-  touched?: TouchedBuffer,
-  sel?: SelMask,
-): void {
-  const radius = size / 2;
-  const iRadius = Math.ceil(radius);
-  for (let dy = -iRadius; dy <= iRadius; dy++) {
-    for (let dx = -iRadius; dx <= iRadius; dx++) {
-      if (dx * dx + dy * dy <= radius * radius) {
-        blendPixelOver(
-          renderer,
-          layer,
-          cx + dx,
-          cy + dy,
-          r,
-          g,
-          b,
-          a,
-          opacity,
-          touched,
-          sel,
-        );
-      }
-    }
-  }
-}
-
-/**
- * Anti-aliased thick segment using a capsule signed-distance field.
- */
-function drawAAThickSegment(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  size: number,
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-  opacity: number,
-  touched?: TouchedBuffer,
-  sel?: SelMask,
-): void {
-  const radius = size / 2;
-  const pad = Math.ceil(radius) + 1;
-  const sdx = x1 - x0,
-    sdy = y1 - y0;
-  const lenSq = sdx * sdx + sdy * sdy;
-
-  const minX = Math.floor(Math.min(x0, x1)) - pad;
-  const maxX = Math.ceil(Math.max(x0, x1)) + pad;
-  const minY = Math.floor(Math.min(y0, y1)) - pad;
-  const maxY = Math.ceil(Math.max(y0, y1)) + pad;
-
-  for (let py = minY; py <= maxY; py++) {
-    for (let px = minX; px <= maxX; px++) {
-      let dist: number;
-      if (lenSq === 0) {
-        dist = Math.sqrt((px - x0) ** 2 + (py - y0) ** 2);
-      } else {
-        const t = Math.max(
-          0,
-          Math.min(1, ((px - x0) * sdx + (py - y0) * sdy) / lenSq),
-        );
-        const nearX = x0 + t * sdx;
-        const nearY = y0 + t * sdy;
-        dist = Math.sqrt((px - nearX) ** 2 + (py - nearY) ** 2);
-      }
-      const coverage = Math.max(0, Math.min(1, radius + 0.5 - dist));
-      if (coverage > 0) {
-        blendPixelOver(
-          renderer,
-          layer,
-          px,
-          py,
-          r,
-          g,
-          b,
-          a,
-          opacity * coverage,
-          touched,
-          sel,
-        );
-      }
-    }
-  }
-}
-
-/**
- * Draw a thick line segment on a layer at `opacity` (0-100).
- * When `antiAlias` is true: 1-px lines use Wu's algorithm; thicker lines use a capsule SDF.
- */
-export function drawThickLine(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  size: number,
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-  opacity = 100,
-  touched?: TouchedBuffer,
-  antiAlias = false,
-  sel?: SelMask,
-): void {
-  if (antiAlias) {
-    if (size <= 1) {
-      wuLine(x0, y0, x1, y1, (x, y, coverage) =>
-        blendPixelOver(
-          renderer,
-          layer,
-          x,
-          y,
-          r,
-          g,
-          b,
-          a,
-          opacity * coverage,
-          touched,
-          sel,
-        ),
-      );
-    } else {
-      drawAAThickSegment(
-        renderer,
-        layer,
-        x0,
-        y0,
-        x1,
-        y1,
-        size,
-        r,
-        g,
-        b,
-        a,
-        opacity,
-        touched,
-        sel,
-      );
-    }
-  } else {
-    if (size <= 1) {
-      bresenham(x0, y0, x1, y1, (x, y) =>
-        blendPixelOver(
-          renderer,
-          layer,
-          x,
-          y,
-          r,
-          g,
-          b,
-          a,
-          opacity,
-          touched,
-          sel,
-        ),
-      );
-    } else {
-      bresenham(x0, y0, x1, y1, (x, y) =>
-        stampCircle(
-          renderer,
-          layer,
-          x,
-          y,
-          size,
-          r,
-          g,
-          b,
-          a,
-          opacity,
-          touched,
-          sel,
-        ),
-      );
-    }
   }
 }

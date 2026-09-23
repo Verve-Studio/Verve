@@ -109,6 +109,10 @@ export interface SwatchGroup {
   /** Optional palette-animation cycle configuration. Absent on groups that
    *  have never been touched by the palette-animation panel. */
   cycle?: SwatchGroupCycle;
+  /** A colour ramp (e.g. a Time of Day gradient: original colour followed
+   *  by its shades). The swatch panel shows it as its own row, in
+   *  `swatchIndices` order, instead of hue-sorting its colours. */
+  ramp?: boolean;
 }
 
 export interface PaletteAnimationState {

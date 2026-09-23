@@ -130,6 +130,7 @@ import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import textIconSvg from "./text.svg?raw";
+import { textFrame } from "./textLayout";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -228,48 +229,29 @@ async function getSystemFonts(): Promise<string[]> {
 
 // ─── Text bounds & overlay helpers ───────────────────────────────────────────
 
-const _measureCanvas = document.createElement("canvas");
-const _measureCtx = _measureCanvas.getContext("2d")!;
-
+/** Editing frame / hit area of a text layer in canvas space. */
 export function getTextBounds(ls: TextLayerState): {
   x: number;
   y: number;
   w: number;
   h: number;
 } {
-  if (ls.boxWidth > 0 && ls.boxHeight > 0) {
-    return { x: ls.x, y: ls.y, w: ls.boxWidth, h: ls.boxHeight };
-  }
-  const fontStyle = [
-    ls.italic ? "italic" : "",
-    ls.bold ? "bold" : "",
-    `${ls.fontSize}px`,
-    `"${ls.fontFamily}", sans-serif`,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  _measureCtx.font = fontStyle;
-  const upperIfNeeded = (s: string): string =>
-    ls.allCaps ? s.toUpperCase() : s;
-  const lines = (ls.text || "M").split("\n").map(upperIfNeeded);
-  const textW = Math.max(
-    ...lines.map((line) => _measureCtx.measureText(line || "M").width),
-  );
-  const lineH = ls.fontSize * (ls.lineHeight ?? 1.2);
-  const hScale = (ls.horizontalScale ?? 100) / 100;
-  const vScale = (ls.verticalScale ?? 100) / 100;
-  const w = Math.max(ls.fontSize * 2, textW) * hScale;
-  // Account for paragraph spacing between paragraphs.
-  const paraGapTotal =
-    Math.max(0, lines.length - 1) *
-    ((ls.spaceBefore ?? 0) + (ls.spaceAfter ?? 0));
-  const h = (Math.max(lineH, lines.length * lineH) + paraGapTotal) * vScale;
-  return { x: ls.x, y: ls.y, w, h };
+  return textFrame(ls);
 }
 
-function hitTestTextLayer(ls: TextLayerState, x: number, y: number): boolean {
-  const b = getTextBounds(ls);
-  return x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h;
+/** Topmost visible, unlocked text layer under a canvas point. */
+function hitTestTextLayers(
+  layers: readonly TextLayerState[],
+  x: number,
+  y: number,
+): TextLayerState | undefined {
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const ls = layers[i];
+    if (!ls.visible || ls.locked) continue;
+    const b = textFrame(ls);
+    if (x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h) return ls;
+  }
+  return undefined;
 }
 
 function drawTextBoundsOverlay(
@@ -324,12 +306,17 @@ function clearOverlay(canvas: HTMLCanvasElement): void {
 function createTextHandler(): ToolHandler {
   let dragStart: { x: number; y: number } | null = null;
   let dragging = false;
+  // Hover outline currently drawn (the overlay is canvas-sized — redraw it
+  // only when the hovered layer changes, not on every mouse move).
+  let hovered: TextLayerState | null = null;
 
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext): void {
-      const hit = ctx.textLayers.find((ls) => hitTestTextLayer(ls, x, y));
+      const hit = hitTestTextLayers(ctx.textLayers, x, y);
       if (hit) {
-        ctx.openTextLayerEditor(hit.id);
+        if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
+        hovered = null;
+        ctx.openTextLayerEditor(hit.id, { x, y });
         return;
       }
       dragStart = { x: Math.round(x), y: Math.round(y) };
@@ -414,7 +401,9 @@ function createTextHandler(): ToolHandler {
     },
     onHover({ x, y }: ToolPointerPos, ctx: ToolContext): void {
       if (!ctx.overlayCanvas) return;
-      const hit = ctx.textLayers.find((ls) => hitTestTextLayer(ls, x, y));
+      const hit = hitTestTextLayers(ctx.textLayers, x, y) ?? null;
+      if (hit === hovered) return;
+      hovered = hit;
       if (hit) {
         drawTextBoundsOverlay(ctx.overlayCanvas, hit);
       } else {
@@ -422,6 +411,7 @@ function createTextHandler(): ToolHandler {
       }
     },
     onLeave(ctx: ToolContext): void {
+      hovered = null;
       if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
     },
   };

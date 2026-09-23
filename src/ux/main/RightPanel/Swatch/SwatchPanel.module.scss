@@ -20,6 +20,12 @@
 }
 
 // fills all available height in the dock row
+// Forces the next swatch onto a new row (each colour ramp gets its own).
+.swatchRowBreak {
+  flex-basis: 100%;
+  height: 0;
+}
+
 .swatchGrid {
   display: flex;
   flex-wrap: wrap;

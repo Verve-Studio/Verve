@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { dodgeBurnThickLine } from "./dodgeBurn";
+import { dodgeBurnThickLine, OriginalPixels } from "./dodgeBurn";
 import type { DodgeBurnRange } from "./dodgeBurn";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
@@ -41,10 +41,7 @@ function createDodgeBurnHandler(
   return function (): ToolHandler {
     let lastPos: { x: number; y: number } | null = null;
     let touched: import("../_shared/primitives").TouchedBuffer | null = null;
-    let origData: Map<
-      number,
-      readonly [number, number, number, number]
-    > | null = null;
+    let origData: OriginalPixels | null = null;
 
     function stamp(
       x0: number,
@@ -53,11 +50,10 @@ function createDodgeBurnHandler(
       y1: number,
       ctx: ToolContext,
     ): void {
-      const { renderer, layer, layers, selectionMask, render, growLayerToFit } =
-        ctx;
+      const { renderer, layer, layers, selectionMask, render } = ctx;
       const radius = opts.size / 2;
-      growLayerToFit(x0, y0, Math.ceil(radius));
-      if (x1 !== x0 || y1 !== y0) growLayerToFit(x1, y1, Math.ceil(radius));
+      // No layer growth: dodge/burn only rescales existing pixels (outside
+      // the layer everything is transparent and skipped anyway).
       const sel = selectionMask
         ? { mask: selectionMask, width: renderer.pixelWidth }
         : undefined;
@@ -108,7 +104,7 @@ function createDodgeBurnHandler(
       onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
         ctx.renderer.strokeStart();
         touched = ctx.renderer.acquireTouchedBuffer();
-        origData = new Map();
+        origData = new OriginalPixels(ctx.renderer.pixelWidth);
         lastPos = null;
         stamp(x, y, x, y, ctx);
         lastPos = { x, y };

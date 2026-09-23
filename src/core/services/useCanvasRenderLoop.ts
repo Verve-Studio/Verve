@@ -293,7 +293,14 @@ export function useCanvasRenderLoop(
       // needs flushing. Updating on every no-op frame did a full unscissored
       // re-blit + createImageBitmap while idle.
       if (renderResult.kind !== "noop" || mirrorBitmapPendingRef.current) {
-        scheduleMirrorUpdate();
+        if (renderer.isStrokeActive) {
+          // Mid-stroke: the Navigator refresh (full unscissored re-blit +
+          // createImageBitmap) caused periodic hitches. Owe one update; the
+          // full render that strokeEnd triggers flushes it.
+          mirrorBitmapPendingRef.current = true;
+        } else {
+          scheduleMirrorUpdate();
+        }
       }
     });
   };

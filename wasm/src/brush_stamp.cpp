@@ -509,7 +509,7 @@ extern "C" void brush_stamp_bitmap(
 
             // Per-lane scalar fallback.
             for (int lane = 0; lane < 4; lane++) {
-                const float coverage = lane_cov[lane];
+                float coverage = lane_cov[lane];
                 if (coverage <= 0.0f) continue;
                 const int cxPx = px + lane;
                 const int cyPx = py;
@@ -517,7 +517,12 @@ extern "C" void brush_stamp_bitmap(
                 const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
                 const uint8_t existingByte = touched_data[touchedKey];
                 if ((int)existingByte >= maxTouchedByte) continue;
-                if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
+                // Soft selections scale coverage (feathered edges fade in).
+                if (sel_mask) {
+                    const uint8_t selV = sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx];
+                    if (selV == 0) continue;
+                    if (selV != 255) coverage *= (float)selV * (1.0f / 255.0f);
+                }
                 const int lxLocal = cxPx - layerOX;
                 const int lyLocal = cyPx - layerOY;
                 if (lxLocal < 0 || lxLocal >= layerW ||
@@ -611,7 +616,12 @@ extern "C" void brush_stamp_bitmap(
             const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + px;
             const uint8_t existingByte = touched_data[touchedKey];
             if ((int)existingByte >= maxTouchedByte) continue;
-            if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + px] == 0) continue;
+            // Soft selections scale coverage (feathered edges fade in).
+            if (sel_mask) {
+                const uint8_t selV = sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + px];
+                if (selV == 0) continue;
+                if (selV != 255) coverage *= (float)selV * (1.0f / 255.0f);
+            }
             const int lxLocal = px - layerOX;
             const int lyLocal = cyPx - layerOY;
             // bbox clip above guarantees in-layer; skip defensive checks.
@@ -1123,7 +1133,17 @@ extern "C" void brush_stamp(
                     const uint8_t existingByte = touched_data[touchedKey];
                     if ((int)existingByte >= maxTouchedByte) continue;
 
-                    if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
+                    // Soft selections scale coverage (feathered edges fade in).
+
+                    if (sel_mask) {
+
+                        const uint8_t selV = sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx];
+
+                        if (selV == 0) continue;
+
+                        if (selV != 255) coverage *= (float)selV * (1.0f / 255.0f);
+
+                    }
 
                     // Grain + dual modulation. Computed per-pixel because
                     // the SDF samples need the actual lane (px+lane) and
@@ -1280,7 +1300,12 @@ extern "C" void brush_stamp(
                 const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
                 const uint8_t existingByte = touched_data[touchedKey];
                 if ((int)existingByte >= maxTouchedByte) continue;
-                if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
+                // Soft selections scale coverage (feathered edges fade in).
+                if (sel_mask) {
+                    const uint8_t selV = sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx];
+                    if (selV == 0) continue;
+                    if (selV != 255) coverage *= (float)selV * (1.0f / 255.0f);
+                }
                 if (grainOn || dualOn) {
                     const float dxBase0 = (float)cxPx - cx;
                     const float dyBase0Lc = (float)cyPx - cy;
@@ -1465,7 +1490,12 @@ extern "C" void brush_stamp(
             const ptrdiff_t touchedKey = static_cast<ptrdiff_t>(cyPx) * touchedW + cxPx;
             const uint8_t existingByte = touched_data[touchedKey];
             if ((int)existingByte >= maxTouchedByte) continue;
-            if (sel_mask && sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx] == 0) continue;
+            // Soft selections scale coverage (feathered edges fade in).
+            if (sel_mask) {
+                const uint8_t selV = sel_mask[static_cast<ptrdiff_t>(cyPx) * canvasW + cxPx];
+                if (selV == 0) continue;
+                if (selV != 255) coverage *= (float)selV * (1.0f / 255.0f);
+            }
 
             const int lxLocal = cxPx - layerOX;
             const int lyLocal = cyPx - layerOY;

@@ -14,6 +14,14 @@ export type PendingSelection =
 
 type Listener = () => void;
 
+/**
+ * Bumped on every selection change (every mutation path calls `notify()`).
+ * The mask array is often edited in place (invert, add/subtract), so array
+ * identity alone can't tell a cache (e.g. the WASM brush's heap copy) that
+ * the contents changed.
+ */
+export let selectionRevision = 0;
+
 const listeners = new Set<Listener>();
 
 export class SelectionStore {
@@ -47,6 +55,7 @@ export class SelectionStore {
     listeners.delete(fn);
   }
   notify(): void {
+    selectionRevision++;
     for (const fn of listeners) fn();
   }
 

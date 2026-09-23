@@ -15,6 +15,10 @@ export class InpaintMaskStore {
   mask: Uint8Array | null = null;
   width = 0;
   height = 0;
+  /** Whether any pixel has been stamped since the last clear — tracked so
+   *  `hasMaskedPixels` (called on every stamp's notify) doesn't scan the
+   *  whole canvas-sized mask. */
+  private hasAny = false;
 
   subscribe(fn: Listener): void {
     listeners.add(fn);
@@ -33,15 +37,12 @@ export class InpaintMaskStore {
     this.mask = new Uint8Array(width * height);
     this.width = width;
     this.height = height;
+    this.hasAny = false;
   }
 
   /** Returns true if any pixel is set. */
   hasMaskedPixels(): boolean {
-    if (!this.mask) return false;
-    for (let i = 0; i < this.mask.length; i++) {
-      if (this.mask[i] > 0) return true;
-    }
-    return false;
+    return this.mask !== null && this.hasAny;
   }
 
   /** Stamp a filled circle of value 255 centered at (cx, cy) with radius r,
@@ -63,6 +64,7 @@ export class InpaintMaskStore {
         const dx = x - cx;
         if (dx * dx + dy2 <= r2) {
           this.mask[y * w + x] = 255;
+          this.hasAny = true;
         }
       }
     }
@@ -102,6 +104,7 @@ export class InpaintMaskStore {
         const dx = x - cx;
         if (dx * dx + dy2 <= r2) {
           this.mask[y * w + x] = 255;
+          this.hasAny = true;
         }
       }
     }
@@ -111,6 +114,7 @@ export class InpaintMaskStore {
    *  inpainting commit. */
   clear(): void {
     if (this.mask) this.mask.fill(0);
+    this.hasAny = false;
     this.notify();
   }
 }

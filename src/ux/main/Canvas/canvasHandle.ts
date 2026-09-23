@@ -19,6 +19,7 @@ import {
   type RasterReason,
 } from "@/graphics/rasterization";
 import { matchPaletteIndices } from "@/wasm";
+import type { LayerHistoryChange } from "@/graphics/webgpu/layers/LayerTextureStore";
 import {
   linearToSrgbChannel,
   srgbToLinearChannel,
@@ -106,6 +107,9 @@ export interface CanvasHandle {
    * doc doesn't allocate 10× the per-entry RAM when only one layer changed.
    */
   captureAllLayerContentVersions: () => Map<string, number>;
+  /** Per layer: what changed since the previous call (history capture);
+   *  resets the tracking. */
+  takeAllLayerHistoryChanges: () => Map<string, LayerHistoryChange>;
   /**
    * Return direct references to layer data buffers — no copy.
    * Only safe when the Canvas is about to unmount (tab switch / file open).
@@ -621,6 +625,22 @@ export function useCanvasHandle({
         for (const ls of layersStateRef.current) {
           const layer = glLayersRef.current.get(ls.id);
           if (layer) result.set(ls.id, layer.data.slice());
+        }
+        return result;
+      },
+
+      takeAllLayerHistoryChanges: () => {
+        const result = new Map<string, LayerHistoryChange>();
+        const renderer = rendererRef.current;
+        for (const ls of layersStateRef.current) {
+          const layer = glLayersRef.current.get(ls.id);
+          if (!layer) continue;
+          result.set(
+            ls.id,
+            renderer
+              ? renderer.takeLayerHistoryChange(layer)
+              : { kind: "all" },
+          );
         }
         return result;
       },

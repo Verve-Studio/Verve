@@ -25,7 +25,6 @@ import { TOOL_REGISTRY } from "@/core/tools";
 import type { ToolContext, ToolHandler, ToolPointerPos } from "@/core/tools";
 import { cursorStore } from "@/ux/main/Canvas/cursorStore";
 import type {
-  GpuLayer,
   WebGPURenderer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { Tool } from "@/types";
@@ -45,7 +44,6 @@ export interface CanvasPointerInputParams {
   /** Build a fresh `ToolContext` for the current pointer event. */
   buildCtx: () => ToolContext | null;
   /** Cleared on pointer-up so the next stroke targets the React layer. */
-  newPixelLayerRef: React.RefObject<GpuLayer | null>;
   /** Stroke-end notification. */
   onStrokeEndRef: React.RefObject<((label: string) => void) | undefined>;
   /** Cursor side-effect APIs. */
@@ -72,7 +70,6 @@ export function useCanvasPointerInput(
     toolHandlerRef,
     rendererRef,
     buildCtx,
-    newPixelLayerRef,
     onStrokeEndRef,
     brushCursorApi,
     updatePixelInfo,
@@ -110,7 +107,31 @@ export function useCanvasPointerInput(
   // `strokeStart` is never paired with `strokeEnd`, Move leaves its text
   // layer hidden, and the history entry is recorded (or dropped) under the
   // wrong tool.
-  const strokeRef = useRef<{ handler: ToolHandler; tool: Tool } | null>(null);
+  //
+  // The context built at pointer-down is kept too: if a live context can't
+  // be built at pointer-up (layer deleted / locked / turned parametric), the
+  // stroke is finished with the pinned one instead of being abandoned.
+  const strokeRef = useRef<{
+    handler: ToolHandler;
+    tool: Tool;
+    downCtx: ToolContext;
+  } | null>(null);
+
+  // While a stroke is in progress, swallow keyboard shortcuts (capture phase
+  // on window runs before every other key handler). Undo / Delete / New
+  // Layer / Paste mid-stroke used to swap or destroy the layer being painted
+  // — leaving the stroke writing into a stale (possibly freed) buffer.
+  // Modifier keys and Space (hand-tool panning) pass through.
+  useEffect(() => {
+    const PASS = new Set(["Shift", "Control", "Alt", "Meta", " ", "CapsLock"]);
+    const onKey = (e: KeyboardEvent): void => {
+      if (!strokeRef.current || PASS.has(e.key)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   const strokeHandler = (): ToolHandler =>
     strokeRef.current?.handler ?? toolHandlerRef.current;
 
@@ -118,7 +139,11 @@ export function useCanvasPointerInput(
   const handleDown = (pos: ToolPointerPos): void => {
     const ctx = buildCtx();
     if (!ctx) return;
-    strokeRef.current = { handler: toolHandlerRef.current, tool: activeTool };
+    strokeRef.current = {
+      handler: toolHandlerRef.current,
+      tool: activeTool,
+      downCtx: ctx,
+    };
     toolHandlerRef.current.onPointerDown(pos, ctx);
   };
 
@@ -137,28 +162,24 @@ export function useCanvasPointerInput(
     const ctx = buildCtx();
     if (!ctx || !renderer) return;
     renderer.deferFlush = true;
-    const noopRender = (): void => {
-      /* deferred */
-    };
     try {
+      // The real `render` is passed through: `doRender` already coalesces
+      // to one rAF per frame, and tools that keep the context (e.g. Brush
+      // build-up ticks) must be able to render after the batch. A no-op
+      // render here used to leak into those timers.
       const handler = strokeHandler();
-      for (const pos of positions) {
-        handler.onPointerMove(pos, {
-          ...ctx,
-          render: noopRender,
-        });
+      const def = TOOL_REGISTRY[strokeRef.current?.tool ?? activeTool];
+      if (def.modifiesPixels || def.wantsCoalescedSamples) {
+        for (const pos of positions) handler.onPointerMove(pos, ctx);
+      } else {
+        // Non-painting tools only need where the pointer is now.
+        handler.onPointerMove(positions[positions.length - 1], ctx);
       }
     } finally {
-      // Always re-enable flushing: if a tool throws mid-batch and this stays
-      // true, every later flushLayer is silently skipped and painting stops.
-      renderer.deferFlush = false;
-      // The tools' own palette-aware flushes were no-ops under deferFlush,
-      // so this flush must carry the palette for indexed8 layers — without
-      // it the layer expands against an empty palette and renders blank.
-      renderer.flushLayer(
-        ctx.layer,
-        ctx.layer.format === "indexed8" ? ctx.swatches : undefined,
-      );
+      // Always end the batch (a throwing tool must not leave flushing off).
+      // Uploads only the layers tools actually flushed, once each; indexed8
+      // layers flushed without a palette get the document's swatches.
+      renderer.endDeferFlush(ctx.swatches);
       ctx.render();
     }
   };
@@ -168,15 +189,43 @@ export function useCanvasPointerInput(
     strokeRef.current = null;
     const handler = stroke?.handler ?? toolHandlerRef.current;
     const tool = stroke?.tool ?? activeTool;
-    const ctx = buildCtx();
-    const result = ctx ? handler.onPointerUp(pos, ctx) : undefined;
-    newPixelLayerRef.current = null;
+    const renderer = rendererRef.current;
+    let ctx = buildCtx();
+    // The live context can be missing mid-stroke (active layer deleted,
+    // locked, turned into a parametric/adjustment layer). Finish with the
+    // pinned pointer-down context as long as its layer is still alive.
+    if (
+      (!ctx || (stroke && ctx.layer !== stroke.downCtx.layer)) &&
+      stroke &&
+      renderer?.isLayerLive(stroke.downCtx.layer)
+    ) {
+      ctx = stroke.downCtx;
+    }
+    let result: ReturnType<ToolHandler["onPointerUp"]> = undefined;
+    let finished = false;
+    try {
+      if (ctx) {
+        result = handler.onPointerUp(pos, ctx);
+        finished = true;
+      }
+    } finally {
+      if (!finished) {
+        // Couldn't finish (no usable context, or the tool threw): stop the
+        // tool's timers / per-stroke state and close the renderer stroke so
+        // effects aren't left bypassed with a full re-composite per frame.
+        try {
+          handler.onCancel?.();
+        } finally {
+          if (renderer?.isStrokeActive) renderer.strokeEnd();
+        }
+      }
+    }
     const def = TOOL_REGISTRY[tool];
     if (
+      finished &&
       def.modifiesPixels &&
       !def.skipAutoHistory &&
-      !result?.skipHistory &&
-      ctx
+      !result?.skipHistory
     ) {
       const label = tool.charAt(0).toUpperCase() + tool.slice(1);
       onStrokeEndRef.current?.(label);

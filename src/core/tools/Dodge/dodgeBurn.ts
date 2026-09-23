@@ -4,6 +4,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { bresenham, wuLine } from "../_shared/primitives";
 import type { SelMask, TouchedBuffer } from "../_shared/primitives";
+import { noteTouchedWrite } from "../_shared/primitives";
 import {
   linearToSrgbChannel,
   srgbToLinearChannel,
@@ -30,6 +31,65 @@ function toneWeight(luminance: number, range: DodgeBurnRange): number {
   }
 }
 
+const TILE = 64;
+
+/**
+ * Each touched pixel's ORIGINAL value for the current stroke, captured on
+ * first touch (so every later coverage upgrade scales the unmodified value).
+ * Stored in lazily allocated 64×64 canvas-space tiles of typed arrays — the
+ * previous `Map<number, [r,g,b,a]>` allocated a tuple per pixel (millions for
+ * a large brush on a big canvas). Values are in the layer's native range
+ * (0–255 for rgba8, linear floats for rgba32f).
+ */
+export class OriginalPixels {
+  private readonly tiles = new Map<number, { v: Float32Array; has: Uint8Array }>();
+  private readonly tilesX: number;
+  private readonly out = new Float32Array(4);
+
+  constructor(canvasWidth: number) {
+    this.tilesX = Math.ceil(canvasWidth / TILE);
+  }
+
+  /** Original rgba at (canvasX, canvasY); `lx/ly` are its layer-local coords.
+   *  Returns a reused scratch array — read it before the next call. */
+  get(
+    layer: GpuLayer,
+    lx: number,
+    ly: number,
+    canvasX: number,
+    canvasY: number,
+  ): Float32Array {
+    const tx = (canvasX / TILE) | 0;
+    const ty = (canvasY / TILE) | 0;
+    const tk = ty * this.tilesX + tx;
+    let tile = this.tiles.get(tk);
+    if (!tile) {
+      tile = {
+        v: new Float32Array(TILE * TILE * 4),
+        has: new Uint8Array(TILE * TILE),
+      };
+      this.tiles.set(tk, tile);
+    }
+    const pi = (canvasY - ty * TILE) * TILE + (canvasX - tx * TILE);
+    const vi = pi * 4;
+    if (!tile.has[pi]) {
+      const src = layer.data;
+      const si = (ly * layer.layerWidth + lx) * 4;
+      tile.v[vi] = src[si];
+      tile.v[vi + 1] = src[si + 1];
+      tile.v[vi + 2] = src[si + 2];
+      tile.v[vi + 3] = src[si + 3];
+      tile.has[pi] = 1;
+    }
+    const out = this.out;
+    out[0] = tile.v[vi];
+    out[1] = tile.v[vi + 1];
+    out[2] = tile.v[vi + 2];
+    out[3] = tile.v[vi + 3];
+    return out;
+  }
+}
+
 /**
  * Apply dodge/burn to one pixel.
  *
@@ -49,7 +109,7 @@ function dodgeBurnPixelOp(
   range: DodgeBurnRange,
   touched?: TouchedBuffer,
   sel?: SelMask,
-  origData?: Map<number, readonly [number, number, number, number]>,
+  origData?: OriginalPixels,
 ): void {
   // See blendPixelOver in primitives.ts: bail before any row-major index math
   // when the sample is outside the canvas, so a negative or oversized canvasX
@@ -61,7 +121,12 @@ function dodgeBurnPixelOp(
     canvasY >= renderer.pixelHeight
   )
     return;
-  if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return;
+  // Soft (feathered) selections scale the effect; 0 = outside.
+  if (sel) {
+    const v = sel.mask[canvasY * sel.width + canvasX];
+    if (v === 0) return;
+    if (v !== 255) coverage *= v / 255;
+  }
   const lx = canvasX - layer.offsetX;
   const ly = canvasY - layer.offsetY;
   if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)
@@ -75,20 +140,19 @@ function dodgeBurnPixelOp(
     const covByte = (coverage * 255 + 0.5) | 0;
     if (prevByte >= covByte) return;
     tdata[key] = covByte;
+    noteTouchedWrite(touched, canvasX, canvasY);
     maxCoverage = coverage;
   }
 
   if (maxCoverage <= 0) return;
 
-  const key = canvasY * renderer.pixelWidth + canvasX;
   let r: number, g: number, b: number, a: number;
   if (origData) {
-    let orig = origData.get(key);
-    if (!orig) {
-      orig = renderer.samplePixel(layer, lx, ly);
-      origData.set(key, orig);
-    }
-    [r, g, b, a] = orig;
+    const o = origData.get(layer, lx, ly, canvasX, canvasY);
+    r = o[0];
+    g = o[1];
+    b = o[2];
+    a = o[3];
   } else {
     [r, g, b, a] = renderer.samplePixel(layer, lx, ly);
   }
@@ -148,7 +212,7 @@ function dodgeBurnStampCircle(
   antiAlias: boolean,
   touched?: TouchedBuffer,
   sel?: SelMask,
-  origData?: Map<number, readonly [number, number, number, number]>,
+  origData?: OriginalPixels,
 ): void {
   const radius = size / 2;
   const outerR = antiAlias ? radius + 0.5 : radius;
@@ -200,7 +264,7 @@ function dodgeBurnAASegment(
   hardness: number,
   touched?: TouchedBuffer,
   sel?: SelMask,
-  origData?: Map<number, readonly [number, number, number, number]>,
+  origData?: OriginalPixels,
 ): void {
   const radius = size / 2;
   const outerR = radius + 0.5;
@@ -280,7 +344,7 @@ export function dodgeBurnThickLine(
   antiAlias = false,
   touched?: TouchedBuffer,
   sel?: SelMask,
-  origData?: Map<number, readonly [number, number, number, number]>,
+  origData?: OriginalPixels,
 ): void {
   if (antiAlias) {
     if (size <= 1) {

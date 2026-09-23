@@ -47,7 +47,7 @@ import { useNotification } from "@/core/store/notificationStore";
 import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 
 import { viewportCommands } from "@/core/store/viewportCommands";
-import { toolRegistry } from "@/core/tools/toolRegistry";
+import { DEFAULT_TOOL, toolRegistry } from "@/core/tools/toolRegistry";
 import { isGroupLayer, isLinkedLayer } from "@/types";
 import type { AppState, LayerState, LinkedLayerState, Tool } from "@/types";
 import { loadImageBytes, EXT_TO_MIME } from "@/core/io/imageLoader";
@@ -801,6 +801,13 @@ function AppContent(): React.JSX.Element {
       () => handleToolChange("clone-stamp"),
       [handleToolChange],
     ),
+    handleReleaseTool: useCallback((): boolean => {
+      if (!toolRegistry.get(stateRef.current.activeTool)?.releaseOnEscape) {
+        return false;
+      }
+      handleToolChange(DEFAULT_TOOL);
+      return true;
+    }, [handleToolChange]),
     handleContentAwareDelete: useCallback(
       () => handleOpenCafDialog("delete"),
       [handleOpenCafDialog],

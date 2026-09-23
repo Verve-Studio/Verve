@@ -101,6 +101,7 @@ function LassoOptions({
 class LassoTool implements ITool {
   readonly id = "lasso";
   readonly label = "Lasso";
+  readonly wantsCoalescedSamples = true;
   readonly shortcut = "L";
   readonly icon = <SvgIcon src={lassoIconSvg} />;
   readonly placement = {

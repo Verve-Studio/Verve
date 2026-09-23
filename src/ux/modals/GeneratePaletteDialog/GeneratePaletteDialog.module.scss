@@ -53,7 +53,12 @@
   min-height: 152px;
   padding: 10px 10px 8px;
   border-bottom: 1px solid vars.$color-border;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-track { background: vars.$color-surface-2; }
+  &::-webkit-scrollbar-thumb { background: var(--color-border-light); border-radius: 3px; }
 }
 
 .modePanel {
@@ -359,25 +364,162 @@
 
 // ─── Night legend ─────────────────────────────────────────────────────────────
 
-.nightLegend {
+// ─── Night color ─────────────────────────────────────────────────────────────
+
+.presetRow {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 6px 4px;
+  min-height: 26px;
+  flex-wrap: wrap;
 }
 
-.legendItem {
+.presetBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-sm;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+}
+
+.presetBtnActive {
+  color: vars.$color-text;
+  border-color: vars.$color-focus;
+}
+
+.presetDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+// ─── Time of day ────────────────────────────────────────────────────────────
+
+.todModes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 4px;
+  background: var(--color-surface-2);
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-sm;
+}
+
+.todMode {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: vars.$radius-sm;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+}
+
+.todModeActive {
+  color: vars.$color-text;
+  background: vars.$color-surface;
+  border-color: vars.$color-border-light;
+}
+
+.section {
+  border-top: 1px solid vars.$color-border;
+  margin-top: 2px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 2px;
+  background: transparent;
+  border: none;
+  color: vars.$color-text-dim;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    color: vars.$color-text;
+  }
+}
+
+.sectionChevron {
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+
+.sectionChevronOpen {
+  transform: rotate(90deg);
+}
+
+.sectionSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.sectionSummary {
+  margin-left: auto;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+}
+
+.sectionBody {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 3px;
+  gap: 5px;
+  padding-bottom: 4px;
 }
 
-.legendSwatch {
-  width: 16px;
-  height: 16px;
-  border-radius: 1px;
-  border: 1px solid rgba(0, 0, 0, 0.3);
+.todOutputRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid vars.$color-border;
+  padding-top: 2px;
+}
+
+.sectionTitle {
+  font-size: vars.$font-size-xs;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: vars.$color-text-muted;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  cursor: pointer;
 }
 
 .legendSep {
@@ -385,12 +527,6 @@
   color: vars.$color-text-muted;
   align-self: center;
   padding-bottom: 3px;
-}
-
-.legendLabel {
-  font-size: 9px;
-  color: vars.$color-text-muted;
-  letter-spacing: 0.02em;
 }
 
 // ─── Extract loading ──────────────────────────────────────────────────────────
@@ -454,6 +590,25 @@
   border: 1px solid rgba(0, 0, 0, 0.35);
   flex-shrink: 0;
   cursor: default;
+}
+
+// Time of Day: one ramp per row, original colour first.
+.previewRows {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  max-height: 180px;
+}
+
+.previewRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.colorChipOriginal {
+  margin-right: 6px;
+  outline: 1px solid vars.$color-text-dim;
+  outline-offset: 1px;
 }
 
 .previewEmpty {

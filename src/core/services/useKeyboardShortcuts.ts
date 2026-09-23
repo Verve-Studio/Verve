@@ -24,6 +24,9 @@ interface UseKeyboardShortcutsOptions {
   handleDeselect?: () => void;
   handleSelectAllLayers?: () => void;
   handleCloneStamp?: () => void;
+  /** Escape with a `releaseOnEscape` tool active: switch back to the default
+   *  tool. Returns true when it did (Escape then does nothing else). */
+  handleReleaseTool?: () => boolean;
   handleContentAwareDelete?: () => void;
   handleFindLayers?: () => void;
   handleCycleLasso?: () => void;
@@ -60,6 +63,7 @@ export function useKeyboardShortcuts({
   handleDeselect,
   handleSelectAllLayers,
   handleCloneStamp,
+  handleReleaseTool,
   handleContentAwareDelete,
   handleFindLayers,
   handleCycleLasso,
@@ -81,6 +85,8 @@ export function useKeyboardShortcuts({
       )
         return;
       if (e.key === "Escape") {
+        // Releasing a tool keeps the selection (it may still be wanted).
+        if (handleReleaseTool?.()) return;
         activeScope().selection.clear();
         activeScope().crop.clear();
         return;
@@ -225,6 +231,7 @@ export function useKeyboardShortcuts({
     handleDeselect,
     handleSelectAllLayers,
     handleCloneStamp,
+    handleReleaseTool,
     handleContentAwareDelete,
     handleFindLayers,
     handleCycleLasso,

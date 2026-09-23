@@ -1,424 +1,632 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactDOM from "react-dom";
 import type { LayerState, TextLayerState } from "@/types";
-import { getTextBounds } from "@/core/tools/Text/Text";
+import {
+  caretGeometry,
+  caretX,
+  hitTestText,
+  indexAtX,
+  layoutText,
+  lineBoundary,
+  lineIndexOf,
+  paragraphRangeAt,
+  selectionRects,
+  textFrame,
+  wordRangeAt,
+} from "@/core/tools/Text/textLayout";
 import styles from "./Canvas.module.scss";
 
 export interface TextLayerEditorProps {
   editingLayerId: string | null;
+  /** Canvas-space point the editor was opened at (caret placement). Read
+   *  once when a session starts; null → caret at the end of the text. */
+  openAt: { x: number; y: number } | null;
+  /** False when the canvas tab is backgrounded — commits and closes. */
+  active: boolean;
   layers: LayerState[];
   zoom: number;
   canvasWrapperRef: React.RefObject<HTMLDivElement | null>;
-  onCommit: (ls: TextLayerState) => void;
-  onClose: () => void;
-}
-
-// Handle positions: which edges each handle controls
-// dx/dy: -1 = left/top edge, 0 = none, 1 = right/bottom edge
-const HANDLES = [
-  { id: "nw", dx: -1, dy: -1, cursor: "nw-resize" },
-  { id: "n", dx: 0, dy: -1, cursor: "n-resize" },
-  { id: "ne", dx: 1, dy: -1, cursor: "ne-resize" },
-  { id: "e", dx: 1, dy: 0, cursor: "e-resize" },
-  { id: "se", dx: 1, dy: 1, cursor: "se-resize" },
-  { id: "s", dx: 0, dy: 1, cursor: "s-resize" },
-  { id: "sw", dx: -1, dy: 1, cursor: "sw-resize" },
-  { id: "w", dx: -1, dy: 0, cursor: "w-resize" },
-] as const;
-
-const MIN_BOX = 40; // minimum box size in canvas pixels
-
-/**
- * Populate a `contenteditable` element with one `<div>` per paragraph,
- * keeping the structure that paragraph-level CSS (margin, indent) depends on.
- * Empty paragraphs get a single `<br>` so the line is still visible.
- */
-function buildParagraphDOM(target: HTMLDivElement, text: string): void {
-  target.replaceChildren();
-  const paragraphs = text === "" ? [""] : text.split("\n");
-  for (const para of paragraphs) {
-    const p = document.createElement("div");
-    if (para.length === 0) {
-      p.appendChild(document.createElement("br"));
-    } else {
-      p.appendChild(document.createTextNode(para));
-    }
-    target.appendChild(p);
-  }
+  /** Rasterise the live draft into the layer and re-render (no store update). */
+  renderDraft: (ls: TextLayerState) => void;
+  /** Write the draft to the store (no history entry). */
+  commitDraft: (ls: TextLayerState) => void;
+  /** End the session. `initial` is the layer as it was when editing began. */
+  onClose: (final: TextLayerState, initial: TextLayerState) => void;
+  /** The edited layer vanished from the store (deleted, undone). */
+  onLost: () => void;
 }
 
 /**
- * Read a `contenteditable` element's text back as a plain `\n`-separated
- * string. We walk the immediate child block elements rather than relying on
- * `innerText` (which can collapse whitespace differently across browsers).
+ * Inline text editing, Photoshop style: the text is rendered by the real
+ * layer (effects, blend mode, masks and stacking all live), and the editor
+ * only draws the frame, caret and selection on top — all positioned from
+ * the same layout the rasteriser uses, so they sit exactly on the glyphs.
+ *
+ * Keyboard input goes through an invisible `<textarea>` that holds the plain
+ * text: native typing, IME, clipboard, word-wise movement and undo come for
+ * free, while vertical movement and Home / End follow the visual lines.
  */
-function readParagraphText(target: HTMLDivElement): string {
-  const blocks = Array.from(target.children);
-  if (blocks.length === 0) return target.textContent ?? "";
-  return blocks
-    .map((b) => {
-      // `<br>`-only paragraph → empty string.
-      if (
-        b.childNodes.length === 1 &&
-        (b.firstChild as HTMLElement)?.tagName === "BR"
-      ) {
-        return "";
-      }
-      return (b as HTMLElement).innerText ?? b.textContent ?? "";
-    })
-    .join("\n");
-}
-
-export function TextLayerEditor({
-  editingLayerId,
-  layers,
-  zoom,
-  canvasWrapperRef,
-  onCommit,
-  onClose,
-}: TextLayerEditorProps): React.JSX.Element | null {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  // The active layer snapshot — kept in a ref so the input handler can
-  // build the next dispatch without re-binding on every parent render.
-  const lsRef = useRef<TextLayerState | null>(null);
-
-  // Derive ls early (before hooks) so hooks can safely reference it.
-  const ls = editingLayerId
+export function TextLayerEditor(
+  props: TextLayerEditorProps,
+): React.JSX.Element | null {
+  const { editingLayerId, layers, onLost } = props;
+  const layer = editingLayerId
     ? (layers.find(
         (l): l is TextLayerState =>
           "type" in l && l.type === "text" && l.id === editingLayerId,
       ) ?? null)
     : null;
-  lsRef.current = ls;
 
-  // Populate the editable DOM once per `editingLayerId` change. We
-  // intentionally do NOT re-populate on every text change — that would wipe
-  // the user's caret. The browser is the source of truth between mount and
-  // unmount; React just owns the wrapper and styling.
-  useLayoutEffect(() => {
-    if (!editorRef.current || !ls) return;
-    buildParagraphDOM(editorRef.current, ls.text);
-  }, [editingLayerId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Focus on mount / layer-id change, deferred a frame so the canvas's
-  // pointer capture from the opening click has released.
   useEffect(() => {
-    if (!editingLayerId) return;
-    const rafId = requestAnimationFrame(() => {
-      const el = editorRef.current;
-      if (!el) return;
-      el.focus();
-      // Place caret at end of text so the user can type immediately.
-      const sel = window.getSelection();
-      if (sel) {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    });
-    return () => cancelAnimationFrame(rafId);
-  }, [editingLayerId]);
+    if (editingLayerId && !layer) onLost();
+  }, [editingLayerId, layer, onLost]);
 
-  // Close when the user clicks outside the editor box.
-  useEffect(() => {
-    if (!editingLayerId) return;
-    const close = (e: PointerEvent): void => {
-      const target = e.target as Element;
-      if (target.closest?.("[data-text-editor-root]")) return;
-      if (target.closest?.("[data-text-editor-safe]")) return;
-      onCloseRef.current();
+  const container = props.canvasWrapperRef.current;
+  if (!layer || !container) return null;
+  return ReactDOM.createPortal(
+    <TextEditSession
+      key={layer.id}
+      {...props}
+      layer={layer}
+      container={container}
+    />,
+    container,
+  );
+}
+
+// ─── Session ─────────────────────────────────────────────────────────────────
+
+type Geometry = Pick<TextLayerState, "x" | "y" | "boxWidth" | "boxHeight">;
+
+// dx/dy: -1 = left/top edge, 0 = none, 1 = right/bottom edge
+const HANDLES = [
+  { id: "nw", dx: -1, dy: -1, cursor: "nwse-resize" },
+  { id: "n", dx: 0, dy: -1, cursor: "ns-resize" },
+  { id: "ne", dx: 1, dy: -1, cursor: "nesw-resize" },
+  { id: "e", dx: 1, dy: 0, cursor: "ew-resize" },
+  { id: "se", dx: 1, dy: 1, cursor: "nwse-resize" },
+  { id: "s", dx: 0, dy: 1, cursor: "ns-resize" },
+  { id: "sw", dx: -1, dy: 1, cursor: "nesw-resize" },
+  { id: "w", dx: -1, dy: 0, cursor: "ew-resize" },
+] as const;
+type Handle = (typeof HANDLES)[number];
+
+const MIN_BOX = 8; // minimum box size in canvas pixels
+const MOVE_RING = 7; // CSS px band around the frame that drags the text
+const HANDLE = 8; // CSS px
+const DEBOUNCE_COMMIT_MS = 400;
+
+type Drag =
+  | {
+      kind: "select";
+      unit: 1 | 2 | 3;
+      anchor: [number, number];
+    }
+  | { kind: "move"; sx: number; sy: number; from: Geometry; moved: boolean }
+  | {
+      kind: "resize";
+      handle: Handle;
+      sx: number;
+      sy: number;
+      from: Geometry;
+      moved: boolean;
     };
-    document.addEventListener("pointerdown", close, { capture: true });
-    return () =>
-      document.removeEventListener("pointerdown", close, { capture: true });
-  }, [editingLayerId]);
 
-  // ── Resize handle drag logic ───────────────────────────────────────────────
-  const resizeDragRef = useRef<{
-    handle: (typeof HANDLES)[number];
-    startClientX: number;
-    startClientY: number;
-    startX: number;
-    startY: number;
-    startBoxW: number;
-    startBoxH: number;
-    ls: TextLayerState;
-  } | null>(null);
+interface Sel {
+  start: number;
+  end: number;
+  backward: boolean;
+}
 
-  const onHandlePointerDown = useCallback(
-    (
-      e: React.PointerEvent,
-      handle: (typeof HANDLES)[number],
-      ls: TextLayerState,
-    ) => {
-      e.preventDefault();
-      e.stopPropagation();
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-      const dpr = window.devicePixelRatio || 1;
-      const cssZoom = zoom / dpr;
-      const actualBounds = getTextBounds(ls);
-      resizeDragRef.current = {
-        handle,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        startX: ls.x,
-        startY: ls.y,
-        startBoxW: Math.max(MIN_BOX, Math.round(actualBounds.w)),
-        startBoxH: Math.max(MIN_BOX, Math.round(actualBounds.h)),
-        ls,
-      };
-      (resizeDragRef.current as { cssZoom?: number }).cssZoom = cssZoom;
-    },
-    [zoom],
+function TextEditSession({
+  layer,
+  container,
+  openAt,
+  active,
+  layers,
+  zoom,
+  renderDraft,
+  commitDraft,
+  onClose,
+}: TextLayerEditorProps & {
+  layer: TextLayerState;
+  container: HTMLDivElement;
+}): React.JSX.Element {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const initialRef = useRef(layer);
+  const [text, setText] = useState(layer.text);
+  const [geom, setGeom] = useState<Geometry | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [sel, setSel] = useState<Sel>(() => {
+    const i = openAt
+      ? hitTestText(layoutText(layer), openAt.x, openAt.y)
+      : layer.text.length;
+    return { start: i, end: i, backward: false };
+  });
+
+  const draft = useMemo<TextLayerState>(
+    () => ({ ...layer, ...geom, text }),
+    [layer, geom, text],
   );
+  const layout = layoutText(draft);
 
-  const onHandlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const drag = resizeDragRef.current;
-      if (!drag) return;
-      const cssZoom = (drag as { cssZoom?: number }).cssZoom ?? 1;
-      const ddx = (e.clientX - drag.startClientX) / cssZoom;
-      const ddy = (e.clientY - drag.startClientY) / cssZoom;
-      const { handle, startX, startY, startBoxW, startBoxH, ls } = drag;
-
-      let newX = startX;
-      let newY = startY;
-      let newW = startBoxW;
-      let newH = startBoxH;
-
-      if (handle.dx === 1) {
-        newW = Math.max(MIN_BOX, Math.round(startBoxW + ddx));
-      } else if (handle.dx === -1) {
-        const delta = Math.round(ddx);
-        newW = Math.max(MIN_BOX, startBoxW - delta);
-        newX = startX + (startBoxW - newW);
-      }
-      if (handle.dy === 1) {
-        newH = Math.max(MIN_BOX, Math.round(startBoxH + ddy));
-      } else if (handle.dy === -1) {
-        const delta = Math.round(ddy);
-        newH = Math.max(MIN_BOX, startBoxH - delta);
-        newY = startY + (startBoxH - newH);
-      }
-
-      onCommit({ ...ls, x: newX, y: newY, boxWidth: newW, boxHeight: newH });
-    },
-    [onCommit],
+  // Live refs for event handlers.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const geomRef = useRef(geom);
+  geomRef.current = geom;
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const dragRef = useRef<Drag | null>(null);
+  const goalXRef = useRef<number | null>(null);
+  // Multi-click tracking. When opened by a click on existing text, that
+  // click counts as the first, so a double-click selects a word right away.
+  const clickRef = useRef(
+    openAt
+      ? { t: performance.now(), x: NaN, y: NaN, n: 1 }
+      : { t: 0, x: 0, y: 0, n: 0 },
   );
-
-  const onHandlePointerUp = useCallback(() => {
-    resizeDragRef.current = null;
-  }, []);
-
-  // ── Editable input → dispatch UPDATE_TEXT_LAYER ────────────────────────────
-  const onEditableInput = useCallback(
-    (e: React.FormEvent<HTMLDivElement>) => {
-      const current = lsRef.current;
-      if (!current) return;
-      const text = readParagraphText(e.currentTarget);
-      if (text === current.text) return;
-      onCommit({ ...current, text });
-    },
-    [onCommit],
-  );
-
-  // Sanitise paste: insert plain text only so rich-text paste can't sneak
-  // markup into the contenteditable structure.
-  const onEditablePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const text = e.clipboardData.getData("text/plain");
-      document.execCommand("insertText", false, text);
-    },
-    [],
-  );
-
-  if (!editingLayerId) return null;
-  if (!ls) return null;
 
   const dpr = window.devicePixelRatio || 1;
   const cssZoom = zoom / dpr;
-  const fontSizePx = ls.fontSize * cssZoom;
+  const cssZoomRef = useRef(cssZoom);
+  cssZoomRef.current = cssZoom;
 
-  const BORDER = 2;
-  const bounds = getTextBounds(ls);
-  const boxWpx = bounds.w * cssZoom;
-  const boxHpx = ls.boxHeight > 0 ? bounds.h * cssZoom : undefined;
+  // ── Live raster: the layer itself shows the draft ─────────────────────────
+  const renderedSigRef = useRef("");
+  useLayoutEffect(() => {
+    const sig = JSON.stringify(draft);
+    if (sig === renderedSigRef.current) return;
+    renderedSigRef.current = sig;
+    renderDraft(draft);
+  }, [draft, renderDraft]);
 
-  const posX = ls.x * cssZoom - BORDER;
-  const posY = ls.y * cssZoom - BORDER;
+  // ── Store sync: on typing pauses (and on close), never per keystroke ──────
+  useEffect(() => {
+    if (text === layer.text) return;
+    const t = setTimeout(
+      () => commitDraft(draftRef.current),
+      DEBOUNCE_COMMIT_MS,
+    );
+    return () => clearTimeout(t);
+  }, [text, layer.text, commitDraft]);
 
-  const fontStyle = [
-    ls.italic ? "italic" : "",
-    ls.bold ? "bold" : "",
-    `${fontSizePx}px`,
-    `"${ls.fontFamily}", sans-serif`,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  // ── Close ─────────────────────────────────────────────────────────────────
+  const closedRef = useRef(false);
+  const close = useCallback((): void => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onCloseRef.current(draftRef.current, initialRef.current);
+  }, []);
 
-  // ── PSD-compatible attributes mirrored as CSS. Per-paragraph attributes
-  //    go through CSS variables that the `.textEditor > div` rule reads.
-  const hScale = (ls.horizontalScale ?? 100) / 100;
-  const vScale = (ls.verticalScale ?? 100) / 100;
-  const supSubScale = ls.superscript || ls.subscript ? 0.583 : 1;
-  const supSubBaselinePx = ls.superscript
-    ? ls.fontSize * 0.33 * cssZoom
-    : ls.subscript
-      ? -ls.fontSize * 0.33 * cssZoom
-      : 0;
-  const baselineShiftPx =
-    (ls.baselineShift ?? 0) * cssZoom + supSubBaselinePx;
-  const fauxItalicShearDeg = ls.fauxItalic ? -12 : 0;
-  const totalHScale = hScale * supSubScale;
-  const totalVScale = vScale * supSubScale;
-  const needsTransform =
-    totalHScale !== 1 ||
-    totalVScale !== 1 ||
-    fauxItalicShearDeg !== 0 ||
-    baselineShiftPx !== 0;
-  const editorTransform = needsTransform
-    ? `translateY(${-baselineShiftPx}px) scale(${totalHScale}, ${totalVScale}) skewX(${fauxItalicShearDeg}deg)`
-    : undefined;
+  useEffect(() => {
+    if (!active) close();
+  }, [active, close]);
 
-  const textTransformCss: "uppercase" | "none" = ls.allCaps
-    ? "uppercase"
-    : "none";
-  const fontVariantCapsCss: "small-caps" | "normal" =
-    ls.smallCaps && !ls.allCaps ? "small-caps" : "normal";
-  const fontVariantLigaturesCss =
-    ls.ligatures === "none"
-      ? "no-common-ligatures no-discretionary-ligatures"
-      : ls.ligatures === "all"
-        ? "common-ligatures discretionary-ligatures"
-        : "common-ligatures no-discretionary-ligatures";
-  const dirAttr: "ltr" | "rtl" = ls.direction === "rtl" ? "rtl" : "ltr";
+  // Focus + initial caret, deferred a frame so the pointer capture of the
+  // click that opened the editor has released.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus({ preventScroll: true });
+      ta.setSelectionRange(sel.start, sel.end);
+      setFocused(document.activeElement === ta);
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Float-RGBA → CSS string with HDR clamped at the Canvas/browser boundary.
-  // Mirrors `floatRgbaToCss` in the rasteriser so the editor preview and the
-  // rasterised output use identical colour values.
-  const colorToCss = (c: {
-    r: number;
-    g: number;
-    b: number;
-    a: number;
-  }): string => {
-    const r = Math.max(0, Math.min(255, Math.round(c.r * 255)));
-    const g = Math.max(0, Math.min(255, Math.round(c.g * 255)));
-    const b = Math.max(0, Math.min(255, Math.round(c.b * 255)));
-    const a = Math.max(0, Math.min(1, c.a));
-    return `rgba(${r},${g},${b},${a})`;
+  const toCanvas = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } => {
+      const r = container.getBoundingClientRect();
+      const z = cssZoomRef.current;
+      return { x: (clientX - r.left) / z, y: (clientY - r.top) / z };
+    },
+    [container],
+  );
+
+  // Click outside commits. A click on the canvas only commits — it must not
+  // also start a new text layer — unless it lands on another text layer, in
+  // which case the tool opens that one.
+  useEffect(() => {
+    const onDown = (e: PointerEvent): void => {
+      const t = e.target as Element | null;
+      if (!t?.closest) return;
+      if (
+        t.closest(
+          "[data-text-editor-root], [data-text-editor-safe], [data-slider-popup]",
+        )
+      )
+        return;
+      const vp = t.closest("[data-canvas-viewport]") as HTMLElement | null;
+      // Viewport scrollbars scroll; they don't end editing.
+      if (
+        vp === t &&
+        (e.offsetX >= vp.clientWidth || e.offsetY >= vp.clientHeight)
+      )
+        return;
+      close();
+      if (!vp || e.button !== 0 || t.tagName !== "CANVAS") return;
+      const p = toCanvas(e.clientX, e.clientY);
+      const editingId = draftRef.current.id;
+      const hitsOther = layersRef.current.some((l) => {
+        if (!("type" in l) || l.type !== "text") return false;
+        if (l.id === editingId || !l.visible || l.locked) return false;
+        const f = textFrame(l);
+        return p.x >= f.x && p.y >= f.y && p.x <= f.x + f.w && p.y <= f.y + f.h;
+      });
+      if (hitsOther) return;
+      e.stopPropagation();
+      e.preventDefault();
+      // The release of that click must not reach the tool either.
+      const done = (): void => {
+        window.removeEventListener("pointerup", swallowUp, true);
+        window.removeEventListener("pointerdown", done, true);
+      };
+      const swallowUp = (ev: PointerEvent): void => {
+        if (ev.pointerId !== e.pointerId) return;
+        ev.stopPropagation();
+        done();
+      };
+      window.addEventListener("pointerup", swallowUp, true);
+      window.addEventListener("pointerdown", done, true);
+    };
+    document.addEventListener("pointerdown", onDown, { capture: true });
+    return () =>
+      document.removeEventListener("pointerdown", onDown, { capture: true });
+  }, [close, toCanvas]);
+
+  // ── Selection helpers ─────────────────────────────────────────────────────
+  const syncSel = useCallback((): void => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const next: Sel = {
+      start: ta.selectionStart,
+      end: ta.selectionEnd,
+      backward: ta.selectionDirection === "backward",
+    };
+    setSel((prev) =>
+      prev.start === next.start &&
+      prev.end === next.end &&
+      prev.backward === next.backward
+        ? prev
+        : next,
+    );
+  }, []);
+
+  /** Select from `anchor` to `focus` (collapsed when equal). */
+  const select = useCallback(
+    (anchor: number, focus: number): void => {
+      const ta = taRef.current;
+      if (!ta) return;
+      if (focus < anchor) ta.setSelectionRange(focus, anchor, "backward");
+      else ta.setSelectionRange(anchor, focus, "forward");
+      syncSel();
+    },
+    [syncSel],
+  );
+
+  // ── Keyboard ──────────────────────────────────────────────────────────────
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // Everything typed here belongs to the text — keep app shortcuts out.
+    e.stopPropagation();
+    if (e.nativeEvent.isComposing) return;
+    const ta = e.currentTarget;
+    if (
+      e.key === "Escape" ||
+      e.code === "NumpadEnter" ||
+      (e.key === "Enter" && (e.ctrlKey || e.metaKey))
+    ) {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      document.execCommand("insertText", false, "\t");
+      return;
+    }
+    const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+    const vertical = plain && (e.key === "ArrowUp" || e.key === "ArrowDown");
+    if (!vertical) goalXRef.current = null;
+    const lay = layoutRef.current;
+    const backward = ta.selectionDirection === "backward";
+    const anchor = backward ? ta.selectionEnd : ta.selectionStart;
+    const focus = backward ? ta.selectionStart : ta.selectionEnd;
+    if (vertical) {
+      e.preventDefault();
+      const li = lineIndexOf(lay, focus);
+      const x = goalXRef.current ?? caretX(lay, li, focus);
+      goalXRef.current = x;
+      const tl = li + (e.key === "ArrowUp" ? -1 : 1);
+      const target =
+        tl < 0 ? 0 : tl >= lay.lines.length ? ta.value.length : indexAtX(lay, tl, x);
+      select(e.shiftKey ? anchor : target, target);
+      return;
+    }
+    if (plain && (e.key === "Home" || e.key === "End")) {
+      e.preventDefault();
+      const target = lineBoundary(lay, focus, e.key === "End");
+      select(e.shiftKey ? anchor : target, target);
+    }
   };
-  const colorRgbCss = (c: { r: number; g: number; b: number }): string => {
-    const r = Math.max(0, Math.min(255, Math.round(c.r * 255)));
-    const g = Math.max(0, Math.min(255, Math.round(c.g * 255)));
-    const b = Math.max(0, Math.min(255, Math.round(c.b * 255)));
-    return `rgb(${r},${g},${b})`;
+
+  // ── Pointer: caret placement, selection, move, resize ─────────────────────
+  const onFramePointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return;
+    e.preventDefault(); // keeps focus on the textarea
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    goalXRef.current = null;
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.focus({ preventScroll: true });
+    const p = toCanvas(e.clientX, e.clientY);
+    if (e.ctrlKey || e.metaKey) {
+      startMove(p);
+      return;
+    }
+    const c = clickRef.current;
+    const n =
+      e.timeStamp - c.t < 450 &&
+      !(Math.hypot(e.clientX - c.x, e.clientY - c.y) >= 5) // NaN: seeded
+        ? ((c.n % 3) + 1)
+        : 1;
+    clickRef.current = { t: e.timeStamp, x: e.clientX, y: e.clientY, n };
+    const idx = hitTestText(layoutRef.current, p.x, p.y);
+    if (n === 1 && e.shiftKey) {
+      const backward = ta.selectionDirection === "backward";
+      const anchor = backward ? ta.selectionEnd : ta.selectionStart;
+      dragRef.current = { kind: "select", unit: 1, anchor: [anchor, anchor] };
+      select(anchor, idx);
+      return;
+    }
+    const range: [number, number] =
+      n === 2
+        ? wordRangeAt(ta.value, idx)
+        : n === 3
+          ? paragraphRangeAt(ta.value, idx)
+          : [idx, idx];
+    dragRef.current = { kind: "select", unit: n as 1 | 2 | 3, anchor: range };
+    select(range[0], range[1]);
   };
 
-  const strokePx = (ls.strokeWidth ?? 0) * cssZoom;
-  const strokeCss =
-    ls.strokeColor && strokePx > 0
-      ? `${strokePx}px ${colorToCss(ls.strokeColor)}`
-      : undefined;
+  const startMove = (p: { x: number; y: number }): void => {
+    const d = draftRef.current;
+    dragRef.current = {
+      kind: "move",
+      sx: p.x,
+      sy: p.y,
+      from: { x: d.x, y: d.y, boxWidth: d.boxWidth, boxHeight: d.boxHeight },
+      moved: false,
+    };
+  };
 
-  const fauxBoldShadow =
-    ls.fauxBold && ls.color
-      ? `0 0 0.4px ${colorToCss(ls.color)}, 0.4px 0 0.4px ${colorToCss(ls.color)}`
-      : undefined;
+  const onRingPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    taRef.current?.focus({ preventScroll: true });
+    startMove(toCanvas(e.clientX, e.clientY));
+  };
 
-  // Per-paragraph CSS values exposed via CSS variables.
-  const spaceBeforePx = (ls.spaceBefore ?? 0) * cssZoom;
-  const spaceAfterPx = (ls.spaceAfter ?? 0) * cssZoom;
-  const firstLineIndentPx = (ls.firstLineIndent ?? 0) * cssZoom;
-  const leftIndentPx = (ls.leftIndent ?? 0) * cssZoom;
-  const rightIndentPx = (ls.rightIndent ?? 0) * cssZoom;
+  const onHandlePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    handle: Handle,
+  ): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    taRef.current?.focus({ preventScroll: true });
+    const p = toCanvas(e.clientX, e.clientY);
+    const d = draftRef.current;
+    const f = layoutRef.current.frame;
+    dragRef.current = {
+      kind: "resize",
+      handle,
+      sx: p.x,
+      sy: p.y,
+      from: {
+        x: d.x,
+        y: d.y,
+        boxWidth: Math.max(MIN_BOX, Math.round(f.w)),
+        boxHeight: Math.max(MIN_BOX, Math.round(f.h)),
+      },
+      moved: false,
+    };
+  };
 
-  const editor = (
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const p = toCanvas(e.clientX, e.clientY);
+    if (drag.kind === "select") {
+      const lay = layoutRef.current;
+      const idx = hitTestText(lay, p.x, p.y);
+      const t = draftRef.current.text;
+      const r: [number, number] =
+        drag.unit === 2
+          ? wordRangeAt(t, idx)
+          : drag.unit === 3
+            ? paragraphRangeAt(t, idx)
+            : [idx, idx];
+      const [a0, a1] = drag.anchor;
+      if (r[0] < a0) select(a1, r[0]);
+      else select(a0, Math.max(a1, r[1]));
+      return;
+    }
+    const dx = p.x - drag.sx;
+    const dy = p.y - drag.sy;
+    if (!drag.moved && Math.hypot(dx, dy) * cssZoomRef.current < 2) return;
+    drag.moved = true;
+    const { from } = drag;
+    if (drag.kind === "move") {
+      setGeom({
+        ...from,
+        x: Math.round(from.x + dx),
+        y: Math.round(from.y + dy),
+      });
+      return;
+    }
+    const { handle } = drag;
+    let { x, y, boxWidth: w, boxHeight: h } = from;
+    if (handle.dx === 1) w = Math.max(MIN_BOX, Math.round(from.boxWidth + dx));
+    else if (handle.dx === -1) {
+      w = Math.max(MIN_BOX, from.boxWidth - Math.round(dx));
+      x = from.x + (from.boxWidth - w);
+    }
+    if (handle.dy === 1) h = Math.max(MIN_BOX, Math.round(from.boxHeight + dy));
+    else if (handle.dy === -1) {
+      h = Math.max(MIN_BOX, from.boxHeight - Math.round(dy));
+      y = from.y + (from.boxHeight - h);
+    }
+    setGeom({ x, y, boxWidth: w, boxHeight: h });
+  };
+
+  const onPointerUp = (): void => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag || drag.kind === "select" || !drag.moved) return;
+    commitDraft({ ...draftRef.current, ...geomRef.current });
+    setGeom(null);
+  };
+
+  const onFrameHover = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (dragRef.current) return;
+    e.currentTarget.style.cursor = e.ctrlKey || e.metaKey ? "move" : "text";
+  };
+
+  // ── Geometry (CSS px inside the canvas wrapper) ───────────────────────────
+  const z = cssZoom;
+  const f = layout.frame;
+  const fx = f.x * z;
+  const fy = f.y * z;
+  const fw = Math.max(1, f.w * z);
+  const fh = Math.max(1, f.h * z);
+  const [ma, mb, mc, md, me, mf] = layout.matrix;
+  const glyphTransform = layout.identity
+    ? undefined
+    : `matrix(${ma}, ${mb}, ${mc}, ${md}, ${me * z}, ${mf * z})`;
+
+  const collapsed = sel.start === sel.end;
+  const focusIdx = sel.backward ? sel.start : sel.end;
+  const caret = caretGeometry(layout, Math.min(focusIdx, text.length));
+  const rects = collapsed ? [] : selectionRects(layout, sel.start, sel.end);
+  // Where the (invisible) textarea sits, so IME candidate windows open at
+  // the caret: the caret's top in canvas space.
+  const caretCanvasX = ma * caret.x + mc * caret.top + me;
+  const caretCanvasY = mb * caret.x + md * caret.top + mf;
+  const caretH = (caret.bottom - caret.top) * z;
+  const isArea = draft.boxWidth > 0 && draft.boxHeight > 0;
+
+  return (
     <div
       data-text-editor-root
-      className={styles.textEditorRoot}
-      style={{
-        position: "absolute",
-        left: posX,
-        top: posY,
-        width: boxWpx,
-        height: boxHpx,
-      }}
-      onPointerMove={onHandlePointerMove}
-      onPointerUp={onHandlePointerUp}
+      className={styles.textEditLayer}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
       <div
-        ref={editorRef}
-        key={editingLayerId}
-        // `plaintext-only` keeps the browser from injecting rich HTML on
-        // paste/typing while still allowing the per-paragraph block
-        // structure we set up via `buildParagraphDOM`.
-        contentEditable="plaintext-only"
-        suppressContentEditableWarning
-        className={styles.textEditor}
+        className={styles.textEditMoveRing}
         style={{
-          font: fontStyle,
-          color: ls.color ? colorToCss(ls.color) : "#ffffff",
-          caretColor: ls.color ? colorRgbCss(ls.color) : "#ffffff",
-          background: "transparent",
-          WebkitTextFillColor: ls.color ? colorToCss(ls.color) : "#ffffff",
-          textDecoration: "none",
-          textAlign: ls.align === "justify" ? "justify" : ls.align,
-          letterSpacing: `${(ls.letterSpacing ?? 0) * cssZoom}px`,
-          lineHeight: String(ls.lineHeight ?? 1.2),
-          width: "100%",
-          height: ls.boxHeight > 0 ? "100%" : "auto",
-          minHeight: `${fontSizePx * (ls.lineHeight ?? 1.2)}px`,
-          overflow: "hidden",
-          outline: "none",
-          border: "none",
-          padding: 0,
-          paddingLeft: `${leftIndentPx}px`,
-          paddingRight: `${rightIndentPx}px`,
-          textTransform: textTransformCss,
-          fontVariantCaps: fontVariantCapsCss,
-          fontVariantLigatures: fontVariantLigaturesCss,
-          direction: dirAttr,
-          whiteSpace: "pre-wrap",
-          overflowWrap: "break-word",
-          // Per-paragraph CSS variables consumed by `.textEditor > div`
-          // (rule defined in Canvas.module.scss).
-          ["--text-space-before" as never]: `${spaceBeforePx}px`,
-          ["--text-space-after" as never]: `${spaceAfterPx}px`,
-          ["--text-first-line-indent" as never]: `${firstLineIndentPx}px`,
-          ...(editorTransform
-            ? { transform: editorTransform, transformOrigin: "top left" }
-            : {}),
-          ...(strokeCss ? { WebkitTextStroke: strokeCss } : {}),
-          ...(fauxBoldShadow ? { textShadow: fauxBoldShadow } : {}),
+          left: fx - MOVE_RING,
+          top: fy - MOVE_RING,
+          width: fw + 2 * MOVE_RING,
+          height: fh + 2 * MOVE_RING,
         }}
-        dir={dirAttr}
-        onInput={onEditableInput}
-        onPaste={onEditablePaste}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onCloseRef.current();
-          e.stopPropagation();
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={onRingPointerDown}
       />
-      {/* 8 resize handles */}
+      <div
+        className={`${styles.textEditFrame}${isArea ? "" : ` ${styles.textEditFramePoint}`}`}
+        style={{ left: fx, top: fy, width: fw, height: fh }}
+        onPointerDown={onFramePointerDown}
+        onPointerMove={onFrameHover}
+      />
+      <div
+        className={styles.textEditGlyphs}
+        style={glyphTransform ? { transform: glyphTransform } : undefined}
+      >
+        {rects.map((r, i) => (
+          <div
+            key={i}
+            className={`${styles.textEditSelection}${focused ? "" : ` ${styles.textEditSelectionBlurred}`}`}
+            style={{ left: r.x * z, top: r.y * z, width: r.w * z, height: r.h * z }}
+          />
+        ))}
+        {collapsed && focused && (
+          <div
+            // Re-keyed on every move so the blink restarts solid.
+            key={`${focusIdx}:${text.length}`}
+            className={styles.textEditCaret}
+            style={{
+              left: caret.x * z,
+              top: caret.top * z,
+              // ~2 screen px, undoing the glyph layer's horizontal scale.
+              width: 2 / Math.abs(ma),
+              marginLeft: -1 / Math.abs(ma),
+              height: caretH,
+            }}
+          />
+        )}
+      </div>
       {HANDLES.map((h) => (
         <div
           key={h.id}
-          className={`${styles.resizeHandle} ${styles[`handle-${h.id}`]}`}
-          style={{ cursor: h.cursor }}
-          onPointerDown={(e) => onHandlePointerDown(e, h, ls)}
+          className={`${styles.textEditHandle}${h.id === "se" && layout.overflow ? ` ${styles.textEditHandleOverflow}` : ""}`}
+          title={h.id === "se" && layout.overflow ? "Text overflows the box" : undefined}
+          style={{
+            left: fx + ((h.dx + 1) / 2) * fw - HANDLE / 2,
+            top: fy + ((h.dy + 1) / 2) * fh - HANDLE / 2,
+            cursor: h.cursor,
+          }}
+          onPointerDown={(e) => onHandlePointerDown(e, h)}
         />
       ))}
+      <textarea
+        ref={taRef}
+        className={styles.textEditInput}
+        defaultValue={layer.text}
+        wrap="off"
+        dir={draft.direction === "rtl" ? "rtl" : "ltr"}
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        aria-label="Text layer content"
+        style={{
+          left: caretCanvasX * z,
+          top: caretCanvasY * z,
+          height: Math.max(8, caretH),
+          fontSize: Math.max(8, layout.fontSize * z),
+        }}
+        onInput={(e) => {
+          setText(e.currentTarget.value);
+          syncSel();
+        }}
+        onSelect={syncSel}
+        onKeyDown={onKeyDown}
+        onKeyUp={(e) => {
+          e.stopPropagation();
+          syncSel();
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      />
     </div>
   );
-
-  const container = canvasWrapperRef.current;
-  if (!container) return null;
-  return ReactDOM.createPortal(editor, container);
 }

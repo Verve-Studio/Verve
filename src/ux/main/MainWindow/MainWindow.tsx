@@ -697,9 +697,15 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         canvasHandleRef={canvasHandleRef}
         swatches={swatches}
         hasActiveDocument={hasActiveDocument}
-        onApply={(palette) => {
+        onApply={(palette, groups) => {
           captureHistory("Generate Palette", { swatches: palette });
           dispatch({ type: "SET_SWATCHES", payload: palette });
+          // The old groups indexed the replaced palette; the generated
+          // palette brings its own (Time of Day: one ramp group per colour).
+          dispatch({
+            type: "SET_SWATCH_GROUPS",
+            payload: groups.map((g) => ({ id: crypto.randomUUID(), ...g })),
+          });
         }}
       />
 

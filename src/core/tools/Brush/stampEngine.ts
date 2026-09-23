@@ -82,7 +82,7 @@ import {
   stampHash,
   type StampInputs,
 } from "./dynamicsResolver";
-import { resolveStampColor } from "./colorJitter";
+import { colorDynamicsInert, resolveStampColor } from "./colorJitter";
 import { sampleGrain } from "./paperTexture";
 import { mixSrgbInOklab } from "./oklch";
 
@@ -147,6 +147,8 @@ export interface StrokeStampState {
    * Null until the first stamp samples a colour.
    */
   prevStampColor: { r: number; g: number; b: number; a: number } | null;
+  /** Per-stroke colour dynamics are resolved once, on the first stamp. */
+  strokeColorResolved: boolean;
 }
 
 export function makeStrokeStampState(
@@ -171,6 +173,7 @@ export function makeStrokeStampState(
     smudgeColor: null,
     smoothDirection: null,
     prevStampColor: null,
+    strokeColorResolved: false,
     strokeBboxLx: 0,
     strokeBboxLy: 0,
     strokeBboxRx: 0,
@@ -297,11 +300,14 @@ function sampleSmudgeColor(
   for (const [dx, dy] of taps) {
     const c = sampleOneLayerFloat(renderer, layer, cx + dx, cy + dy);
     if (!c) continue;
-    r += c.r; g += c.g; b += c.b; a += c.a;
+    // Premultiplied: transparent taps (RGB usually 0) must not pull the
+    // carried colour toward black — they only lower the carried alpha.
+    r += c.r * c.a; g += c.g * c.a; b += c.b * c.a; a += c.a;
     n++;
   }
   if (n === 0) return null;
-  return { r: r / n, g: g / n, b: b / n, a: a / n };
+  if (a <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+  return { r: r / a, g: g / a, b: b / a, a: a / n };
 }
 
 /** Per-stamp resolved parameters — the engine computes one of these per stamp. */
@@ -462,7 +468,9 @@ function makeStampInputs(
     velocity: pose.velocity,
     tilt: pose.tilt,
     rotation: pose.rotation / (2 * Math.PI),
-    direction: pose.direction / (2 * Math.PI),
+    // pose.direction is wrapped to (-π, π]; curves read [0, 1], so wrap
+    // instead of dividing (leftward/upward strokes used to clamp to 0).
+    direction: (((pose.direction / (2 * Math.PI)) % 1) + 1) % 1,
     stampIndex: state.stampIndex,
     hash,
     noiseSample,
@@ -540,7 +548,12 @@ function resolveStamp(
     const radius = baseSize * 0.5 * brush.scatter.amount * jitterMul;
     // Random direction (use hash for x and a salted hash for y).
     const a = ((inputs.hash >>> 0) / 0x100000000) * Math.PI * 2;
-    const rh = stampHash(state.strokeSeed ^ 0xdeadbeef, state.stampIndex);
+    // The sub-stamp index is mixed in so count > 1 stamps get independent
+    // distances (they all landed on the same spot / ring before).
+    const rh = stampHash(
+      state.strokeSeed ^ 0xdeadbeef ^ Math.imul(countSubindex + 1, 0x9e3779b1),
+      state.stampIndex,
+    );
     const r = (rh >>> 0) / 0x100000000;
     if (brush.scatter.bothAxes) {
       cx += Math.cos(a) * radius * r;
@@ -563,13 +576,34 @@ function resolveStamp(
 
   // ─── Color ───────────────────────────────────────────────────────────────
   let fr: number, fg: number, fb: number, fa: number;
-  if (brush.colorDyn.perStamp) {
+  // Inert dynamics: the colour is the stroke colour — skip the OKLab round
+  // trip (it ran on every stamp of the default brush, allocating and
+  // clamping HDR primaries for nothing).
+  const colorInert = colorDynamicsInert(brush.colorDyn);
+  if (brush.colorDyn.perStamp && !colorInert) {
     const resolved = resolveStampColor(primary, secondary, brush.colorDyn, inputs);
     fr = resolved.r;
     fg = resolved.g;
     fb = resolved.b;
     fa = resolved.a;
   } else {
+    if (!colorInert && !state.strokeColorResolved) {
+      // Per-stroke jitter: resolve once for the whole stroke (this was
+      // documented but never done — per-stroke jitter had no effect).
+      const resolved = resolveStampColor(
+        primary,
+        secondary,
+        brush.colorDyn,
+        inputs,
+      );
+      state.strokeColor = {
+        r: resolved.r,
+        g: resolved.g,
+        b: resolved.b,
+        a: resolved.a,
+      };
+    }
+    state.strokeColorResolved = true;
     fr = state.strokeColor.r;
     fg = state.strokeColor.g;
     fb = state.strokeColor.b;
@@ -580,10 +614,17 @@ function resolveStamp(
   // brush.motionBlur is 0..100. 0 → no elongation; 100 → 4× along-stroke
   // stretch, producing a clearly smeared / calligraphic feel. Skipped at
   // very low velocities so a slow paint doesn't get an unwanted streak.
+  // Elongation ramps with velocity (full at 25% of tracking speed) instead
+  // of switching on at a threshold — that step made a stroke alternate
+  // between elongated JS stamps and round WASM stamps. Below
+  // MOTION_BLUR_MIN the stretch (≤ 1.2×) is imperceptible and treated as
+  // off on every path, so default brushes keep the WASM batch.
   let motionElongation = 1;
-  if (brush.motionBlur > 0 && pose.velocity > 0.01) {
-    const k = brush.motionBlur / 100;
-    motionElongation = 1 + k * 3;
+  const motionBlur = effectiveMotionBlur(brush);
+  if (motionBlur > 0 && pose.velocity > 0.01) {
+    const k = motionBlur / 100;
+    const v = Math.min(1, (pose.velocity - 0.01) / 0.24);
+    motionElongation = 1 + k * 3 * v;
   }
 
   return {
@@ -604,6 +645,19 @@ function resolveStamp(
     fa,
   };
 }
+
+/** Motion blur below this percentage (≤ 1.2× elongation) is treated as off. */
+const MOTION_BLUR_MIN = 7;
+
+/** The brush's motion blur, or 0 when it is too small to be visible. */
+function effectiveMotionBlur(brush: Brush): number {
+  return brush.motionBlur >= MOTION_BLUR_MIN ? brush.motionBlur : 0;
+}
+
+/** Below this stamp diameter the bitmap batch's whole-pixel stamp placement
+ *  is visible (stair-stepping); smaller stamps use the SDF batch, which
+ *  positions stamps at sub-pixel precision. */
+const BITMAP_BATCH_MIN_SIZE = 16;
 
 /** Cheap inline of `motionElongation > 1.0001` used by the WASM gate. */
 function motionActiveCheck(motionElongation: number): boolean {
@@ -697,13 +751,24 @@ function applyStamp(
   // grows accordingly so we don't clip the smear; we use the conservative
   // axis-aligned bbox that contains a rotated ellipse with semi-axes
   // (radius × motionElongation, radius).
+  //
+  // The tip itself is bounded by its rotated tip-local box — x: radius plus
+  // shear, y: radius × roundness — which contains round, square, diamond
+  // and bitmap tips alike (an ellipse radius clipped the corners of rotated
+  // square tips and sheared stamps). Motion stretches that along the
+  // stroke direction by radius × (elongation − 1).
   const cosD = Math.cos(motionDir);
   const sinD = Math.sin(motionDir);
+  const tipHX = radius + Math.abs(shear) * radius * roundness;
+  const tipHY = radius * roundness;
+  const absCosT = Math.abs(cosT);
+  const absSinT = Math.abs(sinT);
+  const stretch = radius * (motionElongation - 1);
   const halfX = Math.ceil(
-    Math.abs(cosD) * radius * motionElongation + Math.abs(sinD) * radius + aaWidth + 1,
+    absCosT * tipHX + absSinT * tipHY + Math.abs(cosD) * stretch + aaWidth + 1,
   );
   const halfY = Math.ceil(
-    Math.abs(sinD) * radius * motionElongation + Math.abs(cosD) * radius + aaWidth + 1,
+    absSinT * tipHX + absCosT * tipHY + Math.abs(sinD) * stretch + aaWidth + 1,
   );
   const minX = Math.floor(cx - halfX);
   const maxX = Math.ceil(cx + halfX);
@@ -1004,6 +1069,12 @@ function bezierDirection(
 ): number {
   const dx = 2 * (1 - t) * (cpx - p0x) + 2 * t * (p1x - cpx);
   const dy = 2 * (1 - t) * (cpy - p0y) + 2 * t * (p1y - cpy);
+  // A degenerate tangent (control point on an endpoint — e.g. the first
+  // segment's start) gave atan2(0, 0) = 0 and seeded direction-follow tips
+  // at 0°. Fall back to the chord direction.
+  if (Math.abs(dx) + Math.abs(dy) < 1e-9) {
+    return Math.atan2(p1y - p0y, p1x - p0x);
+  }
   return Math.atan2(dy, dx);
 }
 
@@ -1089,16 +1160,22 @@ function emitStampWithCount(
       // greys. Alpha stays in linear space — opacity isn't perceptual.
       const next = prev
         ? (() => {
+            // Colour mix weighted by each side's alpha (premultiplied
+            // semantics): picking up transparency lowers alpha but must not
+            // shift the carried colour toward the transparent pixels' RGB.
+            const wa = k * prev.a;
+            const wb = (1 - k) * under.a;
+            const t = wa + wb > 1e-6 ? wb / (wa + wb) : 0;
             const mixed = mixSrgbInOklab(
               prev.r, prev.g, prev.b,
               under.r, under.g, under.b,
-              1 - k,
+              t,
             );
             return {
               r: mixed.r,
               g: mixed.g,
               b: mixed.b,
-              a: k * prev.a + (1 - k) * under.a,
+              a: wa + wb,
             };
           })()
         : { ...under };
@@ -1264,9 +1341,17 @@ export function stampSegment(p: StampSegmentParams): void {
     layer.format !== "indexed8" &&
     layer.wasmPtr !== undefined &&
     state.touched.wasmPtr !== undefined;
-  const sdfBatchable = wasmBatchReady && brush.motionBlur === 0;
+  // Both batches need motion blur effectively off (the kernels can't
+  // elongate), so a stroke never mixes elongated and round stamps. The
+  // bitmap batch places stamps on whole pixels, so it is only used where
+  // that half-pixel snap is invisible.
+  const motionOff = effectiveMotionBlur(brush) === 0;
+  const sdfBatchable = wasmBatchReady && motionOff;
   const bitmapBatchable =
-    wasmBatchReady && isShapeStaticSegment(brush, size0, size1);
+    wasmBatchReady &&
+    motionOff &&
+    Math.min(size0, size1) >= BITMAP_BATCH_MIN_SIZE &&
+    isShapeStaticSegment(brush, size0, size1);
   const segmentBatchable = sdfBatchable || bitmapBatchable;
   if (segmentBatchable) {
     // Resolve invariant SDF context once per segment. Per-stamp dual
@@ -1358,61 +1443,73 @@ export function stampSegment(p: StampSegmentParams): void {
     }
   }
 
-  if (forceFirst && state.isFirstStamp) {
-    // Segment-start stamp uses pose0 with the Bézier-tangent direction at t=0.
-    const startPose = lerpPose(pose0, pose1, 0);
-    startPose.direction = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, 0);
-    emitStampWithCount(p, p0x, p0y, size0, opacity0, startPose, onStampBbox);
-  }
-
-  const chord = Math.hypot(p1x - p0x, p1y - p0y);
-  const polyline =
-    Math.hypot(cpx - p0x, cpy - p0y) + Math.hypot(p1x - cpx, p1y - cpy);
-  const approxLen = (chord + polyline) * 0.5;
-  const substeps = Math.max(
-    8,
-    Math.ceil((approxLen / Math.max(0.5, stamp_dx_pixels)) * 4),
-  );
-
-  let prevX = p0x;
-  let prevY = p0y;
-  for (let i = 1; i <= substeps; i++) {
-    const t = i / substeps;
-    const omt = 1 - t;
-    const x = omt * omt * p0x + 2 * omt * t * cpx + t * t * p1x;
-    const y = omt * omt * p0y + 2 * omt * t * cpy + t * t * p1y;
-    let stepLen = Math.hypot(x - prevX, y - prevY);
-    let sx = prevX, sy = prevY;
-    while (state.arcAccum + stepLen >= stamp_dx_pixels) {
-      const need = stamp_dx_pixels - state.arcAccum;
-      const f = stepLen > 0 ? need / stepLen : 0;
-      const cx = sx + (x - sx) * f;
-      const cy = sy + (y - sy) * f;
-      const tt = t - (1 - f) * (1 / substeps);
-      const ttClamped = Math.max(0, Math.min(1, tt));
-      const sz = size0 + (size1 - size0) * ttClamped;
-      const op = opacity0 + (opacity1 - opacity0) * ttClamped;
-      const dirAtT = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, tt);
-      // Pose lerp: smoothly varies pressure/velocity/tilt/rotation along
-      // the segment so dynamic curves driven by these sources don't step
-      // at each pointer-event boundary.
-      const stampPose = lerpPose(pose0, pose1, ttClamped);
-      stampPose.direction = dirAtT;
-      emitStampWithCount(p, cx, cy, sz, op, stampPose, onStampBbox);
-      sx = cx;
-      sy = cy;
-      stepLen -= need;
+  // try/finally: a stamp append can throw (WASM out of memory). The batch
+  // flags must never stay set, or later stamps would be queued into a batch
+  // that is never flushed and silently paint nothing.
+  try {
+    if (forceFirst && state.isFirstStamp) {
+      // Segment-start stamp uses pose0 with the Bézier-tangent direction at t=0.
+      const startPose = lerpPose(pose0, pose1, 0);
+      startPose.direction = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, 0);
+      emitStampWithCount(p, p0x, p0y, size0, opacity0, startPose, onStampBbox);
     }
-    state.arcAccum += stepLen;
-    prevX = x;
-    prevY = y;
-  }
 
-  // Fire all queued stamps for the segment in one WASM call.
-  if (segmentBatchable) {
-    flushBrushBatch(wasmModule!);
-    brushStampBatchOpen = false;
-    brushStampBatchIsBitmap = false;
+    const chord = Math.hypot(p1x - p0x, p1y - p0y);
+    const polyline =
+      Math.hypot(cpx - p0x, cpy - p0y) + Math.hypot(p1x - cpx, p1y - cpy);
+    const approxLen = (chord + polyline) * 0.5;
+    const substeps = Math.max(
+      8,
+      Math.ceil((approxLen / Math.max(0.5, stamp_dx_pixels)) * 4),
+    );
+
+    let prevX = p0x;
+    let prevY = p0y;
+    // Spacing can shrink between segments (pressure size / taper): a carry
+    // larger than the new spacing gave a negative `need` and placed a stamp
+    // behind the segment start.
+    if (state.arcAccum > stamp_dx_pixels) state.arcAccum = stamp_dx_pixels;
+    for (let i = 1; i <= substeps; i++) {
+      const t = i / substeps;
+      const omt = 1 - t;
+      const x = omt * omt * p0x + 2 * omt * t * cpx + t * t * p1x;
+      const y = omt * omt * p0y + 2 * omt * t * cpy + t * t * p1y;
+      let stepLen = Math.hypot(x - prevX, y - prevY);
+      let sx = prevX, sy = prevY;
+      while (state.arcAccum + stepLen >= stamp_dx_pixels) {
+        const need = stamp_dx_pixels - state.arcAccum;
+        const f = stepLen > 0 ? need / stepLen : 0;
+        const cx = sx + (x - sx) * f;
+        const cy = sy + (y - sy) * f;
+        const tt = t - (1 - f) * (1 / substeps);
+        const ttClamped = Math.max(0, Math.min(1, tt));
+        const sz = size0 + (size1 - size0) * ttClamped;
+        const op = opacity0 + (opacity1 - opacity0) * ttClamped;
+        const dirAtT = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, tt);
+        // Pose lerp: smoothly varies pressure/velocity/tilt/rotation along
+        // the segment so dynamic curves driven by these sources don't step
+        // at each pointer-event boundary.
+        const stampPose = lerpPose(pose0, pose1, ttClamped);
+        stampPose.direction = dirAtT;
+        emitStampWithCount(p, cx, cy, sz, op, stampPose, onStampBbox);
+        sx = cx;
+        sy = cy;
+        stepLen -= need;
+      }
+      state.arcAccum += stepLen;
+      prevX = x;
+      prevY = y;
+    }
+  } finally {
+    // Fire all queued stamps for the segment in one WASM call.
+    if (brushStampBatchOpen) {
+      try {
+        if (segmentBatchable) flushBrushBatch(wasmModule!);
+      } finally {
+        brushStampBatchOpen = false;
+        brushStampBatchIsBitmap = false;
+      }
+    }
   }
 }
 
@@ -1471,6 +1568,10 @@ export function stampDot(
     pose,
     onStampBbox,
   );
+  // A dot has no travel direction (its pose direction is a placeholder 0).
+  // Don't let it seed the direction smoothing, or direction-follow tips
+  // start every stroke rotated toward 0° and take dozens of stamps to turn.
+  state.smoothDirection = null;
 }
 
 // ─── Stroke-level wet edges ─────────────────────────────────────────────────
@@ -1608,15 +1709,11 @@ export function applyStrokeWetEdges(
       if (layer.format === "rgba32f") {
         renderer.drawPixel(layer, lx, ly, er * factor, eg * factor, eb * factor, ea);
       } else {
-        renderer.drawPixel(
-          layer,
-          lx,
-          ly,
-          Math.round(er * factor),
-          Math.round(eg * factor),
-          Math.round(eb * factor),
-          ea,
-        );
+        // Darken in linear light like rgba32f (scaling sRGB bytes by the
+        // same factor darkened far more: 0.5 → ~22% of the light).
+        const dk = (v: number): number =>
+          Math.round(linearToSrgbChannel(srgbToLinearChannel(v / 255) * factor) * 255);
+        renderer.drawPixel(layer, lx, ly, dk(er), dk(eg), dk(eb), ea);
       }
 
       if (lx < dxLo) dxLo = lx;

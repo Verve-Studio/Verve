@@ -19,12 +19,30 @@ export function serializePixelBrushFile(brushes: PixelBrush[]): string {
   return JSON.stringify(file, null, 2);
 }
 
+/** Structural check for a pixel brush: positive integer size and a
+ *  base64 payload of exactly width × height × 4 bytes. Malformed brushes
+ *  (zero size → NaN grid snapping, truncated data) broke painting. */
+export function isValidPixelBrush(b: unknown): b is PixelBrush {
+  if (typeof b !== "object" || b === null) return false;
+  const r = b as Record<string, unknown>;
+  const { width: w, height: h, rgba, id } = r;
+  if (typeof id !== "string" || typeof rgba !== "string") return false;
+  if (!Number.isInteger(w) || !Number.isInteger(h)) return false;
+  if ((w as number) < 1 || (h as number) < 1 || (w as number) * (h as number) > 1 << 20)
+    return false;
+  try {
+    return atob(rgba).length === (w as number) * (h as number) * 4;
+  } catch {
+    return false;
+  }
+}
+
 export function parsePixelBrushFile(json: string): PixelBrush[] {
   try {
     const parsed = JSON.parse(json) as unknown;
     if (Array.isArray(parsed)) {
       // Plain array — legacy/simple format
-      return parsed as PixelBrush[];
+      return parsed.filter(isValidPixelBrush);
     }
     if (
       typeof parsed === "object" &&
@@ -32,7 +50,7 @@ export function parsePixelBrushFile(json: string): PixelBrush[] {
       "brushes" in parsed &&
       Array.isArray((parsed as PixelBrushFile).brushes)
     ) {
-      return (parsed as PixelBrushFile).brushes;
+      return (parsed as PixelBrushFile).brushes.filter(isValidPixelBrush);
     }
   } catch {
     // corrupt — ignore

@@ -243,8 +243,6 @@ export function BrushSettingsPanel({
     update({ colorDyn: { ...activeBrush.colorDyn, ...patch } });
   const setPose = (patch: Partial<Brush["pose"]>): void =>
     update({ pose: { ...activeBrush.pose, ...patch } });
-  const setNoise = (patch: Partial<Brush["noise"]>): void =>
-    update({ noise: { ...activeBrush.noise, ...patch } });
   const setTexture = (patch: Partial<Brush["texture"]>): void =>
     update({ texture: { ...activeBrush.texture, ...patch } });
   const dualTip = activeBrush.dualTip ?? {
@@ -607,31 +605,6 @@ export function BrushSettingsPanel({
               suffix="%"
               inputWidth={42}
               onChange={(v) => setPose({ pressureSquash: v / 100 })}
-            />
-          </div>
-        </Section>
-
-        {/* ── Noise ───────────────────────────────────────────── */}
-        <Section title="Noise">
-          <div className={styles.row}>
-            <label className={styles.smallLabel}>Amount</label>
-            <SliderInput
-              value={Math.round(activeBrush.noise.amount * 100)}
-              min={0}
-              max={100}
-              suffix="%"
-              inputWidth={42}
-              onChange={(v) => setNoise({ amount: v / 100 })}
-            />
-          </div>
-          <div className={styles.row}>
-            <label className={styles.smallLabel}>Scale</label>
-            <SliderInput
-              value={activeBrush.noise.scale}
-              min={1}
-              max={64}
-              inputWidth={42}
-              onChange={(v) => setNoise({ scale: v })}
             />
           </div>
         </Section>

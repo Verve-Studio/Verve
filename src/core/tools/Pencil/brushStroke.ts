@@ -4,6 +4,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { blendPixelOver } from "../_shared/primitives";
 import type { SelMask, TouchedBuffer } from "../_shared/primitives";
+import { footprintCentreOffset, inPencilFootprint } from "./pencilFootprint";
 
 /** Brush shape metric used by the airbrush stamp. */
 export type BrushShape = "round" | "square" | "diamond";
@@ -50,13 +51,25 @@ export function stampAirbrush(
   const hardR = radius * (hardness / 100);
   const softZone = radius - hardR;
 
+  // Measure from the footprint centre, which sits half a pixel up-left of
+  // (cx, cy) for even sizes — centring on the pixel made even sizes paint
+  // N+1 pixels wide. Hard (non-AA) stamps use the shared footprint rule so
+  // they match the cursor preview exactly.
+  const off = -footprintCentreOffset(size);
   for (let dy = -iRadius; dy <= iRadius; dy++) {
     for (let dx = -iRadius; dx <= iRadius; dx++) {
-      const dist = shapeDistance(dx, dy, shape);
-      if (dist > outerR) continue;
-
-      // Sub-pixel feather at the outer boundary (AA only)
-      const edgeFactor = antiAlias ? Math.min(1, outerR - dist) : 1;
+      const ox = dx + off;
+      const oy = dy + off;
+      const dist = shapeDistance(ox, oy, shape);
+      let edgeFactor: number;
+      if (antiAlias) {
+        if (dist > outerR) continue;
+        // Sub-pixel feather at the outer boundary
+        edgeFactor = Math.min(1, outerR - dist);
+      } else {
+        if (!inPencilFootprint(ox, oy, size, shape)) continue;
+        edgeFactor = 1;
+      }
 
       let softFactor: number;
       if (softZone <= 0 || dist <= hardR) {

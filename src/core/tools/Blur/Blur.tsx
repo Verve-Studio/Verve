@@ -46,11 +46,19 @@ function blurStamp(
   pressure: number,
 ): void {
   const layer = ctx.layer;
-  const W = layer.layerWidth;
-  const H = layer.layerHeight;
-
   // Indexed8 has no meaningful "blur" (palette indices can't average) — bail.
   if (layer.format === "indexed8") return;
+
+  // Blurring an edge spreads it outward: grow the layer to the footprint
+  // (+ kernel reach) before reading its geometry — it used to leave a hard
+  // cut at the layer rectangle.
+  ctx.growLayerToFit(
+    Math.round(cx),
+    Math.round(cy),
+    Math.ceil(Math.max(1, blurOptions.size / 2)) + 4,
+  );
+  const W = layer.layerWidth;
+  const H = layer.layerHeight;
 
   const opts = blurOptions;
   const strength01 =
@@ -63,14 +71,16 @@ function blurStamp(
 
   // Snapshot the brush bounding-box so the 3×3 sample reads from pre-stamp
   // pixels (otherwise the loop's own writes pollute neighbour samples).
-  const minLx = Math.max(0, Math.floor(cxL - radius) - 1);
-  const maxLx = Math.min(W - 1, Math.ceil(cxL + radius) + 1);
-  const minLy = Math.max(0, Math.floor(cyL - radius) - 1);
-  const maxLy = Math.min(H - 1, Math.ceil(cyL + radius) + 1);
+  // Each 3×3 pass reaches one pixel further, so the snapshot margin is
+  // `passes` px (a 1 px margin edge-clamped the kernel on multi-pass stamps).
+  const passes = Math.max(1, Math.min(3, opts.passes | 0));
+  const minLx = Math.max(0, Math.floor(cxL - radius) - passes);
+  const maxLx = Math.min(W - 1, Math.ceil(cxL + radius) + passes);
+  const minLy = Math.max(0, Math.floor(cyL - radius) - passes);
+  const maxLy = Math.min(H - 1, Math.ceil(cyL + radius) + passes);
   if (minLx > maxLx || minLy > maxLy) return;
   const bw = maxLx - minLx + 1;
   const bh = maxLy - minLy + 1;
-  const passes = Math.max(1, Math.min(3, opts.passes | 0));
   const isFloat = layer.format === "rgba32f";
   const data = layer.data;
 

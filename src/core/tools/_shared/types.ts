@@ -56,6 +56,12 @@ export interface ToolContext {
    */
   commitStroke: (label: string) => void;
   /**
+   * Flatten the document exactly as flatten / export would (layer masks,
+   * adjustments and effects included) into a canvas-sized buffer in the
+   * document's pixel format.
+   */
+  readCompositePixels: () => Promise<Uint8Array | Float32Array>;
+  /**
    * The overlay 2D canvas drawn on top of the WebGL canvas (used for
    * live drag previews — e.g. gradient guide line, selection marquee).
    * May be null if the canvas is not yet mounted.
@@ -65,8 +71,9 @@ export interface ToolContext {
   addTextLayer: (layer: TextLayerState) => void;
   /** Update an existing text layer's content / style (dispatches state update + re-rasterizes). */
   updateTextLayer: (layer: TextLayerState) => void;
-  /** Open the inline text editor for an already-existing text layer (e.g. clicking on it with the text tool). */
-  openTextLayerEditor: (id: string) => void;
+  /** Open the inline text editor for an already-existing text layer (e.g. clicking on it with the text tool).
+   *  `at` places the caret at that canvas-space point; omitted → end of text. */
+  openTextLayerEditor: (id: string, at?: { x: number; y: number }) => void;
   /** Current text layers in state — used by the text tool to detect clicks on existing text. */
   textLayers: TextLayerState[];
   /**
@@ -227,6 +234,12 @@ export interface ToolHandler {
   onHover?(pos: ToolPointerPos, ctx: ToolContext): void;
   /** Called when the pointer leaves the canvas — clean up any hover UI. */
   onLeave?(ctx: ToolContext): void;
+  /**
+   * The stroke could not be finished normally (its layer disappeared, or a
+   * tool threw during pointer-up). Stop timers / reset per-stroke state; do
+   * not touch pixels. The input pipeline calls `renderer.strokeEnd()` itself.
+   */
+  onCancel?(): void;
   /**
    * Called when this tool becomes active OR when the active layer changes
    * while this tool is already active. Used by tools like shape/frame to draw

@@ -2,8 +2,9 @@ import type {
   WebGPURenderer,
   GpuLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { bresenham, wuLine } from "../_shared/primitives";
+import { bresenham } from "../_shared/primitives";
 import type { SelMask, TouchedBuffer } from "../_shared/primitives";
+import { noteTouchedWrite } from "../_shared/primitives";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 
 /**
@@ -62,6 +63,7 @@ function erasePixelOp(
     incr = existing < 1 ? (blendFactor - existing) / (1 - existing) : 0;
     if (incr <= 0) return;
     tdata[key] = (blendFactor * 255 + 0.5) | 0;
+    noteTouchedWrite(touched, canvasX, canvasY);
   }
 
   const [er, eg, eb, ea] = renderer.samplePixel(layer, lx, ly);
@@ -265,25 +267,11 @@ export function eraseThickLine(
 ): void {
   const bf = strength / 100;
   if (antiAlias) {
-    if (size <= 1) {
-      wuLine(x0, y0, x1, y1, (x, y, coverage) => {
-        erasePixelOp(
-          renderer,
-          layer,
-          x,
-          y,
-          secR,
-          secG,
-          secB,
-          bf * coverage,
-          alphaMode,
-          touched,
-          sel,
-          tiledW,
-          tiledH,
-        );
-      });
-    } else {
+    {
+      // 1 px included: a capsule SDF (radius 0.5) joins cleanly between the
+      // ~1 px curve pieces. Chained Wu lines gave each join pixel only
+      // partial coverage, and the max-coverage cap doesn't sum them, so a
+      // 100% stroke came out as partly-erased beads.
       eraseAASegment(
         renderer,
         layer,
@@ -291,7 +279,7 @@ export function eraseThickLine(
         y0,
         x1,
         y1,
-        size,
+        Math.max(1, size),
         secR,
         secG,
         secB,

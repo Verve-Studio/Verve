@@ -1,4 +1,5 @@
 import type { LayerState, PixelFormat, RGBAColor } from "@/types";
+import type { TiledLayerSnapshot } from "./tiledSnapshot";
 
 // ─── History entry ────────────────────────────────────────────────────────────
 
@@ -6,8 +7,10 @@ export interface HistoryEntry {
   id: string;
   label: string;
   timestamp: number;
-  /** Raw pixel data snapshot per layer, keyed by layer ID. Uint8Array for rgba8/indexed8, Float32Array for rgba32f. */
-  layerPixels: Map<string, Uint8Array | Float32Array>;
+  /** Pixel snapshot per layer, keyed by layer ID, as immutable tiles shared
+   *  with neighbouring entries wherever the layer didn't change (see
+   *  tiledSnapshot.ts). Materialize with `materializeLayerPixels`. */
+  layerPixels: Map<string, TiledLayerSnapshot>;
   /**
    * Per-layer contentVersion at the time of the snapshot. Used by
    * `useHistory.captureHistory` to share pixel buffer references across
@@ -47,18 +50,10 @@ export interface ClearHistoryOptions {
 }
 
 function cloneLayerPixels(
-  layerPixels: Map<string, Uint8Array | Float32Array>,
-): Map<string, Uint8Array | Float32Array> {
-  const cloned = new Map<string, Uint8Array | Float32Array>();
-  for (const [layerId, pixels] of layerPixels) {
-    cloned.set(
-      layerId,
-      (pixels as unknown) instanceof Float32Array
-        ? new Float32Array(pixels as Float32Array)
-        : new Uint8Array(pixels as Uint8Array),
-    );
-  }
-  return cloned;
+  layerPixels: Map<string, TiledLayerSnapshot>,
+): Map<string, TiledLayerSnapshot> {
+  // Snapshot tiles are immutable, so a clone can share them.
+  return new Map(layerPixels);
 }
 
 function cloneLayerGeometry(
@@ -134,8 +129,10 @@ let globalCapBytes = 4 * 1024 * 1024 * 1024;
 /** Unique pixel buffers referenced by `entry` (with their sizes). */
 function entryBuffers(entry: HistoryEntry): Map<ArrayBufferLike, number> {
   const out = new Map<ArrayBufferLike, number>();
-  for (const buf of entry.layerPixels.values()) {
-    if (!out.has(buf.buffer)) out.set(buf.buffer, buf.byteLength);
+  for (const snap of entry.layerPixels.values()) {
+    for (const tile of snap.tiles) {
+      if (!out.has(tile.buffer)) out.set(tile.buffer, tile.byteLength);
+    }
   }
   for (const buf of entry.adjustmentMasks.values()) {
     if (!out.has(buf.buffer)) out.set(buf.buffer, buf.byteLength);
@@ -248,11 +245,13 @@ export class HistoryStore {
     const seen = new Set<ArrayBufferLike>();
     let total = 0;
     for (const e of this.entries) {
-      for (const buf of e.layerPixels.values()) {
-        const ab = buf.buffer;
-        if (seen.has(ab)) continue;
-        seen.add(ab);
-        total += buf.byteLength;
+      for (const snap of e.layerPixels.values()) {
+        for (const tile of snap.tiles) {
+          const ab = tile.buffer;
+          if (seen.has(ab)) continue;
+          seen.add(ab);
+          total += tile.byteLength;
+        }
       }
       for (const buf of e.adjustmentMasks.values()) {
         const ab = buf.buffer;

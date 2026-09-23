@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { stampCloneSegment } from "./cloneStampStroke";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import { notificationStore } from "@/core/store/notificationStore";
 
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
@@ -40,6 +42,15 @@ function createCloneStampHandler(): ToolHandler {
   let strokeOffsetDY = 0;
   let isStrokeReady = false;
   let strokeToken: symbol | null = null;
+  // Sample-all-layers: segments drawn before the async composite readback
+  // resolves are queued and painted once it arrives (a quick tap used to
+  // paint nothing), and a pointer-up that comes first defers the stroke end.
+  let pendingSegments: Array<[number, number, number, number]> = [];
+  let upBeforeReady = false;
+  // A different source layer is read live (it isn't modified by the
+  // stroke); `layer.data` is re-read per segment because WASM heap growth
+  // replaces it.
+  let liveSourceLayer: GpuLayer | null = null;
 
   function paintSegment(
     x0: number,
@@ -53,6 +64,11 @@ function createCloneStampHandler(): ToolHandler {
     const pad = Math.ceil(cloneStampOptions.size / 2) + 2;
     growLayerToFit(x0, y0, pad);
     growLayerToFit(x1, y1, pad);
+    // Re-read AFTER growing: the grow allocates on the WASM heap, and a heap
+    // growth detaches every earlier view — a source view taken before it
+    // reads as empty and painted transparent holes for the rest of the
+    // segment.
+    if (liveSourceLayer) sourceBuffer = liveSourceLayer.data;
 
     const sel = selectionMask
       ? { mask: selectionMask, width: renderer.pixelWidth }
@@ -111,6 +127,21 @@ function createCloneStampHandler(): ToolHandler {
     render(layers);
   }
 
+  /** End the stroke; `commit` records history (deferred-stroke path). */
+  function finishStroke(ctx: ToolContext, commit: boolean): void {
+    strokeToken = null;
+    lastPos = null;
+    touched = null;
+    sourceBuffer = null;
+    sourceBounds = null;
+    liveSourceLayer = null;
+    pendingSegments = [];
+    upBeforeReady = false;
+    isStrokeReady = false;
+    ctx.renderer.strokeEnd();
+    if (commit) ctx.commitStroke("Clone-stamp");
+  }
+
   return {
     onPointerDown({ x, y, altKey }: ToolPointerPos, ctx: ToolContext) {
       if (altKey) {
@@ -133,13 +164,24 @@ function createCloneStampHandler(): ToolHandler {
             }
           }
         }
-        activeScope().cloneStamp.setSource(x, y, hitLayerId);
+        ctx.scope.cloneStamp.setSource(x, y, hitLayerId);
         return;
       }
 
-      const cs = activeScope().cloneStamp;
+      const cs = ctx.scope.cloneStamp;
       const source = cs.source;
       if (!source) return;
+      // Validate the source before starting a stroke (a deleted source layer
+      // used to start a stroke that painted nothing but still hit history).
+      const sourceLayer = cloneStampOptions.sampleAllLayers
+        ? null
+        : (ctx.layers.find((l) => l.id === source.layerId) ?? null);
+      if (!cloneStampOptions.sampleAllLayers && !sourceLayer) {
+        notificationStore.error(
+          "The clone source layer no longer exists — Alt-click to set a new source.",
+        );
+        return;
+      }
 
       ctx.renderer.strokeStart();
 
@@ -162,24 +204,45 @@ function createCloneStampHandler(): ToolHandler {
       isStrokeReady = false;
       sourceBuffer = null;
       sourceBounds = null;
+      liveSourceLayer = null;
+      pendingSegments = [];
+      upBeforeReady = false;
 
       if (cloneStampOptions.sampleAllLayers) {
-        const capturedX = x,
-          capturedY = y;
         const capturedCtx = ctx;
         const token = Symbol();
         strokeToken = token;
-        ctx.renderer.readFlattenedPixels(ctx.layers).then((buf) => {
-          if (strokeToken !== token) return;
-          sourceBuffer = buf;
-          sourceBounds = null;
-          isStrokeReady = true;
-          paintSegment(capturedX, capturedY, capturedX, capturedY, capturedCtx);
-        });
-      } else {
-        const sourceLayer = ctx.layers.find((l) => l.id === source.layerId);
-        if (!sourceLayer) return;
-        sourceBuffer = ctx.renderer.readLayerPixels(sourceLayer);
+        pendingSegments.push([x, y, x, y]);
+        ctx
+          .readCompositePixels()
+          .then((buf) => {
+            if (strokeToken !== token) return;
+            sourceBuffer = buf;
+            sourceBounds = null;
+            isStrokeReady = true;
+            for (const [x0, y0, x1, y1] of pendingSegments) {
+              paintSegment(x0, y0, x1, y1, capturedCtx);
+            }
+            pendingSegments = [];
+            if (upBeforeReady) finishStroke(capturedCtx, true);
+          })
+          .catch((err: unknown) => {
+            if (strokeToken !== token) return;
+            notificationStore.error(
+              `Clone Stamp could not sample the image: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+            if (upBeforeReady) finishStroke(capturedCtx, false);
+          });
+      } else if (sourceLayer) {
+        if (sourceLayer === ctx.layer) {
+          // Cloning within the layer being painted: sample a stable copy.
+          sourceBuffer = ctx.renderer.readLayerPixels(sourceLayer);
+        } else {
+          liveSourceLayer = sourceLayer;
+          sourceBuffer = sourceLayer.data;
+        }
         sourceBounds = {
           offsetX: sourceLayer.offsetX,
           offsetY: sourceLayer.offsetY,
@@ -192,11 +255,18 @@ function createCloneStampHandler(): ToolHandler {
     },
 
     onPointerMove({ x, y }: ToolPointerPos, ctx: ToolContext) {
-      if (!isStrokeReady || !lastPos || !sourceBuffer) return;
+      if (!lastPos) return;
+      if (!isStrokeReady) {
+        // Readback still pending: queue the segment.
+        if (strokeToken) pendingSegments.push([lastPos.x, lastPos.y, x, y]);
+        lastPos = { x, y };
+        return;
+      }
+      if (!sourceBuffer) return;
       paintSegment(lastPos.x, lastPos.y, x, y, ctx);
       lastPos = { x, y };
-      if (cloneStampOptions.aligned && activeScope().cloneStamp.alignedOffset) {
-        activeScope().cloneStamp.notify();
+      if (cloneStampOptions.aligned && ctx.scope.cloneStamp.alignedOffset) {
+        ctx.scope.cloneStamp.notify();
       }
     },
 
@@ -204,17 +274,30 @@ function createCloneStampHandler(): ToolHandler {
       // Alt-click (source pick) or a click with no source set: no stroke was
       // started, so there is nothing to record.
       if (!lastPos) return { skipHistory: true };
-      if (isStrokeReady && lastPos && sourceBuffer) {
+      if (!isStrokeReady && strokeToken) {
+        // Composite readback still in flight: paint the queued segments
+        // when it lands, then end the stroke and commit history ourselves.
+        pendingSegments.push([lastPos.x, lastPos.y, x, y]);
+        lastPos = null;
+        upBeforeReady = true;
+        return { skipHistory: true };
+      }
+      if (isStrokeReady && sourceBuffer) {
         paintSegment(lastPos.x, lastPos.y, x, y, ctx);
       }
-      // Invalidate any pending async readback so it doesn't paint after stroke ends
+      finishStroke(ctx, false);
+    },
+
+    onCancel() {
       strokeToken = null;
       lastPos = null;
       touched = null;
       sourceBuffer = null;
       sourceBounds = null;
+      liveSourceLayer = null;
+      pendingSegments = [];
+      upBeforeReady = false;
       isStrokeReady = false;
-      ctx.renderer.strokeEnd();
     },
 
     onHover() {
@@ -372,6 +455,7 @@ class CloneStampTool implements ITool {
     row: 0,
     column: 0,
   } as const;
+  readonly releaseOnEscape = true;
   readonly modifiesPixels = true;
   readonly paintsOntoPixelLayer = true;
   readonly pixelOnly = true;

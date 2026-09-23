@@ -89,6 +89,15 @@ function smudgeStamp(
   const layer = ctx.layer;
   if (layer.format === "indexed8") return;
 
+  // Smudging an object outward extends it: grow the layer to the stamp's
+  // footprint (+ drag distance) BEFORE reading its geometry / data — it used
+  // to stop dead at the layer rectangle.
+  ctx.growLayerToFit(
+    Math.round(cx),
+    Math.round(cy),
+    Math.ceil(Math.max(1, smudgeOptions.size / 2) + Math.hypot(motionX, motionY)) + 2,
+  );
+
   const opts = smudgeOptions;
   const strength01 =
     (opts.pressureStrength ? opts.strength * Math.max(0.05, pressure) : opts.strength) / 100;

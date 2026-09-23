@@ -36,6 +36,40 @@ const activeBrushRef: { current: Brush } = {
   current: makeDefaultBrush("__bootstrap", "Default"),
 };
 
+/** Split the canvas-space span [a, b) into pieces wrapped into [0, n). */
+function wrapSpans(a: number, b: number, n: number): Array<[number, number]> {
+  if (b - a >= n) return [[0, n]];
+  const a0 = ((a % n) + n) % n;
+  const len = b - a;
+  if (a0 + len <= n) return [[a0, a0 + len]];
+  return [
+    [a0, n],
+    [0, a0 + len - n],
+  ];
+}
+
+/** Mark a canvas-space rect dirty on a tiled (wrapping) canvas. */
+function markWrappedDirty(
+  renderer: WebGPURenderer,
+  layer: GpuLayer,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const W = renderer.pixelWidth;
+  const H = renderer.pixelHeight;
+  for (const [ax, bx] of wrapSpans(x0, x1, W)) {
+    for (const [ay, by] of wrapSpans(y0, y1, H)) {
+      const lx = Math.max(0, ax - layer.offsetX);
+      const ly = Math.max(0, ay - layer.offsetY);
+      const rx = Math.min(layer.layerWidth, bx - layer.offsetX);
+      const ry = Math.min(layer.layerHeight, by - layer.offsetY);
+      if (rx > lx && ry > ly) renderer.markDirtyRect(layer, lx, ly, rx, ry);
+    }
+  }
+}
+
 export const brushOptions = {
   size: activeBrushRef.current.tip.size,
 };
@@ -222,13 +256,22 @@ function createBrushHandler(): ToolHandler {
       render,
       growLayerToFit,
     } = ctx;
-    // Worst-case stamp bbox extension. Soft brushes (hardness=0) add up to
-    // 0.5 × radius of feathering, and motion blur stretches the stamp along
-    // stroke direction by up to 4× at motionBlur=100. Combined upper bound:
-    //   half ≈ radius × elongMax + radius × 0.5  (= 0.5 size × (elongMax + 0.5))
+    // Worst-case stamp reach from the path, in radii (r = size / 2):
+    //   √2        square / bitmap tip corners at any angle
+    //   + shear   tilt shear stretches the tip by up to tiltScale × r
+    //   + elong−1 motion blur (up to 4× at motionBlur = 100)
+    //   + 0.5     soft-edge feathering
+    //   + scatter stamps are offset by amount × r (× jitter; 1.5 for margin)
+    // Stamps beyond the grown layer were silently dropped at its edge.
     const elongMax = 1 + 3 * Math.max(0, Math.min(100, brush.motionBlur)) / 100;
     const maxSize = Math.max(size0, size1);
-    const padR = Math.ceil(maxSize * (0.5 * elongMax + 0.25) + 3);
+    const reachRadii =
+      Math.SQRT2 +
+      Math.max(0, brush.pose.tiltScale) +
+      (elongMax - 1) +
+      0.5 +
+      1.5 * Math.max(0, brush.scatter.amount);
+    const padR = Math.ceil(maxSize * 0.5 * reachRadii + 3);
     if (!ctx.tiledMode) {
       const minX = Math.min(p0x, cpx, p1x) - padR;
       const minY = Math.min(p0y, cpy, p1y) - padR;
@@ -309,7 +352,19 @@ function createBrushHandler(): ToolHandler {
       });
     }
 
-    if (!ctx.tiledMode && segDirtyMaxX >= segDirtyMinX) {
+    if (ctx.tiledMode && segDirtyMaxX >= segDirtyMinX) {
+      // Tiled mode wraps stamps around the canvas edges: mark the segment's
+      // bbox split into its (up to 4) wrapped pieces. Without any dirty
+      // rect the flush was skipped and mouse strokes never reached the GPU.
+      markWrappedDirty(
+        renderer,
+        layer,
+        Math.floor(segDirtyMinX),
+        Math.floor(segDirtyMinY),
+        Math.ceil(segDirtyMaxX) + 1,
+        Math.ceil(segDirtyMaxY) + 1,
+      );
+    } else if (!ctx.tiledMode && segDirtyMaxX >= segDirtyMinX) {
       const lx = Math.max(0, Math.floor(segDirtyMinX - layer.offsetX));
       const ly = Math.max(0, Math.floor(segDirtyMinY - layer.offsetY));
       const rx = Math.min(
@@ -376,6 +431,58 @@ function createBrushHandler(): ToolHandler {
   /** Restart the build-up timer with the current brush rate. Each tick clears
    *  the touched map (so coverage genuinely accumulates) and stamps once at
    *  the held position. Photoshop calls this "airbrush" behaviour. */
+  // Build-up clears `touched` every tick so coverage can climb; the wet-edge
+  // pass at stroke end needs the WHOLE stroke's silhouette, so (only when
+  // wet edges are on) each tick first max-merges its coverage into this
+  // stroke-lifetime buffer, and the lifetime bbox is tracked separately.
+  let wetSilhouette: Uint8Array | null = null;
+  let lifeBbox: { lx: number; ly: number; rx: number; ry: number } | null =
+    null;
+
+  function unionLifeBbox(st: NonNullable<typeof strokeState>): void {
+    if (!st.strokeBboxValid) return;
+    if (!lifeBbox) {
+      lifeBbox = {
+        lx: st.strokeBboxLx,
+        ly: st.strokeBboxLy,
+        rx: st.strokeBboxRx,
+        ry: st.strokeBboxRy,
+      };
+      return;
+    }
+    lifeBbox.lx = Math.min(lifeBbox.lx, st.strokeBboxLx);
+    lifeBbox.ly = Math.min(lifeBbox.ly, st.strokeBboxLy);
+    lifeBbox.rx = Math.max(lifeBbox.rx, st.strokeBboxRx);
+    lifeBbox.ry = Math.max(lifeBbox.ry, st.strokeBboxRy);
+  }
+
+  /** Max-merge the current tick's coverage into the silhouette. */
+  function mergeSilhouette(
+    st: NonNullable<typeof strokeState>,
+    fullBuffer: boolean,
+  ): void {
+    const t = st.touched;
+    if (!wetSilhouette || wetSilhouette.length !== t.data.length) {
+      wetSilhouette = new Uint8Array(t.data.length);
+    }
+    const sil = wetSilhouette;
+    const src = t.data;
+    if (fullBuffer || !st.strokeBboxValid) {
+      for (let i = 0; i < src.length; i++) if (src[i] > sil[i]) sil[i] = src[i];
+      return;
+    }
+    const lx = Math.max(0, Math.floor(st.strokeBboxLx));
+    const ly = Math.max(0, Math.floor(st.strokeBboxLy));
+    const rx = Math.min(t.width, Math.ceil(st.strokeBboxRx) + 1);
+    const ry = Math.min(t.height, Math.ceil(st.strokeBboxRy) + 1);
+    for (let y = ly; y < ry; y++) {
+      const row = y * t.width;
+      for (let i = row + lx; i < row + rx; i++) {
+        if (src[i] > sil[i]) sil[i] = src[i];
+      }
+    }
+  }
+
   function startBuildUp(ctx: ToolContext, x: number, y: number): void {
     const brush = activeBrushRef.current;
     if (!brush.buildUp.enabled) return;
@@ -391,7 +498,18 @@ function createBrushHandler(): ToolHandler {
       // end-of-stroke cleanup uses) instead of the whole canvas-sized
       // buffer, which cost ~16–70 MB of memset per tick (every ≥8 ms).
       const touched = strokeState.touched;
-      if (strokeState.strokeBboxValid) {
+      if (activeBrushRef.current.wetEdges.enabled) {
+        if (!wetSilhouette || wetSilhouette.length !== touched.data.length) {
+          wetSilhouette = new Uint8Array(touched.data.length);
+        } else if (!lifeBbox) {
+          wetSilhouette.fill(0);
+        }
+        mergeSilhouette(strokeState, lastPaintCtx.tiledMode);
+        unionLifeBbox(strokeState);
+      }
+      // Tiled strokes write coverage at wrapped coordinates that the
+      // (unwrapped) stroke bbox doesn't describe: clear everything.
+      if (strokeState.strokeBboxValid && !lastPaintCtx.tiledMode) {
         const lx = Math.max(0, Math.floor(strokeState.strokeBboxLx));
         const ly = Math.max(0, Math.floor(strokeState.strokeBboxLy));
         const rx = Math.min(touched.width, Math.ceil(strokeState.strokeBboxRx) + 1);
@@ -423,6 +541,10 @@ function createBrushHandler(): ToolHandler {
         ctx.primaryColor,
         ctx.renderer.acquireTouchedBuffer(),
       );
+      // The WASM stamp kernel writes coverage without recording a write box;
+      // the stroke end sets lastDirtyRect instead (or, if it can't, the next
+      // acquire falls back to a full clear).
+      strokeState.touched.untracked = true;
       smoothSpeed = 0;
       smoothPressure = pressure;
       smoothTilt = Math.hypot(tiltX, tiltY) / 90;
@@ -472,8 +594,14 @@ function createBrushHandler(): ToolHandler {
         smoothTilt * (1 - PRESSURE_SMOOTHING) +
         (Math.hypot(tiltX, tiltY) / 90) * PRESSURE_SMOOTHING;
       const az = Math.atan2(tiltY, tiltX);
-      smoothTiltAz =
-        smoothTiltAz * (1 - PRESSURE_SMOOTHING) + az * PRESSURE_SMOOTHING;
+      // Interpolate along the shortest arc: a linear EMA from 179° to -179°
+      // swept through 0° and briefly reversed the tilt shear.
+      {
+        let d = az - smoothTiltAz;
+        d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+        smoothTiltAz += d * PRESSURE_SMOOTHING;
+        smoothTiltAz -= Math.round(smoothTiltAz / (2 * Math.PI)) * 2 * Math.PI;
+      }
       smoothTwist = (twist * Math.PI) / 180;
       prevTime = now;
 
@@ -513,6 +641,29 @@ function createBrushHandler(): ToolHandler {
         lastPaintCtx = ctx;
         lastBuildUpPoint = { x: drawX, y: drawY };
       }
+    },
+
+    onCancel(): void {
+      // Stroke abandoned (layer gone / tool threw): stop the build-up timer
+      // and drop per-stroke state without touching pixels.
+      stopBuildUp();
+      // Drop (don't commit) the pending flush: its layer may be gone.
+      if (pendingFlushRAF !== null) {
+        cancelAnimationFrame(pendingFlushRAF);
+        pendingFlushRAF = null;
+      }
+      pendingFlushRenderer = null;
+      pendingFlushLayer = null;
+      pendingFlushLayers = null;
+      pendingFlushRender = null;
+      lastRendered = null;
+      lastCtrl = null;
+      renderedCursor = null;
+      strokeState = null;
+      lastPaintCtx = null;
+      lastBuildUpPoint = null;
+      lifeBbox = null;
+      prevPose = null;
     },
 
     onPointerUp(_pos: ToolPointerPos, ctx: ToolContext) {
@@ -572,20 +723,42 @@ function createBrushHandler(): ToolHandler {
       // silhouette, computed from the per-stroke `touched` map. Per-stamp
       // wet edges produced concentric halos at every dab; this is the
       // watercolor pooling effect users actually expect.
-      if (strokeState && brush.wetEdges.enabled) {
+      // With build-up, merge the final tick and use the lifetime silhouette.
+      let wetTouched = strokeState ? strokeState.touched : null;
+      if (strokeState && brush.wetEdges.enabled && lifeBbox && wetSilhouette) {
+        mergeSilhouette(strokeState, ctx.tiledMode);
+        unionLifeBbox(strokeState);
+        wetTouched = {
+          ...strokeState.touched,
+          data: wetSilhouette,
+          wasmPtr: undefined,
+          lastDirtyRect: undefined,
+        };
+      }
+      if (strokeState && wetTouched && brush.wetEdges.enabled) {
         const wet = applyStrokeWetEdges(
           ctx.renderer,
           ctx.layer,
-          strokeState.touched,
+          wetTouched,
           brush,
-          strokeState.strokeBboxValid
-            ? {
-                lx: strokeState.strokeBboxLx,
-                ly: strokeState.strokeBboxLy,
-                rx: strokeState.strokeBboxRx,
-                ry: strokeState.strokeBboxRy,
+          ctx.tiledMode
+            ? // Wrapped coverage lies outside the unwrapped bbox.
+              {
+                lx: 0,
+                ly: 0,
+                rx: ctx.renderer.pixelWidth - 1,
+                ry: ctx.renderer.pixelHeight - 1,
               }
-            : null,
+            : lifeBbox
+              ? { ...lifeBbox }
+              : strokeState.strokeBboxValid
+                ? {
+                    lx: strokeState.strokeBboxLx,
+                    ly: strokeState.strokeBboxLy,
+                    rx: strokeState.strokeBboxRx,
+                    ry: strokeState.strokeBboxRy,
+                  }
+                : null,
         );
         if (wet.dirty) {
           ctx.renderer.markDirtyRect(
@@ -614,7 +787,9 @@ function createBrushHandler(): ToolHandler {
       // `acquireTouchedBuffer` can clear *just* that region instead of
       // memset-ing the whole canvas-sized buffer (saves ~2 ms per stroke
       // start on A1, way more on bigger docs).
-      if (strokeState && strokeState.strokeBboxValid) {
+      // Not for tiled strokes: their coverage is written at wrapped
+      // coordinates outside this bbox, so the next stroke must fully clear.
+      if (strokeState && strokeState.strokeBboxValid && !ctx.tiledMode) {
         strokeState.touched.lastDirtyRect = {
           lx: strokeState.strokeBboxLx,
           ly: strokeState.strokeBboxLy,
@@ -628,6 +803,7 @@ function createBrushHandler(): ToolHandler {
       strokeState = null;
       lastPaintCtx = null;
       lastBuildUpPoint = null;
+      lifeBbox = null;
       smoothSpeed = 0;
       prevSize = activeBrushRef.current.tip.size;
       prevOpacity = activeBrushRef.current.opacity;

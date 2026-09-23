@@ -10,7 +10,8 @@ import { thumbnailMirror } from "@/ux/main/Canvas/thumbnailMirror";
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 32;
-const THUMB_W = 214;
+/** Thumbnail border (px per side) — excluded from the fit. */
+const THUMB_BORDER = 1;
 
 export function Navigator(): React.JSX.Element {
   const state = useAppSelector((s) => ({ canvas: s.canvas }), shallowEqual2);
@@ -24,7 +25,35 @@ export function Navigator(): React.JSX.Element {
   const rafRef = useRef<number>(0);
 
   const { zoom, width: docW, height: docH } = state.canvas;
-  const thumbH = Math.round((docH / docW) * THUMB_W);
+
+  // ─── Thumbnail size: fit the document into the space the panel leaves ──
+  // The stage is whatever height remains under the panel header after the
+  // zoom bar, so the thumbnail never pushes the zoom bar out of the panel.
+  // The document is fitted by the tighter of height and width (aspect
+  // ratio preserved), then the canvas buffer is sized to that box in
+  // device pixels so the thumbnail stays sharp.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      setStage((s) => (s.w === w && s.h === h ? s : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const availW = Math.max(0, stage.w - 2 * THUMB_BORDER);
+  const availH = Math.max(0, stage.h - 2 * THUMB_BORDER);
+  const fit =
+    docW > 0 && docH > 0 ? Math.min(availW / docW, availH / docH) : 0;
+  const boxW = Math.max(1, Math.floor(docW * fit));
+  const boxH = Math.max(1, Math.floor(docH * fit));
+  const dpr = window.devicePixelRatio || 1;
+  const bufW = Math.max(1, Math.round(boxW * dpr));
+  const bufH = Math.max(1, Math.round(boxH * dpr));
 
   // ─── Draw thumbnail + viewport rect (runs every frame) ─────────
   const drawThumb = useCallback(() => {
@@ -33,13 +62,16 @@ export function Navigator(): React.JSX.Element {
     if (!src || !dst) return;
     const ctx = dst.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, THUMB_W, thumbH);
+    ctx.clearRect(0, 0, dst.width, dst.height);
     try {
-      ctx.drawImage(src, 0, 0, THUMB_W, thumbH);
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(src, 0, 0, dst.width, dst.height);
     } catch {
       // mirror not yet updated
     }
-  }, [thumbnailCanvasRef, thumbH]);
+    // Buffer size is part of the deps: a resize clears the canvas, and the
+    // new callback identity re-runs the loop below, which redraws at once.
+  }, [thumbnailCanvasRef, bufW, bufH]);
 
   // ─── Viewport rect via bounding-rect intersection ────────────────
   const getViewportRect = useCallback((): React.CSSProperties => {
@@ -76,7 +108,7 @@ export function Navigator(): React.JSX.Element {
       width: `${Math.max(0.5, (fr - fl) * 100)}%`,
       height: `${Math.max(0.5, (fb - ft) * 100)}%`,
     };
-  }, [canvasElRef, thumbH]);
+  }, [canvasElRef]);
 
   // Poll once per animation frame while mounted, but only do work when
   // something changed: the thumbnail is copied only when the canvas mirror
@@ -151,7 +183,7 @@ export function Navigator(): React.JSX.Element {
       container.scrollLeft += dX;
       container.scrollTop += dY;
     },
-    [canvasElRef, thumbH],
+    [canvasElRef],
   );
 
   const isDraggingThumb = useRef(false);
@@ -209,20 +241,31 @@ export function Navigator(): React.JSX.Element {
   return (
     <div className={styles.navigator}>
       {/* ── Thumbnail ─────────────────────────────────────────────── */}
-      <div className={styles.thumbWrap}>
-        <canvas
-          ref={thumbRef}
-          className={styles.thumb}
-          width={THUMB_W}
-          height={thumbH}
-          onPointerDown={onThumbDown}
-          onPointerMove={onThumbMove}
-          onPointerUp={onThumbUp}
-          aria-label="Navigator thumbnail"
-        />
-        {/* Viewport outline rect */}
-        {viewRect.display !== "none" && (
-          <div ref={viewportRef} className={styles.viewRect} style={viewRect} />
+      <div ref={stageRef} className={styles.stage}>
+        {fit > 0 && (
+          <div
+            className={styles.thumbWrap}
+            style={{ width: boxW, height: boxH }}
+          >
+            <canvas
+              ref={thumbRef}
+              className={styles.thumb}
+              width={bufW}
+              height={bufH}
+              onPointerDown={onThumbDown}
+              onPointerMove={onThumbMove}
+              onPointerUp={onThumbUp}
+              aria-label="Navigator thumbnail"
+            />
+            {/* Viewport outline rect */}
+            {viewRect.display !== "none" && (
+              <div
+                ref={viewportRef}
+                className={styles.viewRect}
+                style={viewRect}
+              />
+            )}
+          </div>
         )}
       </div>
 

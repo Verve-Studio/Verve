@@ -99,22 +99,19 @@ export interface Oklch {
  * linear-light scene values (the cbrt then handles them naturally).
  */
 export function srgbToOklab(r: number, g: number, b: number): Oklab {
-  // For HDR (channel > 1) the sRGB transfer function isn't defined; we fall
-  // back to identity in that range. This matches what most colour pipelines
-  // do for "scene-linear" inputs. The lab axes still produce reasonable
-  // perceptual neighbourhoods because cbrt compresses the range.
-  const lr = r > 1 ? r : srgbToLinear(r);
-  const lg = g > 1 ? g : srgbToLinear(g);
-  const lb = b > 1 ? b : srgbToLinear(b);
-  return linearSrgbToOklab(lr, lg, lb);
+  // Above 1 (HDR) the power-law transfer function is simply extended — the
+  // same convention as `pixelFormatConvert` uses everywhere else. (An
+  // identity branch here made encode ∘ decode disagree with the stamp
+  // path's decode, brightening HDR / out-of-gamut jitter results.)
+  return linearSrgbToOklab(srgbToLinear(r), srgbToLinear(g), srgbToLinear(b));
 }
 
 export function oklabToSrgb(L: number, a: number, b: number): { r: number; g: number; b: number } {
   const linear = oklabToLinearSrgb(L, a, b);
   return {
-    r: linear.r > 1 ? linear.r : linearToSrgb(Math.max(0, linear.r)),
-    g: linear.g > 1 ? linear.g : linearToSrgb(Math.max(0, linear.g)),
-    b: linear.b > 1 ? linear.b : linearToSrgb(Math.max(0, linear.b)),
+    r: linearToSrgb(linear.r),
+    g: linearToSrgb(linear.g),
+    b: linearToSrgb(linear.b),
   };
 }
 

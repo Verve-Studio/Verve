@@ -132,6 +132,7 @@ Defined in `src/core/tools/_shared/ITool.ts`. Each tool declares:
 - **Behaviour flags**: `modifiesPixels`, `skipAutoHistory`, `paintsOntoPixelLayer`, `worksOnAllLayers`, `pixelOnly`, `indexed8Unsupported`. The toolbar / Canvas read these to gate the tool.
 - **History**: a `modifiesPixels` tool gets one history entry per gesture from the pointer-up auto-capture. Don't also call `ctx.commitStroke` for the same gesture. A gesture that changes no pixels (e.g. alt-click to set a clone/heal source) or that committed its own entry returns `{ skipHistory: true }` from `onPointerUp`; async tools that always commit themselves set `skipAutoHistory`.
 - **Runtime**: `createHandler()` returns a fresh `ToolHandler` per activation; `Options` is the right-side options-bar component.
+- **Stroke lifecycle**: the input pipeline pins the handler and the pointer-down context for the whole stroke, and blocks keyboard shortcuts until pointer-up. If a stroke can't finish (its layer is gone, or the tool throws), it calls the optional `ToolHandler.onCancel()`, which must stop timers and drop per-stroke state, and then closes the renderer stroke. Pen/touch coalesced samples are replayed only into tools that need the full path (`modifiesPixels` or `wantsCoalescedSamples`); other tools get the frame's last sample.
 
 ### Registry & toolbar
 
@@ -255,7 +256,7 @@ Avoid re-initializing canvas layers in effects that list `rendererRef.current` a
 
 There are two kinds of stores; they sit at different scopes.
 
-**Per-document stores (`DocumentScope`).** Each tab owns its own bundle of stateful stores: `selection`, `history`, `crop`, `transform`, `polygonalSelection`, `inpaintMask`, `cloneStamp`, `adjustmentPreview`, `paletteCycle`, `brushOverrides`, `healingSource` (the last lives in the HealingBrush tool folder). Any tool state that belongs to a document (e.g. a source anchor) goes here, not in module state. Defined in `src/core/store/scope.ts`. History memory is capped globally across all tabs; closing tabs must go through `useTabs.closeTabs` so their history is disposed. The active scope is the active tab's scope; `setActiveScope(tab.scope)` runs in `useTabs.switchToTab` — there's no copy-on-switch dance. Subscribers are kept at module scope inside each store file (not on the instance), so a component that subscribed to `selection` while Tab 1 was active still wakes up when Tab 2's selection mutates after a switch.
+**Per-document stores (`DocumentScope`).** Each tab owns its own bundle of stateful stores: `selection`, `history`, `crop`, `transform`, `polygonalSelection`, `inpaintMask`, `cloneStamp`, `adjustmentPreview`, `paletteCycle`, `brushOverrides`, `healingSource` (the last lives in the HealingBrush tool folder). Any tool state that belongs to a document (e.g. a source anchor) goes here, not in module state. Defined in `src/core/store/scope.ts`. History memory is capped globally across all tabs; closing tabs must go through `useTabs.closeTabs` so their history is disposed. Entries store each layer as immutable 256×256 tiles (`tiledSnapshot.ts`). A capture copies only the tiles changed since the previous capture (tracked per layer by `LayerTextureStore` from flushed rects) and shares the rest with the previous entry. Restore paths must `materializeLayerPixels`. The active scope is the active tab's scope; `setActiveScope(tab.scope)` runs in `useTabs.switchToTab` — there's no copy-on-switch dance. Subscribers are kept at module scope inside each store file (not on the instance), so a component that subscribed to `selection` while Tab 1 was active still wakes up when Tab 2's selection mutates after a switch.
 
 Read patterns:
 - **Tool handlers** (synchronous pointer-event path): `ctx.scope.selection.X` — `scope` is supplied through `ToolContext`, hot-path-friendly.
@@ -391,7 +392,10 @@ For tools with a custom cursor (brush, eraser), hide the native cursor (`cursor:
 
 - All pixel blending uses **Porter-Duff "over" compositing** via `blendPixelOver` in `src/core/tools/_shared/primitives.ts`.
 - `blendPixelOver` callers pass `r/g/b/a` as **0–255** for `rgba8`/`indexed8` layers. For `rgba32f` layers, callers may pass `srcFloat: readonly [number, number, number, number]` in native `[0,1]` (or `>1` for HDR) to bypass the `÷255` normalisation. The clone stamp always uses `srcFloat` when the source buffer is a `Float32Array`.
-- Track per-stroke coverage with a `Map<number, number>` (key = packed pixel index, value = max effective alpha applied) to prevent opacity accumulation within a single stroke.
+- Track per-stroke coverage with the renderer's canvas-sized `TouchedBuffer` (`renderer.acquireTouchedBuffer()`), never a `Map`. JS writers record a write box via `noteTouchedWrite`, so the next stroke clears only that region. Code that writes it another way (the WASM kernel) must set `lastDirtyRect` or `untracked`.
+- Every pixel write must be covered by `renderer.markDirtyRect` before the flush: the incremental composite and the history tiles both rely on the flushed rects. That includes rotated, square, sheared and motion-stretched stamps, and in tiled mode the wrapped pieces.
+- Selections can be soft (0–255): scale the deposit by `mask / 255` rather than treating any non-zero value as fully selected.
+- A mouse reports pressure 1 while a button is pressed (normalised in `useCanvas`).
 - Thick brush shapes: **circle stamp** for hard edges; **capsule SDF** for anti-aliased thick lines. Both helpers live in `_shared/primitives.ts`.
 - When adding a new drawing operation, always branch on `layer.format` for `rgba32f` (float math, no rounding) and `indexed8` (palette-index write, no alpha blending). Don't assume `rgba8`.
 

@@ -31,7 +31,10 @@ import type {
   GpuLayer,
   WebGPURenderer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import { rasterizeTextToLayer } from "@/ux/main/Canvas/textRasterizer";
+import {
+  markTextLayerBlank,
+  rasterizeTextToLayer,
+} from "@/ux/main/Canvas/textRasterizer";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
 import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import {
@@ -130,11 +133,9 @@ export interface GpuLayerSyncParams {
   pixelFormat: PixelFormat;
   activeTool: Tool;
   doRender: () => void;
-  /** When a text layer is being live-edited in the inline editor, skip its
-   *  per-keystroke GPU rasterisation — the editor overlays the textarea on
-   *  top of the canvas and the GpuLayer is hidden during edit, so rebuilding
-   *  the bitmap and uploading it on every keypress is wasted work. The
-   *  rasterisation happens once on edit-end. */
+  /** The text layer open in the inline editor. The editor rasterises its
+   *  live draft itself (its text reaches the store only on pauses and on
+   *  commit), so the store copy must not overwrite it here. */
   editingTextLayerId?: string | null;
 }
 
@@ -171,8 +172,8 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         // Text layers are normally created imperatively in addTextLayer
         // before the dispatch; this branch is a defensive fallback.
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
-        rasterizeTextToLayer(ls, gl);
-        renderer.flushLayer(gl);
+        markTextLayerBlank(gl);
+        rasterizeTextToLayer(ls, gl, renderer);
         map.set(ls.id, gl);
       } else if ("type" in ls && ls.type === "shape") {
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
@@ -323,14 +324,11 @@ export function useGpuLayerSync(params: GpuLayerSyncParams): void {
         // temporarily for preview.
         gl.offsetX = 0;
         gl.offsetY = 0;
-        // Skip the heavy rasterise + upload while this layer is being
-        // live-edited. The editor textarea shows the text directly, the
-        // GpuLayer is hidden during edit, and we re-rasterise once when
-        // the editor closes (the dep on `editingTextLayerId` makes this
-        // effect re-run on that transition).
+        // While the layer is open in the inline editor the editor owns its
+        // raster (the store may lag the live draft). The dep on
+        // `editingTextLayerId` re-runs this once the editor closes.
         if (ls.id !== editingTextLayerId && needsRaster(gl, ls, pixelFormat)) {
-          rasterizeTextToLayer(ls, gl);
-          renderer.flushLayer(gl);
+          rasterizeTextToLayer(ls, gl, renderer);
         }
       } else if ("type" in ls && ls.type === "shape") {
         if (!needsRaster(gl, ls, pixelFormat)) continue;

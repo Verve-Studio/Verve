@@ -11,6 +11,7 @@
  *
  * Tiled-mode stamps and bitmap-tip SDF caching are handled here.
  */
+import { selectionRevision } from "@/core/store/selectionStore";
 import type { PixelOpsModule } from "./types";
 
 /** Field offsets in the packed `BrushStampParams` struct. MUST match the
@@ -204,6 +205,8 @@ interface BrushStampScratch {
    *  mask actually changes), so we upload once per mask change. */
   selMaskPtr: number;
   selMaskFor: Uint8Array | null;
+  /** `selectionRevision` when the heap copy was made. */
+  selMaskRevision: number;
   // ── Per-segment batch scratch ──────────────────────────────────────
   /** WASM-heap base of the packed BrushStampParams array. Reused across
    *  segments; grows on demand. */
@@ -263,6 +266,7 @@ function getScratch(m: PixelOpsModule): BrushStampScratch {
     sdfPtrByData: new WeakMap(),
     selMaskPtr: 0,
     selMaskFor: null,
+    selMaskRevision: -1,
     batchArrayPtr,
     batchArrayCapacity: INITIAL_BATCH_CAPACITY,
     batchCount: 0,
@@ -298,11 +302,20 @@ function uploadSelMaskCanvas(
   s: BrushStampScratch,
   mask: Uint8Array,
 ): number {
-  if (s.selMaskFor === mask && s.selMaskPtr !== 0) return s.selMaskPtr;
+  // Keyed on identity AND revision: invert / add / subtract mutate the
+  // same array in place, which used to leave the kernels clipping to the
+  // old selection.
+  if (
+    s.selMaskFor === mask &&
+    s.selMaskRevision === selectionRevision &&
+    s.selMaskPtr !== 0
+  )
+    return s.selMaskPtr;
   if (s.selMaskPtr !== 0) m._free(s.selMaskPtr);
   s.selMaskPtr = m._malloc(mask.byteLength);
   m.HEAPU8.set(mask, s.selMaskPtr);
   s.selMaskFor = mask;
+  s.selMaskRevision = selectionRevision;
   return s.selMaskPtr;
 }
 
@@ -312,6 +325,24 @@ function refreshParamsView(m: PixelOpsModule, s: BrushStampScratch): void {
     s.paramsView = new DataView(m.HEAPU8.buffer, s.paramsPtr, PARAM_BYTES);
   }
 }
+
+// Heap copies of SDFs are freed when their JS array is garbage-collected (the
+// WeakMap entry alone disappeared, leaking the heap block on every brush /
+// document reload).
+const sdfHeapFree = new FinalizationRegistry<{
+  m: PixelOpsModule;
+  s: BrushStampScratch;
+  ptr: number;
+}>(({ m, s, ptr }) => {
+  // The baked-bitmap cache key embeds SDF pointers; once this block is
+  // freed the address can be reused by a different SDF, so drop the key.
+  s.bakedBitmapKey = "";
+  try {
+    m._free(ptr);
+  } catch {
+    /* module gone */
+  }
+});
 
 function uploadSdf(
   m: PixelOpsModule,
@@ -323,6 +354,7 @@ function uploadSdf(
   const ptr = m._malloc(sdf.byteLength);
   new Float32Array(m.HEAPU8.buffer, ptr, sdf.length).set(sdf);
   s.sdfPtrByData.set(sdf, ptr);
+  sdfHeapFree.register(sdf, { m, s, ptr });
   return ptr;
 }
 

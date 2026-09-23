@@ -120,11 +120,20 @@ function floodFillFromSeed(
   autoEnhance: boolean,
   seen: Uint8Array,
   out: Uint8Array,
+  /** Per-call visit stamps (see `gen`). */
+  visit: Uint32Array,
+  /** Unique id of this call; `visit[i] === gen` means queued this call. */
+  gen: number,
 ): void {
   if (sx < 0 || sx >= cw || sy < 0 || sy >= ch) return;
   const [sR, sG, sB, sA] = seed;
   const stack: number[] = [];
   const startIdx = sy * cw + sx;
+  // `seen` marks only pixels ACCEPTED and expanded by some stamp of this
+  // stroke (their region has been walked). Pixels rejected against one
+  // stamp's seed used to be marked too, so a later stamp with a different
+  // seed could never select them — leaving 1 px seams between regions and
+  // dropping whole stamps whose seed pixel had been rejected before.
   if (seen[startIdx]) return;
 
   // Seed must itself be within tolerance of itself (always true) — start.
@@ -141,7 +150,7 @@ function floodFillFromSeed(
 
   const AA_ZONE = 24;
   stack.push(startIdx);
-  seen[startIdx] = 1;
+  visit[startIdx] = gen;
   while (stack.length > 0) {
     const idx = stack.pop()!;
     const d = colorDelta(idx);
@@ -159,35 +168,36 @@ function floodFillFromSeed(
     }
     if (strength > out[idx]) out[idx] = strength;
     if (d > tolerance) continue; // don't expand into the AA halo
+    seen[idx] = 1;
 
     // Expand to 4-connected neighbours.
     const x = idx % cw;
     const y = (idx - x) / cw;
     if (x > 0) {
       const n = idx - 1;
-      if (!seen[n]) {
-        seen[n] = 1;
+      if (!seen[n] && visit[n] !== gen) {
+        visit[n] = gen;
         stack.push(n);
       }
     }
     if (x < cw - 1) {
       const n = idx + 1;
-      if (!seen[n]) {
-        seen[n] = 1;
+      if (!seen[n] && visit[n] !== gen) {
+        visit[n] = gen;
         stack.push(n);
       }
     }
     if (y > 0) {
       const n = idx - cw;
-      if (!seen[n]) {
-        seen[n] = 1;
+      if (!seen[n] && visit[n] !== gen) {
+        visit[n] = gen;
         stack.push(n);
       }
     }
     if (y < ch - 1) {
       const n = idx + cw;
-      if (!seen[n]) {
-        seen[n] = 1;
+      if (!seen[n] && visit[n] !== gen) {
+        visit[n] = gen;
         stack.push(n);
       }
     }
@@ -211,9 +221,11 @@ function createQuickSelectHandler(): ToolHandler {
   // stamp already explored; this keeps long strokes roughly linear-time.
   let strokeMask: Uint8Array | null = null;
   let strokeSeen: Uint8Array | null = null;
+  let strokeVisit: Uint32Array | null = null;
+  let visitGen = 0;
 
   function stamp(cx: number, cy: number): void {
-    if (!pixels || !strokeMask || !strokeSeen) return;
+    if (!pixels || !strokeMask || !strokeSeen || !strokeVisit) return;
     // Per-stamp seed: read the colour at the brush centre and flood-fill from
     // there. Each stamp picks up wherever the user is brushing, so dragging
     // across colour boundaries grows the selection through each region.
@@ -237,6 +249,8 @@ function createQuickSelectHandler(): ToolHandler {
       quickSelectOptions.autoEnhance,
       strokeSeen,
       strokeMask,
+      strokeVisit,
+      ++visitGen,
     );
   }
 
@@ -266,6 +280,8 @@ function createQuickSelectHandler(): ToolHandler {
       ch = activeScope().selection.height;
       strokeMask = new Uint8Array(cw * ch);
       strokeSeen = new Uint8Array(cw * ch);
+      strokeVisit = new Uint32Array(cw * ch);
+      visitGen = 0;
 
       // Decide the stroke mode: modifier keys override the option-bar default
       // (matches PS — Shift = add, Alt = subtract, otherwise the option-bar
@@ -304,6 +320,7 @@ function createQuickSelectHandler(): ToolHandler {
       pixels = null;
       strokeMask = null;
       strokeSeen = null;
+      strokeVisit = null;
     },
   };
 }
@@ -390,6 +407,7 @@ function QuickSelectOptions({
 class QuickSelectTool implements ITool {
   readonly id = "quick-select";
   readonly label = "Quick Selection";
+  readonly wantsCoalescedSamples = true;
   readonly shortcut = "W";
   readonly icon = <SvgIcon src={quickSelectIconSvg} />;
   readonly placement = {

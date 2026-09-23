@@ -13,10 +13,14 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import healingBrushIconSvg from "./healing-brush.svg?raw";
 import {
+  brushSelection,
+  flushStamps,
   forEachStamp,
   markBrushDirty,
+  selectionWeight,
 } from "../_shared/localBrush";
 import { activeScope } from "@/core/store/scope";
+import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 // ─── Module-level options ─────────────────────────────────────────────────────
 
 export const healingBrushOptions = {
@@ -45,6 +49,9 @@ export const healingBrushOptions = {
 
 interface SourceBuffer {
   data: Uint8Array | Float32Array;
+  /** When set, sample this (untouched) layer live instead of `data` — it is
+   *  re-read per stamp because WASM heap growth replaces `layer.data`. */
+  liveLayer?: GpuLayer;
   W: number;
   H: number;
   offsetX: number;
@@ -148,6 +155,7 @@ function healingStamp(
     if (a !== alpha) alpha.set(a);
   }
 
+  const srcData = src.liveLayer ? src.liveLayer.data : src.data;
   // Sample the source pixel for a destination layer-local (lx, ly).
   // Returns null if the corresponding source coord is out of bounds.
   const sampleSource = (
@@ -164,22 +172,27 @@ function healingStamp(
     const syL = Math.round(sCyL + dy);
     if (sxL < 0 || syL < 0 || sxL >= src.W || syL >= src.H) return false;
     const i = (syL * src.W + sxL) * 4;
-    out[0] = src.data[i];
-    out[1] = src.data[i + 1];
-    out[2] = src.data[i + 2];
-    out[3] = src.data[i + 3];
+    out[0] = srcData[i];
+    out[1] = srcData[i + 1];
+    out[2] = srcData[i + 2];
+    out[3] = srcData[i + 3];
     return true;
   };
 
   // ── First pass: compute tone shift = dest_avg − source_avg (alpha-weighted)
   const data = layer.data as Uint8Array & Float32Array;
+  // Each side is weighted by its own pixel alpha too: transparent pixels
+  // (RGB usually 0) used to drag the average toward black, leaving dark
+  // patches when healing near a layer's transparent edges.
+  const alphaScale = isFloat ? 1 : 1 / 255;
   let dSumR = 0,
     dSumG = 0,
     dSumB = 0,
     sSumR = 0,
     sSumG = 0,
     sSumB = 0;
-  let weightSum = 0;
+  let dWeight = 0;
+  let sWeight = 0;
   const tmp = new Float64Array(4);
   for (let y = 0; y < bh; y++) {
     const ly = minLy + y;
@@ -190,19 +203,25 @@ function healingStamp(
       if (!sampleSource(lx, ly, tmp)) continue;
       const di = (ly * W + lx) * 4;
       const w = a / 255;
-      dSumR += data[di] * w;
-      dSumG += data[di + 1] * w;
-      dSumB += data[di + 2] * w;
-      sSumR += tmp[0] * w;
-      sSumG += tmp[1] * w;
-      sSumB += tmp[2] * w;
-      weightSum += w;
+      const dw = w * data[di + 3] * alphaScale;
+      const sw = w * tmp[3] * alphaScale;
+      dSumR += data[di] * dw;
+      dSumG += data[di + 1] * dw;
+      dSumB += data[di + 2] * dw;
+      sSumR += tmp[0] * sw;
+      sSumG += tmp[1] * sw;
+      sSumB += tmp[2] * sw;
+      dWeight += dw;
+      sWeight += sw;
     }
   }
-  if (weightSum < 1e-6) return;
-  const tShiftR = (dSumR - sSumR) / weightSum;
-  const tShiftG = (dSumG - sSumG) / weightSum;
-  const tShiftB = (dSumB - sSumB) / weightSum;
+  if (dWeight < 1e-6 || sWeight < 1e-6) return;
+  const tShiftR = dSumR / dWeight - sSumR / sWeight;
+  const tShiftG = dSumG / dWeight - sSumG / sWeight;
+  const tShiftB = dSumB / dWeight - sSumB / sWeight;
+
+  // Healing respects the selection (soft selections scale the effect).
+  const selection = brushSelection(ctx);
 
   // ── Second pass: write tone-shifted source pixels with brush blend.
   const max = 255;
@@ -213,7 +232,8 @@ function healingStamp(
       const a = alpha[y * bw + x];
       if (a === 0) continue;
       if (!sampleSource(lx, ly, tmp)) continue;
-      const w = (a / 255) * strength01;
+      let w = (a / 255) * strength01;
+      if (selection) w *= selectionWeight(selection, lx, ly);
       if (w <= 0) continue;
       const di = (ly * W + lx) * 4;
       const inv = 1 - w;
@@ -308,7 +328,7 @@ function createHealingBrushHandler(): ToolHandler {
         // Show the live path immediately (a single point doesn't draw, but
         // setting pending lets the marching-ants overlay take over once the
         // user moves the pointer).
-        activeScope().selection.setPending({
+        ctx.scope.selection.setPending({
           type: "path",
           points: sourcePathPoints,
         });
@@ -336,16 +356,22 @@ function createHealingBrushHandler(): ToolHandler {
         strokeOffsetDY = src.y - y;
       }
 
-      // Snapshot the source layer's pixels so we sample from a stable buffer
-      // rather than from a destination we may already be modifying.
       const sourceLayer = ctx.layers.find((l) => l.id === src.layerId);
       if (!sourceLayer || sourceLayer.format === "indexed8") {
         isDown = false;
         return;
       }
-      const buf = ctx.renderer.readLayerPixels(sourceLayer);
+      // Healing within one layer must sample a stable snapshot (the stroke
+      // modifies it). A different source layer isn't modified, so it's read
+      // live — copying it per stroke was a full-layer copy every time.
+      const sameLayer = sourceLayer === ctx.layer;
       sourceBuffer = {
-        data: buf as Uint8Array | Float32Array,
+        data: sameLayer
+          ? (ctx.renderer.readLayerPixels(sourceLayer) as
+              | Uint8Array
+              | Float32Array)
+          : sourceLayer.data,
+        liveLayer: sameLayer ? undefined : sourceLayer,
         W: sourceLayer.layerWidth,
         H: sourceLayer.layerHeight,
         offsetX: sourceLayer.offsetX,
@@ -353,6 +379,8 @@ function createHealingBrushHandler(): ToolHandler {
         format: sourceLayer.format,
       };
 
+      // Throttled stroke rendering (attached effects bypassed mid-stroke).
+      ctx.renderer.strokeStart();
       // First stamp.
       healingStamp(
         ctx,
@@ -363,8 +391,7 @@ function createHealingBrushHandler(): ToolHandler {
         y + strokeOffsetDY,
         pressure,
       );
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      flushStamps(ctx);
     },
 
     onPointerMove(
@@ -376,7 +403,7 @@ function createHealingBrushHandler(): ToolHandler {
         const last = sourcePathPoints[sourcePathPoints.length - 1];
         if (Math.abs(x - last.x) < 2 && Math.abs(y - last.y) < 2) return;
         sourcePathPoints.push({ x, y });
-        activeScope().selection.setPending({
+        ctx.scope.selection.setPending({
           type: "path",
           points: sourcePathPoints,
         });
@@ -399,8 +426,7 @@ function createHealingBrushHandler(): ToolHandler {
       });
       prevX = x;
       prevY = y;
-      ctx.renderer.flushLayer(ctx.layer);
-      ctx.render();
+      flushStamps(ctx);
     },
 
     onPointerUp(
@@ -414,7 +440,7 @@ function createHealingBrushHandler(): ToolHandler {
         sourcePathPoints.push({ x, y });
         if (sourcePathPoints.length === 1) {
           // Plain alt-click — point source at this location.
-          activeScope().healingSource.setSource(x, y, sourcePathHitLayerId);
+          _ctx.scope.healingSource.setSource(x, y, sourcePathHitLayerId);
         } else {
           // Centroid of the drawn polygon.
           let sx = 0,
@@ -425,9 +451,9 @@ function createHealingBrushHandler(): ToolHandler {
           }
           sx /= sourcePathPoints.length;
           sy /= sourcePathPoints.length;
-          activeScope().healingSource.setSource(sx, sy, sourcePathHitLayerId);
+          _ctx.scope.healingSource.setSource(sx, sy, sourcePathHitLayerId);
         }
-        activeScope().selection.setPending(null);
+        _ctx.scope.selection.setPending(null);
         drawingSourceSelection = false;
         sourcePathPoints = [];
         // Setting the source isn't an edit.
@@ -437,10 +463,11 @@ function createHealingBrushHandler(): ToolHandler {
       if (!isDown) return { skipHistory: true };
       isDown = false;
       sourceBuffer = null;
+      _ctx.renderer.strokeEnd();
       // Aligned: keep alignedOffset so the next stroke continues in lock-step
       // with the original anchor. Non-aligned: clear it for explicitness.
       if (!healingBrushOptions.aligned) {
-        activeScope().healingSource.alignedOffset = null;
+        _ctx.scope.healingSource.alignedOffset = null;
       }
     },
   };

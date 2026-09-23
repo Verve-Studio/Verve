@@ -18,12 +18,13 @@ import type {
   GpuLayer,
   RenderPlanEntry,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import type { MaskLayerState } from "@/types";
+import type { MaskLayerState, TextLayerState } from "@/types";
 import { TextLayerEditor } from "./TextLayerEditor";
 import { useCanvasHandle } from "./canvasHandle";
 import type { CanvasHandle } from "./canvasHandle";
 import { buildRenderPlan as buildCanvasRenderPlan } from "./canvasPlan";
 import { useMarchingAnts } from "./useMarchingAnts";
+import { useGridOverlay } from "./useGridOverlay";
 import { useScrollZoom } from "./useScrollZoom";
 import { useSpacePan } from "./useSpacePan";
 import { useRulers } from "./useRulers";
@@ -41,6 +42,7 @@ import { useGpuLayerInit } from "@/core/services/useGpuLayerInit";
 import { useGpuLayerSync } from "@/core/services/useGpuLayerSync";
 import { measureStore } from "@/core/tools/Measure/measureStore";
 import { activeScope } from "@/core/store/scope";
+import { selectionRevision } from "@/core/store/selectionStore";
 import { rasterizeTextToLayer } from "./textRasterizer";
 import styles from "./Canvas.module.scss";
 
@@ -107,6 +109,7 @@ export const Canvas = memo(
   isActiveRef.current = isActive;
   const scrollPosRef = useRef({ left: 0, top: 0 });
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const gridOverlayRef = useRef<HTMLCanvasElement>(null);
   const toolOverlayRef = useRef<HTMLCanvasElement>(null);
   const tiledCanvasRef = useRef<HTMLCanvasElement>(null);
   const brushCursorRef = useRef<HTMLDivElement>(null);
@@ -137,11 +140,15 @@ export const Canvas = memo(
   // Inline text-layer editor state — kept as React state because
   // `TextLayerEditor` re-renders when it changes.
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const textOpenAtRef = useRef<{ x: number; y: number } | null>(null);
+  const openTextEditor = useCallback(
+    (id: string, at?: { x: number; y: number }) => {
+      textOpenAtRef.current = at ?? null;
+      setEditingLayerId(id);
+    },
+    [],
+  );
 
-  // When a pixel-modifying tool starts on a text/shape/frame layer, this
-  // holds the newly-created pixel layer so buildCtx can target it before
-  // React re-renders with the new layer in state.
-  const newPixelLayerRef = useRef<GpuLayer | null>(null);
 
   // ── Canvas backing-buffer sizing ──────────────────────────────────────────
   // At a 7016×9933 document we write `backingW * backingH * 4` bytes to the
@@ -232,9 +239,27 @@ export const Canvas = memo(
   const getSelectionAnchorRef = useRef<
     (() => { x: number; y: number } | null) | null
   >(null);
+  // Cached per (mask, selectionRevision): Ctrl+wheel / pinch zoom asks for
+  // this on every event, and each call used to scan the whole mask.
+  const selectionAnchorCache = useRef<{
+    mask: Uint8Array;
+    rev: number;
+    anchor: { x: number; y: number } | null;
+  } | null>(null);
   getSelectionAnchorRef.current = (): { x: number; y: number } | null => {
     const mask = activeScope().selection.mask;
     if (!mask) return null;
+    const cached = selectionAnchorCache.current;
+    if (cached && cached.mask === mask && cached.rev === selectionRevision) {
+      return cached.anchor;
+    }
+    const anchor = computeSelectionAnchor(mask);
+    selectionAnchorCache.current = { mask, rev: selectionRevision, anchor };
+    return anchor;
+  };
+  const computeSelectionAnchor = (
+    mask: Uint8Array,
+  ): { x: number; y: number } | null => {
     const sw = activeScope().selection.width;
     const sh = activeScope().selection.height;
     let lx = sw,
@@ -278,8 +303,6 @@ export const Canvas = memo(
       )
       .map((ls) => map.get(ls.id))
       .filter((l): l is GpuLayer => !!l);
-    const pending = newPixelLayerRef.current;
-    if (pending && !layers.some((l) => l === pending)) layers.push(pending);
     return layers;
   }
 
@@ -295,32 +318,15 @@ export const Canvas = memo(
       state.swatches,
       state.pixelFormat,
     );
-    const pending = newPixelLayerRef.current;
-    if (
-      pending &&
-      !plan.some((e) => e.kind === "layer" && e.layer === pending)
-    ) {
-      plan.push({ kind: "layer", layer: pending });
-    }
     return plan;
   }
 
   /**
    * Plan for flatten / export / merge output. Unlike the screen plan it
-   * ignores adjustment preview-bypass toggles, and it brings a text layer
-   * that is mid-edit up to date first (its raster is not refreshed per
-   * keystroke while the inline editor is open).
+   * ignores adjustment preview-bypass toggles. (A text layer mid-edit is
+   * already current: the editor rasterises its draft on every change.)
    */
   function buildOutputPlan(): RenderPlanEntry[] {
-    const renderer = rendererRef.current;
-    if (editingLayerId && renderer) {
-      const ls = layersStateRef.current.find((l) => l.id === editingLayerId);
-      const gl = glLayersRef.current.get(editingLayerId);
-      if (ls && gl && "type" in ls && ls.type === "text") {
-        rasterizeTextToLayer(ls, gl);
-        renderer.flushLayer(gl);
-      }
-    }
     return buildRenderPlan(new Set());
   }
 
@@ -395,6 +401,20 @@ export const Canvas = memo(
     zoomRef,
     activeToolRef,
   );
+  useGridOverlay({
+    enabled:
+      isActive && state.canvas.showGrid && state.canvas.gridType === "normal",
+    overlayRef: gridOverlayRef,
+    viewportRef,
+    canvasWrapperRef,
+    zoom: state.canvas.zoom,
+    gridSize: state.canvas.gridSize,
+    gridColor: state.canvas.gridColor,
+    width,
+    height,
+    tiledMode: state.canvas.tiledMode,
+    frameClip: frameClipInfo,
+  });
   useSpacePan(isActive, viewportRef);
   useRulers({
     showRulers: state.canvas.showRulers,
@@ -474,33 +494,59 @@ export const Canvas = memo(
     editingTextLayerId: editingLayerId,
   });
 
-  // While the inline text editor is open, hide the text GpuLayer and put the
-  // renderer in preview mode. The editor's textarea renders the text on its
-  // own (DOM-rendered, full-fidelity caret + selection), so keeping the GPU
-  // layer visible would be redundant — and rebuilding its rasterised bitmap +
-  // re-encoding any effects applied to the layer on every keystroke is what
-  // made editing feel sluggish. Effects are restored on close via the final
-  // re-rasterise triggered by `useGpuLayerSync`.
-  useEffect(() => {
-    if (!editingLayerId) return;
-    const gl = glLayersRef.current.get(editingLayerId);
-    const renderer = rendererRef.current;
-    if (!gl || !renderer) return;
-    // Hidden from the screen only (not via `gl.visible`), so a save or
-    // export while editing still includes the text layer.
-    renderer.setScreenHidden(editingLayerId, true);
-    renderer.setPreviewMode(true);
-    doRenderRef.current();
-    return () => {
-      renderer.setScreenHidden(editingLayerId, false);
-      renderer.setPreviewMode(false);
+  // ── Inline text editing ───────────────────────────────────────────────────
+  // The layer itself shows the text being edited (effects, blend mode and
+  // stacking stay live): each draft change re-rasterises only the region the
+  // text covers. The store receives the text on typing pauses and on close.
+  const renderTextDraft = useCallback(
+    (ls: TextLayerState) => {
+      const renderer = rendererRef.current;
+      const gl = glLayersRef.current.get(ls.id);
+      if (!renderer || !gl) return;
+      gl.offsetX = 0;
+      gl.offsetY = 0;
+      rasterizeTextToLayer(ls, gl, renderer);
       doRenderRef.current();
-    };
-    // Only re-run when the edited layer changes. `doRender` is a new closure
-    // on every Canvas render, so listing it re-ran this effect on every
-    // keystroke — toggling preview mode off/on (each toggle invalidates the
-    // frame cache) and forcing two full re-composites per key press.
-  }, [editingLayerId, doRenderRef, glLayersRef, rendererRef]);
+    },
+    [rendererRef, doRenderRef],
+  );
+  const commitTextDraft = useCallback(
+    (ls: TextLayerState) => dispatch({ type: "UPDATE_TEXT_LAYER", payload: ls }),
+    [dispatch],
+  );
+  const closeTextEditor = useCallback(
+    (final: TextLayerState, initial: TextLayerState) => {
+      setEditingLayerId(null);
+      const current = store
+        .getState()
+        .layers.find((l) => l.id === final.id);
+      if (!current || !("type" in current) || current.type !== "text") return;
+      if (final.text.trim() === "") {
+        // Emptied text removes the layer; only a layer that had content
+        // before this session gets a history entry for it.
+        dispatch({ type: "REMOVE_LAYER", payload: final.id });
+        if (initial.text.trim() !== "") onStrokeEndRef.current?.("Text");
+        return;
+      }
+      const next = {
+        ...current,
+        text: final.text,
+        x: final.x,
+        y: final.y,
+        boxWidth: final.boxWidth,
+        boxHeight: final.boxHeight,
+      };
+      if (JSON.stringify(next) !== JSON.stringify(current)) {
+        dispatch({ type: "UPDATE_TEXT_LAYER", payload: next });
+      }
+      // Clicking into text and out again is not an edit.
+      if (JSON.stringify(next) !== JSON.stringify(initial)) {
+        onStrokeEndRef.current?.("Text");
+      }
+    },
+    [store, dispatch],
+  );
+  const onTextEditorLost = useCallback(() => setEditingLayerId(null), []);
 
   // ── Indexed8 palette housekeeping ─────────────────────────────────────────
   useIndexedSwatchSync({
@@ -558,7 +604,6 @@ export const Canvas = memo(
     dispatch,
     rendererRef,
     glLayersRef,
-    newPixelLayerRef,
     toolOverlayRef,
     canvasRef,
     viewportRef,
@@ -568,9 +613,10 @@ export const Canvas = memo(
     height,
     buildMaskMap,
     buildOrderedGLLayers,
+    buildOutputPlan,
     doRender,
     onStrokeEndRef,
-    setEditingLayerId,
+    openTextEditor,
   });
 
   const { main: mainInput, tiled: tiledInput } = useCanvasPointerInput({
@@ -582,7 +628,6 @@ export const Canvas = memo(
     toolHandlerRef,
     rendererRef,
     buildCtx,
-    newPixelLayerRef,
     onStrokeEndRef,
     brushCursorApi,
     updatePixelInfo,
@@ -688,7 +733,9 @@ export const Canvas = memo(
                         ? "none"
                         : state.activeTool === "polygonal-selection"
                           ? "crosshair"
-                          : undefined,
+                          : state.activeTool === "text"
+                            ? "text"
+                            : undefined,
                   // Bilinear when zoomed out (smooth downscale); nearest when
                   // at or above 100% (crisp pixel art).
                   imageRendering: state.canvas.zoom < 1 ? "auto" : "pixelated",
@@ -697,6 +744,8 @@ export const Canvas = memo(
                 onPointerMove={mainInput.handlePointerMove}
                 onPointerUp={mainInput.handlePointerUp}
                 onPointerLeave={mainInput.handlePointerLeave}
+                onPointerCancel={mainInput.handlePointerCancel}
+                onLostPointerCapture={mainInput.handlePointerCancel}
                 aria-label={`Canvas ${width}×${height}`}
               />
               {state.canvas.tiledMode && (
@@ -729,6 +778,8 @@ export const Canvas = memo(
                   onPointerMove={tiledInput.handlePointerMove}
                   onPointerUp={tiledInput.handlePointerUp}
                   onPointerLeave={tiledInput.handlePointerLeave}
+                  onPointerCancel={tiledInput.handlePointerCancel}
+                  onLostPointerCapture={tiledInput.handlePointerCancel}
                 />
               )}
               <canvas
@@ -784,23 +835,11 @@ export const Canvas = memo(
                 })()}
               {state.canvas.showGrid &&
                 (() => {
-                  const { gridType, gridColor, gridSize, zoom } = state.canvas;
+                  const { gridType, gridColor, zoom } = state.canvas;
                   const dpr = window.devicePixelRatio;
-                  const cellPx = (gridSize * zoom) / dpr;
-
-                  if (gridType === "normal") {
-                    return (
-                      <div
-                        className={styles.gridOverlay}
-                        style={
-                          {
-                            "--grid-size": `${cellPx}px`,
-                            "--grid-color": gridColor,
-                          } as React.CSSProperties
-                        }
-                      />
-                    );
-                  }
+                  // The normal grid is drawn pixel-aligned in screen space
+                  // by useGridOverlay (gridOverlayRef below).
+                  if (gridType === "normal") return null;
 
                   const svgStyle: React.CSSProperties = {
                     position: "absolute",
@@ -913,33 +952,23 @@ export const Canvas = memo(
                 })()}
             </div>
           </div>
+          {/* Normal grid: viewport-sized, screen-space, pixel-aligned */}
+          <canvas ref={gridOverlayRef} className={styles.gridCanvas} />
           {/* Marching-ants overlay: viewport-sized, screen-space, never scrolls */}
           <canvas ref={overlayRef} className={styles.antsOverlay} />
         </div>
       </div>
       <TextLayerEditor
         editingLayerId={editingLayerId}
+        openAt={textOpenAtRef.current}
+        active={isActive}
         layers={state.layers}
         zoom={state.canvas.zoom}
         canvasWrapperRef={canvasWrapperRef}
-        onCommit={(ls) => dispatch({ type: "UPDATE_TEXT_LAYER", payload: ls })}
-        onClose={() => {
-          // If the layer being closed is empty (never typed into), destroy
-          // it. Otherwise commit it to history as a "Text" stroke.
-          const closingLayer = state.layers.find(
-            (l) => "type" in l && l.type === "text" && l.id === editingLayerId,
-          );
-          if (
-            closingLayer &&
-            "text" in closingLayer &&
-            closingLayer.text.trim() === ""
-          ) {
-            dispatch({ type: "REMOVE_LAYER", payload: editingLayerId! });
-          } else {
-            onStrokeEndRef.current?.("Text");
-          }
-          setEditingLayerId(null);
-        }}
+        renderDraft={renderTextDraft}
+        commitDraft={commitTextDraft}
+        onClose={closeTextEditor}
+        onLost={onTextEditorLost}
       />
     </>
   );

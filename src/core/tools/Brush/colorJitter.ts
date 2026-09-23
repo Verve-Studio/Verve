@@ -46,6 +46,20 @@ export interface ResolvedColor {
  * for stroke-level resolution) the engine should pre-compute one resolution
  * with a fixed-hash inputs at the stroke start and reuse the result.
  */
+/** True when no colour dynamic can change the colour (the resolved colour
+ *  is exactly the primary), so resolution can be skipped entirely. */
+export function colorDynamicsInert(dyn: ColorDynamics): boolean {
+  const inert = (c: { jitter: number; source: string }): boolean =>
+    c.jitter <= 0 || c.source === "off";
+  return (
+    inert(dyn.fgBgJitter) &&
+    inert(dyn.hueJitter) &&
+    inert(dyn.saturationJitter) &&
+    inert(dyn.brightnessJitter) &&
+    inert(dyn.purityJitter)
+  );
+}
+
 export function resolveStampColor(
   primary: RGBAColor,
   secondary: RGBAColor,
@@ -83,7 +97,9 @@ export function resolveStampColor(
   const dL = resolveSymmetric(dyn.brightnessJitter, inputs);
   const purityMul = resolveDynamic(dyn.purityJitter, inputs);
 
-  const newL = Math.max(0, Math.min(1, lch.L + dL));
+  // Clamp to the displayable range — but never below the input's own
+  // lightness, so an HDR colour (L > 1) isn't dimmed by the round trip.
+  const newL = Math.max(0, Math.min(Math.max(1, lch.L), lch.L + dL));
   const newC = Math.max(0, (lch.C + dc) * purityMul);
   const newH = lch.h + dh;
 

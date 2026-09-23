@@ -81,6 +81,9 @@ export interface ITool {
    * Cycles can chain; the keyboard handler walks the chain at most once.
    */
   readonly shortcutCycle?: Tool;
+  /** Escape releases this tool back to `DEFAULT_TOOL` (toolRegistry; e.g. Clone
+   *  Stamp). Ignored mid-stroke — the input pipeline swallows keys then. */
+  readonly releaseOnEscape?: boolean;
 
   // ── Behaviour flags ────────────────────────────────────────────────
   /** True for tools that write pixels; Canvas uses this to block locked
@@ -89,6 +92,11 @@ export interface ITool {
   /** True for async tools that call `ctx.commitStroke()` themselves;
    *  suppresses the automatic pointer-up history capture. */
   readonly skipAutoHistory?: boolean;
+  /** Receive every coalesced pen/touch sample (full path precision).
+   *  Implied for `modifiesPixels` tools; others get only the frame's last
+   *  sample — replaying every sample into e.g. Frame re-rasterised a
+   *  canvas-sized layer per sample while only the last result was visible. */
+  readonly wantsCoalescedSamples?: boolean;
   /** True for tools that paint new pixels and therefore need a real pixel
    *  layer — Canvas auto-creates one above text/shape layers on first stroke. */
   readonly paintsOntoPixelLayer?: boolean;

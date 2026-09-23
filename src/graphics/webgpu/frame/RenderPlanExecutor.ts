@@ -521,7 +521,10 @@ export class RenderPlanExecutor {
   strokeEnd(): void {
     if (!this.strokeActive) return;
     this.strokeActive = false;
-    this.lastPlanFp = null;
+    // Full composite for the stroke's final frame (not incremental): it
+    // re-applies the effects bypassed mid-stroke and rebuilds stableTex from
+    // scratch, so nothing stroke-related can stay stale on screen.
+    this.invalidateRenderCache();
     this.refreshCallback?.();
   }
 
@@ -1095,20 +1098,14 @@ export class RenderPlanExecutor {
       dirty.w > 0 &&
       dirty.h > 0 &&
       flatPlan &&
-      dirty.w * dirty.h < w * h * 0.6 &&
-      // While a stroke is active, fall back to full re-composite every
-      // frame. The incremental path leaves `stableTex` outside the
-      // per-frame dirty rect untouched — and there is at least one path
-      // (currently unknown) during continuous brush strokes that mutates
-      // a layer outside the union of marked dirty rects, leaving
-      // visible "skipped" strips on screen until something else forces
-      // a full re-render. Full composite per frame during the stroke
-      // sidesteps the whole class. Cost is one extra full-canvas blit
-      // per frame for the duration of the stroke — measured around 1 ms
-      // on a 4K rgba8 doc with three layers, well under the 16 ms frame
-      // budget. Drop this restriction once the offending dirty-rect
-      // leak has been identified and fixed at the source.
-      !this.strokeActive;
+      dirty.w * dirty.h < w * h * 0.6;
+    // Strokes use the incremental path too. It used to be disabled for the
+    // whole stroke (a full re-composite + full-canvas stableTex copy every
+    // frame) to hide dirty-rect leaks: stamp bboxes that missed rotated /
+    // sheared / motion-stretched stamps, tiled-mode strokes that marked
+    // nothing, and a per-batch full-layer pen flush that masked both. Those
+    // are fixed at the source; `strokeEnd` still forces one full composite,
+    // which bounds any residual glitch to the stroke itself.
     const encoder = device.createCommandEncoder();
 
     let result: RenderPlanResult;

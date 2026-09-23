@@ -22,7 +22,19 @@ interface Entry {
   width: number;
   height: number;
   format: PixelFormat;
+  /** Layer-local region uploaded since the last history capture (union of
+   *  flushed rects) — lets history copy only the tiles that changed. */
+  histDirty: LayerDirtyRect | null;
+  /** Something replaced the layer's contents wholesale (new layer, grow,
+   *  replaced texture): the next history capture must copy everything. */
+  histAll: boolean;
 }
+
+/** What changed in a layer since the last history capture. */
+export type LayerHistoryChange =
+  | { kind: "none" }
+  | { kind: "rect"; rect: LayerDirtyRect }
+  | { kind: "all" };
 
 /**
  * Content versions are drawn from one process-wide counter instead of a
@@ -75,6 +87,8 @@ export class LayerTextureStore {
       width: layer.layerWidth,
       height: layer.layerHeight,
       format: layer.format,
+      histDirty: null,
+      histAll: true,
     });
     layer.texture = texture;
     layer.contentVersion = version;
@@ -147,6 +161,24 @@ export class LayerTextureStore {
     this.markDirty(layer, 0, 0, layer.layerWidth, layer.layerHeight);
   }
 
+  /**
+   * What changed in the layer since the last call (the last history
+   * capture), then reset. Unknown layers report "all".
+   */
+  takeHistoryChange(layerId: string): LayerHistoryChange {
+    const e = this.entries.get(layerId);
+    if (!e) return { kind: "all" };
+    // Marked but not yet uploaded changes are in `layer.data` too.
+    if (e.dirty) unionHist(e, e.dirty);
+    let change: LayerHistoryChange;
+    if (e.histAll) change = { kind: "all" };
+    else if (e.histDirty) change = { kind: "rect", rect: e.histDirty };
+    else change = { kind: "none" };
+    e.histAll = false;
+    e.histDirty = null;
+    return change;
+  }
+
   /** Clear the dirty region (called after upload). */
   clearDirty(layerId: string): void {
     const e = this.entries.get(layerId);
@@ -185,6 +217,7 @@ export class LayerTextureStore {
       const rect = e.dirty;
       e.dirty = null;
       strategy.uploadPatch(this.device, e.texture, layer, rect, palette);
+      unionHist(e, rect);
       return {
         canvasX: layer.offsetX + rect.lx,
         canvasY: layer.offsetY + rect.ly,
@@ -194,6 +227,7 @@ export class LayerTextureStore {
     }
     e.dirty = null;
     strategy.uploadFull(this.device, e.texture, layer, palette);
+    unionHist(e, { lx: 0, ly: 0, rx: layer.layerWidth, ry: layer.layerHeight });
     return {
       canvasX: layer.offsetX,
       canvasY: layer.offsetY,
@@ -209,16 +243,24 @@ export class LayerTextureStore {
     newWidth: number,
     newHeight: number,
     newFormat: PixelFormat,
+    /** The caller already uploaded the full contents into `newTexture`
+     *  (layer growth does), so nothing is pending. */
+    alreadyUploaded = false,
   ): void {
     const e = this.entries.get(layer.id);
     if (e) {
       destroyTrackedTexture(e.texture);
       e.texture = newTexture;
-      // The new texture is empty: the next flush must upload everything.
-      e.dirty = { lx: 0, ly: 0, rx: newWidth, ry: newHeight };
+      // An empty new texture needs a full upload on the next flush; one the
+      // caller already filled doesn't (growth used to upload twice).
+      e.dirty = alreadyUploaded
+        ? null
+        : { lx: 0, ly: 0, rx: newWidth, ry: newHeight };
       e.width = newWidth;
       e.height = newHeight;
       e.format = newFormat;
+      e.histAll = true;
+      e.histDirty = null;
     } else {
       this.entries.set(layer.id, {
         texture: newTexture,
@@ -227,8 +269,22 @@ export class LayerTextureStore {
         width: newWidth,
         height: newHeight,
         format: newFormat,
+        histDirty: null,
+        histAll: true,
       });
     }
     layer.texture = newTexture;
   }
+}
+
+function unionHist(e: Entry, r: LayerDirtyRect): void {
+  const h = e.histDirty;
+  if (!h) {
+    e.histDirty = { lx: r.lx, ly: r.ly, rx: r.rx, ry: r.ry };
+    return;
+  }
+  if (r.lx < h.lx) h.lx = r.lx;
+  if (r.ly < h.ly) h.ly = r.ly;
+  if (r.rx > h.rx) h.rx = r.rx;
+  if (r.ry > h.ry) h.ry = r.ry;
 }
