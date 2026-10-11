@@ -385,6 +385,13 @@ void pixelops_brush_stamp_batch(
     }
 }
 
+// Register (or clear, with null) the per-stroke paint layer the brush
+// kernels composite from — see brush_set_stroke_layer in brush_stamp.h.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void pixelops_brush_set_stroke_layer(uint8_t* const* tiles, int tiles_x, int tiles_y) {
+    brush_set_stroke_layer(tiles, tiles_x, tiles_y);
+}
+
 // ── Pre-rasterized bitmap brush path ────────────────────────────────────
 // See brush_stamp.h for the architecture. Rasterizing the brush shape into
 // an 8-bit coverage bitmap once per stroke, then per-stamp blitting the

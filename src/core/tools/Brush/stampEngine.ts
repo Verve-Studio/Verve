@@ -104,6 +104,8 @@ import {
 } from "./dynamicsResolver";
 import { colorDynamicsInert, resolveStampColor } from "./colorJitter";
 import { applyGrain, grainNoise } from "./paperTexture";
+import { StrokeLayer, strokePixel, type StrokeStamp } from "./strokeLayer";
+import { BM_NORMAL, blendModeId } from "./brushBlend";
 import {
   pickUpSmudge,
   smudgePixel,
@@ -155,6 +157,12 @@ export interface StrokeStampState {
    */
   smudgePatch: SmudgePatch | null;
   /**
+   * The stroke paint layer (blend modes, per-dab colour — `strokeLayer.ts`),
+   * created by the caller for strokes that need it (`strokeLayerNeeds`).
+   * Null = paint straight into the layer.
+   */
+  strokeLayer: StrokeLayer | null;
+  /**
    * EMA-smoothed stroke direction in radians. The raw per-stamp Bézier
    * tangent jumps abruptly across segment boundaries and at sharp corners,
    * which makes a direction-following tip snap-rotate. Smoothing this in
@@ -198,6 +206,7 @@ export function makeStrokeStampState(
       a: primary.a,
     },
     smudgePatch: null,
+    strokeLayer: null,
     smoothDirection: null,
     prevStampColor: null,
     strokeColorResolved: false,
@@ -418,9 +427,33 @@ const stampJobScratch: BrushStampJob = {
   dualBaseAngle: undefined, dualMix: undefined, dualTipData: undefined,
   dualTipW: undefined, dualTipH: undefined,
   grainAmount: 0, grainScale: 2, grainFollowBrush: false, grainMode: 0,
-  ditherSeed: 0, sweepDx: 0, sweepDy: 0, sweepR0: 1,
+  ditherSeed: 0, sweepDx: 0, sweepDy: 0, sweepR0: 1, blendMode: 0, strokeFlags: 0,
   bmOffsetX: undefined, bmOffsetY: undefined,
 };
+
+/** Per-stamp stroke-layer context of the JS paint path. */
+const strokeStampScratch: StrokeStamp = {
+  layer: null as unknown as StrokeLayer,
+  blendMode: BM_NORMAL,
+  srcAlphaScale: 0,
+  capAlphaScale: -1,
+  color: [0, 0, 0],
+  ditherSeed: 0,
+};
+
+/**
+ * Whether a stroke with `brush` needs the stroke paint layer, and whether
+ * it must keep a per-pixel colour: a non-Normal blend mode, or colour that
+ * changes from dab to dab. Smudge strokes paint their own way. Null = the
+ * stroke can paint straight into the layer (the exact same result for one
+ * colour in Normal mode, and faster).
+ */
+export function strokeLayerNeeds(brush: Brush): { recolor: boolean } | null {
+  if (brush.smudge.enabled) return null;
+  const recolor = brush.colorDyn.perStamp && !colorDynamicsInert(brush.colorDyn);
+  const blended = (brush.blendMode ?? "normal") !== "normal";
+  return recolor || blended ? { recolor } : null;
+}
 
 /** Per-stamp smudge context (read synchronously by `applyStamp`). */
 const smudgeStampScratch: SmudgeStamp = {
@@ -799,6 +832,8 @@ function applyStamp(
   dual: DualResolved | null,
   /** Smudge mode: the carried patch this stamp paints instead of a colour. */
   smudge: SmudgeStamp | null = null,
+  /** The stroke paint layer to paint through (null = straight into the layer). */
+  strokeLayer: StrokeLayer | null = null,
 ): void {
   let radius = s.size * 0.5;
   if (!(radius > 0)) return;
@@ -881,6 +916,10 @@ function applyStamp(
       return;
   }
   if (onStampBbox) onStampBbox(minX, minY, maxX, maxY);
+  // Stroke paint layer: snapshot the stroke-start pixels of every tile this
+  // stamp can touch before it (or any queued stamp) paints there.
+  const viaStroke = strokeLayer !== null && smudge === null;
+  if (viaStroke) strokeLayer.ensure(layer, minX, minY, maxX, maxY, tiledMode);
 
   // Float colour → 0..255 bytes for the rgba8 path.
   const r = Math.round(Math.min(s.fr, 1) * 255);
@@ -927,7 +966,13 @@ function applyStamp(
     !bypassCap &&
     !motionBlocksWasm &&
     !tiledMode &&
-    layer.format !== "indexed8";
+    layer.format !== "indexed8" &&
+    // The kernel reads a stroke layer only in place (its tiles in the heap,
+    // layer and coverage buffer pinned).
+    (!viaStroke ||
+      (strokeLayer.wasm !== null &&
+        layer.wasmPtr !== undefined &&
+        touched.wasmPtr !== undefined));
   const wasmModule = wasmEligible ? getPixelOpsSync() : null;
   if (wasmModule !== null) {
     // Inside a segment batch the stamp is queued and applied when the
@@ -1001,6 +1046,8 @@ function applyStamp(
     j.sweepDx = sweepDx;
     j.sweepDy = sweepDy;
     j.sweepR0 = sweepR0;
+    j.blendMode = blendModeId(brush.blendMode);
+    j.strokeFlags = viaStroke ? 1 | (strokeLayer.recolor ? 2 : 0) : 0;
     // Set by appendBrushStamp in bitmap mode; never carry a stale offset.
     j.bmOffsetX = undefined;
     j.bmOffsetY = undefined;
@@ -1059,6 +1106,27 @@ function applyStamp(
   }
   const canvasW = renderer.pixelWidth;
   const canvasH = renderer.pixelHeight;
+  let strokeSt: StrokeStamp | null = null;
+  if (viaStroke) {
+    strokeSt = strokeStampScratch;
+    strokeSt.layer = strokeLayer;
+    strokeSt.blendMode = blendModeId(brush.blendMode);
+    const colorA =
+      layer.format === "rgba32f" ? Math.max(0, Math.min(1, s.fa)) : a / 255;
+    strokeSt.srcAlphaScale = colorA * (stampOpacity / 100);
+    strokeSt.capAlphaScale = fullFlow ? -1 : colorA * (ceiling / 100);
+    // Dab colour in the layer's value space (the rgba8 kernel uses bytes).
+    if (layer.format === "rgba32f") {
+      strokeSt.color[0] = stampSrcFloatScratch[0];
+      strokeSt.color[1] = stampSrcFloatScratch[1];
+      strokeSt.color[2] = stampSrcFloatScratch[2];
+    } else {
+      strokeSt.color[0] = r / 255;
+      strokeSt.color[1] = g / 255;
+      strokeSt.color[2] = b / 255;
+    }
+    strokeSt.ditherSeed = s.ditherSeed;
+  }
 
   for (let py = minY; py <= maxY; py++) {
     const dyBase0 = py - cy;
@@ -1116,6 +1184,10 @@ function applyStamp(
       if (smudge !== null) {
         const k = (stampOpacity / 100) * coverage;
         smudgePixel(layer, canvasW, canvasH, px, py, k, k, smudge, touched, sel, tiledMode, s.ditherSeed);
+        continue;
+      }
+      if (strokeSt !== null) {
+        strokePixel(strokeSt, layer, touched, sel, canvasW, canvasH, px, py, coverage, tiledMode);
         continue;
       }
       blendPixelOver(
@@ -1362,6 +1434,7 @@ function emitStampWithCount(
       captureStrokeBbox,
       dual,
       smudge,
+      state.strokeLayer,
     );
   }
   state.prevTipX = cx;
@@ -1421,6 +1494,7 @@ export function stampSegment(p: StampSegmentParams): void {
   // elongated and round stamps.
   const wasmBatchReady =
     wasmModule !== null &&
+    !(state.strokeLayer !== null && state.strokeLayer.wasm === null) &&
     !brush.smudge.enabled &&
     !tiledMode &&
     layer.format !== "indexed8" &&
@@ -1439,6 +1513,7 @@ export function stampSegment(p: StampSegmentParams): void {
     minSegSize >= BITMAP_BATCH_MIN_SIZE &&
     softEnough &&
     !sweepsDabs(brush, sampler) &&
+    state.strokeLayer === null &&
     isShapeStaticSegment(brush, size0, size1);
 
   // Bitmap tips: one density level per segment (a batch shares it), chosen

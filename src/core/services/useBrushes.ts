@@ -28,6 +28,7 @@ import { brushStore } from "@/core/store/brushStore";
 import { activeScope } from "@/core/store/scope";
 import type { Brush } from "@/types";
 import { makeDefaultBrush } from "@/types";
+import { makeStarterBrushes } from "@/core/tools/Brush/brushPresets";
 
 export interface UseBrushesResult {
   /** All brushes, document first then user, deduplicated by id, with each
@@ -54,6 +55,9 @@ export interface UseBrushesResult {
     id: string,
     targetScope: "document" | "user",
   ) => Promise<Brush>;
+  /** Add the starter presets missing from the user library (by name).
+   *  Returns how many were added. */
+  addStarterBrushes: () => Promise<number>;
   /** True when the active brush has unsaved overrides in this document. */
   isActiveBrushModified: boolean;
   /** Set of brush ids that have unsaved overrides in this doc. */
@@ -241,6 +245,15 @@ export function useBrushes(): UseBrushesResult {
     activeScope().brushOverrides.clear(activeBrush.id);
   }, [activeBrush.id]);
 
+  const addStarterBrushes = useCallback(async (): Promise<number> => {
+    const have = new Set(brushStore.getUserBrushes().map((b) => b.name));
+    const missing = makeStarterBrushes().filter((b) => !have.has(b.name));
+    if (missing.length > 0) {
+      await brushStore.setUserBrushes([...brushStore.getUserBrushes(), ...missing]);
+    }
+    return missing.length;
+  }, []);
+
   return {
     allBrushes,
     documentBrushes,
@@ -251,6 +264,7 @@ export function useBrushes(): UseBrushesResult {
     updateBrush,
     deleteBrush,
     duplicateBrush,
+    addStarterBrushes,
     isActiveBrushModified,
     modifiedBrushIds,
     saveActiveBrushOverrides,

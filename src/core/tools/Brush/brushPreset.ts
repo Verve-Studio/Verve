@@ -15,6 +15,7 @@
  */
 
 import { base64ToBytes, bytesToBase64 } from "@/utils/base64";
+import type { BrushBlendMode } from "./brushBlend";
 
 // ─── Shape ────────────────────────────────────────────────────────────────────
 
@@ -301,6 +302,9 @@ export interface Brush {
   smoothing: SmoothingSettings;
   /** Tip uniform alpha multiplier (0..100). Maps to existing `opacity`. */
   opacity: number;
+  /** How the stroke combines with the pixels under it (`brushBlend.ts`).
+   *  Older brushes lack it: Normal. */
+  blendMode?: BrushBlendMode;
   /** When true, soft anti-aliased edges. Mirrors current `antiAlias`. */
   antiAlias: boolean;
   /** Stamp elongation along stroke direction (0..1). Mirrors current `motionBlur`. */
@@ -394,6 +398,7 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
     smudge: { enabled: false, strength: 0.6, colorRate: 0 },
     smoothing: { ema: 50, pullString: 0, catchUp: true },
     opacity: 100,
+    blendMode: "normal",
     antiAlias: true,
     motionBlur: 5,
     // A mouse reports pressure 1, so this only shapes pen strokes.

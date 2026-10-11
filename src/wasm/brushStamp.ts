@@ -16,7 +16,7 @@ import type { PixelOpsModule } from "./types";
 
 /** Field offsets in the packed `BrushStampParams` struct. MUST match the
  *  C++ layout in `wasm/src/brush_stamp.h` byte-for-byte — float and int
- *  are both 4 bytes, no internal padding. 208 bytes of fields, which is
+ *  are both 4 bytes, no internal padding. 224 bytes of fields, which is
  *  also the C++ `alignas(16)` stride — `PARAM_BYTES` below must match it
  *  exactly or batched dispatch reads from the wrong offset past the first
  *  entry. */
@@ -76,11 +76,13 @@ const PARAM_I = {
   bmOffsetY: 176,
   ditherSeed: 184,
   grainMode: 188,
+  blendMode: 204,
+  strokeFlags: 208,
 } as const;
-// Must equal `sizeof(BrushStampParams)` (208, 16-byte aligned). Critical
+// Must equal `sizeof(BrushStampParams)` (224, 16-byte aligned). Critical
 // for the batched dispatch — otherwise C++ would read entries at a
 // different offset than JS wrote them.
-const PARAM_BYTES = 208;
+const PARAM_BYTES = 224;
 
 /** Shape signature for the bake cache. Two stamps with equal signatures
  *  share the same baked coverage bitmap. */
@@ -209,6 +211,11 @@ export interface BrushStampJob {
   sweepDx: number;
   sweepDy: number;
   sweepR0: number;
+  /** Brush blend mode id (`blendModeId`); stroke-layer stamps only. */
+  blendMode: number;
+  /** Bit 0: paint through the registered stroke layer; bit 1: keep a
+   *  per-pixel stroke colour. 0 = paint straight into the layer. */
+  strokeFlags: number;
   // ── Bitmap-path offsets ───────────────────────────────────────────
   // When the bitmap fast path is active, the kernel reads the pre-baked
   // coverage at `bitmap[(py - bmOffsetY) * bmW + (px - bmOffsetX)]`.
@@ -510,6 +517,8 @@ export function ensureBakedBitmap(
   view.setFloat32(PARAM_F.sweepDx, 0, true);
   view.setFloat32(PARAM_F.sweepDy, 0, true);
   view.setFloat32(PARAM_F.sweepR0, 1, true);
+  view.setInt32(PARAM_I.blendMode, 0, true);
+  view.setInt32(PARAM_I.strokeFlags, 0, true);
 
   // The malloc above may have grown the heap; re-bind the view.
   if (s.paramsView.buffer !== m.HEAPU8.buffer) {
@@ -608,6 +617,8 @@ function packStampParamsAt(
   view.setFloat32(off + PARAM_F.sweepDx, j.sweepDx, true);
   view.setFloat32(off + PARAM_F.sweepDy, j.sweepDy, true);
   view.setFloat32(off + PARAM_F.sweepR0, j.sweepR0, true);
+  view.setInt32(off + PARAM_I.blendMode, j.blendMode, true);
+  view.setInt32(off + PARAM_I.strokeFlags, j.strokeFlags, true);
   // Bitmap-path per-stamp offsets. Harmless for the per-stamp path (kernel
   // never reads these fields). For the bitmap path these locate the
   // pre-rasterized coverage bitmap in canvas coords: bitmap pixel (0,0)
@@ -807,6 +818,17 @@ export function appendBrushStamp(
   return true;
 }
 
+/** Register the per-stroke paint layer's tile table with the kernel
+ *  (`brush_set_stroke_layer`); `tablePtr` 0 clears it. */
+export function setBrushStrokeLayer(
+  m: PixelOpsModule,
+  tablePtr: number,
+  tilesX: number,
+  tilesY: number,
+): void {
+  m._pixelops_brush_set_stroke_layer(tablePtr, tilesX, tilesY);
+}
+
 /** Run all queued stamps in one WASM call. Resets the batch. */
 export function flushBrushBatch(m: PixelOpsModule): void {
   const s = getScratch(m);
@@ -952,6 +974,9 @@ export function runBrushStamp(m: PixelOpsModule, j: BrushStampJob): boolean {
     view.setFloat32(PARAM_F.sweepDx, j.sweepDx, true);
     view.setFloat32(PARAM_F.sweepDy, j.sweepDy, true);
     view.setFloat32(PARAM_F.sweepR0, j.sweepR0, true);
+    view.setInt32(PARAM_I.blendMode, j.blendMode, true);
+    // The slice path rebases the layer: it can't address the stroke layer.
+    view.setInt32(PARAM_I.strokeFlags, 0, true);
     view.setFloat32(PARAM_F.fr, j.fr, true);
     view.setFloat32(PARAM_F.fg, j.fg, true);
     view.setFloat32(PARAM_F.fb, j.fb, true);

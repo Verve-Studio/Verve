@@ -425,6 +425,14 @@ export interface PixelOpsModule {
     bmH: number,
   ): void;
 
+  /** Register (tablePtr ≠ 0) or clear the brush's per-stroke paint layer:
+   *  a tilesX × tilesY table of 64-bit tile pointers (see brush_stamp.h). */
+  _pixelops_brush_set_stroke_layer(
+    tablePtr: number,
+    tilesX: number,
+    tilesY: number,
+  ): void;
+
   _pixelops_brush_stamp_bitmap_batch(
     paramsArrayPtr: number,
     count: number,

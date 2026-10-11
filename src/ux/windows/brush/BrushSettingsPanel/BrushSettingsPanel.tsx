@@ -12,6 +12,10 @@ import type {
   PaperTextureMode,
 } from "@/types";
 import { identityCurve } from "@/types";
+import {
+  BRUSH_BLEND_MODES,
+  type BrushBlendMode,
+} from "@/core/tools/Brush/brushBlend";
 import styles from "./BrushSettingsPanel.module.scss";
 
 const SOURCE_LABELS: { value: DynamicSource; label: string }[] = [
@@ -224,6 +228,7 @@ export function BrushSettingsPanel({
     updateBrush,
     deleteBrush,
     duplicateBrush,
+    addStarterBrushes,
     isActiveBrushModified,
     modifiedBrushIds,
     saveActiveBrushOverrides,
@@ -351,6 +356,14 @@ export function BrushSettingsPanel({
           >
             Manage…
           </button>
+          <button
+            type="button"
+            className={styles.resetBtn}
+            title="Add the built-in brush library (pencil, ink, charcoal, oil, watercolor, airbrush, …) — only the ones you don't have yet."
+            onClick={() => void addStarterBrushes()}
+          >
+            Add starter brushes
+          </button>
         </div>
 
         {/* ── Brush Tip ───────────────────────────────────────── */}
@@ -419,6 +432,27 @@ export function BrushSettingsPanel({
               inputWidth={42}
               onChange={(v) => update({ opacity: v })}
             />
+          </div>
+          <div className={styles.row}>
+            <label
+              className={styles.smallLabel}
+              title="How the stroke combines with the pixels under it. Applied once per stroke, so overlapping dabs don't compound. Ignored by smudge."
+            >
+              Mode
+            </label>
+            <select
+              className={styles.select}
+              value={activeBrush.blendMode ?? "normal"}
+              onChange={(e) =>
+                update({ blendMode: e.target.value as BrushBlendMode })
+              }
+            >
+              {BRUSH_BLEND_MODES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className={styles.row}>
             <label className={styles.smallLabel}>Flow</label>

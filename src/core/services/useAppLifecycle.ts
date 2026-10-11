@@ -7,7 +7,7 @@ import { kickoffPixelOpsLoad } from "@/wasm";
 
 import { MemoryLimitError } from "@/core/store/memoryStore";
 import { notificationStore } from "@/core/store/notificationStore";
-import { makeDefaultBrush } from "@/types";
+import { makeStarterBrushes } from "@/core/tools/Brush/brushPresets";
 import { activeScope } from "@/core/store/scope";
 import { extractErrorMessage } from "@/utils/userFeedback";
 
@@ -31,9 +31,7 @@ export function useBrushBootstrap(
     void (async () => {
       await brushStore.init();
       if (brushStore.getUserBrushes().length === 0) {
-        await brushStore.addUserBrush(
-          makeDefaultBrush(crypto.randomUUID(), "Default Round"),
-        );
+        await brushStore.setUserBrushes(makeStarterBrushes());
       }
       if (activeBrushIdRef.current === null) {
         const first = brushStore.getUserBrushes()[0];

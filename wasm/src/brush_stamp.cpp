@@ -286,6 +286,31 @@ struct Stamp {
     uint32_t seed;
     bool tiled;
     int tiledW, tiledH;
+    // Stroke paint layer (brush_set_stroke_layer).
+    bool strokeOn, recolor;
+    int blendMode;
+    // Dab colour in the working space (rgba8: sRGB 0..1, rgba32f: linear).
+    float dr, dg, db;
+};
+
+// ── Stroke paint layer ────────────────────────────────────────────────
+
+constexpr int STROKE_TILE_SHIFT = 6;
+constexpr int STROKE_TILE = 1 << STROKE_TILE_SHIFT;
+constexpr int STROKE_TILE_PX = STROKE_TILE * STROKE_TILE;
+
+struct StrokeLayerState {
+    uint8_t* const* tiles;
+    int tilesX, tilesY;
+};
+StrokeLayerState g_stroke = {nullptr, 0, 0};
+
+// Brush blend modes (ids mirror `BRUSH_BLEND_MODES` in brushBlend.ts).
+enum BlendMode {
+    BM_NORMAL = 0, BM_MULTIPLY, BM_SCREEN, BM_OVERLAY, BM_DARKEN, BM_LIGHTEN,
+    BM_COLOR_DODGE, BM_COLOR_BURN, BM_HARD_LIGHT, BM_SOFT_LIGHT, BM_DIFFERENCE,
+    BM_EXCLUSION, BM_HUE, BM_SATURATION, BM_COLOR, BM_LUMINOSITY, BM_BEHIND,
+    BM_CLEAR
 };
 
 BS_INLINE void init_stamp(
@@ -388,11 +413,20 @@ BS_INLINE void init_stamp(
     s.tiledW = p->tiled_w;
     s.tiledH = p->tiled_h;
 
+    s.strokeOn = (p->stroke_flags & 1) != 0 && g_stroke.tiles != nullptr && !s.bypassCap;
+    s.recolor = s.strokeOn && (p->stroke_flags & 2) != 0;
+    s.blendMode = p->blend_mode;
+    s.dr = s.isF32 ? p->fr : (float)p->r * (1.0f / 255.0f);
+    s.dg = s.isF32 ? p->fg : (float)p->g * (1.0f / 255.0f);
+    s.db = s.isF32 ? p->fb : (float)p->b * (1.0f / 255.0f);
+
     // Saturation threshold: the coverage byte any part of this stamp could
     // raise a pixel to (coverage = 1). At or past it the pixel can't change.
     // The bypass-cap path has no ceiling.
+    // A recolouring stroke changes saturated pixels too (newer dabs paint
+    // over older ones), so nothing is ever skipped.
     s.maxTouchedByte = 256;
-    if (!s.bypassCap) {
+    if (!s.bypassCap && !s.recolor) {
         const float relevantOpacity = s.hasCap ? p->cap_opacity : p->opacity;
         const int t = (int)((float)p->a * relevantOpacity * 0.01f);
         s.maxTouchedByte = t < 256 ? t : 256;
@@ -527,6 +561,224 @@ BS_INLINE void composite(const Stamp& s, int lx, int ly, float blendA, float bia
     d[3] = (uint8_t)clamp255((int)(outA * 255.0f + bias));
 }
 
+// ── Blend modes (mirror brushBlend.ts) ────────────────────────────────
+
+BS_INLINE float blend_channel(int mode, float b, float s) {
+    switch (mode) {
+        case BM_MULTIPLY: return b * s;
+        case BM_SCREEN: return b + s - b * s;
+        case BM_OVERLAY:
+            return b <= 0.5f ? 2.0f * b * s : 1.0f - 2.0f * (1.0f - b) * (1.0f - s);
+        case BM_DARKEN: return b < s ? b : s;
+        case BM_LIGHTEN: return b > s ? b : s;
+        case BM_COLOR_DODGE:
+            if (b <= 0.0f) return 0.0f;
+            if (s >= 1.0f) return 1.0f;
+            return b / (1.0f - s) < 1.0f ? b / (1.0f - s) : 1.0f;
+        case BM_COLOR_BURN:
+            if (b >= 1.0f) return 1.0f;
+            if (s <= 0.0f) return 0.0f;
+            return 1.0f - ((1.0f - b) / s < 1.0f ? (1.0f - b) / s : 1.0f);
+        case BM_HARD_LIGHT:
+            return s <= 0.5f ? 2.0f * b * s : 1.0f - 2.0f * (1.0f - b) * (1.0f - s);
+        case BM_SOFT_LIGHT: {
+            if (s <= 0.5f) return b - (1.0f - 2.0f * s) * b * (1.0f - b);
+            const float d = b <= 0.25f ? ((16.0f * b - 12.0f) * b + 4.0f) * b : std::sqrt(b > 0.0f ? b : 0.0f);
+            return b + (2.0f * s - 1.0f) * (d - b);
+        }
+        case BM_DIFFERENCE: return std::fabs(b - s);
+        case BM_EXCLUSION: return b + s - 2.0f * b * s;
+        default: return s;
+    }
+}
+
+BS_INLINE float lum3(float r, float g, float b) { return 0.3f * r + 0.59f * g + 0.11f * b; }
+
+BS_INLINE void clip_color(float& r, float& g, float& b) {
+    const float l = lum3(r, g, b);
+    const float n = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const float x = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (n < 0.0f && l - n > 1e-6f) {
+        r = l + (r - l) * l / (l - n);
+        g = l + (g - l) * l / (l - n);
+        b = l + (b - l) * l / (l - n);
+    }
+    if (x > 1.0f && x - l > 1e-6f && l <= 1.0f) {
+        r = l + (r - l) * (1.0f - l) / (x - l);
+        g = l + (g - l) * (1.0f - l) / (x - l);
+        b = l + (b - l) * (1.0f - l) / (x - l);
+    }
+}
+
+BS_INLINE void set_lum(float& r, float& g, float& b, float l) {
+    const float d = l - lum3(r, g, b);
+    r += d; g += d; b += d;
+    clip_color(r, g, b);
+}
+
+BS_INLINE float sat3(float r, float g, float b) {
+    const float n = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const float x = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    return x - n;
+}
+
+BS_INLINE void set_sat(float& r, float& g, float& b, float sat) {
+    float* c[3] = {&r, &g, &b};
+    // Sort pointers: min, mid, max.
+    if (*c[0] > *c[1]) { float* t = c[0]; c[0] = c[1]; c[1] = t; }
+    if (*c[1] > *c[2]) { float* t = c[1]; c[1] = c[2]; c[2] = t; }
+    if (*c[0] > *c[1]) { float* t = c[0]; c[0] = c[1]; c[1] = t; }
+    const float mn = *c[0], mx = *c[2];
+    if (mx > mn) {
+        *c[1] = (*c[1] - mn) * sat / (mx - mn);
+        *c[2] = sat;
+    } else {
+        *c[1] = 0.0f;
+        *c[2] = 0.0f;
+    }
+    *c[0] = 0.0f;
+}
+
+// B(Cb, Cs) for the separable and non-separable modes.
+BS_INLINE void blend_rgb(int mode, float br, float bg, float bb,
+                         float& sr, float& sg, float& sb) {
+    switch (mode) {
+        case BM_HUE: {
+            float r = sr, g = sg, b = sb;
+            set_sat(r, g, b, sat3(br, bg, bb));
+            set_lum(r, g, b, lum3(br, bg, bb));
+            sr = r; sg = g; sb = b;
+            return;
+        }
+        case BM_SATURATION: {
+            float r = br, g = bg, b = bb;
+            set_sat(r, g, b, sat3(sr, sg, sb));
+            set_lum(r, g, b, lum3(br, bg, bb));
+            sr = r; sg = g; sb = b;
+            return;
+        }
+        case BM_COLOR: {
+            float r = sr, g = sg, b = sb;
+            set_lum(r, g, b, lum3(br, bg, bb));
+            sr = r; sg = g; sb = b;
+            return;
+        }
+        case BM_LUMINOSITY: {
+            float r = br, g = bg, b = bb;
+            set_lum(r, g, b, lum3(sr, sg, sb));
+            sr = r; sg = g; sb = b;
+            return;
+        }
+        default:
+            sr = blend_channel(mode, br, sr);
+            sg = blend_channel(mode, bg, sg);
+            sb = blend_channel(mode, bb, sb);
+    }
+}
+
+// Recomposite layer pixel (lx, ly) = stroke-start pixel `tile[ti]` with the
+// stroke paint (cr, cg, cb) at alpha `as` under the stamp's blend mode.
+BS_INLINE void composite_stroke(const Stamp& s, const uint8_t* tile, int ti, int lx, int ly,
+                                float cr, float cg, float cb, float as, float bias) {
+    float br, bgc, bb, ab;
+    if (s.isF32) {
+        const float* o = reinterpret_cast<const float*>(tile) + ti * 4;
+        br = o[0]; bgc = o[1]; bb = o[2]; ab = o[3];
+    } else {
+        const uint8_t* o = tile + ti * 4;
+        br = o[0] * (1.0f / 255.0f); bgc = o[1] * (1.0f / 255.0f);
+        bb = o[2] * (1.0f / 255.0f); ab = o[3] * (1.0f / 255.0f);
+    }
+    float orr, og, ob, oa;  // premultiplied result
+    if (s.blendMode == BM_CLEAR) {
+        oa = ab * (1.0f - as);
+        orr = br * oa; og = bgc * oa; ob = bb * oa;
+    } else if (s.blendMode == BM_BEHIND) {
+        oa = ab + as * (1.0f - ab);
+        orr = br * ab + cr * as * (1.0f - ab);
+        og = bgc * ab + cg * as * (1.0f - ab);
+        ob = bb * ab + cb * as * (1.0f - ab);
+    } else {
+        float mr = cr, mg = cg, mb = cb;
+        if (s.blendMode != BM_NORMAL) blend_rgb(s.blendMode, br, bgc, bb, mr, mg, mb);
+        const float sOnly = as * (1.0f - ab);
+        const float both = as * ab;
+        const float bOnly = (1.0f - as) * ab;
+        oa = as + bOnly;
+        orr = cr * sOnly + mr * both + br * bOnly;
+        og = cg * sOnly + mg * both + bgc * bOnly;
+        ob = cb * sOnly + mb * both + bb * bOnly;
+    }
+    const ptrdiff_t idx = (static_cast<ptrdiff_t>(ly) * s.layerW + lx) * 4;
+    if (oa <= 1e-7f) {
+        if (s.isF32) { float* d = s.layerF32 + idx; d[0] = d[1] = d[2] = d[3] = 0.0f; }
+        else { uint8_t* d = s.layerBytes + idx; d[0] = d[1] = d[2] = d[3] = 0; }
+        return;
+    }
+    const float inv = 1.0f / oa;
+    if (s.isF32) {
+        float* d = s.layerF32 + idx;
+        d[0] = orr * inv; d[1] = og * inv; d[2] = ob * inv; d[3] = oa;
+    } else {
+        uint8_t* d = s.layerBytes + idx;
+        d[0] = (uint8_t)clamp255((int)(orr * inv * 255.0f + bias));
+        d[1] = (uint8_t)clamp255((int)(og * inv * 255.0f + bias));
+        d[2] = (uint8_t)clamp255((int)(ob * inv * 255.0f + bias));
+        d[3] = (uint8_t)clamp255((int)(oa * 255.0f + bias));
+    }
+}
+
+// Stroke-layer version of accumulate + composite at canvas (px, py), layer
+// (lx, ly). The stroke alpha follows the same Opacity / Flow rules; the
+// stroke colour takes each dab "over" itself (newer dabs on top); the
+// pixel is recomposited from its stroke-start value.
+BS_INLINE void stroke_pixel(const Stamp& s, int px, int py, int lx, int ly,
+                            float coverage, float selF, float bias) {
+    uint8_t* tile = g_stroke.tiles[(py >> STROKE_TILE_SHIFT) * g_stroke.tilesX + (px >> STROKE_TILE_SHIFT)];
+    if (tile == nullptr) return;
+    const int ti = ((py & (STROKE_TILE - 1)) << STROKE_TILE_SHIFT) | (px & (STROKE_TILE - 1));
+    const ptrdiff_t key = static_cast<ptrdiff_t>(py) * s.touchedW + px;
+    const uint8_t oldByte = s.touched[key];
+    const float aOld = oldByte * (1.0f / 255.0f);
+    const float srcA = s.srcAlphaScale * coverage;
+    if (srcA <= 0.0f) return;
+    uint8_t newByte = oldByte;
+    float w = srcA;  // the dab's weight over the stroke colour
+    if (s.hasCap) {
+        const float capA = s.capAlphaScale * selF;
+        if (aOld < capA) {
+            const float upgrade = aOld < 1.0f ? (capA - aOld) / (1.0f - aOld) : 0.0f;
+            const float b = srcA < upgrade ? srcA : upgrade;
+            if (b > 0.0f) {
+                newByte = srcA >= upgrade ? to_byte_ceil(capA)
+                                          : to_byte_dither(aOld + b * (1.0f - aOld), bias);
+            }
+        }
+    } else if (srcA > aOld) {
+        newByte = to_byte_ceil(srcA);
+    }
+    if (newByte < oldByte) newByte = oldByte;
+    if (newByte == oldByte && !s.recolor) return;
+    s.touched[key] = newByte;
+
+    float cr = s.dr, cg = s.dg, cb = s.db;
+    if (s.recolor) {
+        const int bpp = s.isF32 ? 16 : 4;
+        float* col = reinterpret_cast<float*>(tile + STROKE_TILE_PX * bpp) + ti * 3;
+        if (aOld > 0.0f) {
+            const float keep = aOld * (1.0f - w);
+            const float den = w + keep;
+            if (den > 1e-7f) {
+                cr = (s.dr * w + col[0] * keep) / den;
+                cg = (s.dg * w + col[1] * keep) / den;
+                cb = (s.db * w + col[2] * keep) / den;
+            }
+        }
+        col[0] = cr; col[1] = cg; col[2] = cb;
+    }
+    composite_stroke(s, tile, ti, lx, ly, cr, cg, cb, newByte * (1.0f / 255.0f), bias);
+}
+
 // Paint `coverage` (tip × dual × grain, before selection) at canvas pixel
 // (px, py): wrap, clip, selection, accumulate, composite.
 BS_INLINE void blend_pixel(const Stamp& s, int px, int py, float coverage) {
@@ -549,8 +801,12 @@ BS_INLINE void blend_pixel(const Stamp& s, int px, int py, float coverage) {
     const int lx = px - s.layerOX;
     const int ly = py - s.layerOY;
     if (lx < 0 || lx >= s.layerW || ly < 0 || ly >= s.layerH) return;
-    const float bias = (s.fullAlpha && coverage >= 1.0f)
+    const float bias = (s.fullAlpha && coverage >= 1.0f && !s.strokeOn)
         ? 0.5f : dither_bias(dither_u(px, py, s.seed));
+    if (s.strokeOn) {
+        stroke_pixel(s, px, py, lx, ly, coverage, selF, bias);
+        return;
+    }
     const float blendA = accumulate(s, key, coverage, selF, bias);
     if (blendA > 0.0f) composite(s, lx, ly, blendA, bias);
 }
@@ -717,6 +973,12 @@ BS_INLINE v128_t procedural_coverage4(
 
 } // anonymous namespace
 
+extern "C" void brush_set_stroke_layer(uint8_t* const* tiles, int tiles_x, int tiles_y) {
+    g_stroke.tiles = tiles;
+    g_stroke.tilesX = tiles_x;
+    g_stroke.tilesY = tiles_y;
+}
+
 extern "C" void brush_bake_coverage(
     const BrushStampParams* p,
     uint8_t*                out_bitmap,
@@ -797,7 +1059,7 @@ extern "C" void brush_stamp_bitmap(
         const uint8_t* tRow = touched_data + static_cast<ptrdiff_t>(py) * s.touchedW;
         int px = x0;
 #ifdef __wasm_simd128__
-        const bool fastRow = !s.isF32 && s.sel == nullptr && !grainHere && !s.bypassCap;
+        const bool fastRow = !s.isF32 && s.sel == nullptr && !grainHere && !s.bypassCap && !s.strokeOn;
         for (; px + 3 <= x1; px += 4) {
             uint32_t cov4;
             __builtin_memcpy(&cov4, bmRow + (px - bmOX), 4);
@@ -920,7 +1182,7 @@ extern "C" void brush_stamp(
 
                 const int lx0 = px - s.layerOX;
                 const bool fastGroup =
-                    !s.isF32 && s.sel == nullptr && !needsModulation && !s.bypassCap &&
+                    !s.isF32 && s.sel == nullptr && !needsModulation && !s.bypassCap && !s.strokeOn &&
                     rowInLayer && px >= 0 && px + 3 < s.canvasW &&
                     lx0 >= 0 && lx0 + 3 < s.layerW;
                 if (fastGroup) {

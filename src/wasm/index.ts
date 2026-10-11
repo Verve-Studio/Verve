@@ -220,6 +220,7 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
   m._pixelops_brush_bake_coverage = wrapPtrFn(m._pixelops_brush_bake_coverage, [0, 1, 4, 7], false);
   m._pixelops_brush_stamp_bitmap = wrapPtrFn(m._pixelops_brush_stamp_bitmap, [0, 1, 2, 3, 4], false);
   m._pixelops_brush_stamp_bitmap_batch = wrapPtrFn(m._pixelops_brush_stamp_bitmap_batch, [0, 2, 3, 4, 5], false);
+  m._pixelops_brush_set_stroke_layer = wrapPtrFn(m._pixelops_brush_set_stroke_layer, [0], false);
 
   // ── lcms2 colour management (optional — only present when vendored) ──
   if (typeof m._cms_get_working_profile === "function") {
@@ -1566,6 +1567,7 @@ export {
   beginBrushBatchBitmap,
   appendBrushStamp,
   flushBrushBatch,
+  setBrushStrokeLayer,
   ensureBakedBitmap,
   type BrushStampJob,
   type BrushBakeShape,

@@ -10,10 +10,14 @@ import {
   stampSegment,
   stampDot,
   applyStrokeWetEdges,
+  strokeLayerNeeds,
   type StrokeStampState,
   type StrokePoseInputs,
 } from "./stampEngine";
 import { getCachedTipSampler } from "./tipSampler";
+import { StrokeLayer } from "./strokeLayer";
+import { getPixelOpsSync } from "@/wasm";
+import { BRUSH_BLEND_MODES, type BrushBlendMode } from "./brushBlend";
 import { markCanvasRectDirty } from "../_shared/primitives";
 import {
   requestPreRenderFlush,
@@ -521,6 +525,9 @@ function createBrushHandler(): ToolHandler {
         touched.data.fill(0);
       }
       strokeState.strokeBboxValid = false;
+      // The stroke layer restarts from the pixels as they are now, so the
+      // tick lays a fresh dose over them.
+      strokeState.strokeLayer?.commit();
       const { size, opacity } = resolveStrokeParams(smoothPressure);
       const px = lastBuildUpPoint.x;
       const py = lastBuildUpPoint.y;
@@ -544,6 +551,17 @@ function createBrushHandler(): ToolHandler {
       // the stroke end sets lastDirtyRect instead (or, if it can't, the next
       // acquire falls back to a full clear).
       strokeState.touched.untracked = true;
+      // Blend modes / per-dab colour paint through a stroke paint layer.
+      const needs = strokeLayerNeeds(activeBrushRef.current);
+      if (needs && ctx.layer.format !== "indexed8") {
+        strokeState.strokeLayer = new StrokeLayer(
+          ctx.renderer.pixelWidth,
+          ctx.renderer.pixelHeight,
+          ctx.layer.format === "rgba32f",
+          needs.recolor,
+          getPixelOpsSync(),
+        );
+      }
       smoothSpeed = 0;
       smoothPressure = pressure;
       smoothTilt = Math.hypot(tiltX, tiltY) / 90;
@@ -656,6 +674,7 @@ function createBrushHandler(): ToolHandler {
       lastRendered = null;
       lastCtrl = null;
       renderedCursor = null;
+      strokeState?.strokeLayer?.dispose();
       strokeState = null;
       lastPaintCtx = null;
       lastBuildUpPoint = null;
@@ -780,6 +799,7 @@ function createBrushHandler(): ToolHandler {
       // pending rAF is unioned into the same flushLayer call (the dirty
       // rect on the layer accumulates across markDirtyRect calls).
       drainPendingFlush();
+      strokeState?.strokeLayer?.dispose();
       // Tell the touched buffer which region we wrote to, so the next
       // `acquireTouchedBuffer` can clear *just* that region instead of
       // memset-ing the whole canvas-sized buffer (saves ~2 ms per stroke
@@ -893,6 +913,25 @@ function BrushOptions({
       >
         Manage…
       </button>
+      <span className={styles.optSep} />
+      <label className={styles.optLabel}>Mode:</label>
+      <select
+        className={styles.optSelect}
+        value={activeBrush.blendMode ?? "normal"}
+        title="How the stroke combines with the pixels under it"
+        onChange={(e) =>
+          void updateBrush({
+            ...activeBrush,
+            blendMode: e.target.value as BrushBlendMode,
+          })
+        }
+      >
+        {BRUSH_BLEND_MODES.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+          </option>
+        ))}
+      </select>
       <span className={styles.optSep} />
       <label className={styles.optLabel}>Size:</label>
       <SliderInput

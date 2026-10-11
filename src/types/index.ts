@@ -826,6 +826,7 @@ export {
   makeDefaultBrush,
   identityCurve,
 } from "@/core/tools/Brush/brushPreset";
+export type { BrushBlendMode } from "@/core/tools/Brush/brushBlend";
 
 export type ToneMappingOperator = "reinhard" | "clamp";
 

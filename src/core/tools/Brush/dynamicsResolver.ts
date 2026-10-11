@@ -43,12 +43,21 @@ export interface StampInputs {
   noiseSample: number;
 }
 
+/** Full-avalanche 32-bit mix (lowbias32): every input bit flips about half
+ *  the output bits, so neighbouring keys give unrelated values. A single
+ *  xorshift round left consecutive stamp indices strongly correlated —
+ *  scatter, flips and random jitter came out as regular patterns. */
+function mix32(h: number): number {
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 function hashIntToUnit(seed: number, key: number): number {
-  let h = (seed ^ Math.imul(key, 0x9e3779b1)) >>> 0;
-  h ^= h << 13;
-  h ^= h >>> 17;
-  h ^= h << 5;
-  return (h >>> 0) / 0x100000000;
+  return mix32(seed ^ Math.imul(key, 0x9e3779b1)) / 0x100000000;
 }
 
 /**
@@ -158,21 +167,15 @@ export function resolveSymmetric(
   return signed * curve.jitter;
 }
 
-/** xorshift32 — fast deterministic per-stamp hash. */
+/** Fast deterministic per-stamp hash (unrelated values for neighbouring
+ *  stamps — see `mix32`). */
 export function stampHash(strokeSeed: number, stampIndex: number): number {
-  let h = (strokeSeed ^ (stampIndex + 0x9e3779b9)) >>> 0;
-  h ^= h << 13;
-  h ^= h >>> 17;
-  h ^= h << 5;
-  return h >>> 0;
+  return mix32(strokeSeed ^ Math.imul(stampIndex + 0x9e3779b9, 0x85ebca6b));
 }
 
 /** Boolean flip with probability `p ∈ [0, 1]`, sampling from the stamp hash. */
 export function shouldFlip(p: number, hash: number, salt: number): boolean {
   if (p <= 0) return false;
   // Mix the hash with a salt so flipX and flipY decisions are independent.
-  let h = (hash ^ (salt * 0x85ebca6b)) >>> 0;
-  h ^= h << 13;
-  h ^= h >>> 17;
-  return (h >>> 0) / 0x100000000 < p;
+  return mix32(hash ^ Math.imul(salt, 0x85ebca6b)) / 0x100000000 < p;
 }

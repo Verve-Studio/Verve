@@ -40,7 +40,9 @@ src/
       Pencil/                ← Pencil.tsx, brushStroke.ts, pencil.svg
       Brush/                 ← Brush.tsx, stampEngine.ts, tipSampler.ts,
                                colorJitter.ts, paperTexture.ts, dynamicsResolver.ts,
-                               smudgePatch.ts, brushPreset.ts (Brush data model), brush.svg
+                               smudgePatch.ts, strokeLayer.ts + brushBlend.ts (per-stroke
+                               paint layer, brush blend modes), brushPresets.ts (starter
+                               library), brushPreset.ts (Brush data model), brush.svg
       Eraser/                ← Eraser.tsx, eraseStroke.ts, eraser.svg
       CloneStamp/            ← CloneStamp.tsx, cloneStampStroke.ts, clone-stamp.svg
       Dodge/                 ← Dodge.tsx (defines dodge + burn), dodgeBurn.ts,
@@ -421,7 +423,7 @@ For tools with a custom cursor (brush, eraser), hide the native cursor (`cursor:
 - Selections can be soft (0–255): scale the deposit by `mask / 255` rather than treating any non-zero value as fully selected.
 - A mouse reports pressure 1 while a button is pressed (normalised in `useCanvas`).
 - Thick brush shapes: **circle stamp** for hard edges; **capsule SDF** for anti-aliased thick lines. Both helpers live in `_shared/primitives.ts`.
-- The paint brush's per-pixel math exists twice: the WASM kernel (`wasm/src/brush_stamp.cpp`) and its JS fallback (`Brush/tipSampler.ts`, `paperTexture.ts`, the `applyStamp` loop, `blendPixelOver` with a dither seed). Keep them in sync. The stamp engine works at sub-pixel positions with pixel centres at integer coordinates (`ToolPointerPos.preciseX/Y` − 0.5), and its 8-bit writes use stochastic rounding.
+- The paint brush's per-pixel math exists twice: the WASM kernel (`wasm/src/brush_stamp.cpp`) and its JS fallback (`Brush/tipSampler.ts`, `paperTexture.ts`, the `applyStamp` loop, `blendPixelOver` with a dither seed). Keep them in sync. The stamp engine works at sub-pixel positions with pixel centres at integer coordinates (`ToolPointerPos.preciseX/Y` − 0.5), and its 8-bit writes use stochastic rounding. Brush blend modes and per-dab colour paint through the stroke paint layer (`strokeLayer.ts`, registered with the kernel via `setBrushStrokeLayer`): pixels are recomposited from their stroke-start values.
 - When adding a new drawing operation, always branch on `layer.format` for `rgba32f` (float math, no rounding) and `indexed8` (palette-index write, no alpha blending). Don't assume `rgba8`.
 
 ---

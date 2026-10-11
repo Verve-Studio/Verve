@@ -13,6 +13,7 @@
 //     mip level chosen JS-side for the dab size).
 //   * Swept round dabs: a capsule from the previous dab's centre, so round
 //     strokes have no ripple between dabs.
+//   * Stroke paint layer + brush blend modes (brush_set_stroke_layer).
 //   * Layer formats rgba8 + rgba32f (no indexed8 — palette write stays in JS).
 //   * Opacity / Flow accumulation against the per-stroke coverage buffer,
 //     bypass-cap mode and the "stamp == cap" path.
@@ -41,8 +42,8 @@ extern "C" {
 
 // Packed parameter struct mirrored exactly on the TS side
 // (src/wasm/brushStamp.ts PARAM_F / PARAM_I). Keep field order stable.
-// 208 bytes of fields; `alignas(16)` keeps `sizeof(BrushStampParams)` at
-// exactly 208 to match the JS-side `PARAM_BYTES` stride used by the batched
+// 224 bytes of fields; `alignas(16)` keeps `sizeof(BrushStampParams)` at
+// exactly 224 to match the JS-side `PARAM_BYTES` stride used by the batched
 // dispatch.
 struct alignas(16) BrushStampParams {
     // Geometry
@@ -99,8 +100,24 @@ struct alignas(16) BrushStampParams {
     // (0, 0) = a plain dab.
     float sweep_dx, sweep_dy;
     float sweep_r0;
-    int   sweep_pad;
+    // ── Stroke paint layer (see brush_set_stroke_layer) ────────────────
+    int   blend_mode;        // BrushBlendMode id (stroke-layer path only)
+    int   stroke_flags;      // bit 0: composite from the stroke layer;
+                             // bit 1: keep a per-pixel stroke colour
+    int   pad0, pad1, pad2;
 };
+
+// Stroke paint layer: canvas tiles of 64×64 holding the layer's pixels at
+// stroke start (layer format: 4 or 16 bytes/pixel), followed — when the
+// stroke keeps a per-pixel colour — by 3 floats/pixel of stroke colour (the
+// layer's value space). `tiles` is a tilesX × tilesY table of tile pointers
+// (null = not allocated; the JS side allocates every tile a stamp's bbox
+// covers before dispatching it). With a stroke layer, a stamp whose
+// `stroke_flags` bit 0 is set updates the stroke alpha (the coverage
+// buffer) and colour, then recomposites the pixel from its stroke-start
+// value with `blend_mode` — so blend modes don't compound within a stroke
+// and later dabs paint over earlier ones. Pass null to clear.
+void brush_set_stroke_layer(uint8_t* const* tiles, int tiles_x, int tiles_y);
 
 // Kernel: apply one stamp into the supplied buffers.
 //
