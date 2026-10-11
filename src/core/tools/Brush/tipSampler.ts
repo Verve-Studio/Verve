@@ -16,7 +16,7 @@
  * interpolated at sample time.
  */
 import type { BrushTipShape } from "@/types";
-import { computeSdfFromRgba, sdfFromBase64, sdfToBase64 } from "../_shared/sdf";
+import { computeSdfFromRgba } from "../_shared/sdf";
 
 export interface TipSampler {
   /** Aspect ratio of the source bitmap (height / width). 1 for procedural. */
@@ -144,8 +144,7 @@ class BitmapSdfSampler implements TipSampler {
 
 /**
  * Build a `TipSampler` for the given `BrushTipShape`. For bitmap tips, the
- * SDF is loaded from `sdfBase64` if present, otherwise computed lazily from
- * `bitmapRgba`. The result is a self-contained sampler safe to share across
+ * SDF is computed from `bitmapRgba`'s alpha. The result is a self-contained sampler safe to share across
  * strokes — the caller should cache it keyed by tip identity (e.g. shape
  * object reference) to avoid recomputing per-stroke.
  */
@@ -160,31 +159,12 @@ export function makeTipSampler(shape: BrushTipShape): TipSampler {
     case "bitmap": {
       const w = shape.bitmapWidth ?? 0;
       const h = shape.bitmapHeight ?? 0;
-      if (w <= 0 || h <= 0) return ROUND; // missing data → safe fallback
-      let sdf: Float32Array;
-      if (shape.sdfBase64 && shape.sdfWidth === w && shape.sdfHeight === h) {
-        sdf = sdfFromBase64(shape.sdfBase64, w, h);
-      } else if (shape.bitmapRgba) {
-        const bin = atob(shape.bitmapRgba);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        sdf = computeSdfFromRgba(bytes, w, h);
-      } else {
-        return ROUND;
-      }
-      return new BitmapSdfSampler(sdf, w, h);
+      const rgba = shape.bitmapRgba;
+      // Missing or malformed data → safe fallback.
+      if (w <= 0 || h <= 0 || !rgba || rgba.length !== w * h * 4) return ROUND;
+      return new BitmapSdfSampler(computeSdfFromRgba(rgba, w, h), w, h);
     }
   }
-}
-
-/** Compute the SDF for a captured bitmap tip and return a base64-encoded blob. */
-export function makeSdfForBitmapTip(
-  rgba: Uint8Array | Uint8ClampedArray,
-  width: number,
-  height: number,
-): { base64: string; width: number; height: number } {
-  const sdf = computeSdfFromRgba(rgba, width, height);
-  return { base64: sdfToBase64(sdf), width, height };
 }
 
 // ─── LRU cache so the engine doesn't recompute on every stroke ──────────────

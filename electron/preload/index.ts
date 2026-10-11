@@ -24,8 +24,8 @@ const api = {
     ipcRenderer.invoke('file:saveverve', path, data),
   exportBrowse: (ext: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:exportBrowse', ext),
-  /** Write an exported image: raw bytes, or a base64 string. */
-  exportImage: (path: string, data: Uint8Array | string): Promise<void> =>
+  /** Write an exported image's file bytes. */
+  exportImage: (path: string, data: Uint8Array): Promise<void> =>
     ipcRenderer.invoke('file:exportImage', path, data),
   /** Read an image / ICC file as raw bytes. */
   readFile: (path: string): Promise<Uint8Array> =>
@@ -41,7 +41,7 @@ const api = {
   cmsListProfiles: (): Promise<
     Array<{ id: string; filename: string; source: 'system' | 'user'; size: number }>
   > => ipcRenderer.invoke('cms:listProfiles'),
-  cmsReadProfileBytes: (id: string): Promise<string | null> =>
+  cmsReadProfileBytes: (id: string): Promise<Uint8Array | null> =>
     ipcRenderer.invoke('cms:readProfileBytes', id),
   cmsImportProfileDialog: (): Promise<{
     id: string
@@ -193,7 +193,7 @@ const api = {
 
   print: (opts: {
     deviceName: string
-    pngBase64: string
+    png: Uint8Array
     pageSize:
       | 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid'
       | { widthMicrons: number; heightMicrons: number }

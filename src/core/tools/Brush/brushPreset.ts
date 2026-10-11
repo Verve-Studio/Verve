@@ -7,11 +7,14 @@
  * the panel UI is uniform and the engine can resolve any of them the same
  * way.
  *
- * Brushes live in two places, mirroring the pixel-brush model:
- *  - **Document brushes** travel with the .verve file (AppState.brushes).
+ * Brushes live in two places:
+ *  - **Document brushes** live on AppState.brushes and travel with the
+ *    .verve file (with the active brush id).
  *  - **User brushes** live in electron userData/paint-brushes.json and are
  *    available across documents (brushStore singleton).
  */
+
+import { base64ToBytes, bytesToBase64 } from "@/utils/base64";
 
 // ─── Shape ────────────────────────────────────────────────────────────────────
 
@@ -23,17 +26,12 @@ export type BrushTipKind = "round" | "square" | "diamond" | "bitmap";
 
 export interface BrushTipShape {
   kind: BrushTipKind;
-  /** For `bitmap` tips: source RGBA, base64, width × height × 4. PR1 stores raw alpha; PR2 adds SDF. */
-  bitmapRgba?: string;
+  /** For `bitmap` tips: source RGBA bytes, width × height × 4. The stamp
+   *  engine samples an SDF of its alpha, derived on first use and cached per
+   *  shape (`getCachedTipSampler`). */
+  bitmapRgba?: Uint8Array;
   bitmapWidth?: number;
   bitmapHeight?: number;
-  /**
-   * SDF of the tip alpha, normalized so 0 = edge, negative = inside, positive = outside.
-   * Stored as Float32 base64. Filled in by PR2; absent in PR1.
-   */
-  sdfBase64?: string;
-  sdfWidth?: number;
-  sdfHeight?: number;
 }
 
 // ─── Dynamic curves ──────────────────────────────────────────────────────────
@@ -203,10 +201,6 @@ export interface SmoothingSettings {
 }
 
 export interface PaperTexture {
-  /** Optional grain texture base64 (RGBA tile, repeated). */
-  tileRgba?: string;
-  tileWidth?: number;
-  tileHeight?: number;
   /** 0..1 — grain contribution. */
   amount: number;
   /** Pixels per tile repeat. */
@@ -363,4 +357,78 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
     motionBlur: 5,
     pressureSize: false,
   };
+}
+
+// ─── Serialization ───────────────────────────────────────────────────────────
+//
+// Brushes are stored as JSON: a bitmap tip's bytes become a string — base64
+// in brush files (`paint-brushes.json`, `.vbrush`), a container blob
+// reference in `.verve` documents. In memory they're a Uint8Array.
+
+function serializeTip(
+  shape: BrushTipShape,
+  encode: (bytes: Uint8Array) => string,
+): unknown {
+  return shape.bitmapRgba
+    ? { ...shape, bitmapRgba: encode(shape.bitmapRgba) }
+    : shape;
+}
+
+function deserializeTip(
+  raw: unknown,
+  decode: (value: string) => Uint8Array,
+): BrushTipShape {
+  if (typeof raw !== "object" || raw === null) return { kind: "round" };
+  // Older files also stored a derived SDF; it's recomputed now, so drop it.
+  const { sdfBase64: _sdf, sdfWidth: _sw, sdfHeight: _sh, ...shape } =
+    raw as BrushTipShape & Record<string, unknown>;
+  const rgba = (shape as Record<string, unknown>).bitmapRgba;
+  if (typeof rgba !== "string") return shape;
+  try {
+    return { ...shape, bitmapRgba: decode(rgba) };
+  } catch {
+    return { ...shape, bitmapRgba: undefined };
+  }
+}
+
+/** A brush as JSON-serializable data; bitmap tip bytes go through `encode`
+ *  (base64 by default). */
+export function serializeBrush(
+  brush: Brush,
+  encode: (bytes: Uint8Array) => string = bytesToBase64,
+): unknown {
+  return {
+    ...brush,
+    shape: serializeTip(brush.shape, encode),
+    ...(brush.dualTip
+      ? { dualTip: { ...brush.dualTip, shape: serializeTip(brush.dualTip.shape, encode) } }
+      : {}),
+  };
+}
+
+/** Inverse of `serializeBrush`. */
+export function deserializeBrush(
+  raw: Record<string, unknown>,
+  decode: (value: string) => Uint8Array = base64ToBytes,
+): Brush {
+  const brush = raw as unknown as Brush;
+  return {
+    ...brush,
+    shape: deserializeTip(brush.shape, decode),
+    ...(brush.dualTip
+      ? { dualTip: { ...brush.dualTip, shape: deserializeTip(brush.dualTip.shape, decode) } }
+      : {}),
+  };
+}
+
+/** The bitmap-tip payload strings of a serialized brush (main and dual tip). */
+export function serializedTipPayloads(raw: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const add = (shape: unknown): void => {
+    const v = (shape as Record<string, unknown> | null)?.bitmapRgba;
+    if (typeof v === "string") out.push(v);
+  };
+  add(raw.shape);
+  add((raw.dualTip as Record<string, unknown> | undefined)?.shape);
+  return out;
 }

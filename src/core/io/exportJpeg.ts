@@ -7,6 +7,7 @@
 // browser's encoder doesn't accept profile bytes directly.
 
 import { embedIccInJpeg } from "@/core/cms/iccProfile";
+import { encodeWithCanvas } from "./canvasEncode";
 
 export interface JpegExportOptions {
   /**
@@ -24,7 +25,7 @@ export interface JpegExportOptions {
 }
 
 /**
- * Encode RGBA pixel data to a JPEG data-URL.
+ * Encode RGBA pixel data as a JPEG file.
  *
  * Transparent pixels are composited over `options.background` because JPEG
  * has no alpha channel.
@@ -33,55 +34,18 @@ export interface JpegExportOptions {
  * @param width   Image width in pixels.
  * @param height  Image height in pixels.
  * @param options JPEG-specific compression options.
- * @returns       `data:image/jpeg;base64,...` string.
+ * @returns       The JPEG file bytes.
  */
-export function exportJpeg(
+export async function exportJpeg(
   pixels: Uint8Array,
   width: number,
   height: number,
   options: JpegExportOptions = { quality: 92, background: "#ffffff" },
-): string {
-  // Draw RGBA pixels onto an intermediate canvas so that semi-transparent
-  // areas are preserved before compositing.
-  const src = document.createElement("canvas");
-  src.width = width;
-  src.height = height;
-  const srcCtx = src.getContext("2d")!;
-  srcCtx.putImageData(
-    new ImageData(
-      new Uint8ClampedArray(pixels.buffer as ArrayBuffer),
-      width,
-      height,
-    ),
-    0,
-    0,
-  );
-
-  // Composite over the chosen background using standard alpha blending.
-  const dst = document.createElement("canvas");
-  dst.width = width;
-  dst.height = height;
-  const dstCtx = dst.getContext("2d")!;
-  dstCtx.fillStyle = options.background;
-  dstCtx.fillRect(0, 0, width, height);
-  dstCtx.drawImage(src, 0, 0);
-
+): Promise<Uint8Array> {
   const quality = Math.max(0, Math.min(100, options.quality)) / 100;
-  const dataUrl = dst.toDataURL("image/jpeg", quality);
-  if (!options.iccProfile) return dataUrl;
-
-  // Inject APP2 ICC profile segments into the browser-encoded JPEG.
-  const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
-  const bin = atob(base64);
-  const raw = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
-  const withProfile = embedIccInJpeg(raw, options.iccProfile);
-  let str = "";
-  const CHUNK = 65536;
-  for (let i = 0; i < withProfile.length; i += CHUNK) {
-    str += String.fromCharCode(
-      ...withProfile.subarray(i, Math.min(i + CHUNK, withProfile.length)),
-    );
-  }
-  return `data:image/jpeg;base64,${btoa(str)}`;
+  const jpeg = await encodeWithCanvas(pixels, width, height, "image/jpeg", {
+    quality,
+    background: options.background,
+  });
+  return options.iccProfile ? embedIccInJpeg(jpeg, options.iccProfile) : jpeg;
 }

@@ -1,7 +1,8 @@
 import React, { useCallback, useSyncExternalStore } from "react";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, MutableRefObject } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { TabRecord } from "@/core/store/tabTypes";
+import type { LayerDataBundle } from "@/core/store/layerPayload";
 import type { UseAdjustmentsReturn } from "@/core/services/useAdjustments";
 import type { UseColorModeReturn } from "@/core/services/useColorMode";
 import type { Tool, PixelFormat, RGBAColor } from "@/types";
@@ -95,8 +96,8 @@ export interface MainWindowProps {
   tabInfos: TabInfo[];
   activeTabId: string;
   canvasHandleRef: { readonly current: CanvasHandle | null };
-  pendingLayerData: Map<string, string> | null;
-  setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  pendingLayerData: LayerDataBundle | null;
+  releaseMountedLayerData: () => void;
   tabCanvasRef: (id: string) => (h: CanvasHandle | null) => void;
 
   // History
@@ -413,7 +414,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
   const editorFullWindow = useSyncExternalStore(subscribeDock, isEditorFullWindow);
   const handleCanvasReady = useCallback((): void => {
     const p = propsRef.current;
-    p.setPendingLayerData(null);
+    p.releaseMountedLayerData();
     p.captureHistory(p.pendingLayerLabelRef.current ?? "Initial State");
     p.pendingLayerLabelRef.current = null;
     p.canvasHandleRef.current?.fitToWindow();

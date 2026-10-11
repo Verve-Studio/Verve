@@ -182,31 +182,3 @@ export function computeSdfFromRgba(
   for (let i = 0; i < n; i++) alpha[i] = rgba[i * 4 + 3];
   return computeSdf8SSEDT(alpha, width, height, threshold);
 }
-
-// ─── Base64 codec for persistence ────────────────────────────────────────────
-
-export function sdfToBase64(sdf: Float32Array): string {
-  const bytes = new Uint8Array(sdf.buffer, sdf.byteOffset, sdf.byteLength);
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(
-      null,
-      Array.from(bytes.subarray(i, Math.min(i + chunk, bytes.length))),
-    );
-  }
-  return btoa(bin);
-}
-
-export function sdfFromBase64(
-  b64: string,
-  width: number,
-  height: number,
-): Float32Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const out = new Float32Array(width * height);
-  out.set(new Float32Array(bytes.buffer, bytes.byteOffset, width * height));
-  return out;
-}

@@ -74,25 +74,11 @@ function snapToBrushGrid(
 
 // ─── Pixel brush stamp cache ──────────────────────────────────────────────────
 
-/** Cache decoded RGBA bytes so we don't re-decode on every pointer event. */
-const brushPixelCache = new Map<string, Uint8ClampedArray>();
-
+/** The brush's RGBA bytes (a view, no copy). Brushes are validated to hold
+ *  exactly width × height × 4 bytes, so reads never index past the end. */
 function getBrushPixels(brush: PixelBrush): Uint8ClampedArray {
-  if (brushPixelCache.has(brush.id)) return brushPixelCache.get(brush.id)!;
-  let bin = "";
-  try {
-    bin = atob(brush.rgba);
-  } catch {
-    /* malformed payload → fully transparent brush */
-  }
-  // Always exactly width × height × 4 so reads never index past the end.
-  const bytes = new Uint8ClampedArray(
-    Math.max(1, brush.width) * Math.max(1, brush.height) * 4,
-  );
-  const n = Math.min(bin.length, bytes.length);
-  for (let i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
-  brushPixelCache.set(brush.id, bytes);
-  return bytes;
+  const { rgba } = brush;
+  return new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length);
 }
 
 /**
@@ -1303,7 +1289,7 @@ function captureSelectionAsBrush(
 
   const bw = maxX - minX + 1;
   const bh = maxY - minY + 1;
-  const rgba = new Uint8ClampedArray(bw * bh * 4);
+  const rgba = new Uint8Array(bw * bh * 4);
 
   const layer = _layer;
   const layerData = layer.data;
@@ -1354,17 +1340,12 @@ function captureSelectionAsBrush(
     }
   }
 
-  // Encode as base64
-  let bin = "";
-  for (let i = 0; i < rgba.length; i++) bin += String.fromCharCode(rgba[i]);
-  const b64 = btoa(bin);
-
   const brush: PixelBrush = {
     id: crypto.randomUUID(),
     name: `Brush ${Date.now()}`,
     width: bw,
     height: bh,
-    rgba: b64,
+    rgba,
     createdAt: Date.now(),
   };
   dispatch({ type: "ADD_PIXEL_BRUSH", payload: brush });

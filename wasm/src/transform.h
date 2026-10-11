@@ -18,6 +18,15 @@ void transform_affine(
     int interp
 );
 
+/** `transform_affine` for scene-linear float RGBA (rgba32f): values > 1 are
+ *  kept; negatives and alpha outside [0, 1] are clamped. */
+void transform_affine_f32(
+    const float* src, int srcW, int srcH,
+    float* dst, int dstW, int dstH,
+    const float* invMatrix,
+    int interp
+);
+
 /**
  * Perspective transform with inverse-mapping via 3×3 homography.
  *
@@ -32,6 +41,14 @@ void transform_affine(
 void transform_perspective(
     const uint8_t* src, int srcW, int srcH,
     uint8_t* dst, int dstW, int dstH,
+    const float* invH,
+    int interp
+);
+
+/** `transform_perspective` for float RGBA (see `transform_affine_f32`). */
+void transform_perspective_f32(
+    const float* src, int srcW, int srcH,
+    float* dst, int dstW, int dstH,
     const float* invH,
     int interp
 );

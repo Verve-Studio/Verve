@@ -417,16 +417,11 @@ export function PrintPreviewDialog({
       // profile, or if lcms2 is missing).
       const rgbaForPrint =
         useCms && convertedRgba ? convertedRgba : srcRgba;
-      const pngDataUrl = await exportPng(
-        rgbaForPrint,
-        documentWidth,
-        documentHeight,
-      );
-      const pngBase64 = pngDataUrl.slice("data:image/png;base64,".length);
+      const png = await exportPng(rgbaForPrint, documentWidth, documentHeight);
 
       const result = await window.api.print({
         deviceName,
-        pngBase64,
+        png,
         pageSize,
         landscape,
         margins: {

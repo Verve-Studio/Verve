@@ -1,6 +1,7 @@
 import type { TiledLayerSnapshot } from "@/core/store/tiledSnapshot";
 import {
   materializeLayerPixels,
+  materializeSnapshot,
   snapshotFull,
   snapshotIncremental,
 } from "@/core/store/tiledSnapshot";
@@ -8,9 +9,9 @@ import type { AppAction } from "@/core/store/AppContext";
 import type { ClearHistoryOptions } from "@/core/store/historyStore";
 
 import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+  createLayerDataBundle,
+  type LayerDataBundle,
+} from "@/core/store/layerPayload";
 import { preferencesStore } from "@/core/store/preferencesStore";
 import type { TabRecord } from "@/core/store/tabTypes";
 import type { AppState, RGBAColor } from "@/types";
@@ -28,7 +29,7 @@ interface UseHistoryOptions {
   activeTabIdRef: MutableRefObject<string>;
   setTabsRef: MutableRefObject<Dispatch<React.SetStateAction<TabRecord[]>>>;
   setPendingLayerData: Dispatch<
-    React.SetStateAction<Map<string, string> | null>
+    React.SetStateAction<LayerDataBundle | null>
   >;
   /** state.layers — dependency for the auto-capture-on-layer-change effect. */
   layers: AppState["layers"];
@@ -206,38 +207,27 @@ export function useHistory({
         entry.canvasHeight !== currentH ||
         formatChanged
       ) {
-        // Hand the history buffers to the remounting canvas through the
-        // transfer stores (the init path copies them out, so sharing the
-        // history's buffers is safe). This used to PNG-encode every rgba8
-        // layer and mask through a 2D canvas: slow on big documents, and
-        // lossy, because the canvas premultiplies alpha.
-        const encoded = new Map<string, string>();
-        const refPrefix = `${activeTabIdRef.current}:history:`;
-        for (const [id, pixels] of materializeLayerPixels(entry.layerPixels)) {
-          const geo = entry.layerGeometry?.get(id);
-          const lw = geo?.layerWidth ?? entry.canvasWidth;
-          const lh = geo?.layerHeight ?? entry.canvasHeight;
-          const key = refPrefix + id;
-          if ((pixels as unknown) instanceof Float32Array) {
-            f32TransferStore.set(key, pixels as unknown as Float32Array);
-            encoded.set(id, `data:raw/f32-ref;id=${key}`);
-          } else if (pixels.length === lw * lh) {
-            // indexed8 — 1 byte/pixel
-            u8TransferStore.set(key, pixels as Uint8Array);
-            encoded.set(id, `data:raw/indexed8-ref;id=${key}`);
-          } else {
-            u8TransferStore.set(key, pixels as Uint8Array);
-            encoded.set(id, `data:raw/rgba8-ref;id=${key}`);
-          }
-          if (geo) encoded.set(`${id}:geo`, JSON.stringify(geo));
+        // Hand the history buffers straight to the remounting canvas (the
+        // init path copies them out, so sharing the history's buffers is
+        // safe). Each entry records its own format: a jump across a colour-
+        // mode conversion restores the pre-conversion format.
+        const pending = createLayerDataBundle();
+        for (const [id, snap] of entry.layerPixels) {
+          pending.layers.set(id, {
+            format: snap.float
+              ? "rgba32f"
+              : snap.channels === 1
+                ? "indexed8"
+                : "rgba8",
+            data: materializeSnapshot(snap),
+            geo: entry.layerGeometry?.get(id),
+          });
         }
         for (const [layerId, maskPixels] of entry.adjustmentMasks) {
-          const key = `${refPrefix}${layerId}:mask`;
-          u8TransferStore.set(key, maskPixels);
-          encoded.set(`${layerId}:adjustment-mask`, `data:raw/rgba8-ref;id=${key}`);
+          pending.adjustmentMasks.set(layerId, maskPixels);
         }
         suppressReadyCaptureRef.current = true;
-        setPendingLayerData(encoded);
+        setPendingLayerData(pending);
         const jumpTabId = activeTabIdRef.current;
         setTabsRef.current((prev) =>
           prev.map((t) =>

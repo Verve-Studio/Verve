@@ -1,12 +1,11 @@
-import { isValidPixelBrush } from "@/core/store/pixelBrushStore";
 import type { AppShellState } from "@/core/store/AppContext";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import {
-  u8TransferStore,
-  f32TransferStore,
-} from "@/core/store/layerDataTransfer";
+  createLayerDataBundle,
+  type LayerDataBundle,
+} from "@/core/store/layerPayload";
 import { decodeExrLayers } from "@/wasm";
 import {
   IMAGE_EXTENSIONS,
@@ -19,7 +18,6 @@ import type {
   LayerState,
   BackgroundFill,
   SwatchGroup,
-  PixelBrush,
   PixelFormat,
   ToneMappingOperator,
 } from "@/types";
@@ -37,12 +35,21 @@ import { parseProfileColorSpace } from "@/core/cms/iccProfile";
 import { notificationStore } from "@/core/store/notificationStore";
 import { statusMessageStore } from "@/core/store/statusMessageStore";
 import { preferencesStore } from "@/core/store/preferencesStore";
+import { brushStore } from "@/core/store/brushStore";
 import {
   VerveBlobWriter,
   decodeVerveContainer,
-  isBlobRef,
   isVerveContainer,
 } from "@/core/io/verveContainer";
+import {
+  VERVE_DOC_VERSION,
+  readVervePayloads,
+  serializeBrushes,
+  serializeLayer,
+  serializeLayerPixels,
+  serializePixelBrushes,
+  type SavedLayerPayloads,
+} from "@/core/io/verveDocument";
 
 // ─── Linked-layer path helpers ────────────────────────────────────────────────
 // Renderer-side path arithmetic for the linked-layer feature. The renderer
@@ -121,10 +128,10 @@ interface UseFileOpsOptions {
   activeTabId: string;
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   setActiveTabId: Dispatch<SetStateAction<string>>;
-  setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
   activeTabIdRef: { readonly current: string };
   captureActiveSnapshot: () => TabSnapshot;
-  serializeActiveTabPixels: () => Map<string, string> | null;
+  serializeActiveTabPixels: () => LayerDataBundle | null;
   handleSwitchTab: (toId: string) => void;
   dispatch: Dispatch<AppAction>;
   onRecentFilesUpdated?: (files: string[]) => void;
@@ -165,16 +172,6 @@ export interface UseFileOpsReturn {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Encode a Uint8Array as base64 using chunked approach to avoid stack overflow. */
-function uint8ToBase64(arr: Uint8Array): string {
-  let str = "";
-  const CHUNK = 65536;
-  for (let i = 0; i < arr.length; i += CHUNK) {
-    str += String.fromCharCode(...arr.subarray(i, i + CHUNK));
-  }
-  return btoa(str);
-}
 
 function isValidSwatchArray(
   val: unknown,
@@ -400,7 +397,7 @@ export function useFileOps({
         }
         const newId = makeTabId();
       const newScope = createDocumentScope();
-        const layerData = new Map<string, string>();
+        const layerData = createLayerDataBundle();
         const layers: LayerState[] = [];
         // Recursively flatten the PSD tree into Verve's flat layer array.
         // Groups become GroupLayerState entries with childIds that mirror
@@ -448,18 +445,16 @@ export function useFileOps({
               continue;
             }
             const psdLayer = node;
-            const storeKey = `${newId}:${psdLayer.id}`;
-            u8TransferStore.set(storeKey, psdLayer.pixels);
-            layerData.set(psdLayer.id, `data:raw/rgba8-ref;id=${storeKey}`);
-            layerData.set(
-              `${psdLayer.id}:geo`,
-              JSON.stringify({
+            layerData.layers.set(psdLayer.id, {
+              format: "rgba8",
+              data: psdLayer.pixels,
+              geo: {
                 layerWidth: psdLayer.layerWidth,
                 layerHeight: psdLayer.layerHeight,
                 offsetX: psdLayer.offsetX,
                 offsetY: psdLayer.offsetY,
-              }),
-            );
+              },
+            });
             layers.push({
               id: psdLayer.id,
               name: psdLayer.name,
@@ -483,21 +478,16 @@ export function useFileOps({
                 rgba[j + 2] = v;
                 rgba[j + 3] = 255;
               }
-              const maskStoreKey = `${newId}:${maskId}`;
-              u8TransferStore.set(maskStoreKey, rgba);
-              layerData.set(
-                maskId,
-                `data:raw/rgba8-ref;id=${maskStoreKey}`,
-              );
-              layerData.set(
-                `${maskId}:geo`,
-                JSON.stringify({
+              layerData.layers.set(maskId, {
+                format: "rgba8",
+                data: rgba,
+                geo: {
                   layerWidth: m.width,
                   layerHeight: m.height,
                   offsetX: m.offsetX,
                   offsetY: m.offsetY,
-                }),
-              );
+                },
+              });
               layers.push({
                 id: maskId,
                 name: "Mask",
@@ -576,7 +566,7 @@ export function useFileOps({
         if (exr.layers.length > 1) {
           const newId = makeTabId();
       const newScope = createDocumentScope();
-          const layerData = new Map<string, string>();
+          const layerData = createLayerDataBundle();
           const layers: LayerState[] = [];
           // Track names already used so we can disambiguate duplicates.
           const seenNames = new Map<string, number>();
@@ -586,18 +576,16 @@ export function useFileOps({
             const n = seenNames.get(name) ?? 0;
             if (n > 0) name = `${name} (${n + 1})`;
             seenNames.set(name, n + 1);
-            const storeKey = `${newId}:${layerId}`;
-            f32TransferStore.set(storeKey, L.pixels);
-            layerData.set(layerId, `data:raw/f32-ref;id=${storeKey}`);
-            layerData.set(
-              `${layerId}:geo`,
-              JSON.stringify({
+            layerData.layers.set(layerId, {
+              format: "rgba32f",
+              data: L.pixels,
+              geo: {
                 layerWidth: L.width,
                 layerHeight: L.height,
                 offsetX: L.offsetX,
                 offsetY: L.offsetY,
-              }),
-            );
+              },
+            });
             layers.push({
               id: layerId,
               name,
@@ -717,17 +705,13 @@ export function useFileOps({
         }
 
         if (loaded.isHdr) {
-          // HDR file — create a rgba32f tab, store float pixels via f32TransferStore
+          // HDR file — create a rgba32f tab with the float pixels.
           const layerId = "layer-0";
-          const f32Data = importPixels as Float32Array;
-          // Hand the floats to layer init through the transfer store (like the
-          // multi-layer EXR path) — a base64 round trip of an 8K HDR image is
-          // ~750 MB of string and exceeds V8's maximum string length.
-          const layerDataKey = `hdr-import:${Date.now()}-${Math.random().toString(36).slice(2)}:${layerId}`;
-          f32TransferStore.set(layerDataKey, f32Data);
-          const layerData = new Map([
-            [layerId, `data:raw/f32-ref;id=${layerDataKey}`],
-          ]);
+          const layerData = createLayerDataBundle();
+          layerData.layers.set(layerId, {
+            format: "rgba32f",
+            data: importPixels as Float32Array,
+          });
           const layers: LayerState[] = [
             {
               id: layerId,
@@ -793,7 +777,6 @@ export function useFileOps({
           });
           const updatedRecent = await window.api.addRecentFile(path);
           onRecentFilesUpdated?.(updatedRecent);
-          void layerDataKey; // used in savedLayerData map above
           return;
         }
 
@@ -801,11 +784,8 @@ export function useFileOps({
         const layerId = "layer-0";
         const newId = makeTabId();
       const newScope = createDocumentScope();
-        const storeKey = `${newId}:${layerId}`;
-        u8TransferStore.set(storeKey, data);
-        const layerData = new Map([
-          [layerId, `data:raw/rgba8-ref;id=${storeKey}`],
-        ]);
+        const layerData = createLayerDataBundle();
+        layerData.layers.set(layerId, { format: "rgba8", data });
         const layers: LayerState[] = [
           {
             id: layerId,
@@ -895,24 +875,15 @@ export function useFileOps({
           backgroundFill?: BackgroundFill;
         };
         activeLayerId: string | null;
-        layers: Array<
-          LayerState & {
-            layerDataRGBA8?: string | null;
-            layerDataF32?: string | null;
-            layerDataIndexed?: string | null;
-            layerGeo?: {
-              layerWidth: number;
-              layerHeight: number;
-              offsetX: number;
-              offsetY: number;
-            } | null;
-            adjustmentMaskPng?: string | null;
-          }
-        >;
+        layers: Array<LayerState & SavedLayerPayloads>;
         swatches?: unknown;
         swatchGroups?: unknown;
         pixelBrushes?: unknown;
+        brushes?: unknown;
+        activeBrushId?: unknown;
         spritesheet?: unknown;
+        iccProfile?: string | null;
+        /** Version ≤ 6. */
         iccProfileBase64?: string | null;
       };
 
@@ -939,49 +910,17 @@ export function useFileOps({
       }
 
       const docDir = directoryOf(path);
-      const layerData = new Map<string, string>();
-      // Binary-container blobs are handed to the layer-init path through the
-      // in-process transfer stores (no base64 round trip).
-      const loadKey = `verve-load:${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const blobBytes = (ref: string): Uint8Array | null =>
-        container && isBlobRef(ref) ? container.blob(ref) : null;
-      const layers: LayerState[] = doc.layers.map(
-        ({
-          layerDataRGBA8,
-          layerDataF32,
-          layerDataIndexed,
-          layerGeo,
-          adjustmentMaskPng,
-          ...meta
-        }) => {
-          if (layerDataRGBA8) layerData.set(meta.id, layerDataRGBA8);
-          if (layerDataF32) {
-            const bytes = blobBytes(layerDataF32);
-            if (bytes) {
-              const key = `${loadKey}:${meta.id}`;
-              f32TransferStore.set(key, new Float32Array(bytes.buffer));
-              layerData.set(meta.id, `data:raw/f32-ref;id=${key}`);
-            } else {
-              layerData.set(meta.id, `data:raw/f32;base64,${layerDataF32}`);
-            }
-          }
-          if (layerDataIndexed) {
-            const bytes = blobBytes(layerDataIndexed);
-            if (bytes) {
-              const key = `${loadKey}:${meta.id}`;
-              u8TransferStore.set(key, bytes);
-              layerData.set(meta.id, `data:raw/indexed8-ref;id=${key}`);
-            } else {
-              layerData.set(
-                meta.id,
-                `data:raw/indexed8;base64,${layerDataIndexed}`,
-              );
-            }
-          }
-          if (layerGeo)
-            layerData.set(`${meta.id}:geo`, JSON.stringify(layerGeo));
-          if (adjustmentMaskPng)
-            layerData.set(`${meta.id}:adjustment-mask`, adjustmentMaskPng);
+      // Resolve every binary payload (blobs, or base64 / PNG in older files)
+      // to typed arrays before the tab is created.
+      const payloads = await readVervePayloads(
+        doc,
+        container ? container.blob : null,
+        doc.canvas.width,
+        doc.canvas.height,
+      );
+      const layerData = payloads.data;
+      const layers: LayerState[] = payloads.layers.map(
+        (meta) => {
           // For linked layers, prefer the relative path (resolved against
           // the document we just opened) over the stale absolute path. The
           // init hook just reads `source.absolutePath`, so re-stamp it here.
@@ -1026,10 +965,19 @@ export function useFileOps({
         }
         docSwatchGroups = doc.swatchGroups as SwatchGroup[];
       }
-      let docPixelBrushes: PixelBrush[] = [];
-      if (doc.version >= 4 && Array.isArray(doc.pixelBrushes)) {
-        docPixelBrushes = doc.pixelBrushes as PixelBrush[];
-      }
+      const docPixelBrushes = doc.version >= 4 ? payloads.pixelBrushes : [];
+      const docBrushes = payloads.brushes;
+      // The saved active brush, if it still exists (a document brush or one
+      // in the user library); else keep the current user-library brush.
+      const userBrushIds = new Set(brushStore.getUserBrushes().map((b) => b.id));
+      const brushExists = (id: unknown): id is string =>
+        typeof id === "string" &&
+        (userBrushIds.has(id) || docBrushes.some((b) => b.id === id));
+      const docActiveBrushId = brushExists(doc.activeBrushId)
+        ? doc.activeBrushId
+        : state.activeBrushId && userBrushIds.has(state.activeBrushId)
+          ? state.activeBrushId
+          : (brushStore.getUserBrushes()[0]?.id ?? null);
       let docPixelFormat: PixelFormat = "rgba8";
       if (doc.version >= 5) {
         const fmt = doc.pixelFormat;
@@ -1050,17 +998,7 @@ export function useFileOps({
       ) {
         docSpritesheet = doc.spritesheet as import("@/types").SpritesheetState;
       }
-      let docIccProfile: Uint8Array | undefined;
-      if (typeof doc.iccProfileBase64 === "string" && doc.iccProfileBase64) {
-        try {
-          const bin = atob(doc.iccProfileBase64);
-          const out = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-          docIccProfile = out;
-        } catch {
-          docIccProfile = undefined;
-        }
-      }
+      const docIccProfile = payloads.iccProfile;
       const newSnapshot: TabSnapshot = {
         canvasWidth: doc.canvas.width,
         canvasHeight: doc.canvas.height,
@@ -1071,6 +1009,8 @@ export function useFileOps({
         swatches: docSwatches,
         swatchGroups: docSwatchGroups,
         pixelBrushes: docPixelBrushes,
+        brushes: docBrushes,
+        activeBrushId: docActiveBrushId,
         pixelFormat: docPixelFormat,
         spritesheet: docSpritesheet,
         iccProfile: docIccProfile,
@@ -1114,10 +1054,9 @@ export function useFileOps({
           iccProfile: docIccProfile,
         },
       });
-      dispatch({
-        type: "SET_PIXEL_BRUSHES",
-        payload: docPixelBrushes.filter(isValidPixelBrush),
-      });
+      dispatch({ type: "SET_PIXEL_BRUSHES", payload: docPixelBrushes });
+      dispatch({ type: "SET_BRUSHES", payload: docBrushes });
+      dispatch({ type: "SET_ACTIVE_BRUSH", payload: docActiveBrushId });
       if (docSpritesheet) {
         dispatch({ type: "SET_SPRITESHEET", payload: docSpritesheet });
       }
@@ -1186,6 +1125,63 @@ export function useFileOps({
     [openFromPath],
   );
 
+  /** Encode the active document as a `.verve` container. Every binary
+   *  payload goes to a blob: layer pixels in their native format with
+   *  geometry, adjustment masks, frame content, pixel brushes, ICC profile. */
+  const encodeDocument = useCallback(
+    (path: string): Promise<Uint8Array> => {
+      const handle = canvasHandleRef.current;
+      if (!handle) throw new Error("The canvas isn't ready yet.");
+      const blobs = new VerveBlobWriter();
+      const docDir = directoryOf(path);
+      const doc = {
+        version: VERVE_DOC_VERSION,
+        pixelFormat: state.pixelFormat,
+        canvas: {
+          width: state.canvas.width,
+          height: state.canvas.height,
+          backgroundFill: state.canvas.backgroundFill,
+        },
+        activeLayerId: state.activeLayerId,
+        layers: state.layers.map((l) => {
+          // Linked layers persist only their `source` metadata; pixels are
+          // re-read from the source file on next open. Their
+          // `source.relativePath` is re-stamped against the document being
+          // saved so the link survives moving both files together.
+          if ("type" in l && l.type === "linked") {
+            return {
+              ...l,
+              source: {
+                ...l.source,
+                relativePath: relativePathFrom(docDir, l.source.absolutePath),
+              },
+            };
+          }
+          if ("type" in l && l.type === "adjustment") {
+            const mask = handle.exportAdjustmentMask(l.id);
+            return { ...l, adjustmentMask: mask ? blobs.add(mask) : null };
+          }
+          if ("type" in l && l.type === "group") return l;
+          // Pixel layers, and text / shape / path / frame / mask layers
+          // (stored rasterized).
+          return {
+            ...serializeLayer(l, blobs),
+            pixels: serializeLayerPixels(handle.exportLayerData(l.id), blobs),
+          };
+        }),
+        swatches: state.swatches,
+        swatchGroups: state.swatchGroups,
+        pixelBrushes: serializePixelBrushes(state.pixelBrushes, blobs),
+        brushes: serializeBrushes(state.brushes, blobs),
+        activeBrushId: state.activeBrushId,
+        spritesheet: state.spritesheet,
+        iccProfile: state.iccProfile ? blobs.add(state.iccProfile) : null,
+      };
+      return blobs.encode(doc);
+    },
+    [state, canvasHandleRef],
+  );
+
   const handleSaveNow = useCallback(
     async (saveAs = false, targetPath?: string): Promise<void> => {
       const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -1199,122 +1195,7 @@ export function useFileOps({
         );
         if (!path) return;
       }
-
-      const blobs = new VerveBlobWriter();
-      const layerPngs: Record<string, string> = {};
-      const layerF32Data: Record<string, string> = {};
-      const layerIndexedData: Record<string, string> = {};
-      const adjustmentMaskPngs: Record<string, string> = {};
-      const layerGeos: Record<
-        string,
-        {
-          layerWidth: number;
-          layerHeight: number;
-          offsetX: number;
-          offsetY: number;
-        }
-      > = {};
-
-      // Get all layer geometries at once (used for non-rgba8 pixel layers)
-      const allGeos =
-        canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map();
-      for (const [id, geo] of allGeos) {
-        layerGeos[id] = geo;
-      }
-
-      for (const layer of state.layers) {
-        if (!("type" in layer)) {
-          // Pixel layer — use format-specific export
-          if (state.pixelFormat === "rgba8") {
-            const result = canvasHandleRef.current?.exportLayerPng(layer.id);
-            if (result) {
-              layerPngs[layer.id] = result.png;
-              layerGeos[layer.id] = {
-                layerWidth: result.layerWidth,
-                layerHeight: result.layerHeight,
-                offsetX: result.offsetX,
-                offsetY: result.offsetY,
-              };
-            }
-          } else if (state.pixelFormat === "rgba32f") {
-            const f32 = canvasHandleRef.current?.exportLayerF32(layer.id);
-            if (f32) layerF32Data[layer.id] = blobs.add(f32);
-          } else {
-            const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id);
-            if (idx) layerIndexedData[layer.id] = blobs.add(idx);
-          }
-        } else if (
-          layer.type !== "adjustment" &&
-          layer.type !== "group" &&
-          layer.type !== "linked"
-        ) {
-          // Text, shape, mask layers — always serialized as PNG (they are always rgba8 internally)
-          const result = canvasHandleRef.current?.exportLayerPng(layer.id);
-          if (result) {
-            layerPngs[layer.id] = result.png;
-            layerGeos[layer.id] = {
-              layerWidth: result.layerWidth,
-              layerHeight: result.layerHeight,
-              offsetX: result.offsetX,
-              offsetY: result.offsetY,
-            };
-          }
-        }
-        // Linked layers persist only their `source` metadata in the doc JSON;
-        // pixels are re-read from the source file on next open.
-        if ("type" in layer && layer.type === "adjustment") {
-          const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(
-            layer.id,
-          );
-          if (maskPng) adjustmentMaskPngs[layer.id] = maskPng;
-        }
-      }
-      const docDir = directoryOf(path);
-      const doc = {
-        version: 6,
-        pixelFormat: state.pixelFormat,
-        canvas: {
-          width: state.canvas.width,
-          height: state.canvas.height,
-          backgroundFill: state.canvas.backgroundFill,
-        },
-        activeLayerId: state.activeLayerId,
-        layers: state.layers.map((l) => {
-          // Linked layers re-stamp their `source.relativePath` against the
-          // document being saved so the link survives if the user later moves
-          // both files together.
-          if ("type" in l && l.type === "linked") {
-            return {
-              ...l,
-              source: {
-                ...l.source,
-                relativePath: relativePathFrom(docDir, l.source.absolutePath),
-              },
-              layerDataRGBA8: null,
-              layerDataF32: null,
-              layerDataIndexed: null,
-              layerGeo: null,
-              adjustmentMaskPng: null,
-            };
-          }
-          return {
-            ...l,
-            layerDataRGBA8: layerPngs[l.id] ?? null,
-            layerDataF32: layerF32Data[l.id] ?? null,
-            layerDataIndexed: layerIndexedData[l.id] ?? null,
-            layerGeo: layerGeos[l.id] ?? null,
-            adjustmentMaskPng: adjustmentMaskPngs[l.id] ?? null,
-          };
-        }),
-        swatches: state.swatches,
-        swatchGroups: state.swatchGroups,
-        pixelBrushes: state.pixelBrushes,
-        spritesheet: state.spritesheet,
-        iccProfileBase64: state.iccProfile
-          ? uint8ToBase64(state.iccProfile)
-          : null,
-      };
-      await window.api.saveverveFile(path, blobs.encode(doc));
+      await window.api.saveverveFile(path, await encodeDocument(path));
       activeScope().history.markSaved();
       const savedPath = path;
       const title = fileTitle(savedPath);
@@ -1327,7 +1208,7 @@ export function useFileOps({
       onRecentFilesUpdated?.(updated);
       statusMessageStore.show(`Saved ${title}`);
     },
-    [tabs, activeTabId, state, canvasHandleRef, setTabs, onRecentFilesUpdated],
+    [tabs, activeTabId, encodeDocument, setTabs, onRecentFilesUpdated],
   );
 
   const handleSave = useCallback(
@@ -1348,117 +1229,10 @@ export function useFileOps({
       targetPath ??
       (await window.api.saveverveDialog(activeTab?.filePath ?? undefined));
     if (!path) return;
-
-    const layerPngs2: Record<string, string> = {};
-    const blobs2 = new VerveBlobWriter();
-    const layerF32Data2: Record<string, string> = {};
-    const layerIndexedData2: Record<string, string> = {};
-    const adjustmentMaskPngs2: Record<string, string> = {};
-    const layerGeos2: Record<
-      string,
-      {
-        layerWidth: number;
-        layerHeight: number;
-        offsetX: number;
-        offsetY: number;
-      }
-    > = {};
-
-    const allGeos2 =
-      canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map();
-    for (const [id, geo] of allGeos2) {
-      layerGeos2[id] = geo;
-    }
-
-    for (const layer of state.layers) {
-      if (!("type" in layer)) {
-        if (state.pixelFormat === "rgba8") {
-          const result = canvasHandleRef.current?.exportLayerPng(layer.id);
-          if (result) {
-            layerPngs2[layer.id] = result.png;
-            layerGeos2[layer.id] = {
-              layerWidth: result.layerWidth,
-              layerHeight: result.layerHeight,
-              offsetX: result.offsetX,
-              offsetY: result.offsetY,
-            };
-          }
-        } else if (state.pixelFormat === "rgba32f") {
-          const f32 = canvasHandleRef.current?.exportLayerF32(layer.id);
-          if (f32) layerF32Data2[layer.id] = blobs2.add(f32);
-        } else {
-          const idx = canvasHandleRef.current?.exportLayerIndexed(layer.id);
-          if (idx) layerIndexedData2[layer.id] = blobs2.add(idx);
-        }
-      } else if (
-        layer.type !== "adjustment" &&
-        layer.type !== "group" &&
-        layer.type !== "linked"
-      ) {
-        const result = canvasHandleRef.current?.exportLayerPng(layer.id);
-        if (result) {
-          layerPngs2[layer.id] = result.png;
-          layerGeos2[layer.id] = {
-            layerWidth: result.layerWidth,
-            layerHeight: result.layerHeight,
-            offsetX: result.offsetX,
-            offsetY: result.offsetY,
-          };
-        }
-      }
-      if ("type" in layer && layer.type === "adjustment") {
-        const maskPng = canvasHandleRef.current?.exportAdjustmentMaskPng(
-          layer.id,
-        );
-        if (maskPng) adjustmentMaskPngs2[layer.id] = maskPng;
-      }
-    }
-    const docDir2 = directoryOf(path);
-    const doc2 = {
-      version: 6,
-      pixelFormat: state.pixelFormat,
-      canvas: {
-        width: state.canvas.width,
-        height: state.canvas.height,
-        backgroundFill: state.canvas.backgroundFill,
-      },
-      activeLayerId: state.activeLayerId,
-      layers: state.layers.map((l) => {
-        if ("type" in l && l.type === "linked") {
-          return {
-            ...l,
-            source: {
-              ...l.source,
-              relativePath: relativePathFrom(docDir2, l.source.absolutePath),
-            },
-            layerDataRGBA8: null,
-            layerDataF32: null,
-            layerDataIndexed: null,
-            layerGeo: null,
-            adjustmentMaskPng: null,
-          };
-        }
-        return {
-          ...l,
-          layerDataRGBA8: layerPngs2[l.id] ?? null,
-          layerDataF32: layerF32Data2[l.id] ?? null,
-          layerDataIndexed: layerIndexedData2[l.id] ?? null,
-          layerGeo: layerGeos2[l.id] ?? null,
-          adjustmentMaskPng: adjustmentMaskPngs2[l.id] ?? null,
-        };
-      }),
-      swatches: state.swatches,
-      swatchGroups: state.swatchGroups,
-      pixelBrushes: state.pixelBrushes,
-      spritesheet: state.spritesheet,
-      iccProfileBase64: state.iccProfile
-        ? uint8ToBase64(state.iccProfile)
-        : null,
-    };
-    await window.api.saveverveFile(path, blobs2.encode(doc2));
+    await window.api.saveverveFile(path, await encodeDocument(path));
     // The current tab's filePath is NOT updated — this is a copy.
     statusMessageStore.show(`Saved a copy to ${fileTitle(path)}`);
-  }, [tabs, activeTabId, state, canvasHandleRef]);
+  }, [tabs, activeTabId, encodeDocument]);
 
   const handleSaveACopy = useCallback(async (): Promise<void> => {
     try {

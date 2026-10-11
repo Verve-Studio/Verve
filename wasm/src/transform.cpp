@@ -5,19 +5,28 @@
 namespace {
 
 // ─── Sampling helpers ─────────────────────────────────────────────────────────
+// Templated on the channel type: uint8_t (rgba8, 0–255) or float (rgba32f,
+// scene-linear, values > 1 are valid HDR).
 
 struct RGBA { float r, g, b, a; };
 
-inline RGBA sample_nearest(const uint8_t* src, int srcW, int srcH, float su, float sv) {
-    int u = static_cast<int>(su + 0.5f);
-    int v = static_cast<int>(sv + 0.5f);
-    if (u < 0 || u >= srcW || v < 0 || v >= srcH) return {0.f, 0.f, 0.f, 0.f};
-    const uint8_t* p = src + (static_cast<std::ptrdiff_t>(v) * srcW + u) * 4;
+template <typename T>
+inline RGBA load(const T* src, int srcW, int px, int py) {
+    const T* p = src + (static_cast<std::ptrdiff_t>(py) * srcW + px) * 4;
     return { static_cast<float>(p[0]), static_cast<float>(p[1]),
              static_cast<float>(p[2]), static_cast<float>(p[3]) };
 }
 
-inline RGBA sample_bilinear(const uint8_t* src, int srcW, int srcH, float su, float sv) {
+template <typename T>
+inline RGBA sample_nearest(const T* src, int srcW, int srcH, float su, float sv) {
+    int u = static_cast<int>(su + 0.5f);
+    int v = static_cast<int>(sv + 0.5f);
+    if (u < 0 || u >= srcW || v < 0 || v >= srcH) return {0.f, 0.f, 0.f, 0.f};
+    return load(src, srcW, u, v);
+}
+
+template <typename T>
+inline RGBA sample_bilinear(const T* src, int srcW, int srcH, float su, float sv) {
     float x = su - 0.5f;
     float y = sv - 0.5f;
     int x0 = static_cast<int>(std::floor(x));
@@ -29,9 +38,7 @@ inline RGBA sample_bilinear(const uint8_t* src, int srcW, int srcH, float su, fl
     auto clamp = [&](int px, int py) -> RGBA {
         px = std::max(0, std::min(srcW - 1, px));
         py = std::max(0, std::min(srcH - 1, py));
-        const uint8_t* p = src + (static_cast<std::ptrdiff_t>(py) * srcW + px) * 4;
-        return { static_cast<float>(p[0]), static_cast<float>(p[1]),
-                 static_cast<float>(p[2]), static_cast<float>(p[3]) };
+        return load(src, srcW, px, py);
     };
 
     if (x1 <= 0 || x0 >= srcW || y1 <= 0 || y0 >= srcH) return {0.f, 0.f, 0.f, 0.f};
@@ -55,7 +62,8 @@ inline float cubic_w(float t) {
     return 0.f;
 }
 
-inline RGBA sample_bicubic(const uint8_t* src, int srcW, int srcH, float su, float sv) {
+template <typename T>
+inline RGBA sample_bicubic(const T* src, int srcW, int srcH, float su, float sv) {
     float x = su - 0.5f, y = sv - 0.5f;
     int x0 = static_cast<int>(std::floor(x));
     int y0 = static_cast<int>(std::floor(y));
@@ -69,17 +77,18 @@ inline RGBA sample_bicubic(const uint8_t* src, int srcW, int srcH, float su, flo
             float w = wy * cubic_w(fx - static_cast<float>(dx));
             int px = std::max(0, std::min(srcW - 1, x0 + dx));
             int py = std::max(0, std::min(srcH - 1, y0 + dy));
-            const uint8_t* p = src + (static_cast<std::ptrdiff_t>(py) * srcW + px) * 4;
-            result.r += w * static_cast<float>(p[0]);
-            result.g += w * static_cast<float>(p[1]);
-            result.b += w * static_cast<float>(p[2]);
-            result.a += w * static_cast<float>(p[3]);
+            RGBA c = load(src, srcW, px, py);
+            result.r += w * c.r;
+            result.g += w * c.g;
+            result.b += w * c.b;
+            result.a += w * c.a;
         }
     }
     return result;
 }
 
-inline RGBA sample(const uint8_t* src, int srcW, int srcH, float su, float sv, int interp) {
+template <typename T>
+inline RGBA sample(const T* src, int srcW, int srcH, float su, float sv, int interp) {
     if (su < -0.5f || su >= static_cast<float>(srcW) + 0.5f ||
         sv < -0.5f || sv >= static_cast<float>(srcH) + 0.5f)
         return {0.f, 0.f, 0.f, 0.f};
@@ -96,14 +105,19 @@ inline void write_rgba(uint8_t* dst, int dstW, int x, int y, RGBA c) {
     p[3] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.a)));
 }
 
-} // namespace
+// Floats keep HDR (> 1); only bicubic undershoot below 0 and alpha outside
+// [0, 1] are clamped.
+inline void write_rgba(float* dst, int dstW, int x, int y, RGBA c) {
+    float* p = dst + (static_cast<std::ptrdiff_t>(y) * dstW + x) * 4;
+    p[0] = std::max(0.f, c.r);
+    p[1] = std::max(0.f, c.g);
+    p[2] = std::max(0.f, c.b);
+    p[3] = std::max(0.f, std::min(1.f, c.a));
+}
 
-void transform_affine(
-    const uint8_t* src, int srcW, int srcH,
-    uint8_t* dst, int dstW, int dstH,
-    const float* invMatrix,
-    int interp
-) {
+template <typename T>
+void affine(const T* src, int srcW, int srcH, T* dst, int dstW, int dstH,
+            const float* invMatrix, int interp) {
     const float a = invMatrix[0], b = invMatrix[1], tx = invMatrix[2];
     const float c = invMatrix[3], d = invMatrix[4], ty = invMatrix[5];
 
@@ -117,12 +131,9 @@ void transform_affine(
     }
 }
 
-void transform_perspective(
-    const uint8_t* src, int srcW, int srcH,
-    uint8_t* dst, int dstW, int dstH,
-    const float* invH,
-    int interp
-) {
+template <typename T>
+void perspective(const T* src, int srcW, int srcH, T* dst, int dstW, int dstH,
+                 const float* invH, int interp) {
     for (int y = 0; y < dstH; y++) {
         for (int x = 0; x < dstW; x++) {
             const float fx = static_cast<float>(x);
@@ -131,13 +142,50 @@ void transform_perspective(
             const float v = invH[3]*fx + invH[4]*fy + invH[5];
             const float w = invH[6]*fx + invH[7]*fy + invH[8];
             if (std::abs(w) < 1e-9f) {
-                uint8_t* p = dst + (static_cast<std::ptrdiff_t>(y) * dstW + x) * 4;
-                p[0] = p[1] = p[2] = p[3] = 0;
+                write_rgba(dst, dstW, x, y, {0.f, 0.f, 0.f, 0.f});
                 continue;
             }
             write_rgba(dst, dstW, x, y, sample(src, srcW, srcH, u/w, v/w, interp));
         }
     }
+}
+
+} // namespace
+
+void transform_affine(
+    const uint8_t* src, int srcW, int srcH,
+    uint8_t* dst, int dstW, int dstH,
+    const float* invMatrix,
+    int interp
+) {
+    affine(src, srcW, srcH, dst, dstW, dstH, invMatrix, interp);
+}
+
+void transform_affine_f32(
+    const float* src, int srcW, int srcH,
+    float* dst, int dstW, int dstH,
+    const float* invMatrix,
+    int interp
+) {
+    affine(src, srcW, srcH, dst, dstW, dstH, invMatrix, interp);
+}
+
+void transform_perspective(
+    const uint8_t* src, int srcW, int srcH,
+    uint8_t* dst, int dstW, int dstH,
+    const float* invH,
+    int interp
+) {
+    perspective(src, srcW, srcH, dst, dstW, dstH, invH, interp);
+}
+
+void transform_perspective_f32(
+    const float* src, int srcW, int srcH,
+    float* dst, int dstW, int dstH,
+    const float* invH,
+    int interp
+) {
+    perspective(src, srcW, srcH, dst, dstW, dstH, invH, interp);
 }
 
 // ─── Rotate RGBA ──────────────────────────────────────────────────────────────

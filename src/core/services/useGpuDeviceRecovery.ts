@@ -6,12 +6,13 @@ import {
   onGpuUncapturedError,
 } from "@/graphics/webgpu/device/GpuDevice";
 import { notificationStore } from "@/core/store/notificationStore";
+import type { LayerDataBundle } from "@/core/store/layerPayload";
 
 interface UseGpuDeviceRecoveryOptions {
   activeTabIdRef: { readonly current: string };
-  serializeActiveTabPixels: () => Map<string, string> | null;
+  serializeActiveTabPixels: () => LayerDataBundle | null;
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
-  setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
   suppressReadyCaptureRef: MutableRefObject<boolean>;
 }
 

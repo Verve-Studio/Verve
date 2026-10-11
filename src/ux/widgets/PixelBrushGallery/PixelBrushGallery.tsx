@@ -7,7 +7,7 @@ import styles from "./PixelBrushGallery.module.scss";
 const THUMB_SIZE = 48; // px — gallery cell inner size
 
 /**
- * Decode a brush's raw RGBA bytes (base64) and draw it into a canvas element,
+ * Draw a brush's raw RGBA bytes into a canvas element,
  * scaled to fill THUMB_SIZE while preserving pixel-perfect rendering.
  */
 function drawBrushThumb(canvas: HTMLCanvasElement, brush: PixelBrush): void {
@@ -22,10 +22,12 @@ function drawBrushThumb(canvas: HTMLCanvasElement, brush: PixelBrush): void {
   ctx.clearRect(0, 0, THUMB_SIZE, THUMB_SIZE);
 
   try {
-    const bin = atob(brush.rgba);
-    const bytes = new Uint8ClampedArray(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const imgData = new ImageData(bytes, brush.width, brush.height);
+    const { rgba } = brush;
+    const imgData = new ImageData(
+      new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.length),
+      brush.width,
+      brush.height,
+    );
 
     // Draw at native size first, then scale up
     const tmp = document.createElement("canvas");

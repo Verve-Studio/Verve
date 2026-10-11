@@ -239,19 +239,19 @@ export function useExportOps({
               : flatLayer.data;
 
           const iccProfile = stateRef.current.iccProfile;
-          let dataUrl: string;
+          let encoded: Uint8Array;
           if (settings.format === "png") {
-            dataUrl = await exportPng(fullPixels, w, h, { iccProfile });
+            encoded = await exportPng(fullPixels, w, h, { iccProfile });
           } else if (settings.format === "webp") {
-            dataUrl = exportWebp(fullPixels, w, h, {
+            encoded = await exportWebp(fullPixels, w, h, {
               quality: settings.webpQuality,
             });
           } else if (settings.format === "tga") {
-            dataUrl = exportTga(fullPixels, w, h);
+            encoded = exportTga(fullPixels, w, h);
           } else if (settings.format === "tiff") {
-            dataUrl = exportTiff(fullPixels, w, h, { iccProfile });
+            encoded = exportTiff(fullPixels, w, h, { iccProfile });
           } else {
-            dataUrl = exportJpeg(fullPixels, w, h, {
+            encoded = await exportJpeg(fullPixels, w, h, {
               quality: settings.jpegQuality,
               background: settings.jpegBackground,
               iccProfile,
@@ -259,10 +259,7 @@ export function useExportOps({
           }
           const filename = `${stem}_${sanitiseName(ls.name)}${ext}`;
           const filePath = dir ? `${dir}${sep}${filename}` : filename;
-          await window.api.exportImage(
-            filePath,
-            dataUrl.replace(/^data:[^;]+;base64,/, ""),
-          );
+          await window.api.exportImage(filePath, encoded);
         }
         return;
       }
@@ -907,7 +904,7 @@ export function useExportOps({
             throw new Error(
               "BC6H/RGBA32F DDS export requires a rgba32f document.",
             );
-          const dataUrl = await exportDds({
+          const bytes = await exportDds({
             pixels: flat.data,
             width,
             height,
@@ -915,10 +912,7 @@ export function useExportOps({
             mipLevels: settings.ddsMipLevels,
             inputFormat: "rgba32f",
           });
-          await window.api.exportImage(
-            settings.filePath,
-            dataUrl.replace(/^data:[^;]+;base64,/, ""),
-          );
+          await window.api.exportImage(settings.filePath, bytes);
         } else {
           let ldrData: Uint8Array;
           if (isHdrDoc && flat.data instanceof Float32Array) {
@@ -933,7 +927,7 @@ export function useExportOps({
                 ? clampF32ToUint8(flat.data)
                 : flat.data;
           }
-          const dataUrl = await exportDds({
+          const bytes = await exportDds({
             pixels: ldrData,
             width,
             height,
@@ -942,10 +936,7 @@ export function useExportOps({
             headerMode: DdsHeaderMode.AUTO,
             inputFormat: "rgba8",
           });
-          await window.api.exportImage(
-            settings.filePath,
-            dataUrl.replace(/^data:[^;]+;base64,/, ""),
-          );
+          await window.api.exportImage(settings.filePath, bytes);
         }
         return;
       }
@@ -966,27 +957,24 @@ export function useExportOps({
       }
 
       const iccProfile = stateRef.current.iccProfile;
-      let dataUrl: string;
+      let encoded: Uint8Array;
       if (settings.format === "png")
-        dataUrl = await exportPng(data, width, height, { iccProfile });
+        encoded = await exportPng(data, width, height, { iccProfile });
       else if (settings.format === "webp")
-        dataUrl = exportWebp(data, width, height, {
+        encoded = await exportWebp(data, width, height, {
           quality: settings.webpQuality,
         });
       else if (settings.format === "tga")
-        dataUrl = exportTga(data, width, height);
+        encoded = exportTga(data, width, height);
       else if (settings.format === "tiff")
-        dataUrl = exportTiff(data, width, height, { iccProfile });
+        encoded = exportTiff(data, width, height, { iccProfile });
       else
-        dataUrl = exportJpeg(data, width, height, {
+        encoded = await exportJpeg(data, width, height, {
           quality: settings.jpegQuality,
           background: settings.jpegBackground,
           iccProfile,
         });
-      await window.api.exportImage(
-        settings.filePath,
-        dataUrl.replace(/^data:[^;]+;base64,/, ""),
-      );
+      await window.api.exportImage(settings.filePath, encoded);
     },
     [canvasHandleRef, stateRef],
   );

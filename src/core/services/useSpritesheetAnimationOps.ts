@@ -5,6 +5,7 @@ import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
+import { convertPixelBuffer } from "@/utils/convertPixelBuffer";
 import { computeEffectivePalette, paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import type { ImportSpritesheetFramesResult } from "@/ux/modals/ImportSpritesheetFramesDialog/ImportSpritesheetFramesDialog";
 import type { ExportAnimationFramesSettings } from "@/ux/modals/ExportAnimationFramesDialog/ExportAnimationFramesDialog";
@@ -43,73 +44,83 @@ export function useSpritesheetAnimationOps({
 }: UseSpritesheetAnimationOpsOptions): UseSpritesheetAnimationOpsReturn {
   const handleImportSpritesheetFrames = useCallback(
     (result: ImportSpritesheetFramesResult): void => {
-      const handle = canvasHandleRef.current;
-      if (!handle) return;
-      const s = stateRef.current;
-      const activeLayerId = s.activeLayerId;
-      if (!activeLayerId) {
-        showOperationError(
-          "Could not import frames.",
-          "No active layer to plot frames onto.",
-        );
-        return;
-      }
-      const cw = s.canvas.width;
-      const ch = s.canvas.height;
-      const { frames, frameWidth, frameHeight } = result;
-      const merged =
-        handle.getLayerPixels(activeLayerId) ?? new Uint8Array(cw * ch * 4);
-      const cols = Math.max(1, Math.floor(cw / frameWidth));
-      for (let i = 0; i < frames.length; i++) {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const dx = col * frameWidth;
-        const dy = row * frameHeight;
-        const src = frames[i];
-        for (let y = 0; y < frameHeight; y++) {
-          const cy = dy + y;
-          if (cy < 0 || cy >= ch) continue;
-          for (let x = 0; x < frameWidth; x++) {
-            const cx = dx + x;
-            if (cx < 0 || cx >= cw) continue;
-            const si = (y * frameWidth + x) * 4;
-            const di = (cy * cw + cx) * 4;
-            merged[di] = src[si];
-            merged[di + 1] = src[si + 1];
-            merged[di + 2] = src[si + 2];
-            merged[di + 3] = src[si + 3];
+      void (async (): Promise<void> => {
+        const handle = canvasHandleRef.current;
+        if (!handle) return;
+        const s = stateRef.current;
+        const activeLayerId = s.activeLayerId;
+        if (!activeLayerId) {
+          showOperationError(
+            "Could not import frames.",
+            "No active layer to plot frames onto.",
+          );
+          return;
+        }
+        // Plot into the layer in its own format: the (8-bit) frames are
+        // converted; the layer's existing pixels are never re-encoded.
+        const gpu = handle.getGpuLayer(activeLayerId);
+        const merged = handle.getLayerCanvasData(activeLayerId);
+        if (!gpu || !merged) return;
+        const channels = gpu.format === "indexed8" ? 1 : 4;
+        const cw = s.canvas.width;
+        const ch = s.canvas.height;
+        const { frames, frameWidth, frameHeight } = result;
+        const cols = Math.max(1, Math.floor(cw / frameWidth));
+        for (let i = 0; i < frames.length; i++) {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          const dx = col * frameWidth;
+          const dy = row * frameHeight;
+          const src = await convertPixelBuffer(
+            frames[i],
+            "rgba8",
+            gpu.format,
+            s.swatches,
+          );
+          for (let y = 0; y < frameHeight; y++) {
+            const cy = dy + y;
+            if (cy < 0 || cy >= ch) continue;
+            for (let x = 0; x < frameWidth; x++) {
+              const cx = dx + x;
+              if (cx < 0 || cx >= cw) continue;
+              const si = (y * frameWidth + x) * channels;
+              const di = (cy * cw + cx) * channels;
+              for (let c = 0; c < channels; c++) merged[di + c] = src[si + c];
+            }
           }
         }
-      }
-      handle.writeLayerPixels(activeLayerId, merged);
+        handle.writeLayerCanvasData(activeLayerId, merged);
 
-      dispatch({
-        type: "SET_SPRITESHEET",
-        payload: {
-          enabled: true,
-          cellWidth: frameWidth,
-          cellHeight: frameHeight,
-        },
-      });
-      const newAnimId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      const newFrames = frames.map(() => ({
-        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        duration: 1,
-      }));
-      dispatch({
-        type: "ADD_ANIMATION",
-        payload: {
-          id: newAnimId,
-          name: "Imported Animation",
-          fps: 12,
-          playbackMode: "loop",
-          frames: newFrames,
-        },
-      });
-      dispatch({ type: "SET_SELECTED_ANIMATION", payload: newAnimId });
-      if (newFrames.length > 0) {
-        dispatch({ type: "SET_SELECTED_FRAME", payload: newFrames[0].id });
-      }
+        dispatch({
+          type: "SET_SPRITESHEET",
+          payload: {
+            enabled: true,
+            cellWidth: frameWidth,
+            cellHeight: frameHeight,
+          },
+        });
+        const newAnimId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        const newFrames = frames.map(() => ({
+          id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          duration: 1,
+        }));
+        dispatch({
+          type: "ADD_ANIMATION",
+          payload: {
+            id: newAnimId,
+            name: "Imported Animation",
+            fps: 12,
+            playbackMode: "loop",
+            frames: newFrames,
+          },
+        });
+        dispatch({ type: "SET_SELECTED_ANIMATION", payload: newAnimId });
+        if (newFrames.length > 0) {
+          dispatch({ type: "SET_SELECTED_FRAME", payload: newFrames[0].id });
+        }
+      })().catch((err: unknown) =>
+        showOperationError("Could not import frames.", err),
+      );
     },
     [canvasHandleRef, dispatch, stateRef],
   );
@@ -260,7 +271,7 @@ export function useSpritesheetAnimationOps({
         data: Uint8Array,
         w: number,
         h: number,
-      ): Promise<string> => {
+      ): Promise<Uint8Array> => {
         if (settings.format === "png")
           return exportPng(data, w, h, { iccProfile });
         if (settings.format === "jpeg")
@@ -294,11 +305,10 @@ export function useSpritesheetAnimationOps({
           gifH = h;
           return;
         }
-        const dataUrl = await encode(data, w, h);
+        const encoded = await encode(data, w, h);
         const filename = `${settings.baseName}${pad(settings.startIndex + i, settings.padDigits)}${ext}`;
         const filePath = `${settings.folder}${sep}${filename}`;
-        const base64 = dataUrl.replace(/^data:[^;]+;base64,/, "");
-        await window.api.exportImage(filePath, base64);
+        await window.api.exportImage(filePath, encoded);
       };
 
       try {

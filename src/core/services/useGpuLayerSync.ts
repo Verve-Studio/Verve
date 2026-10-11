@@ -83,7 +83,7 @@ function linkedSig(
 const parametricRasterSig = new WeakMap<GpuLayer, string>();
 
 /** Stable small ids for large payloads (frame content) so the signature
- *  never stringifies megabytes of base64. */
+ *  never stringifies megabytes of pixel bytes. */
 const payloadIds = new WeakMap<object, number>();
 let nextPayloadId = 1;
 function payloadId(obj: object | null | undefined): number {

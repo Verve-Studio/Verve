@@ -77,13 +77,8 @@ class ColorProfileStore {
   }
 
   /** Fetch the raw bytes of a profile (system or user) by id. */
-  async readBytes(id: string): Promise<Uint8Array | null> {
-    const base64 = await window.api.cmsReadProfileBytes(id);
-    if (!base64) return null;
-    const bin = atob(base64);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
+  readBytes(id: string): Promise<Uint8Array | null> {
+    return window.api.cmsReadProfileBytes(id);
   }
 
   subscribe(cb: Listener): () => void {

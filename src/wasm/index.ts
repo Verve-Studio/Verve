@@ -185,6 +185,8 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
   m._pixelops_curves_histogram = wrapPtrFn(m._pixelops_curves_histogram, [0, 3], true);
   m._pixelops_affine_transform = wrapPtrFn(m._pixelops_affine_transform, [0, 3, 6], false);
   m._pixelops_perspective_transform = wrapPtrFn(m._pixelops_perspective_transform, [0, 3, 6], false);
+  m._pixelops_affine_transform_f32 = wrapPtrFn(m._pixelops_affine_transform_f32, [0, 3, 6], false);
+  m._pixelops_perspective_transform_f32 = wrapPtrFn(m._pixelops_perspective_transform_f32, [0, 3, 6], false);
   m._pixelops_rotate_rgba = wrapPtrFn(m._pixelops_rotate_rgba, [0, 3], false);
   m._pixelops_flip_rgba = wrapPtrFn(m._pixelops_flip_rgba, [0, 3], false);
   m._pixelops_rotate_indexed = wrapPtrFn(m._pixelops_rotate_indexed, [0, 3], false);
@@ -487,77 +489,99 @@ export async function computeHistogramRGBA(
   }
 }
 
-/**
- * Affine transform via inverse-mapping.
- * invMatrix: [a, b, tx, c, d, ty] — maps output (x,y) to source (u,v):
- *   u = a*x + b*y + tx
- *   v = c*x + d*y + ty
- * interp: 0=nearest, 1=bilinear, 2=bicubic
- */
-export async function applyAffineTransform(
-  src: Uint8Array,
+type TransformKernel = (
+  srcPtr: number,
+  srcW: number,
+  srcH: number,
+  dstPtr: number,
+  dstW: number,
+  dstH: number,
+  matPtr: number,
+  interp: number,
+) => void;
+
+/** Run an inverse-mapped RGBA resampling kernel on bytes (rgba8) or
+ *  scene-linear floats (rgba32f); the result has the input's type. */
+async function runTransform<T extends Uint8Array | Float32Array>(
+  src: T,
   srcW: number,
   srcH: number,
   dstW: number,
   dstH: number,
-  invMatrix: Float32Array,
+  matrix: Float32Array,
   interp: number,
-): Promise<Uint8Array> {
+  kernel: (m: PixelOpsModule) => { u8: TransformKernel; f32: TransformKernel },
+): Promise<T> {
   const m = await getPixelOps();
-  const matPtr = m._malloc(invMatrix.byteLength);
+  const k = kernel(m);
+  const matPtr = m._malloc(matrix.byteLength);
   try {
-    m.HEAPF32.set(invMatrix, matPtr / 4);
-    return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
-      m._pixelops_affine_transform(
-        srcPtr,
-        srcW,
-        srcH,
-        dstPtr,
-        dstW,
-        dstH,
-        matPtr,
-        interp,
-      ),
-    );
+    m.HEAPF32.set(matrix, matPtr / 4);
+    if (src instanceof Uint8Array) {
+      return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
+        k.u8(srcPtr, srcW, srcH, dstPtr, dstW, dstH, matPtr, interp),
+      ) as T;
+    }
+    const count = dstW * dstH * 4;
+    const srcPtr = m._malloc(src.byteLength);
+    const dstPtr = m._malloc(count * 4);
+    try {
+      m.HEAPF32.set(src, srcPtr / 4);
+      k.f32(srcPtr, srcW, srcH, dstPtr, dstW, dstH, matPtr, interp);
+      // Re-read HEAPF32: memory may have grown.
+      return m.HEAPF32.slice(dstPtr / 4, dstPtr / 4 + count) as T;
+    } finally {
+      m._free(srcPtr);
+      m._free(dstPtr);
+    }
   } finally {
     m._free(matPtr);
   }
 }
 
 /**
- * Perspective transform via inverse 3×3 homography.
+ * Affine transform via inverse-mapping, on RGBA bytes or scene-linear floats
+ * (HDR values are kept).
+ * invMatrix: [a, b, tx, c, d, ty] — maps output (x,y) to source (u,v):
+ *   u = a*x + b*y + tx
+ *   v = c*x + d*y + ty
+ * interp: 0=nearest, 1=bilinear, 2=bicubic
+ */
+export function applyAffineTransform<T extends Uint8Array | Float32Array>(
+  src: T,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+  invMatrix: Float32Array,
+  interp: number,
+): Promise<T> {
+  return runTransform(src, srcW, srcH, dstW, dstH, invMatrix, interp, (m) => ({
+    u8: m._pixelops_affine_transform,
+    f32: m._pixelops_affine_transform_f32,
+  }));
+}
+
+/**
+ * Perspective transform via inverse 3×3 homography, on RGBA bytes or
+ * scene-linear floats (HDR values are kept).
  * invH: 9 elements, row-major — maps output (x,y) to source (u,v) via:
  *   [u, v, w] = invH * [x, y, 1]ᵀ;  srcX = u/w, srcY = v/w
  * interp: 0=nearest, 1=bilinear, 2=bicubic
  */
-export async function applyPerspectiveTransform(
-  src: Uint8Array,
+export function applyPerspectiveTransform<T extends Uint8Array | Float32Array>(
+  src: T,
   srcW: number,
   srcH: number,
   dstW: number,
   dstH: number,
   invH: Float32Array,
   interp: number,
-): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  const matPtr = m._malloc(invH.byteLength);
-  try {
-    m.HEAPF32.set(invH, matPtr / 4);
-    return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
-      m._pixelops_perspective_transform(
-        srcPtr,
-        srcW,
-        srcH,
-        dstPtr,
-        dstW,
-        dstH,
-        matPtr,
-        interp,
-      ),
-    );
-  } finally {
-    m._free(matPtr);
-  }
+): Promise<T> {
+  return runTransform(src, srcW, srcH, dstW, dstH, invH, interp, (m) => ({
+    u8: m._pixelops_perspective_transform,
+    f32: m._pixelops_perspective_transform_f32,
+  }));
 }
 
 /**

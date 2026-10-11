@@ -208,6 +208,7 @@ function AppContent(): React.JSX.Element {
     canvasHandleRef,
     pendingLayerData,
     setPendingLayerData,
+    releaseMountedLayerData,
     tabCanvasRef,
     captureActiveSnapshot,
     serializeActiveTabPixels,
@@ -1137,7 +1138,7 @@ function AppContent(): React.JSX.Element {
         activeTabId={activeTabId}
         canvasHandleRef={canvasHandleRef}
         pendingLayerData={pendingLayerData}
-        setPendingLayerData={setPendingLayerData}
+        releaseMountedLayerData={releaseMountedLayerData}
         tabCanvasRef={tabCanvasRef}
         captureHistory={captureHistory}
         pendingLayerLabelRef={pendingLayerLabelRef}

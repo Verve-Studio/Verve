@@ -17,8 +17,8 @@ function getRasterCtx(w: number, h: number): CanvasRenderingContext2D {
 
 // ─── Decoded-content cache ─────────────────────────────────────────────────────
 // rasterizeFrameToLayer is called on every parameter tweak (drag-resize, etc.).
-// Decoding the base64-RGBA payload + creating an ImageBitmap on every call would
-// thrash. Cache the decoded ImageBitmap keyed by (rgba ref + dimensions).
+// Creating an ImageBitmap from the RGBA payload on every call would thrash.
+// Cache the decoded ImageBitmap keyed by the content object.
 
 interface ContentBitmap {
   bitmap: ImageBitmap;
@@ -34,13 +34,6 @@ const _pendingDecodes = new WeakMap<
   Promise<ContentBitmap>
 >();
 
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
 function decodeContent(
   content: NonNullable<FrameLayerState["content"]>,
 ): Promise<ContentBitmap> {
@@ -48,13 +41,12 @@ function decodeContent(
   if (existing) return existing;
 
   const promise = (async (): Promise<ContentBitmap> => {
-    const bytes = base64ToUint8Array(content.rgba);
-    // Allocate a fresh, non-shared backing buffer so the resulting
-    // Uint8ClampedArray satisfies ImageData's `ArrayBuffer` (not `ArrayBufferLike`)
-    // constructor signature.
-    const clamped = new Uint8ClampedArray(bytes.length);
-    clamped.set(bytes);
-    const imageData = new ImageData(clamped, content.width, content.height);
+    const { rgba } = content;
+    const imageData = new ImageData(
+      new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.length),
+      content.width,
+      content.height,
+    );
     const bitmap = await createImageBitmap(imageData);
     const entry: ContentBitmap = {
       bitmap,

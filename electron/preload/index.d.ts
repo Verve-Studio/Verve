@@ -14,7 +14,7 @@ declare global {
       openverveFile: (path: string) => Promise<Uint8Array>
       saveverveFile: (path: string, data: Uint8Array) => Promise<void>
       exportBrowse: (ext: string) => Promise<string | null>
-      exportImage: (path: string, data: Uint8Array | string) => Promise<void>
+      exportImage: (path: string, data: Uint8Array) => Promise<void>
       readFile: (path: string) => Promise<Uint8Array>
       loadCurvesPresets: () => Promise<CurvesPreset[]>
       saveCurvesPresets: (presets: CurvesPreset[]) => Promise<void>
@@ -25,7 +25,7 @@ declare global {
       cmsListProfiles: () => Promise<
         Array<{ id: string; filename: string; source: 'system' | 'user'; size: number }>
       >
-      cmsReadProfileBytes: (id: string) => Promise<string | null>
+      cmsReadProfileBytes: (id: string) => Promise<Uint8Array | null>
       cmsImportProfileDialog: () => Promise<{
         id: string
         filename: string
@@ -195,7 +195,7 @@ declare global {
       >
       print: (opts: {
         deviceName: string
-        pngBase64: string
+        png: Uint8Array
         pageSize:
           | 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid'
           | { widthMicrons: number; heightMicrons: number }

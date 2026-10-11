@@ -13,6 +13,7 @@ import {
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import { loadImageBytes } from "@/core/io/imageLoader";
+import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -553,15 +554,6 @@ function createFrameHandler(): ToolHandler {
 
 // ─── Image-loading helpers (used by the Place button) ─────────────────────────
 
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let s = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    s += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(s);
-}
-
 function mimeForExtension(ext: string): string {
   switch (ext.toLowerCase()) {
     case "jpg":
@@ -592,22 +584,17 @@ function mimeForExtension(ext: string): string {
 async function loadImageFromBytes(
   data: Uint8Array,
   mime: string,
-): Promise<{ rgba: string; width: number; height: number } | null> {
+): Promise<{ rgba: Uint8Array; width: number; height: number } | null> {
   try {
     const loaded = await loadImageBytes(data, mime);
-    let bytes: Uint8Array;
-    if (loaded.data instanceof Uint8Array) {
-      bytes = loaded.data;
-    } else {
-      // Convert HDR float pixels to clamped 8-bit; frames don't preserve HDR.
-      const f32 = loaded.data;
-      bytes = new Uint8Array(f32.length);
-      for (let i = 0; i < f32.length; i++) {
-        bytes[i] = Math.max(0, Math.min(255, Math.round(f32[i] * 255)));
-      }
-    }
+    // Frames hold sRGB bytes: HDR (scene-linear) pixels are encoded and
+    // clamped; frames don't preserve HDR.
+    const rgba =
+      loaded.data instanceof Uint8Array
+        ? loaded.data
+        : clampF32ToUint8(loaded.data);
     return {
-      rgba: uint8ArrayToBase64(bytes),
+      rgba,
       width: loaded.width,
       height: loaded.height,
     };
@@ -618,7 +605,7 @@ async function loadImageFromBytes(
 }
 
 async function pickImageFromDisk(): Promise<{
-  rgba: string;
+  rgba: Uint8Array;
   width: number;
   height: number;
 } | null> {

@@ -4,21 +4,21 @@ import type { AppState, PixelFormat } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { TabRecord } from "@/core/store/tabTypes";
 import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+  createLayerDataBundle,
+  type LayerDataBundle,
+} from "@/core/store/layerPayload";
 
 interface UseFormatRemountOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
   stateRef: MutableRefObject<AppState>;
   activeTabId: string;
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
-  setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
   captureHistory: (label: string) => void;
 }
 
-/** Captures all layer pixel data + geometry, hands them to the transfer
- *  stores, and bumps `canvasKey` to force a Canvas remount in the new
+/** Copies every pixel layer's (already converted) data + geometry into a
+ *  pending bundle and bumps `canvasKey` to force a Canvas remount in the new
  *  pixel format. Used when switching color modes between rgba8 / rgba32f /
  *  indexed8. */
 export function useFormatRemount({
@@ -30,31 +30,26 @@ export function useFormatRemount({
   captureHistory,
 }: UseFormatRemountOptions): (toFormat: PixelFormat) => void {
   return useCallback(
-    (toFormat: PixelFormat): void => {
+    (_toFormat: PixelFormat): void => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
-      const layerGeo = handle.captureAllLayerGeometry();
-      const encoded = new Map<string, string>();
+      const pending = createLayerDataBundle();
       for (const ls of stateRef.current.layers) {
         if ("type" in ls) continue;
-        const raw = handle.getLayerRawData(ls.id);
-        if (!raw) continue;
-        const geo = layerGeo.get(ls.id);
-        if (geo) encoded.set(`${ls.id}:geo`, JSON.stringify(geo));
-        if (toFormat === "rgba32f") {
-          // Store the typed array directly — avoids ~576 MB of base64/atob
-          // intermediaries for large images.
-          f32TransferStore.set(ls.id, raw as Float32Array);
-          encoded.set(ls.id, `data:raw/f32-ref;id=${ls.id}`);
-        } else if (toFormat === "indexed8") {
-          u8TransferStore.set(ls.id, raw as Uint8Array);
-          encoded.set(ls.id, `data:raw/indexed8-ref;id=${ls.id}`);
-        } else {
-          u8TransferStore.set(ls.id, raw as Uint8Array);
-          encoded.set(ls.id, `data:raw/rgba8-ref;id=${ls.id}`);
-        }
+        const gpu = handle.getGpuLayer(ls.id);
+        if (!gpu) continue;
+        pending.layers.set(ls.id, {
+          format: gpu.format,
+          data: gpu.data.slice(),
+          geo: {
+            layerWidth: gpu.layerWidth,
+            layerHeight: gpu.layerHeight,
+            offsetX: gpu.offsetX,
+            offsetY: gpu.offsetY,
+          },
+        });
       }
-      setPendingLayerData(encoded);
+      setPendingLayerData(pending);
       setTabs((prev) =>
         prev.map((t) =>
           t.id === activeTabId ? { ...t, canvasKey: t.canvasKey + 1 } : t,

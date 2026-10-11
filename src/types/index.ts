@@ -476,10 +476,10 @@ export interface FrameLayerState {
   rotation: number;
   /**
    * Content image, or null for an empty frame.
-   * `rgba` is base64-encoded raw RGBA bytes (length = width × height × 4).
+   * `rgba` is raw sRGB RGBA bytes (length = width × height × 4).
    */
   content: {
-    rgba: string;
+    rgba: Uint8Array;
     width: number;
     height: number;
   } | null;
@@ -785,7 +785,7 @@ export interface CanvasState {
 
 /**
  * A custom pixel-art brush captured from a canvas selection.
- * `rgba` holds the raw RGBA bytes (width × height × 4) encoded as a base64 string.
+ * `rgba` holds the raw sRGB RGBA bytes (width × height × 4).
  * Transparent pixels in the brush mask (a === 0) are skipped when stamping.
  */
 export interface PixelBrush {
@@ -793,8 +793,8 @@ export interface PixelBrush {
   name: string;
   width: number;
   height: number;
-  /** Raw RGBA bytes, width × height × 4, base64-encoded. */
-  rgba: string;
+  /** Raw RGBA bytes, width × height × 4. */
+  rgba: Uint8Array;
   createdAt: number;
 }
 

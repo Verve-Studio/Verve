@@ -166,12 +166,9 @@ export function registerIpcHandlers(): void {
     return readFile(assertReadable(path, [...IMAGE_EXTENSIONS, 'icc', 'icm']))
   })
 
-  // `data` is raw bytes, or base64 for encoders that only produce data URLs
-  // (canvas-encoded PNG / JPEG).
-  ipcMain.handle('file:exportImage', async (_event, path: string, data: Uint8Array | string) => {
+  ipcMain.handle('file:exportImage', async (_event, path: string, data: Uint8Array) => {
     const target = assertWritable(path, EXPORT_EXTENSIONS)
-    const bytes = typeof data === 'string' ? Buffer.from(data, 'base64') : data
-    await writeFileAtomic(target, bytes)
+    await writeFileAtomic(target, data)
   })
 
   ipcMain.handle('presets:loadCurvesPresets', async () => {
@@ -514,7 +511,7 @@ export function registerIpcHandlers(): void {
 
   type PrintOptions = {
     deviceName: string
-    pngBase64: string
+    png: Uint8Array
     /** Page size: standard name or custom microns (1mm = 1000µm). */
     pageSize:
       | 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid'
@@ -587,7 +584,7 @@ export function registerIpcHandlers(): void {
     const tempDir = await mkdtemp(join(app.getPath('temp'), 'verve-print-'))
     const pngPath = join(tempDir, 'page.png')
     const htmlPath = join(tempDir, 'page.html')
-    await writeFile(pngPath, Buffer.from(opts.pngBase64, 'base64'))
+    await writeFile(pngPath, opts.png)
     const html = `<!doctype html><html><head><style>
       @page { size: ${pageCss}; margin: ${marginsCss}; }
       html, body { margin: 0; padding: 0; background: white; }

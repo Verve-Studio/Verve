@@ -109,6 +109,28 @@ void pixelops_perspective_transform(
     transform_perspective(src, srcW, srcH, dst, dstW, dstH, invH, interp);
 }
 
+// ─── Float (rgba32f) variants ────────────────────────────────────────────────
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_affine_transform_f32(
+    const float* src, int srcW, int srcH,
+    float* dst, int dstW, int dstH,
+    const float* invMatrix,
+    int interp
+) {
+    transform_affine_f32(src, srcW, srcH, dst, dstW, dstH, invMatrix, interp);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void pixelops_perspective_transform_f32(
+    const float* src, int srcW, int srcH,
+    float* dst, int dstW, int dstH,
+    const float* invH,
+    int interp
+) {
+    transform_perspective_f32(src, srcW, srcH, dst, dstW, dstH, invH, interp);
+}
+
 // ─── Rotate RGBA ──────────────────────────────────────────────────────────────
 
 EMSCRIPTEN_KEEPALIVE

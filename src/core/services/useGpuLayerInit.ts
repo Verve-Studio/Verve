@@ -3,14 +3,13 @@
  * remounts after a format change). Handles every pixel-data source we
  * support:
  *
- *   - **Open-file path:** `data:raw/{f32,rgba8,indexed8};base64,…` blobs
- *     (synchronous decode via atob) or `…-ref;id=…` pointers into the
- *     in-process transfer stores (`f32TransferStore`, `u8TransferStore`)
- *     that avoid the base64 roundtrip.
- *   - **Legacy / image-import:** a PNG data URL, optionally with a
- *     `geo` blob carrying layer-local dimensions + offset.
- *   - **Adjustment-layer masks:** stored under `{id}:adjustment-mask`
- *     keys; populate `adjustmentMaskMap` not `glLayersRef`.
+ *   - **Pixel payloads** (`LayerDataBundle`): typed arrays in each layer's
+ *     native format plus optional layer-local geometry — from file open,
+ *     tab restore, history jumps, transforms and colour-mode conversion.
+ *     The owner drops the bundle once the canvas is ready
+ *     (`releaseMountedLayerData`), releasing the CPU copy.
+ *   - **Adjustment-layer masks:** `bundle.adjustmentMasks`; populate
+ *     `adjustmentMaskMap` not `glLayersRef`.
  *   - **New document, first pixel layer:** allocate full-canvas in the
  *     document format, apply the background-fill option (white / black /
  *     transparent) with palette mapping in indexed8 mode.
@@ -19,7 +18,7 @@
  *   - **New blank layer:** 128×128 centred (matches the new-layer button
  *     elsewhere).
  *
- * The whole flow is async because PNG decode is async. The
+ * The flow is async because linked-layer sources decode asynchronously. The
  * `hasInitializedRef` guard prevents a re-fire on Strict-Mode double-invoke
  * and on rendererVersion bumps that don't represent a fresh renderer; the
  * `isStale()` closure aborts mid-flight if the renderer has been swapped
@@ -34,10 +33,7 @@ import type {
   GpuLayer,
   WebGPURenderer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
-import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+import type { LayerDataBundle } from "@/core/store/layerPayload";
 import { rasterizeShapeToLayer } from "@/ux/main/Canvas/shapeRasterizer";
 import { rasterizePathToLayer } from "@/ux/main/Canvas/pathRasterizer";
 import {
@@ -46,19 +42,8 @@ import {
   tryGetDecodedLinkedSource,
   tryGetLinkedSourceError,
 } from "@/ux/main/Canvas/linkedLayerRasterizer";
-import { decodePng } from "@/ux/main/Canvas/pngHelpers";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 import { notificationStore } from "@/core/store/notificationStore";
-
-/** Decode base64 (legacy .verve layer payloads). A plain loop — the
- *  previous `Uint8Array.from(str, callback)` ran a callback per byte, which
- *  is very slow over hundreds of MB. */
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 export interface GpuLayerInitParams {
   rendererRef: React.RefObject<WebGPURenderer | null>;
@@ -74,8 +59,9 @@ export interface GpuLayerInitParams {
   initialLayers: AppState["layers"];
   initialPixelFormat: PixelFormat;
   initialBackgroundFill: AppState["canvas"]["backgroundFill"];
-  /** Per-layer base64 PNG data URLs (or transfer-store pointers). */
-  initialLayerData: Map<string, string> | undefined;
+  /** Pixel data to hydrate from. Read-only here: StrictMode re-runs this
+   *  effect, so the bundle must survive the first run. */
+  initialLayerData: LayerDataBundle | undefined;
   /** Render trigger after init completes. */
   doRender: () => void;
   /** Mount-complete callback (called once init finishes for the active
@@ -120,8 +106,8 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
 
         // ── Adjustment-layer masks ──────────────────────────────────────
         if ("type" in ls && ls.type === "adjustment") {
-          const maskData = initialLayerData?.get(`${ls.id}:adjustment-mask`);
-          if (maskData) {
+          const mask = initialLayerData?.adjustmentMasks.get(ls.id);
+          if (mask) {
             const maskLayer = renderer.createLayer(
               `${ls.id}:adjustment-mask`,
               `${ls.name} Mask`,
@@ -130,36 +116,20 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
               0,
               0,
             );
-            if (maskData.startsWith("data:raw/rgba8-ref;id=")) {
-              const u8 = u8TransferStore.take(
-                maskData.slice("data:raw/rgba8-ref;id=".length),
-              );
-              if (u8) maskLayer.data.set(u8);
-              renderer.flushLayer(maskLayer);
-              adjustmentMaskMapRef.current.set(ls.id, maskLayer);
-            } else {
-              try {
-                const rgba = await decodePng(maskData, cw, ch);
-                if (isStale()) return;
-                maskLayer.data.set(rgba);
-                renderer.flushLayer(maskLayer);
-                adjustmentMaskMapRef.current.set(ls.id, maskLayer);
-              } catch (e) {
-                renderer.destroyLayer(maskLayer);
-                console.error("[Canvas] Failed to load adjustment mask PNG:", e);
-              }
-            }
+            maskLayer.data.set(mask);
+            renderer.flushLayer(maskLayer);
+            adjustmentMaskMapRef.current.set(ls.id, maskLayer);
           }
           continue;
         }
 
         let layer;
-        const imageData = initialLayerData?.get(ls.id);
+        const payload = initialLayerData?.layers.get(ls.id);
 
         // Pixel layer with no fresh data — preserve any pre-existing
         // GpuLayer (e.g. when the canvas remounts post-resize and the
         // layer map survived from before).
-        if (!("type" in ls) && !imageData) {
+        if (!("type" in ls) && !payload) {
           const prev = glLayersRef.current.get(ls.id);
           if (prev) {
             layer = renderer.createLayer(
@@ -169,163 +139,34 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
               prev.layerHeight,
               prev.offsetX,
               prev.offsetY,
+              prev.format,
             );
             layer.data.set(prev.data);
           }
         }
 
-        if (imageData) {
-          const geoKey = `${ls.id}:geo`;
-          const geoJson = initialLayerData?.get(geoKey);
-
-          if (imageData.startsWith("data:raw/f32-ref;id=")) {
-            // rgba32f layer via in-process transfer store (no base64).
-            const refId = imageData.slice("data:raw/f32-ref;id=".length);
-            const f32 = f32TransferStore.take(refId);
-            const geo = geoJson
-              ? (JSON.parse(geoJson) as {
-                  layerWidth: number;
-                  layerHeight: number;
-                  offsetX: number;
-                  offsetY: number;
-                })
-              : { layerWidth: cw, layerHeight: ch, offsetX: 0, offsetY: 0 };
-            layer = renderer.createLayer(
-              ls.id,
-              ls.name,
-              geo.layerWidth,
-              geo.layerHeight,
-              geo.offsetX,
-              geo.offsetY,
-              "rgba32f",
-            );
-            if (f32) (layer.data as Float32Array).set(f32);
-          } else if (imageData.startsWith("data:raw/rgba8-ref;id=")) {
-            // rgba8 layer via in-process transfer store (no PNG roundtrip).
-            const refId = imageData.slice("data:raw/rgba8-ref;id=".length);
-            const u8 = u8TransferStore.take(refId);
-            const geo = geoJson
-              ? (JSON.parse(geoJson) as {
-                  layerWidth: number;
-                  layerHeight: number;
-                  offsetX: number;
-                  offsetY: number;
-                })
-              : { layerWidth: cw, layerHeight: ch, offsetX: 0, offsetY: 0 };
-            layer = renderer.createLayer(
-              ls.id,
-              ls.name,
-              geo.layerWidth,
-              geo.layerHeight,
-              geo.offsetX,
-              geo.offsetY,
-              "rgba8",
-            );
-            if (u8) layer.data.set(u8);
-          } else if (imageData.startsWith("data:raw/f32;base64,")) {
-            // rgba32f layer: base64-encoded raw Float32Array bytes.
-            const b64 = imageData.slice("data:raw/f32;base64,".length);
-            const bytes = base64ToBytes(b64);
-            const f32 = new Float32Array(bytes.buffer);
-            const geo = geoJson
-              ? (JSON.parse(geoJson) as {
-                  layerWidth: number;
-                  layerHeight: number;
-                  offsetX: number;
-                  offsetY: number;
-                })
-              : { layerWidth: cw, layerHeight: ch, offsetX: 0, offsetY: 0 };
-            layer = renderer.createLayer(
-              ls.id,
-              ls.name,
-              geo.layerWidth,
-              geo.layerHeight,
-              geo.offsetX,
-              geo.offsetY,
-              "rgba32f",
-            );
-            (layer.data as Float32Array).set(f32);
-          } else if (imageData.startsWith("data:raw/indexed8-ref;id=")) {
-            // indexed8 layer via in-process transfer store (no base64).
-            const refId = imageData.slice("data:raw/indexed8-ref;id=".length);
-            const idx = u8TransferStore.take(refId);
-            const geo = geoJson
-              ? (JSON.parse(geoJson) as {
-                  layerWidth: number;
-                  layerHeight: number;
-                  offsetX: number;
-                  offsetY: number;
-                })
-              : { layerWidth: cw, layerHeight: ch, offsetX: 0, offsetY: 0 };
-            layer = renderer.createLayer(
-              ls.id,
-              ls.name,
-              geo.layerWidth,
-              geo.layerHeight,
-              geo.offsetX,
-              geo.offsetY,
-              "indexed8",
-            );
-            if (idx) (layer.data as Uint8Array).set(idx);
-          } else if (imageData.startsWith("data:raw/indexed8;base64,")) {
-            // indexed8 layer: base64-encoded raw palette-index bytes.
-            const b64 = imageData.slice("data:raw/indexed8;base64,".length);
-            const bytes = base64ToBytes(b64);
-            const geo = geoJson
-              ? (JSON.parse(geoJson) as {
-                  layerWidth: number;
-                  layerHeight: number;
-                  offsetX: number;
-                  offsetY: number;
-                })
-              : { layerWidth: cw, layerHeight: ch, offsetX: 0, offsetY: 0 };
-            layer = renderer.createLayer(
-              ls.id,
-              ls.name,
-              geo.layerWidth,
-              geo.layerHeight,
-              geo.offsetX,
-              geo.offsetY,
-              "indexed8",
-            );
-            (layer.data as Uint8Array).set(bytes);
-          } else if (geoJson) {
-            // Layer-local PNG with geometry.
-            const geo = JSON.parse(geoJson) as {
-              layerWidth: number;
-              layerHeight: number;
-              offsetX: number;
-              offsetY: number;
-            };
-            layer = renderer.createLayer(
-              ls.id,
-              ls.name,
-              geo.layerWidth,
-              geo.layerHeight,
-              geo.offsetX,
-              geo.offsetY,
-            );
-            try {
-              const rgba = await decodePng(
-                imageData,
-                geo.layerWidth,
-                geo.layerHeight,
-              );
-              if (isStale()) return;
-              layer.data.set(rgba);
-            } catch (e) {
-              console.error("[Canvas] Failed to load layer PNG:", e);
-            }
+        if (payload) {
+          const geo = payload.geo ?? {
+            layerWidth: cw,
+            layerHeight: ch,
+            offsetX: 0,
+            offsetY: 0,
+          };
+          layer = renderer.createLayer(
+            ls.id,
+            ls.name,
+            geo.layerWidth,
+            geo.layerHeight,
+            geo.offsetX,
+            geo.offsetY,
+            payload.format,
+          );
+          if (payload.data.length === layer.data.length) {
+            layer.data.set(payload.data);
           } else {
-            // Legacy / image import: PNG is canvas-sized.
-            layer = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
-            try {
-              const rgba = await decodePng(imageData, cw, ch);
-              if (isStale()) return;
-              layer.data.set(rgba);
-            } catch (e) {
-              console.error("[Canvas] Failed to load layer PNG:", e);
-            }
+            notificationStore.error(
+              `Layer "${ls.name}" could not be restored: its pixel data has the wrong size.`,
+            );
           }
         } else if (i === 0 && !initialLayerData) {
           // New document — background layer covers the full canvas.

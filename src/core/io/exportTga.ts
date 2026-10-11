@@ -5,18 +5,18 @@
 // No browser API is needed — the binary is built manually.
 
 /**
- * Encode RGBA pixel data to a TGA data-URL.
+ * Encode RGBA pixel data as a TGA file.
  *
  * @param pixels  Raw RGBA bytes, top-row-first.
  * @param width   Image width in pixels.
  * @param height  Image height in pixels.
- * @returns       `data:image/tga;base64,...` string.
+ * @returns       The TGA file bytes.
  */
 export function exportTga(
   pixels: Uint8Array,
   width: number,
   height: number,
-): string {
+): Uint8Array {
   const HEADER_SIZE = 18;
   const buf = new Uint8Array(HEADER_SIZE + width * height * 4);
 
@@ -46,13 +46,5 @@ export function exportTga(
     buf[out++] = pixels[i + 3]; // A
   }
 
-  // ── Encode to base64 (chunked to avoid call-stack limits) ─────────────────
-  let binary = "";
-  const CHUNK = 8192;
-  for (let i = 0; i < buf.length; i += CHUNK) {
-    binary += String.fromCharCode(
-      ...buf.subarray(i, Math.min(i + CHUNK, buf.length)),
-    );
-  }
-  return `data:image/tga;base64,${btoa(binary)}`;
+  return buf;
 }

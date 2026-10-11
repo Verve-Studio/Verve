@@ -13,14 +13,16 @@ export interface DdsExportOptions {
 
 /**
  * Encode pixels to a DDS file off the main thread.
- * Returns a `data:image/vnd.ms-dds;base64,...` data URL.
+ * Returns the DDS file bytes.
  */
-export async function exportDds(options: DdsExportOptions): Promise<string> {
+export async function exportDds(
+  options: DdsExportOptions,
+): Promise<Uint8Array> {
   const { pixels, width, height, fmt, inputFormat, signal } = options;
   const headerMode = options.headerMode ?? DdsHeaderMode.AUTO;
   const mipLevels = options.mipLevels ?? 1;
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<Uint8Array>((resolve, reject) => {
     const worker = new Worker(new URL("./ddsWorker.ts", import.meta.url), {
       type: "module",
     });
@@ -51,15 +53,7 @@ export async function exportDds(options: DdsExportOptions): Promise<string> {
         reject(new Error(e.data.error ?? "DDS encode failed"));
         return;
       }
-      const buf = e.data.data;
-      let binary = "";
-      const CHUNK = 8192;
-      for (let i = 0; i < buf.length; i += CHUNK) {
-        binary += String.fromCharCode(
-          ...buf.subarray(i, Math.min(i + CHUNK, buf.length)),
-        );
-      }
-      resolve(`data:image/vnd.ms-dds;base64,${btoa(binary)}`);
+      resolve(e.data.data);
     };
 
     worker.onerror = (err) => {

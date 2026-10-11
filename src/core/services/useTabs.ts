@@ -3,9 +3,9 @@ import type { AppAction } from "@/core/store/AppContext";
 import type { TabRecord, TabSnapshot } from "@/core/store/tabTypes";
 import { DEFAULT_SWATCHES } from "@/core/store/tabTypes";
 import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+  createLayerDataBundle,
+  type LayerDataBundle,
+} from "@/core/store/layerPayload";
 import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
@@ -23,11 +23,13 @@ export interface UseTabsReturn {
   activeTabIdRef: React.MutableRefObject<string>;
   setTabsRef: React.MutableRefObject<Dispatch<SetStateAction<TabRecord[]>>>;
   canvasHandleRef: { readonly current: CanvasHandle | null };
-  pendingLayerData: Map<string, string> | null;
-  setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  pendingLayerData: LayerDataBundle | null;
+  setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
+  /** Drop the active tab's pixel hand-off once its Canvas is ready. */
+  releaseMountedLayerData: () => void;
   tabCanvasRef: (tabId: string) => (h: CanvasHandle | null) => void;
   captureActiveSnapshot: () => TabSnapshot;
-  serializeActiveTabPixels: () => Map<string, string> | null;
+  serializeActiveTabPixels: () => LayerDataBundle | null;
   switchToTab: (toId: string, tabs_: TabRecord[]) => void;
   handleSwitchTab: (toId: string) => void;
   handleCloseTab: (tabId: string) => void;
@@ -63,10 +65,8 @@ export function useTabs(
 
   const [tabs, setTabs] = useState<TabRecord[]>([]);
   const [activeTabId, setActiveTabId] = useState("");
-  const [pendingLayerData, setPendingLayerData] = useState<Map<
-    string,
-    string
-  > | null>(null);
+  const [pendingLayerData, setPendingLayerData] =
+    useState<LayerDataBundle | null>(null);
 
   // Keep refs in sync each render so async closures always see fresh values
   activeTabIdRef.current = activeTabId;
@@ -126,67 +126,53 @@ export function useTabs(
     };
   }, [getState]);
 
-  /** Encode every active layer's pixel data into Map<layerId, dataURL> (+ geometry entries).
-   *  Must be called while the active tab's Canvas is still mounted. Returns null if no data. */
-  const serializeActiveTabPixels = useCallback((): Map<
-    string,
-    string
-  > | null => {
-    const layerPixels = canvasHandleRef.current?.borrowAllLayerPixels();
-    if (!layerPixels || layerPixels.size === 0) return null;
-    const layerGeo =
-      canvasHandleRef.current?.captureAllLayerGeometry() ?? new Map();
+  /** Copy every active layer's pixels (native format + geometry) and the
+   *  adjustment masks out of the GPU layers. Must be called while the active
+   *  tab's Canvas is still mounted. Returns null if there is no data. */
+  const serializeActiveTabPixels = useCallback((): LayerDataBundle | null => {
+    const handle = canvasHandleRef.current;
+    if (!handle) return null;
     const snap = captureActiveSnapshot();
-    const result = new Map<string, string>();
-    const tabId = activeTabIdRef.current;
-    for (const [id, pixels] of layerPixels) {
-      const geo = layerGeo.get(id);
-      const lw = geo?.layerWidth ?? snap.canvasWidth;
-      const lh = geo?.layerHeight ?? snap.canvasHeight;
-      // IMPORTANT: `borrowAllLayerPixels` returns *live* `layer.data` views.
-      // For layers pinned to the WASM heap (the brush kernel's zero-copy
-      // path), those views become DETACHED if the heap grows later — and
-      // since this stash outlives the active tab, a different tab's
-      // allocations will detach our reference. `.slice()` returns a fresh
-      // JS-heap copy that's immune to growth.
-      if ((pixels as unknown) instanceof Float32Array) {
-        // rgba32f layer — use compound key to avoid cross-tab collisions
-        const storeKey = `${tabId}:${id}`;
-        f32TransferStore.set(
-          storeKey,
-          (pixels as unknown as Float32Array).slice(),
-        );
-        result.set(id, `data:raw/f32-ref;id=${storeKey}`);
-      } else if (pixels.length === lw * lh) {
-        // indexed8 layer — 1 byte/pixel palette indices
-        const storeKey = `${tabId}:${id}`;
-        u8TransferStore.set(storeKey, (pixels as Uint8Array).slice());
-        result.set(id, `data:raw/indexed8-ref;id=${storeKey}`);
-      } else {
-        // rgba8 layer — use compound key to avoid cross-tab collisions
-        const storeKey = `${tabId}:${id}`;
-        u8TransferStore.set(storeKey, (pixels as Uint8Array).slice());
-        result.set(id, `data:raw/rgba8-ref;id=${storeKey}`);
-      }
-      if (geo) result.set(`${id}:geo`, JSON.stringify(geo));
-    }
+    const bundle = createLayerDataBundle();
     for (const layer of snap.layers) {
-      if (!("type" in layer) || layer.type !== "adjustment") continue;
-      const maskPixels = canvasHandleRef.current?.getAdjustmentMaskPixels(
-        layer.id,
-      );
-      if (maskPixels) {
-        const storeKey = `${tabId}:${layer.id}:mask`;
-        // Same WASM-pinned-view detachment hazard as above — copy.
-        u8TransferStore.set(storeKey, (maskPixels as Uint8Array).slice());
-        result.set(
-          `${layer.id}:adjustment-mask`,
-          `data:raw/rgba8-ref;id=${storeKey}`,
-        );
+      if ("type" in layer && layer.type === "adjustment") {
+        const mask = handle.getAdjustmentMaskPixels(layer.id);
+        // `.slice()`: see below.
+        if (mask instanceof Uint8Array) {
+          bundle.adjustmentMasks.set(layer.id, mask.slice());
+        }
+        continue;
       }
+      const gpu = handle.getGpuLayer(layer.id);
+      if (!gpu) continue;
+      // IMPORTANT: `gpu.data` is the *live* buffer. For layers pinned to the
+      // WASM heap (the brush kernel's zero-copy path), that view becomes
+      // DETACHED if the heap grows later — and since this stash outlives the
+      // active tab, a different tab's allocations will detach it. `.slice()`
+      // returns a fresh JS-heap copy that's immune to growth.
+      bundle.layers.set(layer.id, {
+        format: gpu.format,
+        data: gpu.data.slice(),
+        geo: {
+          layerWidth: gpu.layerWidth,
+          layerHeight: gpu.layerHeight,
+          offsetX: gpu.offsetX,
+          offsetY: gpu.offsetY,
+        },
+      });
     }
-    return result;
+    return bundle.layers.size === 0 ? null : bundle;
   }, [canvasHandleRef, captureActiveSnapshot]);
+
+  const releaseMountedLayerData = useCallback((): void => {
+    setPendingLayerData(null);
+    const id = activeTabIdRef.current;
+    setTabs((prev) =>
+      prev.some((t) => t.id === id && t.savedLayerData)
+        ? prev.map((t) => (t.id === id ? { ...t, savedLayerData: null } : t))
+        : prev,
+    );
+  }, []);
 
   const switchToTab = useCallback(
     (toId: string, tabs_: TabRecord[]): void => {
@@ -320,13 +306,9 @@ export function useTabs(
           next[next.length - 1];
         switchToTab(fallback.id, next);
       }
-      // Release what the closed tabs still hold: backgrounded pixel copies
-      // in the transfer stores and their undo history.
-      for (const tab of closed) {
-        f32TransferStore.dropPrefix(`${tab.id}:`);
-        u8TransferStore.dropPrefix(`${tab.id}:`);
-        tab.scope.history.dispose();
-      }
+      // Release the closed tabs' undo history (their backgrounded pixel
+      // copies go with the dropped tab records).
+      for (const tab of closed) tab.scope.history.dispose();
     },
     [switchToTab],
   );
@@ -346,6 +328,7 @@ export function useTabs(
     canvasHandleRef,
     pendingLayerData,
     setPendingLayerData,
+    releaseMountedLayerData,
     tabCanvasRef,
     captureActiveSnapshot,
     serializeActiveTabPixels,

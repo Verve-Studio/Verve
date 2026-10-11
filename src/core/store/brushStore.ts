@@ -5,33 +5,38 @@
  * live on AppState.brushes and are saved inside the .verve file.
  */
 import type { Brush } from "@/types";
-
-interface PaintBrushFile {
-  version: 1;
-  brushes: Brush[];
-}
+import {
+  deserializeBrush,
+  serializeBrush,
+} from "@/core/tools/Brush/brushPreset";
 
 export function serializeBrushFile(brushes: Brush[]): string {
-  const file: PaintBrushFile = { version: 1, brushes };
-  return JSON.stringify(file, null, 2);
+  return JSON.stringify(
+    { version: 1, brushes: brushes.map((b) => serializeBrush(b)) },
+    null,
+    2,
+  );
 }
 
 export function parseBrushFile(json: string): Brush[] {
+  let list: unknown[] = [];
   try {
     const parsed = JSON.parse(json) as unknown;
-    if (Array.isArray(parsed)) return parsed as Brush[];
-    if (
+    if (Array.isArray(parsed)) {
+      list = parsed;
+    } else if (
       typeof parsed === "object" &&
       parsed !== null &&
-      "brushes" in parsed &&
-      Array.isArray((parsed as PaintBrushFile).brushes)
+      Array.isArray((parsed as { brushes?: unknown }).brushes)
     ) {
-      return (parsed as PaintBrushFile).brushes;
+      list = (parsed as { brushes: unknown[] }).brushes;
     }
   } catch {
     // corrupt — ignore
   }
-  return [];
+  return list
+    .filter((b): b is Record<string, unknown> => typeof b === "object" && b !== null)
+    .map((b) => deserializeBrush(b));
 }
 
 class BrushStore {

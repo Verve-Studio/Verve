@@ -12,7 +12,7 @@ import {
   buildSubPlan,
 } from "./canvasPlan";
 
-import { encodePng } from "./pngHelpers";
+import type { LayerPayload } from "@/core/store/layerPayload";
 import {
   rasterizeDocument,
   type RasterBackend,
@@ -21,6 +21,7 @@ import {
 import { matchPaletteIndices } from "@/wasm";
 import type { LayerHistoryChange } from "@/graphics/webgpu/layers/LayerTextureStore";
 import {
+  clampF32ToUint8,
   linearToSrgbChannel,
   srgbToLinearChannel,
 } from "@/utils/pixelFormatConvert";
@@ -28,18 +29,11 @@ import {
 // ─── Public handle type (imported by App.tsx and other callers) ────────────
 
 export interface CanvasHandle {
-  /** Encode a layer's pixel data to a PNG data-URL synchronously. Returns layer-local PNG + geometry. */
-  exportLayerPng: (
-    layerId: string,
-  ) => {
-    png: string;
-    layerWidth: number;
-    layerHeight: number;
-    offsetX: number;
-    offsetY: number;
-  } | null;
-  /** Encode a baked adjustment mask to a PNG data-URL synchronously. */
-  exportAdjustmentMaskPng: (layerId: string) => string | null;
+  /** Copy a layer's pixels in its native format (rgba32f floats, rgba8
+   *  bytes, indexed8 indices) with its layer-local geometry. */
+  exportLayerData: (layerId: string) => LayerPayload | null;
+  /** Copy a baked adjustment mask (canvas-sized rgba8). */
+  exportAdjustmentMask: (layerId: string) => Uint8Array | null;
   /**
    * Composite all visible layers (in state order) and return the raw RGBA
    * pixel data together with the image dimensions.
@@ -173,6 +167,14 @@ export interface CanvasHandle {
    * the same format returned by `getLayerPixels`. Does NOT push to undo history.
    */
   writeLayerPixels: (layerId: string, pixels: Uint8Array) => void;
+  /** A copy of a layer as a CANVAS-SIZE buffer in its native format:
+   *  Float32 RGBA for rgba32f, RGBA bytes for rgba8, palette indices
+   *  (255 = transparent / off-layer) for indexed8. */
+  getLayerCanvasData: (layerId: string) => Uint8Array | Float32Array | null;
+  /** Write a canvas-size buffer in the layer's native format (see
+   *  `getLayerCanvasData`), growing the layer to cover its visible pixels.
+   *  Flushes and re-renders. Does NOT push to undo history. */
+  writeLayerCanvasData: (layerId: string, data: Uint8Array | Float32Array) => void;
   /** Re-flush every indexed8 layer with the supplied palette and re-render.
    *  Used by the palette-animation playback loop to swap the displayed
    *  colours without touching the underlying index buffer. No-op when there
@@ -196,10 +198,6 @@ export interface CanvasHandle {
     newFormat: PixelFormat,
     palette?: RGBAColor[],
   ) => void;
-  /** Export raw Float32Array for an rgba32f layer. Returns null for non-f32 layers. */
-  exportLayerF32: (layerId: string) => Float32Array | null;
-  /** Export raw Uint8Array for an indexed8 layer. Returns null for non-indexed layers. */
-  exportLayerIndexed: (layerId: string) => Uint8Array | null;
   /** Return the raw index buffer for an indexed8 layer as a canvas-sized Uint8Array (1 byte/pixel, 255 = off-layer). Returns null for non-indexed layers. */
   getLayerIndexData: (layerId: string) => Uint8Array | null;
   /** Create a full-canvas indexed8 GPU layer from a canvas-sized index buffer. Used by useLayers after merge/flatten. */
@@ -364,24 +362,18 @@ export function useCanvasHandle({
   useImperativeHandle(
     ref,
     () => ({
-      exportLayerPng: (layerId) => {
-        const renderer = rendererRef.current;
+      exportLayerData: (layerId) => {
         const layer = glLayersRef.current.get(layerId);
-        if (!renderer || !layer) return null;
-        const raw = renderer.readLayerPixels(layer);
-        const u8 =
-          raw instanceof Float32Array
-            ? new Uint8Array(raw.length).map((_, i) =>
-                Math.round(Math.min(raw[i], 1) * 255),
-              )
-            : (raw as Uint8Array);
-        const png = encodePng(u8, layer.layerWidth, layer.layerHeight);
+        if (!layer) return null;
         return {
-          png,
-          layerWidth: layer.layerWidth,
-          layerHeight: layer.layerHeight,
-          offsetX: layer.offsetX,
-          offsetY: layer.offsetY,
+          format: layer.format,
+          data: layer.data.slice(),
+          geo: {
+            layerWidth: layer.layerWidth,
+            layerHeight: layer.layerHeight,
+            offsetX: layer.offsetX,
+            offsetY: layer.offsetY,
+          },
         };
       },
 
@@ -390,11 +382,10 @@ export function useCanvasHandle({
         const layer = glLayersRef.current.get(layerId);
         if (!renderer || !layer) return null;
         const raw = renderer.readLayerPixels(layer);
+        // rgba32f is scene-linear: encode to sRGB bytes.
         const u8 =
           raw instanceof Float32Array
-            ? new Uint8Array(raw.length).map((_, i) =>
-                Math.round(Math.min(raw[i], 1) * 255),
-              )
+            ? clampF32ToUint8(raw)
             : (raw as Uint8Array);
         return {
           pixels: u8,
@@ -405,18 +396,9 @@ export function useCanvasHandle({
         };
       },
 
-      exportAdjustmentMaskPng: (layerId) => {
-        const renderer = rendererRef.current;
+      exportAdjustmentMask: (layerId) => {
         const maskLayer = adjustmentMaskMap.current.get(layerId);
-        if (!renderer || !maskLayer) return null;
-        const raw = renderer.readLayerPixels(maskLayer);
-        const u8 =
-          raw instanceof Float32Array
-            ? new Uint8Array(raw.length).map((_, i) =>
-                Math.round(Math.min(raw[i], 1) * 255),
-              )
-            : (raw as Uint8Array);
-        return encodePng(u8, renderer.pixelWidth, renderer.pixelHeight);
+        return maskLayer ? (maskLayer.data as Uint8Array).slice() : null;
       },
 
       rasterizeComposite: async (reason) => {
@@ -572,11 +554,24 @@ export function useCanvasHandle({
           useOy,
           format,
         );
-        // Both arrays are the same logical kind for set(): Uint8Array→Uint8Array
-        // and Float32Array→Float32Array copy element-wise. The format/data
-        // pairing is the caller's responsibility.
+        // `data` must already be in the layer's format and size (RGBA bytes,
+        // floats, or 1-byte palette indices).
+        if (
+          data.length !== layer.data.length ||
+          data instanceof Float32Array !== layer.data instanceof Float32Array
+        ) {
+          renderer.destroyLayer(layer);
+          throw new Error(
+            `Layer "${name}" data doesn't match its ${layer.format} format and size.`,
+          );
+        }
         (layer.data as Uint8Array | Float32Array).set(data as never);
-        renderer.flushLayer(layer);
+        renderer.flushLayer(
+          layer,
+          layer.format === "indexed8"
+            ? (swatchesRef.current as RGBAColor[])
+            : undefined,
+        );
         glLayersRef.current.set(layerId, layer);
         renderFromPlan();
       },
@@ -986,18 +981,6 @@ export function useCanvasHandle({
         renderFromPlan();
       },
 
-      exportLayerF32: (layerId) => {
-        const layer = glLayersRef.current.get(layerId);
-        if (!layer || layer.format !== "rgba32f") return null;
-        return (layer.data as Float32Array).slice();
-      },
-
-      exportLayerIndexed: (layerId) => {
-        const layer = glLayersRef.current.get(layerId);
-        if (!layer || layer.format !== "indexed8") return null;
-        return (layer.data as Uint8Array).slice();
-      },
-
       getLayerIndexData: (layerId) => {
         const layer = glLayersRef.current.get(layerId);
         const renderer = rendererRef.current;
@@ -1038,6 +1021,91 @@ export function useCanvasHandle({
           swatchesRef.current as import("@/types").RGBAColor[],
         );
         glLayersRef.current.set(layerId, layer);
+        renderFromPlan();
+      },
+
+      getLayerCanvasData: (layerId) => {
+        const renderer = rendererRef.current;
+        const layer = glLayersRef.current.get(layerId);
+        if (!renderer || !layer) return null;
+        const w = renderer.pixelWidth;
+        const h = renderer.pixelHeight;
+        const ch = layer.format === "indexed8" ? 1 : 4;
+        const out =
+          layer.format === "rgba32f"
+            ? new Float32Array(w * h * 4)
+            : new Uint8Array(w * h * ch);
+        if (layer.format === "indexed8") out.fill(255);
+        const src = layer.data;
+        for (let ly = 0; ly < layer.layerHeight; ly++) {
+          const cy = layer.offsetY + ly;
+          if (cy < 0 || cy >= h) continue;
+          const x0 = Math.max(0, -layer.offsetX);
+          const x1 = Math.min(layer.layerWidth, w - layer.offsetX);
+          if (x1 <= x0) continue;
+          const s = (ly * layer.layerWidth + x0) * ch;
+          out.set(
+            src.subarray(s, s + (x1 - x0) * ch) as never,
+            (cy * w + layer.offsetX + x0) * ch,
+          );
+        }
+        return out;
+      },
+
+      writeLayerCanvasData: (layerId, data) => {
+        const renderer = rendererRef.current;
+        const layer = glLayersRef.current.get(layerId);
+        if (!renderer || !layer) return;
+        const w = renderer.pixelWidth;
+        const h = renderer.pixelHeight;
+        const indexed = layer.format === "indexed8";
+        const ch = indexed ? 1 : 4;
+        if (
+          data.length !== w * h * ch ||
+          data instanceof Float32Array !== (layer.format === "rgba32f")
+        ) {
+          throw new Error(
+            `Pixel data doesn't match layer "${layer.name}" (${layer.format}).`,
+          );
+        }
+        // Grow the layer to cover the visible pixels: a transform result may
+        // extend beyond the layer's current rect.
+        let minX = w,
+          maxX = -1,
+          minY = h,
+          maxY = -1;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = y * w + x;
+            if (indexed ? data[i] !== 255 : data[i * 4 + 3] !== 0) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        if (maxX >= 0) {
+          renderer.growLayerToFit(layer, minX, minY);
+          renderer.growLayerToFit(layer, maxX, maxY);
+        }
+        for (let ly = 0; ly < layer.layerHeight; ly++) {
+          const cy = layer.offsetY + ly;
+          if (cy < 0 || cy >= h) continue;
+          const x0 = Math.max(0, -layer.offsetX);
+          const x1 = Math.min(layer.layerWidth, w - layer.offsetX);
+          if (x1 <= x0) continue;
+          const s = (cy * w + layer.offsetX + x0) * ch;
+          layer.data.set(
+            data.subarray(s, s + (x1 - x0) * ch) as never,
+            (ly * layer.layerWidth + x0) * ch,
+          );
+        }
+        renderer.markFullDirty(layer);
+        renderer.flushLayer(
+          layer,
+          indexed ? (swatchesRef.current as RGBAColor[]) : undefined,
+        );
         renderFromPlan();
       },
 

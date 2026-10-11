@@ -14,30 +14,21 @@ export interface TiffExportOptions {
 }
 
 /**
- * Encode RGBA pixel data to a TIFF data-URL.
+ * Encode RGBA pixel data as a TIFF file.
  *
  * @param pixels  Raw RGBA bytes, top-row-first.
  * @param width   Image width in pixels.
  * @param height  Image height in pixels.
- * @returns       `data:image/tiff;base64,...` string.
+ * @returns       The TIFF file bytes.
  */
 export function exportTiff(
   pixels: Uint8Array,
   width: number,
   height: number,
   options: TiffExportOptions = {},
-): string {
-  const buffer = UTIF.encodeImage(pixels, width, height);
-  const encoded = new Uint8Array(buffer);
-  const bytes: Uint8Array = options.iccProfile
+): Uint8Array {
+  const encoded = new Uint8Array(UTIF.encodeImage(pixels, width, height));
+  return options.iccProfile
     ? embedIccInTiff(encoded, options.iccProfile)
     : encoded;
-  let binary = "";
-  const CHUNK = 8192;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(
-      ...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)),
-    );
-  }
-  return `data:image/tiff;base64,${btoa(binary)}`;
 }

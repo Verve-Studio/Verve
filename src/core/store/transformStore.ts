@@ -3,6 +3,7 @@
 // all import this directly; useTransform registers onApply/onCancel callbacks.
 
 import type {
+  PixelFormat,
   Tool,
   TransformParams,
   TransformInterpolation,
@@ -16,9 +17,14 @@ export interface TransformEnterData {
   originalW: number;
   originalH: number;
   originalRect: { x: number; y: number; w: number; h: number };
-  floatBuffer: Uint8Array;
+  /** The transformed content as the resampler's RGBA input, in the layer's
+   *  format (indexed8: index packed in red, alpha 255 / 0). */
+  floatBuffer: Uint8Array | Float32Array;
+  pixelFormat: PixelFormat;
+  /** 8-bit preview of `floatBuffer` for the overlay. */
   floatCanvas: OffscreenCanvas;
-  savedLayerPixels: Uint8Array | null;
+  /** The layer's canvas-sized data before the transform (native format). */
+  savedLayerPixels: Uint8Array | Float32Array | null;
   savedSelectionMask: Uint8Array | null;
   params: TransformParams;
 }
@@ -42,10 +48,11 @@ export class TransformStore {
     h: 0,
   };
 
-  floatBuffer: Uint8Array | null = null;
+  floatBuffer: Uint8Array | Float32Array | null = null;
+  pixelFormat: PixelFormat = "rgba8";
   floatCanvas: OffscreenCanvas | null = null;
 
-  savedLayerPixels: Uint8Array | null = null;
+  savedLayerPixels: Uint8Array | Float32Array | null = null;
   savedSelectionMask: Uint8Array | null = null;
 
   params: TransformParams = {
@@ -87,6 +94,7 @@ export class TransformStore {
     this.originalH = data.originalH;
     this.originalRect = data.originalRect;
     this.floatBuffer = data.floatBuffer;
+    this.pixelFormat = data.pixelFormat;
     this.floatCanvas = data.floatCanvas;
     this.savedLayerPixels = data.savedLayerPixels;
     this.savedSelectionMask = data.savedSelectionMask;

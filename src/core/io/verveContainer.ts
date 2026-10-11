@@ -14,11 +14,16 @@
  *   padding   to an 8-byte boundary
  *   blobs     raw bytes, each starting on an 8-byte boundary
  *
- * Large binary payloads (rgba32f / indexed8 layer data) are stored as blobs
+ * Every binary payload (layer pixels in their native format, adjustment
+ * masks, frame content, pixel brushes, the ICC profile) is stored as a blob
  * and referenced from the JSON as the string `"blob:<index>"`; the header's
  * `blobTable` holds each blob's `{ offset, length }` relative to the start
- * of the blob section. Files without the magic are legacy JSON documents.
+ * of the blob section, plus `deflated: true` when the blob is raw-deflate
+ * compressed (8-bit data; float layers are stored raw so saving HDR
+ * documents stays fast). Files without the magic are legacy JSON documents.
  */
+
+import { deflate, inflate } from "@/utils/zlib";
 
 const MAGIC = "VERVEPK1";
 const MAGIC_BYTES = new TextEncoder().encode(MAGIC);
@@ -27,6 +32,7 @@ const BLOB_PREFIX = "blob:";
 interface BlobTableEntry {
   offset: number;
   length: number;
+  deflated?: boolean;
 }
 
 const align8 = (n: number): number => (n + 7) & ~7;
@@ -41,33 +47,41 @@ export function isVerveContainer(bytes: Uint8Array): boolean {
 
 /** Collects blobs while a document is being serialized. */
 export class VerveBlobWriter {
-  private readonly blobs: Uint8Array[] = [];
+  private readonly blobs: { bytes: Uint8Array; deflate: boolean }[] = [];
 
-  /** Register a payload and return the string to store in the JSON. */
+  /** Register a payload and return the string to store in the JSON. 8-bit
+   *  payloads are deflated; Float32 payloads are stored raw. */
   add(data: Uint8Array | Float32Array): string {
-    const bytes =
-      data instanceof Uint8Array
-        ? data
-        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    this.blobs.push(bytes);
+    const isBytes = data instanceof Uint8Array;
+    const bytes = isBytes
+      ? data
+      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    this.blobs.push({ bytes, deflate: isBytes });
     return `${BLOB_PREFIX}${this.blobs.length - 1}`;
   }
 
   /** Serialize `doc` plus the registered blobs into one byte array. */
-  encode(doc: object): Uint8Array {
+  async encode(doc: object): Promise<Uint8Array> {
+    const stored = await Promise.all(
+      this.blobs.map((b) => (b.deflate ? deflate(b.bytes, "deflate-raw") : b.bytes)),
+    );
     const blobTable: BlobTableEntry[] = [];
     let blobSize = 0;
-    for (const blob of this.blobs) {
-      blobTable.push({ offset: blobSize, length: blob.byteLength });
+    stored.forEach((blob, i) => {
+      blobTable.push({
+        offset: blobSize,
+        length: blob.byteLength,
+        ...(this.blobs[i].deflate ? { deflated: true } : {}),
+      });
       blobSize = align8(blobSize + blob.byteLength);
-    }
+    });
     const json = new TextEncoder().encode(JSON.stringify({ ...doc, blobTable }));
     const blobStart = align8(MAGIC_BYTES.length + 4 + json.length);
     const out = new Uint8Array(blobStart + blobSize);
     out.set(MAGIC_BYTES, 0);
     new DataView(out.buffer).setUint32(MAGIC_BYTES.length, json.length, true);
     out.set(json, MAGIC_BYTES.length + 4);
-    this.blobs.forEach((blob, i) => {
+    stored.forEach((blob, i) => {
       out.set(blob, blobStart + blobTable[i].offset);
     });
     return out;
@@ -76,9 +90,9 @@ export class VerveBlobWriter {
 
 export interface DecodedVerveContainer<T> {
   doc: T;
-  /** Resolve a `"blob:<n>"` reference to (a copy of) its bytes; null if the
-   *  value isn't a blob reference. */
-  blob: (ref: string) => Uint8Array | null;
+  /** Resolve a `"blob:<n>"` reference to (a copy of) its bytes, inflating
+   *  compressed blobs. Throws if the value isn't a blob reference. */
+  blob: (ref: string) => Promise<Uint8Array>;
 }
 
 export function decodeVerveContainer<T>(
@@ -97,17 +111,19 @@ export function decodeVerveContainer<T>(
   const blobStart = align8(jsonStart + jsonLen);
   return {
     doc: header,
-    blob: (ref) => {
-      if (!isBlobRef(ref)) return null;
+    blob: async (ref) => {
+      if (!isBlobRef(ref)) throw new Error(`Not a blob reference: ${ref}`);
       const entry = table[Number(ref.slice(BLOB_PREFIX.length))];
       if (!entry) throw new Error(`The document references a missing blob (${ref}).`);
       const start = blobStart + entry.offset;
       if (start + entry.length > bytes.length) {
         throw new Error("The document is truncated (layer data exceeds file size).");
       }
-      // Copy: the result must own an aligned buffer (Float32Array views
-      // need 4-byte alignment) and must not pin the whole file in memory.
-      return bytes.slice(start, start + entry.length);
+      const stored = bytes.subarray(start, start + entry.length);
+      // Raw blobs are copied: the result must own an aligned buffer
+      // (Float32Array views need 4-byte alignment) and must not pin the
+      // whole file in memory.
+      return entry.deflated ? inflate(stored, "deflate-raw") : stored.slice();
     },
   };
 }

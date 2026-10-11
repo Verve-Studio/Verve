@@ -4,13 +4,13 @@ import {
   computeInverseAffine,
   computeInverseHomography,
 } from "@/core/tools/Transform/Transform";
-import type { AppState } from "@/types";
+import type { AppState, PixelFormat, RGBAColor } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
+import { applyAffineTransform, applyPerspectiveTransform } from "@/wasm";
 import {
-  applyAffineTransform,
-  applyPerspectiveTransform,
-  matchPaletteIndices,
-} from "@/wasm";
+  convertF32ToRgba8,
+  convertIndexedToRgba8,
+} from "@/utils/pixelFormatConvert";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { activeScope } from "@/core/store/scope";
@@ -38,9 +38,23 @@ export interface UseTransformReturn {
 }
 
 // ─── Pixel utilities ──────────────────────────────────────────────────────────
+//
+// Free transform works in the layer's own format on canvas-sized buffers:
+// RGBA bytes (rgba8), scene-linear float RGBA (rgba32f), or palette indices
+// (indexed8). The resampler takes RGBA, so indices are packed into the red
+// channel (alpha 0 = transparent) and resampled nearest-neighbour, which
+// moves them without ever turning them into colours.
+
+type Pixels = Uint8Array | Float32Array;
+
+/** Is the pixel at canvas index `i` visible? */
+function isVisible(px: Pixels, format: PixelFormat, i: number): boolean {
+  return format === "indexed8" ? px[i] !== 255 : px[i * 4 + 3] > 0;
+}
 
 function findBoundingRect(
-  pixels: Uint8Array,
+  pixels: Pixels,
+  format: PixelFormat,
   w: number,
   h: number,
 ): { x: number; y: number; w: number; h: number } {
@@ -50,7 +64,7 @@ function findBoundingRect(
     maxY = -1;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (pixels[(y * w + x) * 4 + 3] > 0) {
+      if (isVisible(pixels, format, y * w + x)) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -85,55 +99,96 @@ function findMaskBoundingRect(
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
-function cropPixels(
-  src: Uint8Array,
+/** Crop `rect` out of a canvas-sized buffer as the resampler's RGBA input
+ *  (indexed8 is packed: red = index, alpha 255 / 0). Unselected pixels are
+ *  left transparent. */
+function cropForTransform(
+  src: Pixels,
+  format: PixelFormat,
   srcW: number,
   rect: { x: number; y: number; w: number; h: number },
   mask: Uint8Array | null,
-): Uint8Array {
+): Pixels {
   const { x, y, w, h } = rect;
-  const out = new Uint8Array(w * h * 4);
+  const out =
+    format === "rgba32f" ? new Float32Array(w * h * 4) : new Uint8Array(w * h * 4);
   for (let row = 0; row < h; row++) {
     for (let col = 0; col < w; col++) {
-      const sx = x + col,
-        sy = y + row;
-      const srcIdx = (sy * srcW + sx) * 4;
-      const dstIdx = (row * w + col) * 4;
-      if (mask !== null && mask[sy * srcW + sx] === 0) {
-        out[dstIdx] = out[dstIdx + 1] = out[dstIdx + 2] = out[dstIdx + 3] = 0;
-      } else {
-        out[dstIdx] = src[srcIdx];
-        out[dstIdx + 1] = src[srcIdx + 1];
-        out[dstIdx + 2] = src[srcIdx + 2];
-        out[dstIdx + 3] = src[srcIdx + 3];
+      const si = (y + row) * srcW + (x + col);
+      if (mask !== null && mask[si] === 0) continue;
+      const di = (row * w + col) * 4;
+      if (format === "indexed8") {
+        if (src[si] === 255) continue;
+        out[di] = src[si];
+        out[di + 3] = 255;
+        continue;
       }
+      out[di] = src[si * 4];
+      out[di + 1] = src[si * 4 + 1];
+      out[di + 2] = src[si * 4 + 2];
+      out[di + 3] = src[si * 4 + 3];
     }
   }
   return out;
 }
 
-/** Porter-Duff "over" of a canvas-sized RGBA8 `top` onto `base`, in place
- *  on `base` (straight alpha). */
-function compositeOver(base: Uint8Array, top: Uint8Array): void {
+/** The transform input as sRGB bytes for the on-screen preview. */
+function previewRgba(
+  input: Pixels,
+  format: PixelFormat,
+  palette: readonly RGBAColor[],
+): Uint8Array {
+  if (format === "rgba32f") return convertF32ToRgba8(input as Float32Array);
+  if (format === "indexed8") {
+    const indices = new Uint8Array(input.length / 4);
+    for (let i = 0; i < indices.length; i++) {
+      indices[i] = input[i * 4 + 3] > 0 ? input[i * 4] : 255;
+    }
+    return convertIndexedToRgba8(indices, [...palette]);
+  }
+  return input as Uint8Array;
+}
+
+/**
+ * Composite the canvas-sized resampler output `top` over `base` (the layer's
+ * canvas data), in place on `base`. RGBA formats use straight-alpha
+ * Porter-Duff "over"; indexed8 replaces pixels wherever `top` is opaque.
+ */
+function compositeOver(base: Pixels, top: Pixels, format: PixelFormat): void {
+  if (format === "indexed8") {
+    for (let p = 0; p < base.length; p++) {
+      if (top[p * 4 + 3] > 0) base[p] = top[p * 4];
+    }
+    return;
+  }
+  const one = format === "rgba32f" ? 1 : 255;
+  const round = format === "rgba32f" ? (v: number) => v : Math.round;
   for (let i = 0; i < top.length; i += 4) {
     const ta = top[i + 3];
-    if (ta === 0) continue;
-    if (ta === 255) {
+    if (ta <= 0) continue;
+    if (ta >= one) {
       base[i] = top[i];
       base[i + 1] = top[i + 1];
       base[i + 2] = top[i + 2];
-      base[i + 3] = 255;
+      base[i + 3] = one;
       continue;
     }
-    const sa = ta / 255;
-    const da = base[i + 3] / 255;
+    const sa = ta / one;
+    const da = base[i + 3] / one;
     const oa = sa + da * (1 - sa);
     const k = da * (1 - sa);
-    base[i] = Math.round((top[i] * sa + base[i] * k) / oa);
-    base[i + 1] = Math.round((top[i + 1] * sa + base[i + 1] * k) / oa);
-    base[i + 2] = Math.round((top[i + 2] * sa + base[i + 2] * k) / oa);
-    base[i + 3] = Math.round(oa * 255);
+    base[i] = round((top[i] * sa + base[i] * k) / oa);
+    base[i + 1] = round((top[i + 1] * sa + base[i + 1] * k) / oa);
+    base[i + 2] = round((top[i + 2] * sa + base[i + 2] * k) / oa);
+    base[i + 3] = round(oa * one);
   }
+}
+
+/** An empty canvas-sized buffer in `format`. */
+function emptyCanvas(format: PixelFormat, w: number, h: number): Pixels {
+  if (format === "rgba32f") return new Float32Array(w * h * 4);
+  if (format === "indexed8") return new Uint8Array(w * h).fill(255);
+  return new Uint8Array(w * h * 4);
 }
 
 function interpToInt(interp: string): number {
@@ -165,6 +220,7 @@ export function useTransform({
       handleMode,
       interpolation,
       floatBuffer,
+      pixelFormat,
       originalW,
       originalH,
       layerId,
@@ -177,10 +233,16 @@ export function useTransform({
     applyingRef.current = true;
     try {
       const layer = handle.getGpuLayer(layerId);
-      const isIndexed = layer?.format === "indexed8";
-      const interpInt = interpToInt(isIndexed ? "nearest" : interpolation);
+      if (!layer) throw new Error("The layer no longer exists.");
+      if (layer.format !== pixelFormat) {
+        throw new Error("The layer's colour mode changed during the transform.");
+      }
+      // Indices can't be blended: indexed8 always resamples nearest.
+      const interpInt = interpToInt(
+        pixelFormat === "indexed8" ? "nearest" : interpolation,
+      );
 
-      let result: Uint8Array;
+      let result: Pixels;
       if (handleMode === "perspective" && params.perspectiveCorners) {
         const srcQuad: [
           { x: number; y: number },
@@ -227,20 +289,10 @@ export function useTransform({
       // is left of the layer (the rest of the layer outside a selection;
       // nothing in whole-layer mode) — writing `result` alone erased
       // everything outside the transformed selection.
-      const composed = handle.getLayerPixels(layerId);
+      const composed = handle.getLayerCanvasData(layerId);
       if (!composed) throw new Error("The layer no longer exists.");
-      compositeOver(composed, result);
-
-      if (isIndexed) {
-        const indexResult = await matchPaletteIndices(
-          composed,
-          stateRef.current.swatches,
-          255,
-        );
-        handle.writeLayerIndexData(layerId, indexResult);
-      } else {
-        handle.writeLayerPixels(layerId, composed);
-      }
+      compositeOver(composed, result, pixelFormat);
+      handle.writeLayerCanvasData(layerId, composed);
 
       // A selection-mode transform moves the selection with the pixels.
       if (isSelectionMode) {
@@ -276,7 +328,7 @@ export function useTransform({
 
     const tx = activeScope().transform;
     if (handle && tx.savedLayerPixels) {
-      handle.writeLayerPixels(tx.layerId, tx.savedLayerPixels);
+      handle.writeLayerCanvasData(tx.layerId, tx.savedLayerPixels);
     }
     if (tx.savedSelectionMask) {
       activeScope().selection.restoreMask(tx.savedSelectionMask);
@@ -299,8 +351,10 @@ export function useTransform({
     const layer = state.layers.find((l) => l.id === activeId);
     if (!layer || "type" in layer) return; // only plain pixel layers
 
-    const pixels = handle.getLayerPixels(activeId);
-    if (!pixels) return;
+    const gpu = handle.getGpuLayer(activeId);
+    const pixels = handle.getLayerCanvasData(activeId);
+    if (!gpu || !pixels) return;
+    const format = gpu.format;
 
     const { canvas } = state;
     const cw = canvas.width,
@@ -317,8 +371,8 @@ export function useTransform({
 
     const isSelectionMode = hasMask && maskHasArea;
 
-    const savedLayerPixels = pixels.slice();
-    let floatBuffer: Uint8Array;
+    const savedLayerPixels = pixels;
+    let floatBuffer: Pixels;
     let rect: { x: number; y: number; w: number; h: number };
     let savedSelectionMask: Uint8Array | null = null;
 
@@ -326,21 +380,25 @@ export function useTransform({
       const mask = activeScope().selection.mask!;
       rect = findMaskBoundingRect(mask, cw, ch);
       if (rect.w <= 0 || rect.h <= 0) return;
-      floatBuffer = cropPixels(pixels, cw, rect, mask);
+      floatBuffer = cropForTransform(pixels, format, cw, rect, mask);
       savedSelectionMask = mask.slice();
       handle.clearLayerPixels(activeId, mask);
     } else {
-      rect = findBoundingRect(pixels, cw, ch);
-      floatBuffer = cropPixels(pixels, cw, rect, null);
+      rect = findBoundingRect(pixels, format, cw, ch);
+      floatBuffer = cropForTransform(pixels, format, cw, rect, null);
       // Clear the layer so the WebGL composite doesn't show the original underneath the overlay preview
-      handle.writeLayerPixels(activeId, new Uint8Array(cw * ch * 4));
+      handle.writeLayerCanvasData(activeId, emptyCanvas(format, cw, ch));
     }
 
     const { w: origW, h: origH } = rect;
     const floatCanvas = new OffscreenCanvas(origW, origH);
     const fc = floatCanvas.getContext("2d")!;
     fc.putImageData(
-      new ImageData(new Uint8ClampedArray(floatBuffer), origW, origH),
+      new ImageData(
+        new Uint8ClampedArray(previewRgba(floatBuffer, format, state.swatches)),
+        origW,
+        origH,
+      ),
       0,
       0,
     );
@@ -369,6 +427,7 @@ export function useTransform({
       originalH: origH,
       originalRect: rect,
       floatBuffer,
+      pixelFormat: format,
       floatCanvas,
       savedLayerPixels,
       savedSelectionMask,

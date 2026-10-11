@@ -1,9 +1,9 @@
 import type { AppAction } from "@/core/store/AppContext";
 
 import {
-  f32TransferStore,
-  u8TransferStore,
-} from "@/core/store/layerDataTransfer";
+  createLayerDataBundle,
+  type LayerDataBundle,
+} from "@/core/store/layerPayload";
 import type { TabRecord } from "@/core/store/tabTypes";
 import type { AppState } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
@@ -53,7 +53,7 @@ interface UseCanvasTransformsOptions {
   /** Live active-tab id, read after awaits to detect a tab switch. */
   activeTabIdRef: { readonly current: string };
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
-  setPendingLayerData: Dispatch<SetStateAction<Map<string, string> | null>>;
+  setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
   pendingLayerLabelRef: MutableRefObject<string | null>;
   canvasWidth: number;
   canvasHeight: number;
@@ -185,6 +185,65 @@ function flippedGeo(geo: LayerGeo, W: number, H: number, axis: 0 | 1): LayerGeo 
     : { ...geo, offsetY: H - geo.offsetY - geo.layerHeight };
 }
 
+/** A JS-heap copy of an 8-bit layer buffer. Layer buffers may be views into
+ *  the WASM heap, which a WASM call that grows memory would detach. */
+const copyOf = (buf: LayerBuffer): Uint8Array => (buf.data as Uint8Array).slice();
+
+/** Rotate one layer buffer (in its own format and layer-local space) with
+ *  the whole canvas (W×H). */
+async function rotateLayerBuffer(
+  buf: LayerBuffer,
+  W: number,
+  H: number,
+  amount: 0 | 1 | 2,
+): Promise<LayerBuffer> {
+  const { width: lw, height: lh } = buf;
+  const data =
+    buf.format === "rgba32f"
+      ? rotateF32(buf.data as Float32Array, lw, lh, amount).data
+      : buf.format === "indexed8"
+        ? await rotateIndexed(copyOf(buf), lw, lh, amount)
+        : await rotateRgba(copyOf(buf), lw, lh, amount);
+  const geo = rotatedGeo(
+    { layerWidth: lw, layerHeight: lh, offsetX: buf.offsetX, offsetY: buf.offsetY },
+    W,
+    H,
+    amount,
+  );
+  return {
+    data,
+    format: buf.format,
+    width: geo.layerWidth,
+    height: geo.layerHeight,
+    offsetX: geo.offsetX,
+    offsetY: geo.offsetY,
+  };
+}
+
+/** Flip one layer buffer (in its own format and layer-local space) with the
+ *  whole canvas (W×H). */
+async function flipLayerBuffer(
+  buf: LayerBuffer,
+  W: number,
+  H: number,
+  axis: 0 | 1,
+): Promise<LayerBuffer> {
+  const { width: lw, height: lh } = buf;
+  const data =
+    buf.format === "rgba32f"
+      ? flipF32(buf.data as Float32Array, lw, lh, axis)
+      : buf.format === "indexed8"
+        ? await flipIndexed(copyOf(buf), lw, lh, axis)
+        : await flipRgba(copyOf(buf), lw, lh, axis);
+  const geo = flippedGeo(
+    { layerWidth: lw, layerHeight: lh, offsetX: buf.offsetX, offsetY: buf.offsetY },
+    W,
+    H,
+    axis,
+  );
+  return { ...buf, data, offsetX: geo.offsetX, offsetY: geo.offsetY };
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useCanvasTransforms({
@@ -202,11 +261,6 @@ export function useCanvasTransforms({
   setRescaleProgress,
   activeTabIdRef,
 }: UseCanvasTransformsOptions): UseCanvasTransformsReturn {
-  // Transfer-store keys for this tab's transform results. Prefixed so they
-  // can't collide with another tab's layer ids (every document has a
-  // "layer-0") or with this tab's own backgrounded pixels (`${tabId}:${id}`).
-  const xformPrefix = `${activeTabId}:xform:`;
-
   /**
    * Async transforms (AI rescale/restore can take minutes) must not apply
    * their result to whichever tab happens to be active when they finish.
@@ -215,8 +269,6 @@ export function useCanvasTransforms({
   const abandonedAfterTabSwitch = useCallback(
     (startTabId: string, what: string): boolean => {
       if (activeTabIdRef.current === startTabId) return false;
-      f32TransferStore.dropPrefix(`${startTabId}:xform:`);
-      u8TransferStore.dropPrefix(`${startTabId}:xform:`);
       notificationStore.error(
         `${what} was cancelled because a different document became active while it was running.`,
       );
@@ -268,43 +320,34 @@ export function useCanvasTransforms({
     [canvasWidth, canvasHeight, stateRef],
   );
 
-  /** Encode transformed buffers for the remounted canvas: transfer-store
-   *  refs in each layer's format plus its new geometry. */
+  /** Package transformed buffers for the remounted canvas: each layer in
+   *  its own format with its new geometry, masks canvas-sized. */
   const encodeLayerBuffers = useCallback(
     (
       results: readonly { id: string; mask: boolean; buf: LayerBuffer }[],
       newW: number,
       newH: number,
-    ): Map<string, string> => {
-      const encoded = new Map<string, string>();
+    ): LayerDataBundle => {
+      const pending = createLayerDataBundle();
       for (const { id, mask, buf } of results) {
         if (mask) {
-          const key = `${xformPrefix}${id}:adjustment-mask`;
-          u8TransferStore.set(key, toCanvasSized(buf, newW, newH));
-          encoded.set(`${id}:adjustment-mask`, `data:raw/rgba8-ref;id=${key}`);
+          pending.adjustmentMasks.set(id, toCanvasSized(buf, newW, newH));
           continue;
         }
-        const key = xformPrefix + id;
-        if (buf.format === "rgba32f") {
-          f32TransferStore.set(key, buf.data as Float32Array);
-          encoded.set(id, `data:raw/f32-ref;id=${key}`);
-        } else {
-          u8TransferStore.set(key, buf.data as Uint8Array);
-          encoded.set(id, `data:raw/${buf.format === "indexed8" ? "indexed8" : "rgba8"}-ref;id=${key}`);
-        }
-        encoded.set(
-          `${id}:geo`,
-          JSON.stringify({
+        pending.layers.set(id, {
+          format: buf.format,
+          data: buf.data,
+          geo: {
             layerWidth: buf.width,
             layerHeight: buf.height,
             offsetX: buf.offsetX,
             offsetY: buf.offsetY,
-          }),
-        );
+          },
+        });
       }
-      return encoded;
+      return pending;
     },
-    [xformPrefix],
+    [],
   );
 
   const handleResizeImage = useCallback(
@@ -327,7 +370,7 @@ export function useCanvasTransforms({
             buf: await resampleLayer(e.buf, oldW, oldH, newW, newH, filter),
           })),
         );
-        const encoded = encodeLayerBuffers(results, newW, newH);
+        const pending = encodeLayerBuffers(results, newW, newH);
         if (abandonedAfterTabSwitch(activeTabId, "Resize Image")) return;
         captureHistory("Before Resize Image");
         const resizeTabId = activeTabId;
@@ -346,7 +389,7 @@ export function useCanvasTransforms({
               : t,
           ),
         );
-        setPendingLayerData(encoded);
+        setPendingLayerData(pending);
         pendingLayerLabelRef.current = "Resize Image";
         dispatch({
           type: "RESIZE_CANVAS",
@@ -367,7 +410,6 @@ export function useCanvasTransforms({
       stateRef,
       captureHistory,
       abandonedAfterTabSwitch,
-      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -420,7 +462,7 @@ export function useCanvasTransforms({
         }));
       });
       try {
-        const encoded = new Map<string, string>();
+        const pending = createLayerDataBundle();
         for (let i = 0; i < eligibleLayers.length; i++) {
           const layer = eligibleLayers[i];
           const pixels = handle.getLayerPixels(layer.id);
@@ -452,8 +494,7 @@ export function useCanvasTransforms({
             });
             resized = result.rgba;
           }
-          u8TransferStore.set(xformPrefix + layer.id, resized);
-          encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
+          pending.layers.set(layer.id, { format: "rgba8", data: resized });
         }
         if (abandonedAfterTabSwitch(activeTabId, "Rescale Image")) return;
         captureHistory("Before Rescale Image");
@@ -473,7 +514,7 @@ export function useCanvasTransforms({
               : t,
           ),
         );
-        setPendingLayerData(encoded);
+        setPendingLayerData(pending);
         pendingLayerLabelRef.current = "Rescale Image";
         dispatch({
           type: "RESIZE_CANVAS",
@@ -495,7 +536,8 @@ export function useCanvasTransforms({
       stateRef,
       captureHistory,
       abandonedAfterTabSwitch,
-      xformPrefix,
+      collectLayerBuffers,
+      encodeLayerBuffers,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -543,7 +585,7 @@ export function useCanvasTransforms({
         }));
       });
       try {
-        const encoded = new Map<string, string>();
+        const pending = createLayerDataBundle();
         for (let i = 0; i < eligibleLayers.length; i++) {
           const layer = eligibleLayers[i];
           const pixels = handle.getLayerPixels(layer.id);
@@ -568,10 +610,9 @@ export function useCanvasTransforms({
             targetWidth: W,
             targetHeight: H,
           });
-          u8TransferStore.set(xformPrefix + layer.id, result.rgba);
-          encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
+          pending.layers.set(layer.id, { format: "rgba8", data: result.rgba });
         }
-        if (encoded.size === 0) return;
+        if (pending.layers.size === 0) return;
         if (abandonedAfterTabSwitch(activeTabId, "Restore Image")) return;
         captureHistory("Before Restore Image");
         const restoreTabId = activeTabId;
@@ -585,7 +626,7 @@ export function useCanvasTransforms({
               : t,
           ),
         );
-        setPendingLayerData(encoded);
+        setPendingLayerData(pending);
         pendingLayerLabelRef.current = "Restore Image";
       } catch (err) {
         if (opts?.throwErrors) throw err;
@@ -603,7 +644,8 @@ export function useCanvasTransforms({
       stateRef,
       captureHistory,
       abandonedAfterTabSwitch,
-      xformPrefix,
+      collectLayerBuffers,
+      encodeLayerBuffers,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -640,7 +682,7 @@ export function useCanvasTransforms({
 
       // Each layer moves by the anchor offset and is clipped to the new
       // canvas in its own format.
-      const encoded = encodeLayerBuffers(
+      const pending = encodeLayerBuffers(
         collectLayerBuffers(handle).map((e) => ({
           ...e,
           buf: clipLayerToCanvas(e.buf, offsetX, offsetY, newW, newH),
@@ -666,7 +708,7 @@ export function useCanvasTransforms({
             : t,
         ),
       );
-      setPendingLayerData(encoded);
+      setPendingLayerData(pending);
       pendingLayerLabelRef.current = "Resize Canvas";
       dispatch({
         type: "RESIZE_CANVAS",
@@ -682,7 +724,6 @@ export function useCanvasTransforms({
       stateRef,
       captureHistory,
       abandonedAfterTabSwitch,
-      xformPrefix,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -715,7 +756,7 @@ export function useCanvasTransforms({
 
     // Each layer moves by the crop origin and is clipped to the crop size
     // in its own format.
-    const encoded = encodeLayerBuffers(
+    const pending = encodeLayerBuffers(
       collectLayerBuffers(handle).map((e) => ({
         ...e,
         buf: clipLayerToCanvas(e.buf, -cropX, -cropY, cropW, cropH),
@@ -742,7 +783,7 @@ export function useCanvasTransforms({
           : t,
       ),
     );
-    setPendingLayerData(encoded);
+    setPendingLayerData(pending);
     pendingLayerLabelRef.current = "Crop";
     dispatch({
       type: "RESIZE_CANVAS",
@@ -756,7 +797,6 @@ export function useCanvasTransforms({
     canvasHandleRef,
     stateRef,
     captureHistory,
-    xformPrefix,
     activeTabId,
     setTabs,
     setPendingLayerData,
@@ -781,60 +821,20 @@ export function useCanvasTransforms({
       const startTabId = activeTabIdRef.current;
       const oldW = canvasWidth;
       const oldH = canvasHeight;
-      const { layers, pixelFormat } = stateRef.current;
-      const isIndexed = pixelFormat === "indexed8";
       const newW = amount === "180" ? oldW : oldH;
       const newH = amount === "180" ? oldH : oldW;
       const wasmAmount: 0 | 1 | 2 =
         amount === "90cw" ? 0 : amount === "180" ? 1 : 2;
-      // rgba32f layers are stored layer-local (not canvas-sized), so they're
-      // rotated in their own space and their offset is remapped.
-      const layerGeo = handle.captureAllLayerGeometry();
-      const geoEntries: [string, string][] = [];
-
       try {
-        const entries = await Promise.all(
-          layers.map(async (layer): Promise<[string, string] | null> => {
-            if (isIndexed) {
-              const srcIdx = handle.getLayerIndexData(layer.id);
-              if (!srcIdx) return null;
-              const dst = await rotateIndexed(srcIdx, oldW, oldH, wasmAmount);
-              u8TransferStore.set(xformPrefix + layer.id, dst);
-              return [layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`];
-            } else if (stateRef.current.pixelFormat === "rgba32f") {
-              const raw = handle.getLayerRawData(layer.id);
-              if (!raw) return null;
-              const geo = layerGeo.get(layer.id) ?? {
-                layerWidth: oldW,
-                layerHeight: oldH,
-                offsetX: 0,
-                offsetY: 0,
-              };
-              const { data } = rotateF32(
-                raw as Float32Array,
-                geo.layerWidth,
-                geo.layerHeight,
-                wasmAmount,
-              );
-              f32TransferStore.set(xformPrefix + layer.id, data);
-              geoEntries.push([
-                `${layer.id}:geo`,
-                JSON.stringify(rotatedGeo(geo, oldW, oldH, wasmAmount)),
-              ]);
-              return [layer.id, `data:raw/f32-ref;id=${xformPrefix}${layer.id}`];
-            } else {
-              const src = handle.getLayerPixels(layer.id);
-              if (!src) return null;
-              const rotated = await rotateRgba(src, oldW, oldH, wasmAmount);
-              u8TransferStore.set(xformPrefix + layer.id, rotated);
-              return [layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`];
-            }
-          }),
+        // Every layer (and adjustment mask) is rotated in its own format and
+        // layer-local space, and its offset remapped.
+        const results = await Promise.all(
+          collectLayerBuffers(handle).map(async (e) => ({
+            ...e,
+            buf: await rotateLayerBuffer(e.buf, oldW, oldH, wasmAmount),
+          })),
         );
-        const encoded = new Map([
-          ...entries.filter((e): e is [string, string] => e !== null),
-          ...geoEntries,
-        ]);
+        const pending = encodeLayerBuffers(results, newW, newH);
 
         const label =
           amount === "90cw"
@@ -860,7 +860,7 @@ export function useCanvasTransforms({
               : t,
           ),
         );
-        setPendingLayerData(encoded);
+        setPendingLayerData(pending);
         pendingLayerLabelRef.current = label;
         if (amount !== "180") {
           dispatch({
@@ -881,7 +881,8 @@ export function useCanvasTransforms({
       stateRef,
       captureHistory,
       abandonedAfterTabSwitch,
-      xformPrefix,
+      collectLayerBuffers,
+      encodeLayerBuffers,
       activeTabId,
       setTabs,
       setPendingLayerData,
@@ -900,57 +901,17 @@ export function useCanvasTransforms({
       const startTabId = activeTabIdRef.current;
       const w = canvasWidth;
       const h = canvasHeight;
-      const { layers, pixelFormat } = stateRef.current;
-      const isIndexed = pixelFormat === "indexed8";
       const wasmAxis: 0 | 1 = axis === "horizontal" ? 0 : 1;
-      // rgba32f layers are stored layer-local (not canvas-sized), so they're
-      // flipped in their own space and their offset is mirrored.
-      const layerGeo = handle.captureAllLayerGeometry();
-      const geoEntries: [string, string][] = [];
-
       try {
-        const entries = await Promise.all(
-          layers.map(async (layer): Promise<[string, string] | null> => {
-            if (isIndexed) {
-              const srcIdx = handle.getLayerIndexData(layer.id);
-              if (!srcIdx) return null;
-              const dst = await flipIndexed(srcIdx, w, h, wasmAxis);
-              u8TransferStore.set(xformPrefix + layer.id, dst);
-              return [layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`];
-            } else if (stateRef.current.pixelFormat === "rgba32f") {
-              const raw = handle.getLayerRawData(layer.id);
-              if (!raw) return null;
-              const geo = layerGeo.get(layer.id) ?? {
-                layerWidth: w,
-                layerHeight: h,
-                offsetX: 0,
-                offsetY: 0,
-              };
-              const data = flipF32(
-                raw as Float32Array,
-                geo.layerWidth,
-                geo.layerHeight,
-                wasmAxis,
-              );
-              f32TransferStore.set(xformPrefix + layer.id, data);
-              geoEntries.push([
-                `${layer.id}:geo`,
-                JSON.stringify(flippedGeo(geo, w, h, wasmAxis)),
-              ]);
-              return [layer.id, `data:raw/f32-ref;id=${xformPrefix}${layer.id}`];
-            } else {
-              const src = handle.getLayerPixels(layer.id);
-              if (!src) return null;
-              const flipped = await flipRgba(src, w, h, wasmAxis);
-              u8TransferStore.set(xformPrefix + layer.id, flipped);
-              return [layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`];
-            }
-          }),
+        // Every layer (and adjustment mask) is flipped in its own format and
+        // layer-local space, and its offset mirrored.
+        const results = await Promise.all(
+          collectLayerBuffers(handle).map(async (e) => ({
+            ...e,
+            buf: await flipLayerBuffer(e.buf, w, h, wasmAxis),
+          })),
         );
-        const encoded = new Map([
-          ...entries.filter((e): e is [string, string] => e !== null),
-          ...geoEntries,
-        ]);
+        const pending = encodeLayerBuffers(results, w, h);
 
         const label =
           axis === "horizontal" ? "Flip Horizontal" : "Flip Vertical";
@@ -962,7 +923,7 @@ export function useCanvasTransforms({
             t.id === tabId ? { ...t, canvasKey: t.canvasKey + 1 } : t,
           ),
         );
-        setPendingLayerData(encoded);
+        setPendingLayerData(pending);
         pendingLayerLabelRef.current = label;
       } catch (err) {
         if (opts?.throwErrors) throw err;
@@ -977,7 +938,8 @@ export function useCanvasTransforms({
       stateRef,
       captureHistory,
       abandonedAfterTabSwitch,
-      xformPrefix,
+      collectLayerBuffers,
+      encodeLayerBuffers,
       activeTabId,
       setTabs,
       setPendingLayerData,

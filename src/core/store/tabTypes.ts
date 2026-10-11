@@ -1,4 +1,5 @@
 import type { DocumentScope } from "@/core/store/scope";
+import type { LayerDataBundle } from "@/core/store/layerPayload";
 import type {
   LayerState,
   BackgroundFill,
@@ -68,8 +69,9 @@ export interface TabRecord {
   title: string;
   filePath: string | null;
   snapshot: TabSnapshot;
-  /** Pixel data for each layer — null while tab is active (data lives in WebGL) */
-  savedLayerData: Map<string, string> | null;
+  /** Pixel data for each layer while the tab is backgrounded. Dropped once
+   *  its Canvas has mounted (the live data then lives on the GPU). */
+  savedLayerData: LayerDataBundle | null;
   /**
    * Per-document store bundle (selection, history, crop, transform, …).
    * Each tab owns its own instance; switching tabs calls `setActiveScope`

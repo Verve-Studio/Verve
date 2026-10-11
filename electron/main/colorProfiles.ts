@@ -146,18 +146,17 @@ export function registerColorProfileHandlers(): void {
   ipcMain.handle('cms:readProfileBytes', async (
     _event,
     id: string,
-  ): Promise<string | null> => {
+  ): Promise<Uint8Array | null> => {
     // Re-resolve the entry from the filesystem each call rather than
     // caching the catalog in module state — keeps imports/deletes between
-    // catalog refreshes from serving stale paths. Returns base64 to keep
-    // the IPC boundary symmetrical with the other file reads.
+    // catalog refreshes from serving stale paths. Raw bytes (the renderer
+    // receives a Uint8Array).
     const userDir = userProfileDir()
     if (id.startsWith('usr:')) {
       const path = safeJoin(userDir, id.slice(4))
       if (!path) return null
       try {
-        const buf = await readFile(path)
-        return buf.toString('base64')
+        return await readFile(path)
       } catch {
         return null
       }
@@ -168,8 +167,7 @@ export function registerColorProfileHandlers(): void {
         const path = safeJoin(dir, name)
         if (!path) return null
         try {
-          const buf = await readFile(path)
-          return buf.toString('base64')
+          return await readFile(path)
         } catch {
           // try next dir
         }

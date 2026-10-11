@@ -2,16 +2,14 @@ import type { AppAction } from "@/core/store/AppContext";
 
 import type { AppState } from "@/types";
 import { computeSourceMask } from "@/utils/computeSourceMask";
-import {
-  clampF32ToUint8,
-  convertRgba8ToF32,
-} from "@/utils/pixelFormatConvert";
+import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 import { extractErrorMessage } from "@/utils/userFeedback";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { getPixelOps } from "@/wasm";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useRef } from "react";
 import { activeScope } from "@/core/store/scope";
+import { convertPixelBuffer } from "@/utils/convertPixelBuffer";
 import { inpaintRegionOffThread } from "@/wasm/pixelopsWorkerClient";
 import { newLayerId as makeLayerId } from "@/utils/layerId";
 
@@ -161,15 +159,17 @@ export function useContentAwareFill({
         pendingLayerLabelRef.current = label;
 
         // Prepare GPU layer (before dispatching so the sync effect is a no-op).
-        // The inpainting algorithm always returns sRGB RGBA8 bytes; in an f32
-        // doc they're gamma-decoded with `convertRgba8ToF32` and the layer is
-        // created in the doc format so the floats aren't clamped into bytes.
+        // The inpainting algorithm always returns sRGB RGBA8 bytes; they're
+        // converted to the doc format (gamma-decoded floats in an f32 doc,
+        // nearest palette indices in an indexed8 doc).
         const newLayerId = makeLayerId("layer");
         const docFormat = stateRef.current.pixelFormat;
-        const layerData =
-          docFormat === "rgba32f"
-            ? convertRgba8ToF32(fillLayerData)
-            : fillLayerData;
+        const layerData = await convertPixelBuffer(
+          fillLayerData,
+          "rgba8",
+          docFormat,
+          stateRef.current.swatches,
+        );
         handle.prepareNewLayer(
           newLayerId,
           label,

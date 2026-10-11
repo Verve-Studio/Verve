@@ -20,6 +20,8 @@
 // On embed, any pre-existing profile chunk/marker/tag is stripped first so
 // we never write a file with two competing profiles.
 
+import { deflate, inflate } from "@/utils/zlib";
+
 // ─── PNG CRC-32 ──────────────────────────────────────────────────────────────
 
 const CRC_TABLE: Uint32Array = (() => {
@@ -38,22 +40,6 @@ function crc32(bytes: Uint8Array): number {
     c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
   }
   return (c ^ 0xffffffff) >>> 0;
-}
-
-// ─── zlib via platform CompressionStream (PNG iCCP only) ─────────────────────
-
-async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([bytes as BlobPart])
-    .stream()
-    .pipeThrough(new CompressionStream("deflate"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([bytes as BlobPart])
-    .stream()
-    .pipeThrough(new DecompressionStream("deflate"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 function concat(parts: Uint8Array[]): Uint8Array {

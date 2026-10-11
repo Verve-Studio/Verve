@@ -4,8 +4,12 @@ import type { ClipboardData } from "@/core/store/clipboardStore";
 import { clipboardStore } from "@/core/store/clipboardStore";
 
 import { makeTabId } from "@/core/store/tabTypes";
-import { convertRgba8ToF32 } from "@/utils/pixelFormatConvert";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
+import {
+  clipboardToFormat,
+  clipboardToRgba8,
+  cropToClipboard,
+} from "@/core/io/clipboardPixels";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback } from "react";
 import { activeScope } from "@/core/store/scope";
@@ -75,53 +79,52 @@ async function readSystemClipboardImage(): Promise<{
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-/** Crop to tight bounding box, write to internal store and system clipboard. */
-function writeToClipboard(
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-): void {
-  let minX = width,
-    minY = height,
-    maxX = -1,
-    maxY = -1;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (pixels[(y * width + x) * 4 + 3] > 0) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxX < 0) return;
-
-  const bboxW = maxX - minX + 1;
-  const bboxH = maxY - minY + 1;
-  const bboxData = new Uint8Array(bboxW * bboxH * 4);
-  for (let y = 0; y < bboxH; y++) {
-    for (let x = 0; x < bboxW; x++) {
-      const si = ((minY + y) * width + (minX + x)) * 4;
-      const di = (y * bboxW + x) * 4;
-      bboxData[di] = pixels[si];
-      bboxData[di + 1] = pixels[si + 1];
-      bboxData[di + 2] = pixels[si + 2];
-      bboxData[di + 3] = pixels[si + 3];
-    }
-  }
-  clipboardStore.current = {
-    data: bboxData,
-    width: bboxW,
-    height: bboxH,
-    offsetX: minX,
-    offsetY: minY,
-  };
+/** Store `clip` internally (native format) and write its 8-bit sRGB view to
+ *  the system clipboard for other apps. */
+function writeToClipboard(clip: ClipboardData | null): void {
+  if (!clip) return;
+  clipboardStore.current = clip;
   void window.api
-    .clipboardWriteImage(rgbaToBgraPremul(bboxData), bboxW, bboxH)
+    .clipboardWriteImage(
+      rgbaToBgraPremul(clipboardToRgba8(clip)),
+      clip.width,
+      clip.height,
+    )
     .catch(() => {
       /* system clipboard write is best-effort */
     });
+}
+
+/** The clipboard to paste: the internal one (native format) when the system
+ *  clipboard still holds our copy, else the system image centred. */
+async function resolveClipboard(
+  canvasWidth: number,
+  canvasHeight: number,
+): Promise<ClipboardData | null> {
+  const internal = clipboardStore.current;
+  try {
+    const decoded = await readSystemClipboardImage();
+    if (decoded) {
+      const { data, width: srcW, height: srcH } = decoded;
+      // Same dimensions as the internal store → came from this session's
+      // copy; reuse it (lossless, original position).
+      if (internal && internal.width === srcW && internal.height === srcH) {
+        return internal;
+      }
+      // Image came from another app (or different dimensions) — paste centred.
+      return {
+        format: "rgba8",
+        data,
+        width: srcW,
+        height: srcH,
+        offsetX: Math.floor((canvasWidth - srcW) / 2),
+        offsetY: Math.floor((canvasHeight - srcH) / 2),
+      };
+    }
+  } catch {
+    // System clipboard read unavailable; fall through to internal store.
+  }
+  return internal;
 }
 
 export function useClipboard({
@@ -134,20 +137,27 @@ export function useClipboard({
   const handleCopy = useCallback((): void => {
     const activeId = state.activeLayerId;
     if (!activeId) return;
-    const pixels = canvasHandleRef.current?.getLayerPixels(activeId);
-    if (!pixels) return;
-    const { width, height } = state.canvas;
-
-    // Apply selection mask: scale alpha by selection strength (supports feathered edges)
-    const mask = activeScope().selection.mask;
-    if (mask) {
-      for (let i = 0; i < mask.length; i++) {
-        pixels[i * 4 + 3] = Math.round((pixels[i * 4 + 3] * mask[i]) / 255);
-      }
-    }
-
-    writeToClipboard(pixels, width, height);
-  }, [state.activeLayerId, state.canvas, canvasHandleRef]);
+    const layer = canvasHandleRef.current?.getGpuLayer(activeId);
+    if (!layer) return;
+    // Copied in the layer's own format; the selection scales alpha
+    // (feathered edges).
+    writeToClipboard(
+      cropToClipboard(
+        {
+          format: layer.format,
+          data: layer.data,
+          width: layer.layerWidth,
+          height: layer.layerHeight,
+          offsetX: layer.offsetX,
+          offsetY: layer.offsetY,
+          palette: state.swatches,
+        },
+        activeScope().selection.mask,
+        state.canvas.width,
+        state.canvas.height,
+      ),
+    );
+  }, [state.activeLayerId, state.canvas, state.swatches, canvasHandleRef]);
 
   const handleCut = useCallback((): void => {
     const activeId = state.activeLayerId;
@@ -192,54 +202,19 @@ export function useClipboard({
       const { width: dstW, height: dstH } = state.canvas;
 
       // Prefer the system clipboard so images copied from other apps can be pasted.
-      let clipData: ClipboardData | null = null;
-      try {
-        {
-          const decoded = await readSystemClipboardImage();
-          if (decoded) {
-            const { data, width: srcW, height: srcH } = decoded;
-            const internal = clipboardStore.current;
-            if (
-              internal &&
-              internal.width === srcW &&
-              internal.height === srcH
-            ) {
-              // Same dimensions as internal store → came from this session's copy;
-              // reuse stored offset so the paste lands back at its original position.
-              clipData = internal;
-            } else {
-              // Image came from another app (or different dimensions) — paste centred.
-              clipData = {
-                data,
-                width: srcW,
-                height: srcH,
-                offsetX: Math.floor((dstW - srcW) / 2),
-                offsetY: Math.floor((dstH - srcH) / 2),
-              };
-            }
-          }
-        }
-      } catch {
-        // System clipboard read unavailable; fall through to internal store.
-      }
-
-      if (!clipData) clipData = clipboardStore.current;
+      const clipData = await resolveClipboard(dstW, dstH);
       if (!clipData) return;
 
-      const {
-        data: srcData,
-        width: srcW,
-        height: srcH,
-        offsetX,
-        offsetY,
-      } = clipData;
+      const { width: srcW, height: srcH, offsetX, offsetY } = clipData;
       const newId = makeTabId();
-      // Clipboard data is always RGBA8 bytes. In an f32 doc convert to
-      // Float32 (matching the codebase's `convertRgba8ToF32` convention)
-      // and pass the matching format so the layer is allocated as f32.
+      // Convert to the document's format (nearest palette colour in an
+      // indexed8 document).
       const docFormat = state.pixelFormat;
-      const pasteData =
-        docFormat === "rgba32f" ? convertRgba8ToF32(srcData) : srcData;
+      const pasteData = await clipboardToFormat(
+        clipData,
+        docFormat,
+        state.swatches,
+      );
       canvasHandleRef.current?.prepareNewLayer(
         newId,
         "Paste",
@@ -263,7 +238,14 @@ export function useClipboard({
         },
       });
     })();
-  }, [state.canvas, dispatch, canvasHandleRef, pendingLayerLabelRef]);
+  }, [
+    state.canvas,
+    state.pixelFormat,
+    state.swatches,
+    dispatch,
+    canvasHandleRef,
+    pendingLayerLabelRef,
+  ]);
 
   const handleCopyMerged = useCallback((): void => {
     void (async () => {
@@ -271,16 +253,23 @@ export function useClipboard({
       const result =
         await canvasHandleRef.current?.rasterizeComposite("sample");
       if (!result) return;
-      // Normalize f32→u8 for rgba32f documents; rgba8/indexed8 are already Uint8Array
-      const rgba =
-        result.data instanceof Float32Array
-          ? new Uint8Array(
-              result.data.map((v) =>
-                Math.round(Math.min(1, Math.max(0, v)) * 255),
-              ),
-            )
-          : (result.data as Uint8Array);
-      writeToClipboard(rgba, width, height);
+      // The composite is scene-linear floats in rgba32f documents, RGBA
+      // bytes otherwise (indexed8 documents composite to colours).
+      writeToClipboard(
+        cropToClipboard(
+          {
+            format: result.data instanceof Float32Array ? "rgba32f" : "rgba8",
+            data: result.data,
+            width: result.width,
+            height: result.height,
+            offsetX: 0,
+            offsetY: 0,
+          },
+          null,
+          width,
+          height,
+        ),
+      );
     })();
   }, [state.canvas, canvasHandleRef]);
 
@@ -291,44 +280,10 @@ export function useClipboard({
     void (async () => {
       const { width: dstW, height: dstH } = state.canvas;
 
-      // Resolve clipboard — same logic as handlePaste
-      let clipData: ClipboardData | null = null;
-      try {
-        {
-          const decoded = await readSystemClipboardImage();
-          if (decoded) {
-            const { data, width: srcW, height: srcH } = decoded;
-            const internal = clipboardStore.current;
-            if (
-              internal &&
-              internal.width === srcW &&
-              internal.height === srcH
-            ) {
-              clipData = internal;
-            } else {
-              clipData = {
-                data,
-                width: srcW,
-                height: srcH,
-                offsetX: Math.floor((dstW - srcW) / 2),
-                offsetY: Math.floor((dstH - srcH) / 2),
-              };
-            }
-          }
-        }
-      } catch {
-        /* fall through */
-      }
-      if (!clipData) clipData = clipboardStore.current;
+      const clipData = await resolveClipboard(dstW, dstH);
       if (!clipData) return;
 
-      const {
-        data: srcData,
-        width: srcW,
-        height: srcH,
-        offsetX,
-        offsetY,
-      } = clipData;
+      const { width: srcW, height: srcH, offsetX, offsetY } = clipData;
       // Position the layer at the selection's top-left corner so that the pasted
       // content's origin aligns with the origin of the selection bounding box.
       const bounds = selectionBounds(selMask, dstW, dstH);
@@ -337,11 +292,13 @@ export function useClipboard({
       const newId = makeTabId();
       const maskId = makeTabId();
 
-      // Same Uint8 → Float32 conversion as the regular Paste path so the
-      // pasted layer lands correctly in an f32 document.
+      // Same conversion as the regular Paste path.
       const docFormat = state.pixelFormat;
-      const pasteData =
-        docFormat === "rgba32f" ? convertRgba8ToF32(srcData) : srcData;
+      const pasteData = await clipboardToFormat(
+        clipData,
+        docFormat,
+        state.swatches,
+      );
       canvasHandleRef.current?.prepareNewLayer(
         newId,
         "Paste Into",
@@ -377,7 +334,14 @@ export function useClipboard({
         },
       });
     })();
-  }, [state.canvas, dispatch, canvasHandleRef, pendingLayerLabelRef]);
+  }, [
+    state.canvas,
+    state.pixelFormat,
+    state.swatches,
+    dispatch,
+    canvasHandleRef,
+    pendingLayerLabelRef,
+  ]);
 
   return {
     handleCopy,

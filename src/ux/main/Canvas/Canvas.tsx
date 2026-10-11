@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import type { LayerDataBundle } from "@/core/store/layerPayload";
 import { useWebGPU } from "@/core/services/useWebGPU";
 import {
   shallowEqual,
@@ -54,8 +55,8 @@ export type { CanvasHandle } from "./canvasHandle";
 interface CanvasProps {
   width: number;
   height: number;
-  /** Per-layer base64 PNG data URLs to populate on mount (used when opening a file). */
-  initialLayerData?: Map<string, string>;
+  /** Pixel data to hydrate the GPU layers from on mount. */
+  initialLayerData?: LayerDataBundle;
   /** Called with the tool label after a pixel-modifying stroke completes. */
   onStrokeEnd?: (label: string) => void;
   /** Called once after the canvas has finished its first initialization render. */

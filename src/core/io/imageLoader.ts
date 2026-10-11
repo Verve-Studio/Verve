@@ -1,5 +1,6 @@
 import * as UTIF from "utif";
 import { decodeRgbe } from "./hdrCodec";
+import { base64ToBytes } from "@/utils/base64";
 import {
   decodeExr,
   getDdsInfo,
@@ -473,8 +474,5 @@ export async function loadImagePixels(
   if (!match || !match[2]) {
     throw new Error("Unsupported image data URL");
   }
-  const binary = atob(dataUrl.slice(match[0].length));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return loadImageBytes(bytes, match[1]);
+  return loadImageBytes(base64ToBytes(dataUrl.slice(match[0].length)), match[1]);
 }

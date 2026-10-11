@@ -110,6 +110,28 @@ export interface PixelOpsModule {
     interp: number,
   ): void;
 
+  _pixelops_affine_transform_f32(
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
+    dstPtr: number,
+    dstW: number,
+    dstH: number,
+    invMatrixPtr: number,
+    interp: number,
+  ): void;
+
+  _pixelops_perspective_transform_f32(
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
+    dstPtr: number,
+    dstW: number,
+    dstH: number,
+    invHPtr: number,
+    interp: number,
+  ): void;
+
   /** Rotate RGBA image. amount: 0=90°CW, 1=180°, 2=270°CW. dst must be pre-allocated. */
   _pixelops_rotate_rgba(
     srcPtr: number,

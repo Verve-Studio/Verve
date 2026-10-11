@@ -6,56 +6,80 @@
  * AppState.pixelBrushes and are saved inside the .verve file.
  */
 import type { PixelBrush } from "@/types";
+import { base64ToBytes, bytesToBase64 } from "@/utils/base64";
 
 // ─── Brush file format ────────────────────────────────────────────────────────
+//
+// `pixel-brushes.json` / `.pxbrush` are JSON, so the RGBA payload is base64
+// in the file only; in memory it's a Uint8Array.
 
-export interface PixelBrushFile {
+/** A pixel brush as written to a file: `rgba` is base64 (brush files) or a
+ *  container blob reference (`.verve`). */
+export type SerializedPixelBrush = Omit<PixelBrush, "rgba"> & { rgba: string };
+
+interface PixelBrushFile {
   version: 1;
-  brushes: PixelBrush[];
+  brushes: SerializedPixelBrush[];
 }
 
 export function serializePixelBrushFile(brushes: PixelBrush[]): string {
-  const file: PixelBrushFile = { version: 1, brushes };
+  const file: PixelBrushFile = {
+    version: 1,
+    brushes: brushes.map((b) => ({ ...b, rgba: bytesToBase64(b.rgba) })),
+  };
   return JSON.stringify(file, null, 2);
 }
 
-/** Structural check for a pixel brush: positive integer size and a
- *  base64 payload of exactly width × height × 4 bytes. Malformed brushes
- *  (zero size → NaN grid snapping, truncated data) broke painting. */
+/** Structural check for a pixel brush: positive integer size and a payload
+ *  of exactly width × height × 4 bytes. Malformed brushes (zero size → NaN
+ *  grid snapping, truncated data) broke painting. */
 export function isValidPixelBrush(b: unknown): b is PixelBrush {
   if (typeof b !== "object" || b === null) return false;
   const r = b as Record<string, unknown>;
   const { width: w, height: h, rgba, id } = r;
-  if (typeof id !== "string" || typeof rgba !== "string") return false;
+  if (typeof id !== "string" || !(rgba instanceof Uint8Array)) return false;
   if (!Number.isInteger(w) || !Number.isInteger(h)) return false;
   if ((w as number) < 1 || (h as number) < 1 || (w as number) * (h as number) > 1 << 20)
     return false;
+  return rgba.length === (w as number) * (h as number) * 4;
+}
+
+/** Rebuild a serialized brush, resolving its `rgba` string through
+ *  `decode`; null when the brush is malformed. */
+export function deserializePixelBrush(
+  raw: unknown,
+  decode: (rgba: string) => Uint8Array,
+): PixelBrush | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.rgba !== "string") return null;
   try {
-    return atob(rgba).length === (w as number) * (h as number) * 4;
+    const brush = { ...r, rgba: decode(r.rgba) };
+    return isValidPixelBrush(brush) ? brush : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 export function parsePixelBrushFile(json: string): PixelBrush[] {
+  let list: unknown[] = [];
   try {
     const parsed = JSON.parse(json) as unknown;
     if (Array.isArray(parsed)) {
-      // Plain array — legacy/simple format
-      return parsed.filter(isValidPixelBrush);
-    }
-    if (
+      list = parsed;
+    } else if (
       typeof parsed === "object" &&
       parsed !== null &&
-      "brushes" in parsed &&
-      Array.isArray((parsed as PixelBrushFile).brushes)
+      Array.isArray((parsed as { brushes?: unknown }).brushes)
     ) {
-      return (parsed as PixelBrushFile).brushes.filter(isValidPixelBrush);
+      list = (parsed as { brushes: unknown[] }).brushes;
     }
   } catch {
     // corrupt — ignore
   }
-  return [];
+  return list
+    .map((b) => deserializePixelBrush(b, base64ToBytes))
+    .filter((b): b is PixelBrush => b !== null);
 }
 
 // ─── Store class ──────────────────────────────────────────────────────────────

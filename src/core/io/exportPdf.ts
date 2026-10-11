@@ -3,6 +3,7 @@
 // composite / text-with-attached-adjustments) as embedded RGB images with
 // soft masks. Page size matches the canvas in points (1 px = 1 pt @ 72 DPI).
 
+import { deflate } from "@/utils/zlib";
 import type {
   TextLayerState,
   ShapeLayerState,
@@ -102,29 +103,6 @@ function pdfBlendModeName(b: BlendMode): string {
 }
 
 // ─── PDF primitive helpers ────────────────────────────────────────────────────
-
-async function deflate(input: Uint8Array): Promise<Uint8Array> {
-  const cs = new CompressionStream("deflate");
-  const writer = cs.writable.getWriter();
-  writer.write(input as unknown as BufferSource);
-  writer.close();
-  const chunks: Uint8Array[] = [];
-  const reader = cs.readable.getReader();
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (value) chunks.push(value);
-  }
-  let total = 0;
-  for (const c of chunks) total += c.length;
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) {
-    out.set(c, off);
-    off += c.length;
-  }
-  return out;
-}
 
 // PDF literal-string escaping for WinAnsi text.
 function escapePdfLiteral(s: string): string {

@@ -7,6 +7,7 @@ import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useMemo } from "react";
 import { newLayerId } from "@/utils/layerId";
+import { matchPaletteIndices } from "@/wasm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,16 +146,27 @@ export function useLayerGroups({
         captureHistory("Merge Group");
 
         const newId = newLayerId("layer");
-        handle.prepareNewLayer(
-          newId,
-          group.name,
-          merged.data,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          stateRef.current.pixelFormat,
-        );
+        const { pixelFormat } = stateRef.current;
+        if (pixelFormat === "indexed8") {
+          // The composite is RGBA: map it back to palette indices.
+          const indexData = await matchPaletteIndices(
+            merged.data as Uint8Array,
+            swatches,
+            255,
+          );
+          handle.prepareNewLayerIndexed(newId, group.name, indexData);
+        } else {
+          handle.prepareNewLayer(
+            newId,
+            group.name,
+            merged.data,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            pixelFormat,
+          );
+        }
 
         const newPixelLayer: PixelLayerState = {
           id: newId,

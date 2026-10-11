@@ -1,14 +1,13 @@
 /**
  * Capture a brush tip from the current selection on the active layer.
  *
- * The captured tip stores the cropped RGBA bitmap (for thumbnails / inspection)
- * plus an 8SSEDT-derived signed distance field. The SDF is what the stamp
- * engine actually samples at paint time — it gives clean scaling to any brush
- * size and naturally feathered edges via the hardness smoothstep, regardless
- * of the source bitmap's resolution.
+ * The captured tip stores the cropped RGBA bitmap. The stamp engine samples
+ * an 8SSEDT-derived signed distance field of its alpha (computed and cached
+ * by `getCachedTipSampler`) — it gives clean scaling to any brush size and
+ * naturally feathered edges via the hardness smoothstep, regardless of the
+ * source bitmap's resolution.
  */
 import type { BrushTipShape } from "@/types";
-import { computeSdfFromRgba, sdfToBase64 } from "@/core/tools/_shared/sdf";
 
 export interface CaptureBrushArgs {
   canvasWidth: number;
@@ -45,7 +44,7 @@ export function captureBrushTipFromSelection(
 
   const bw = maxX - minX + 1;
   const bh = maxY - minY + 1;
-  const out = new Uint8ClampedArray(bw * bh * 4);
+  const out = new Uint8Array(bw * bh * 4);
 
   for (let y = 0; y < bh; y++) {
     for (let x = 0; x < bw; x++) {
@@ -61,24 +60,10 @@ export function captureBrushTipFromSelection(
     }
   }
 
-  // Encode as base64.
-  let bin = "";
-  for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
-  const b64 = btoa(bin);
-
-  // Compute SDF from the alpha channel — this is what the stamp engine
-  // samples at paint time. Threshold of 16/255 catches even faint edges so
-  // soft selections still produce a meaningful tip silhouette.
-  const sdf = computeSdfFromRgba(out, bw, bh, 16);
-  const sdfBase64 = sdfToBase64(sdf);
-
   return {
     kind: "bitmap",
-    bitmapRgba: b64,
+    bitmapRgba: out,
     bitmapWidth: bw,
     bitmapHeight: bh,
-    sdfBase64,
-    sdfWidth: bw,
-    sdfHeight: bh,
   };
 }
