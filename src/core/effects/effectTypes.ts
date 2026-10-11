@@ -65,6 +65,7 @@ import type { TwirlParams } from "./Twirl/TwirlEffect";
 import type { DisplaceParams } from "./Displace/DisplaceEffect";
 import type { LutAdjustmentParams } from "./LutAdjustment/LutAdjustmentEffect";
 import type { ReplaceColorParams } from "./ReplaceColor/ReplaceColorEffect";
+import type { CustomShaderParams } from "./CustomShader/CustomShaderEffect";
 
 /** Type-level twin of `effectRegistry`: every registered effect contributes a
  *  params shape here. Adding a new effect = one import line + one map entry. */
@@ -134,6 +135,7 @@ export interface EffectParamsMap {
   "lut": LutAdjustmentParams;
   "replace-color": ReplaceColorParams;
   "time-of-day": TimeOfDayParams;
+  "custom-shader": CustomShaderParams;
 }
 
 /** Union of every registered effect's id literal. */

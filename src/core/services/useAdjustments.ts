@@ -23,6 +23,8 @@ export interface UseAdjustmentsReturn {
   handleCreateAdjustmentLayer: <T extends EffectType>(
     effectType: T,
     paramOverrides?: Partial<EffectParamsMap[T]>,
+    /** Layer name (defaults to the effect's label). */
+    name?: string,
   ) => void;
   handleCreateColorDitheringWithSetup: (addReduceColors: boolean) => void;
   handleOpenAdjustmentPanel: (layerId: string) => void;
@@ -79,6 +81,7 @@ export function useAdjustments({
     <T extends EffectType>(
       effectType: T,
       paramOverrides?: Partial<EffectParamsMap[T]>,
+      name?: string,
     ): void => {
       const { activeLayerId, layers, openAdjustmentLayerId } = stateRef.current;
 
@@ -122,7 +125,7 @@ export function useAdjustments({
 
       const newLayer = {
         id: newId,
-        name: effect.label.replace("…", ""),
+        name: name ?? effect.label.replace("…", ""),
         visible: true,
         type: "adjustment" as const,
         parentId: effectiveParentId,
@@ -135,10 +138,16 @@ export function useAdjustments({
       } as EffectLayerState;
 
       dispatch({ type: "ADD_ADJUSTMENT_LAYER", payload: newLayer });
-      dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
 
       if (selPixels && registerAdjMask) {
         registerAdjMask(newId, selPixels);
+      }
+
+      if (effect.openEditor?.(newLayer)) {
+        // No floating panel to close later, so record the creation now.
+        captureHistory(name ?? effect.label.replace("…", ""));
+      } else {
+        dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
       }
     },
     [stateRef, captureHistory, dispatch, getSelectionPixels, registerAdjMask],
@@ -157,9 +166,16 @@ export function useAdjustments({
   const handleOpenAdjustmentPanel = useCallback(
     (layerId: string): void => {
       dispatch({ type: "SET_ACTIVE_LAYER", payload: layerId });
-      dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: layerId });
+      const layer = stateRef.current.layers.find((l) => l.id === layerId);
+      const effect =
+        layer && "type" in layer && layer.type === "adjustment"
+          ? effectRegistry.get(layer.effectType)
+          : undefined;
+      if (!effect?.openEditor?.(layer)) {
+        dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: layerId });
+      }
     },
-    [dispatch],
+    [stateRef, dispatch],
   );
 
   return {

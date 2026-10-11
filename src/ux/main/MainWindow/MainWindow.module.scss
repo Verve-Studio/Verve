@@ -15,11 +15,21 @@
   min-height: 0;
 }
 
+// Canvas with the node editor docked underneath.
+.centerColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .canvasArea {
   display: flex;
   flex: 1;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
   position: relative;
 }
 

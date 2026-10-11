@@ -18,6 +18,7 @@ interface ToolWindowProps {
 
 function toolTitle(layer: EffectLayerState): string {
   const effect = effectRegistry.get(layer.effectType);
+  if (effect?.panelTitle) return effect.panelTitle(layer);
   return effect ? effect.label.replace(/…$/, "") : layer.effectType;
 }
 
@@ -121,7 +122,7 @@ export function AdjustmentPanel({
       >
         {(() => {
           const effect = effectRegistry.get(adjLayer.effectType);
-          if (!effect) return null;
+          if (!effect?.Panel) return null;
           const Panel = effect.Panel as React.ComponentType<{
             layer: typeof adjLayer;
             parentLayerName: string;

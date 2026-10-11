@@ -1,0 +1,86 @@
+@use '@/styles/variables' as vars;
+
+// Rows line up with the node layout's ROW_H (22px).
+.list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.name,
+.select {
+  height: 18px;
+  min-width: 0;
+  color: vars.$color-text;
+  background: vars.$color-surface-selected;
+  border: 1px solid transparent;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  font-size: vars.$font-size-sm;
+  outline: none;
+
+  &:focus {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.name {
+  flex: 1 1 auto;
+  padding: 0 4px;
+}
+
+.select {
+  flex: 0 0 64px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.remove {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  color: vars.$color-text-muted;
+  background: none;
+  border: none;
+  border-radius: vars.$radius-sm;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+}
+
+.add {
+  height: 18px;
+  margin-top: 2px;
+  color: vars.$color-text-dim;
+  background: none;
+  border: 1px dashed vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  font-size: vars.$font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    border-color: vars.$color-text-muted;
+  }
+}

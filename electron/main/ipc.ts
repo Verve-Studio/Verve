@@ -13,6 +13,7 @@ import { join, basename } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
 import { registerMlHandlers } from './ml/mlIpc'
+import { registerEffectHandlers } from './effects'
 import { SUPPORTED_FILE_TYPES, getRegisteredExtensions, applyExtensions } from './fileAssociations'
 
 export function registerIpcHandlers(): void {
@@ -441,6 +442,7 @@ export function registerIpcHandlers(): void {
   })
 
   registerMlHandlers()
+  registerEffectHandlers()
 
   // ── File Associations ─────────────────────────────────────────────────────────
 

@@ -1,0 +1,37 @@
+@use '@/styles/variables' as vars;
+
+.description {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: vars.$color-text-dim;
+}
+
+.empty {
+  margin: 4px 0;
+  font-size: 11px;
+  color: vars.$color-text-muted;
+}
+
+.wideNum {
+  width: 80px;
+  text-align: left;
+}
+
+.editGraph {
+  align-self: flex-start;
+  height: 22px;
+  margin: 6px 0 2px;
+  padding: 0 10px;
+  color: vars.$color-text;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-sm;
+  font-size: 11px;
+  font-family: vars.$font-sans;
+  cursor: pointer;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+}

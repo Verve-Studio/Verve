@@ -144,9 +144,18 @@ class DockStore {
       }
     }
 
+    // The node editor always starts closed: it opens through an action
+    // (View → Node Editor, a Custom Shader layer, opening an effect). Only
+    // its height is remembered.
+    const ne = raw.nodeEditor;
+    const nodeEditor = {
+      open: false,
+      height: typeof ne?.height === "number" ? ne.height : DEFAULT_LAYOUT.nodeEditor.height,
+    };
+
     return rows.length > 0 || floatingWindows.length > 0
-      ? { rows, closedPanels, floatingWindows }
-      : DEFAULT_LAYOUT;
+      ? { rows, closedPanels, floatingWindows, nodeEditor }
+      : { ...DEFAULT_LAYOUT, nodeEditor };
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────────
@@ -388,6 +397,25 @@ class DockStore {
       rows: this._layout.rows.map((r) =>
         r.id === rowId ? { ...r, height } : r,
       ),
+    });
+  }
+
+  setNodeEditorOpen(open: boolean): void {
+    this._set({
+      ...this._layout,
+      nodeEditor: { ...this._layout.nodeEditor, open },
+    });
+  }
+
+  toggleNodeEditor(): void {
+    this.setNodeEditorOpen(!this._layout.nodeEditor.open);
+  }
+
+  /** Update height live (called during resize drag) — debounced save. */
+  setNodeEditorHeight(height: number): void {
+    this._set({
+      ...this._layout,
+      nodeEditor: { ...this._layout.nodeEditor, height },
     });
   }
 

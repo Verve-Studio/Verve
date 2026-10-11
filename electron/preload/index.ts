@@ -89,6 +89,28 @@ const api = {
   writeBrushFile: (filePath: string, data: string): Promise<void> =>
     ipcRenderer.invoke('file:writeBrushFile', filePath, data),
 
+  // ── Effect files (.effect node-graph shaders) ────────────────────────────────
+  listEffectFiles: (): Promise<
+    Array<{ path: string; source: 'user' | 'bundled'; text?: string; error?: string }>
+  > => ipcRenderer.invoke('effects:list'),
+  /** Save dialog (defaults to the user effects folder); resolves to the path or null. */
+  saveEffectFile: (text: string, suggestedName: string): Promise<string | null> =>
+    ipcRenderer.invoke('effects:save', text, suggestedName),
+  openEffectsFolder: (): Promise<void> => ipcRenderer.invoke('effects:openFolder'),
+  /** Open dialog for an .effect file; resolves to its path and text, or null. */
+  openEffectFile: (): Promise<{ path: string; text: string } | null> =>
+    ipcRenderer.invoke('effects:openFile'),
+  /** Overwrite an .effect file. */
+  writeEffectFile: (path: string, text: string): Promise<void> =>
+    ipcRenderer.invoke('effects:write', path, text),
+  getEffectsFolder: (): Promise<string> => ipcRenderer.invoke('effects:folder'),
+  /** Fires when the user effects folder changes. */
+  onEffectsChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('effects:changed', handler)
+    return () => ipcRenderer.removeListener('effects:changed', handler)
+  },
+
   // ── Dock layout ──────────────────────────────────────────────────────────────
   loadDockLayout: (): Promise<unknown> => ipcRenderer.invoke('dockLayout:load'),
   saveDockLayout: (layout: unknown): Promise<void> => ipcRenderer.invoke('dockLayout:save', layout),

@@ -67,6 +67,10 @@
       {
         "from": "resources/models/lama",
         "to": "models/lama"
+      },
+      {
+        "from": "resources/effects",
+        "to": "effects"
       }
     ],
     "win": {

@@ -100,6 +100,8 @@ function buildBGL(
 // ─── EffectRuntime ───────────────────────────────────────────────────────────
 
 const MAX_POOLED_PER_SIZE = 128;
+/** Pipelines kept for generated (custom shader) sources. */
+const MAX_SOURCE_PIPELINES = 32;
 
 /**
  * Generic per-frame service shared by every effect (adjustment, real-time
@@ -135,6 +137,8 @@ export class EffectRuntime {
 
   private readonly modules = new Map<string, GPUShaderModule>();
   private readonly pairs = new Map<string, EffectPipelinePair>();
+  /** Insertion-ordered LRU of pipelines built from generated sources. */
+  private readonly sourcePairs = new Map<string, EffectPipelinePair>();
   private readonly singlesWithBGL = new Map<
     string,
     { pipeline: GPURenderPipeline; bgl: GPUBindGroupLayout }
@@ -178,6 +182,7 @@ export class EffectRuntime {
     // Pipelines have no explicit destroy; GC handles them with the device.
     this.modules.clear();
     this.pairs.clear();
+    this.sourcePairs.clear();
     this.singlesWithBGL.clear();
     this.singlesAuto.clear();
     this.computes.clear();
@@ -259,6 +264,49 @@ export class EffectRuntime {
         };
       }
       this.pairs.set(key, pair);
+    }
+    return pair;
+  }
+
+  /**
+   * s8+f32 render pipeline pair built from generated WGSL source (custom
+   * shader effects) rather than a `.wgsl` file. Cached by source in a small
+   * LRU: editing a graph produces new sources, and old ones are evicted.
+   * `onCompileError` is called once, asynchronously, if the module has
+   * compilation errors.
+   */
+  getRenderPipelinePairForSource(
+    code: string,
+    fsEntry: string,
+    bindings: AdjBinding[],
+    onCompileError?: (message: string) => void,
+  ): EffectPipelinePair {
+    const key = `${fsEntry}|${bindings.join(",")}|${code}`;
+    let pair = this.sourcePairs.get(key);
+    if (pair) {
+      // Refresh LRU position.
+      this.sourcePairs.delete(key);
+      this.sourcePairs.set(key, pair);
+      return pair;
+    }
+    const module = this.device.createShaderModule({ code });
+    if (onCompileError) {
+      void module.getCompilationInfo().then((info) => {
+        const errors = info.messages.filter((m) => m.type === "error");
+        if (errors.length > 0) {
+          onCompileError(errors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join("\n"));
+        }
+      });
+    }
+    const bgl = buildBGL(this.device, bindings);
+    pair = {
+      s8: this.buildRenderPipeline(module, fsEntry, "rgba8unorm", bgl),
+      f32: this.buildRenderPipeline(module, fsEntry, "rgba32float", bgl),
+      bgl,
+    };
+    this.sourcePairs.set(key, pair);
+    if (this.sourcePairs.size > MAX_SOURCE_PIPELINES) {
+      this.sourcePairs.delete(this.sourcePairs.keys().next().value!);
     }
     return pair;
   }

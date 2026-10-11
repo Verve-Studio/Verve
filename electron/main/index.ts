@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'path'
-import { existsSync } from 'node:fs'
+import { join, resolve } from 'path'
+import { existsSync, statSync } from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 // Set the app name early so the macOS menu bar shows "Verve" instead of "Electron".
@@ -101,12 +101,17 @@ app.on('open-file', (event, path) => {
 })
 
 function detectStartupFileFromArgs(argv: string[] = process.argv): string | null {
-  // In dev:       argv = [electron, mainScript, ...userArgs]  → skip first 2
-  // In packaged:  argv = [exe, ...userArgs]                   → skip first 1
-  const args = argv.slice(app.isPackaged ? 1 : 2)
-  for (const arg of args) {
+  // argv[0] is the executable. Don't skip by position beyond that: in dev the
+  // app path (`electron .`) is in there too, and `second-instance` argv has
+  // Chromium's switches reordered and extra ones inserted. Instead skip the
+  // app path explicitly and accept only regular files.
+  const appPath = resolve(app.getAppPath())
+  for (const arg of argv.slice(1)) {
     if (arg.startsWith('-')) continue
-    try { if (existsSync(arg)) return arg } catch { /* skip invalid paths */ }
+    try {
+      if (resolve(arg) === appPath) continue
+      if (statSync(arg).isFile()) return arg
+    } catch { /* skip missing / invalid paths */ }
   }
   return null
 }

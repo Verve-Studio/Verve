@@ -1,0 +1,91 @@
+@use '@/styles/variables' as vars;
+
+.menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  max-height: 340px;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-lg;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  font-size: vars.$font-size-base;
+  color: vars.$color-text;
+  overflow: hidden;
+}
+
+.subtitle {
+  padding: 6px 8px 0;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+}
+
+.search {
+  margin: 6px;
+  height: 22px;
+  padding: 0 6px;
+  color: vars.$color-text;
+  background: vars.$color-bg;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  outline: none;
+
+  &:focus {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+.category {
+  padding: 6px 10px 2px;
+  font-size: vars.$font-size-xs;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: vars.$color-text-muted;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 22px;
+  padding: 0 10px;
+  color: inherit;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.active {
+  background: vars.$color-accent;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.itemCategory {
+  margin-left: auto;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+}
+
+.empty {
+  padding: 8px 10px;
+  color: vars.$color-text-muted;
+}

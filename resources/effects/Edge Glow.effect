@@ -1,0 +1,128 @@
+{
+  "format": "verve-effect",
+  "formatVersion": 1,
+  "graph": {
+    "id": "725d6f56-1cfb-4a45-b9fc-2291f2a471c1",
+    "name": "Edge Glow",
+    "domain": "shader",
+    "nodes": [
+      {
+        "id": "13fedacf-dcb9-4a9e-ba53-14b89235325a",
+        "type": "layerInput",
+        "x": 0,
+        "y": 0,
+        "params": {}
+      },
+      {
+        "id": "048097b5-3a6f-40fc-9c57-743cc19b90ee",
+        "type": "sampleKernel",
+        "x": 0,
+        "y": 140,
+        "params": {
+          "kernel": {
+            "size": 3,
+            "weights": [
+              -1,
+              -1,
+              -1,
+              -1,
+              8,
+              -1,
+              -1,
+              -1,
+              -1
+            ]
+          },
+          "normalize": true,
+          "convolveAlpha": false,
+          "edge": "clamp",
+          "strength": 1,
+          "bias": 0
+        }
+      },
+      {
+        "id": "74ef5f44-dc0b-4a7a-9696-c94c4a1b88d2",
+        "type": "mix",
+        "x": 300,
+        "y": 60,
+        "params": {
+          "mode": "add",
+          "factor": 0.8,
+          "a": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "b": [
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      {
+        "id": "ccd07e5f-2ae9-44c5-b733-12ba22038496",
+        "type": "layerOutput",
+        "x": 560,
+        "y": 0,
+        "params": {
+          "alpha": 1
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "81841a84-8d91-4109-9e20-d37328bf6a3b",
+        "from": {
+          "node": "13fedacf-dcb9-4a9e-ba53-14b89235325a",
+          "port": "color"
+        },
+        "to": {
+          "node": "74ef5f44-dc0b-4a7a-9696-c94c4a1b88d2",
+          "port": "a"
+        }
+      },
+      {
+        "id": "f24b32ff-93a8-465f-a6c3-da3f39a39681",
+        "from": {
+          "node": "048097b5-3a6f-40fc-9c57-743cc19b90ee",
+          "port": "color"
+        },
+        "to": {
+          "node": "74ef5f44-dc0b-4a7a-9696-c94c4a1b88d2",
+          "port": "b"
+        }
+      },
+      {
+        "id": "ef171cbd-6f72-4a24-9e8e-ae6adc5aa1c7",
+        "from": {
+          "node": "74ef5f44-dc0b-4a7a-9696-c94c4a1b88d2",
+          "port": "color"
+        },
+        "to": {
+          "node": "ccd07e5f-2ae9-44c5-b733-12ba22038496",
+          "port": "color"
+        }
+      },
+      {
+        "id": "9f6f8959-6972-423a-b0bc-2906c28fbc06",
+        "from": {
+          "node": "13fedacf-dcb9-4a9e-ba53-14b89235325a",
+          "port": "alpha"
+        },
+        "to": {
+          "node": "ccd07e5f-2ae9-44c5-b733-12ba22038496",
+          "port": "alpha"
+        }
+      }
+    ],
+    "info": {
+      "name": "Edge Glow",
+      "author": "Verve",
+      "description": "Adds the layer's edges on top of it: an edge-detect convolution kernel blended additively.",
+      "version": "1.0"
+    }
+  }
+}

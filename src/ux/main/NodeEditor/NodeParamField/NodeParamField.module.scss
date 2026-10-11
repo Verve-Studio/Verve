@@ -1,0 +1,159 @@
+@use '@/styles/variables' as vars;
+
+$field-h: 18px;
+
+.scrub {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: $field-h;
+  padding: 0 6px;
+  overflow: hidden;
+  background: vars.$color-surface-selected;
+  border-radius: vars.$radius-md;
+  cursor: ew-resize;
+  user-select: none;
+  font-size: vars.$font-size-sm;
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill, 0%);
+  background: rgb(from vars.$color-accent-blue r g b / 0.35);
+  pointer-events: none;
+}
+
+.label {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: vars.$color-text-dim;
+}
+
+.value {
+  position: relative;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: vars.$color-text;
+}
+
+.scrubInput,
+.text,
+.select {
+  width: 100%;
+  height: $field-h;
+  padding: 0 6px;
+  color: vars.$color-text;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  font-size: vars.$font-size-sm;
+  outline: none;
+
+  &:focus {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.select {
+  padding: 0 2px;
+  background: vars.$color-surface-selected;
+  cursor: pointer;
+}
+
+.labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: vars.$font-size-sm;
+
+  .text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.swatch {
+  width: 40px;
+  height: 14px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  cursor: pointer;
+
+  input {
+    margin: 0;
+  }
+}
+
+.pair {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+}
+
+.kernel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.kernelBar {
+  display: flex;
+  gap: 4px;
+  height: 18px;
+  margin-bottom: 4px;
+
+  .select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.kernelGrid {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  // Each grid row fills one layout row (ROW_H − gap).
+  grid-auto-rows: 1fr;
+}
+
+.kernelCell {
+  min-width: 0;
+  padding: 0 2px;
+  color: vars.$color-text;
+  background: vars.$color-surface-selected;
+  border: 1px solid transparent;
+  border-radius: vars.$radius-sm;
+  font: inherit;
+  font-size: vars.$font-size-xs;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+
+  &:focus {
+    border-color: vars.$color-accent-blue;
+    background: vars.$color-surface;
+  }
+}

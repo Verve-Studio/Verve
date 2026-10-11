@@ -25,6 +25,9 @@ export interface PlanContext {
   swatches: RGBAColor[];
   /** Selection mask for this adjustment layer, if any. */
   mask: GpuLayer | undefined;
+  /** Canvas-pixel rectangle of the parent layer, for per-layer
+   *  attachments. Absent for composite / group parents (whole canvas). */
+  parentRect?: { x: number; y: number; width: number; height: number };
 }
 
 export interface EncodeContext {
@@ -88,8 +91,19 @@ export interface IPipelineEffect<
   /** Record GPU work for this effect into the given command encoder. */
   encode(ctx: EncodeContext, entry: Op): void;
 
-  /** Right-side panel component shown when this layer is active. */
-  readonly Panel: ComponentType<PanelProps<L>>;
+  /** Floating panel shown when this layer is opened. Required unless
+   *  `openEditor` always handles opening. */
+  readonly Panel?: ComponentType<PanelProps<L>>;
+
+  /** Optional. Title of the floating panel (default: the effect label). */
+  panelTitle?(layer: L): string;
+
+  /**
+   * Optional. Opening the layer (clicking its row / settings icon, or
+   * creating it) calls this first. Return true when it opened a dedicated
+   * editor (e.g. Custom Shader → node editor); false shows `Panel`.
+   */
+  openEditor?(layer: L): boolean;
 
   /** SVG icon shown in the panel header. Optional — falls back to a generic
    *  effect icon if omitted. */

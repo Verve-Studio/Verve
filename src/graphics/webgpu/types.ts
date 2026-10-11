@@ -64,6 +64,9 @@ export const BLEND_MODE_INDEX: Record<string, number> = {
 // PlanExtrasMap.
 
 export interface PlanExtrasMap {
+  /** Parent layer rectangle in canvas pixels; width 0 = the whole canvas
+   *  (composite layers, group-scoped effects). */
+  "custom-shader": { parentX: number; parentY: number; parentW: number; parentH: number };
   curves: { luts: CurvesLuts };
   "reduce-colors": { palette: Float32Array; paletteCount: number };
   "color-dithering": { palette: Float32Array; paletteCount: number };

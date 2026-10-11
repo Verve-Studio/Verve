@@ -1,0 +1,104 @@
+@use '@/styles/variables' as vars;
+
+.canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+  background-color: vars.$color-canvas-bg;
+  // Major grid (2 layers) over minor grid (2 layers); sizes and offset are
+  // set inline from the viewport.
+  background-image:
+    linear-gradient(to right, rgb(0 0 0 / 0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(0 0 0 / 0.22) 1px, transparent 1px),
+    linear-gradient(to right, rgb(0 0 0 / 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(0 0 0 / 0.09) 1px, transparent 1px);
+  touch-action: none;
+  user-select: none;
+}
+
+.world {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+.wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.wire {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.wireExec {
+  stroke-width: 3;
+}
+
+.wireActive {
+  opacity: 1;
+  stroke-width: 2.5;
+}
+
+.wireSelected {
+  opacity: 1;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 3px vars.$color-accent-blue);
+}
+
+.wireHit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.wireDraft {
+  opacity: 1;
+  stroke-dasharray: 6 4;
+}
+
+.wireInvalid {
+  stroke: vars.$color-danger !important;
+}
+
+.marquee {
+  position: absolute;
+  border: 1px solid vars.$color-accent-border;
+  background: vars.$color-accent;
+  pointer-events: none;
+}
+
+.linkHint {
+  position: absolute;
+  padding: 3px 6px;
+  font-size: vars.$font-size-sm;
+  color: #f0d0d0;
+  background: #3a2a2a;
+  border: 1px solid #7a3030;
+  border-radius: vars.$radius-md;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.zoomBadge {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+  pointer-events: none;
+}

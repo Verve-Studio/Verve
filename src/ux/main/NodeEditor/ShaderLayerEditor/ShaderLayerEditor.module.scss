@@ -1,0 +1,124 @@
+@use '@/styles/variables' as vars;
+
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.infoBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 22px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  background: vars.$color-surface;
+  border-bottom: 1px solid vars.$color-border;
+}
+
+.main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.toggle {
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 8px;
+  color: vars.$color-text-dim;
+  background: none;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+  }
+}
+
+.toggleOn {
+  color: vars.$color-text;
+  background: vars.$color-surface-selected;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.crumb {
+  padding: 1px 4px;
+  color: vars.$color-accent-blue;
+  background: none;
+  border: none;
+  border-radius: vars.$radius-sm;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: vars.$color-surface-hover;
+  }
+
+  // The current level is plain text.
+  &:disabled {
+    color: vars.$color-text-dim;
+    cursor: default;
+  }
+
+  strong {
+    color: vars.$color-text;
+    font-weight: 600;
+  }
+}
+
+.sep {
+  color: vars.$color-text-muted;
+}
+
+.ok,
+.error {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ok {
+  color: #5fb878;
+}
+
+.error {
+  color: #e08080;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  gap: 4px;
+  font-size: vars.$font-size-base;
+  color: vars.$color-text-dim;
+  background: vars.$color-canvas-bg;
+
+  p {
+    margin: 0;
+  }
+}
+
+.emptyHint {
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-muted;
+}

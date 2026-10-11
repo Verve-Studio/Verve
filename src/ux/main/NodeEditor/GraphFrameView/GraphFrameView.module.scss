@@ -1,0 +1,90 @@
+@use '@/styles/variables' as vars;
+
+.frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgb(from var(--frame) r g b / 0.7);
+  border-radius: vars.$radius-lg + 2px;
+  background: rgb(from var(--frame) r g b / 0.16);
+  // The inside lets pointer input through (marquee, empty-canvas clicks);
+  // the header and handle opt back in.
+  pointer-events: none;
+}
+
+.selected {
+  border-color: vars.$color-accent-blue;
+  box-shadow: 0 0 0 1px vars.$color-accent-blue;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 26px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  border-radius: vars.$radius-lg + 1px vars.$radius-lg + 1px 0 0;
+  background: rgb(from var(--frame) r g b / 0.38);
+  color: #eeeeee;
+  font-size: vars.$font-size-md;
+  font-weight: 600;
+  cursor: grab;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 3px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  background: var(--frame);
+  cursor: pointer;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.placeholder {
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  color: vars.$color-text;
+  background: vars.$color-surface;
+  border: 1px solid vars.$color-accent-blue;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  line-height: 1.35;
+  resize: none;
+  outline: none;
+}
+
+.handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    rgb(from var(--frame) r g b / 0.8) 50%
+  );
+  border-radius: 0 0 vars.$radius-lg + 1px 0;
+}

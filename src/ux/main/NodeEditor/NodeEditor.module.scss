@@ -1,0 +1,98 @@
+@use '@/styles/variables' as vars;
+
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  background: vars.$color-surface;
+  border-top: 1px solid vars.$color-border;
+}
+
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  flex-shrink: 0;
+  font-size: vars.$font-size-base;
+  color: vars.$color-text;
+  background: vars.$color-surface-2;
+  border-bottom: 1px solid vars.$color-border;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-md;
+  overflow: hidden;
+
+  button {
+    height: 20px;
+    padding: 0 10px;
+    color: vars.$color-text-dim;
+    background: vars.$color-surface;
+    border: none;
+    font: inherit;
+    font-size: vars.$font-size-sm;
+    cursor: pointer;
+
+    & + button {
+      border-left: 1px solid vars.$color-border;
+    }
+
+    &:hover {
+      background: vars.$color-surface-hover;
+    }
+  }
+
+  .segActive,
+  .segActive:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-selected;
+  }
+}
+
+.hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+  font-size: vars.$font-size-xs;
+  color: vars.$color-text-muted;
+}
+
+.close {
+  width: 22px;
+  height: 22px;
+  color: vars.$color-text-dim;
+  background: none;
+  border: none;
+  border-radius: vars.$radius-md;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+}

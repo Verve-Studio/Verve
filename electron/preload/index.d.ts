@@ -58,6 +58,15 @@ declare global {
       readBrushFile: (filePath: string) => Promise<string>
       writeBrushFile: (filePath: string, data: string) => Promise<void>
       // Dock layout
+      listEffectFiles: () => Promise<
+        Array<{ path: string; source: 'user' | 'bundled'; text?: string; error?: string }>
+      >
+      saveEffectFile: (text: string, suggestedName: string) => Promise<string | null>
+      openEffectsFolder: () => Promise<void>
+      openEffectFile: () => Promise<{ path: string; text: string } | null>
+      writeEffectFile: (path: string, text: string) => Promise<void>
+      getEffectsFolder: () => Promise<string>
+      onEffectsChanged: (callback: () => void) => () => void
       loadDockLayout: () => Promise<unknown>
       saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle

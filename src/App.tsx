@@ -57,6 +57,7 @@ import {
 } from "@/utils/pixelFormatConvert";
 import { matchPaletteIndices } from "@/wasm";
 import { notificationStore } from "@/core/store/notificationStore";
+import { parseEffect } from "@/core/effects/CustomShader/effectFile";
 import { fileTitle } from "@/core/store/tabTypes";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
@@ -997,6 +998,53 @@ function AppContent(): React.JSX.Element {
             adjustments.handleCreateAdjustmentLayer(type);
           }
         }),
+      onApplyCustomEffect: (effect) =>
+        requireTransformDecision(() => {
+          if (effect.graph) {
+            adjustments.handleCreateAdjustmentLayer(
+              "custom-shader",
+              // User effects stay linked to their file (Save updates it);
+              // bundled ones are read-only.
+              {
+                graph: effect.graph,
+                source: effect.source === "user" ? effect.path : undefined,
+                asEffect: true,
+              },
+              effect.label,
+            );
+          }
+        }),
+      onOpenEffectFile: () =>
+        requireTransformDecision(() => {
+          void (async () => {
+            try {
+              const file = await window.api.openEffectFile();
+              if (!file) return;
+              const parsed = parseEffect(file.text);
+              if (!parsed.ok) {
+                notificationStore.error(`Can't open ${file.path}: ${parsed.error}`);
+                return;
+              }
+              const fileName = (file.path.split(/[\\/]/).pop() ?? "Effect").replace(/\.effect$/i, "");
+              adjustments.handleCreateAdjustmentLayer(
+                "custom-shader",
+                { graph: parsed.graph, source: file.path, asEffect: true },
+                parsed.graph.info?.name || fileName,
+              );
+            } catch (err) {
+              notificationStore.error(
+                `Couldn't open the effect: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          })();
+        }),
+      onOpenEffectsFolder: () => {
+        window.api.openEffectsFolder().catch((err: unknown) =>
+          notificationStore.error(
+            `Couldn't open the effects folder: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      },
       onOpenFilterDialog: handleOpenFilterDialog,
       onInstantFilter: (key) =>
         requireTransformDecision(() => filters.handleInstantFilter(key)),

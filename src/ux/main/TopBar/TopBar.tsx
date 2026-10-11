@@ -7,6 +7,7 @@ import {
   filterForTarget,
   type MenuDeps,
 } from "../menu/menuTree";
+import { customEffectStore } from "@/core/effects/CustomShader/customEffectStore";
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
 import { ALL_PANEL_IDS, type PanelId } from "@/ux/main/RightPanel/Dock/types";
 import styles from "./TopBar.module.scss";
@@ -77,6 +78,22 @@ function TopBarImpl({
     sync();
     return dockStore.subscribe(sync);
   }, []);
+  const [customEffects, setCustomEffects] = useState(() => customEffectStore.all());
+  useEffect(() => {
+    customEffectStore.start();
+    setCustomEffects(customEffectStore.all());
+    return customEffectStore.subscribe(() => setCustomEffects(customEffectStore.all()));
+  }, []);
+  const [nodeEditorOpen, setNodeEditorOpen] = useState(
+    () => dockStore.getSnapshot().nodeEditor.open,
+  );
+  useEffect(
+    () =>
+      dockStore.subscribe(() =>
+        setNodeEditorOpen(dockStore.getSnapshot().nodeEditor.open),
+      ),
+    [],
+  );
 
   // On macOS the native menu replaces this bar (see useMacNativeMenu), so
   // don't build a tree that would never be shown.
@@ -90,6 +107,8 @@ function TopBarImpl({
           luts,
           activeViewLut,
           openPanelIds,
+          nodeEditorOpen,
+          customEffects,
           hasDisplayProfile,
           hasProofProfile,
           proofColorsActive,
@@ -104,6 +123,8 @@ function TopBarImpl({
       luts,
       activeViewLut,
       openPanelIds,
+      nodeEditorOpen,
+      customEffects,
       hasDisplayProfile,
       hasProofProfile,
       proofColorsActive,

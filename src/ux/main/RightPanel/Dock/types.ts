@@ -44,10 +44,19 @@ export interface FloatingWindow {
   height: number;
 }
 
+/** The node editor docked under the canvas. `open` is session-only: the
+ *  editor always starts closed (see `dockStore._migrate`). */
+export interface BottomPanelConfig {
+  open: boolean;
+  /** Height in px. */
+  height: number;
+}
+
 export interface DockLayout {
   rows: DockRowConfig[];
   closedPanels: PanelId[];
   floatingWindows: FloatingWindow[];
+  nodeEditor: BottomPanelConfig;
 }
 
 export const DEFAULT_LAYOUT: DockLayout = {
@@ -67,4 +76,5 @@ export const DEFAULT_LAYOUT: DockLayout = {
   ],
   closedPanels: ["Display"],
   floatingWindows: [],
+  nodeEditor: { open: false, height: 320 },
 };

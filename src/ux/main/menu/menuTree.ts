@@ -58,6 +58,7 @@ import type { PanelId } from "@/ux/main/RightPanel/Dock/types";
 import { ALL_PANEL_IDS, PANEL_LABELS } from "@/ux/main/RightPanel/Dock/types";
 import { lutCategory } from "@/core/lut";
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
+import type { CustomEffectEntry } from "@/core/effects/CustomShader/customEffectStore";
 
 // ─── MenuNode ─────────────────────────────────────────────────────────────
 
@@ -310,6 +311,12 @@ export interface MenuDeps {
 
   // ── Adjustments / Effects / Filters ───────────────────────────────────
   onCreateAdjustmentLayer?: (type: EffectType) => void;
+  /** `.effect` files from the effects folders (Effects → Custom Effects). */
+  customEffects?: readonly CustomEffectEntry[];
+  onApplyCustomEffect?: (effect: CustomEffectEntry) => void;
+  onOpenEffectsFolder?: () => void;
+  /** Open an .effect file from disk to edit it (as a Custom Shader layer). */
+  onOpenEffectFile?: () => void;
   isAdjustmentMenuEnabled?: boolean;
   adjustmentMenuItems?: Array<{
     type: EffectType;
@@ -366,6 +373,8 @@ export interface MenuDeps {
   /** Panel ids currently open (used to drive the checkbox states on
    *  the View → <panel name> entries). */
   openPanelIds?: ReadonlyArray<PanelId>;
+  /** True when the node editor is docked open under the canvas. */
+  nodeEditorOpen?: boolean;
   // ── Soft proofing (Tier 3a/3b) ─────────────────────────────────────────
   /** Open the Proof Setup dialog. */
   onOpenProofSetup?: () => void;
@@ -477,6 +486,8 @@ function effectsItems(deps: MenuDeps): MenuNode[] {
   let lastGroup: string | undefined = undefined;
   let distortionInserted = false;
   for (const item of items) {
+    // `fx-custom` effects (Custom Shader) live in the Custom Effects submenu.
+    if (item.group === "fx-custom") continue;
     if (item.group === "fx-distortion") {
       if (!distortionInserted) {
         if (lastGroup !== undefined && lastGroup !== "fx-distortion") out.push(SEP);
@@ -505,6 +516,47 @@ function effectsItems(deps: MenuDeps): MenuNode[] {
       disabled: disable,
     });
   }
+  // Custom Shader (new graph) first, then saved node-graph effects
+  // (.effect files in the effects folders).
+  const builders = items.filter((i) => i.group === "fx-custom");
+  const custom = deps.customEffects ?? [];
+  out.push(SEP, {
+    label: "Custom Effects",
+    submenu: [
+      ...builders.map(
+        (item): MenuNode => ({
+          label: item.label,
+          actionId: `adj:${item.type}`,
+          action: () => deps.onCreateAdjustmentLayer?.(item.type),
+          disabled: disable,
+        }),
+      ),
+      ...(builders.length > 0 ? [SEP] : []),
+      ...custom.map(
+        (e): MenuNode => ({
+          label: e.error ? `${e.label} (can't be loaded: ${e.error})` : e.label,
+          actionId: `customEffect:${e.path}`,
+          action: () => deps.onApplyCustomEffect?.(e),
+          disabled: disable || !e.graph,
+        }),
+      ),
+      ...(custom.length === 0
+        ? [{ label: "No saved effects yet", actionId: "customEffect:none", disabled: true }]
+        : []),
+      SEP,
+      {
+        label: "Open Effect File…",
+        actionId: "openEffectFile",
+        action: deps.onOpenEffectFile,
+        disabled: disable,
+      },
+      {
+        label: "Open Effects Folder",
+        actionId: "openEffectsFolder",
+        action: deps.onOpenEffectsFolder,
+      },
+    ],
+  });
   return out;
 }
 
@@ -1200,6 +1252,12 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           action: () => dockStore.togglePanel(id),
           checked: !!deps.openPanelIds?.includes(id),
         })),
+        {
+          label: "Node Editor",
+          actionId: "toggleNodeEditor",
+          action: () => dockStore.toggleNodeEditor(),
+          checked: !!deps.nodeEditorOpen,
+        },
         SEP,
         {
           label: "Reset Panel Layout",

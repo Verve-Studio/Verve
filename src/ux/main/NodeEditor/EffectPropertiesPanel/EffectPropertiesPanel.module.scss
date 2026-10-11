@@ -1,0 +1,190 @@
+@use '@/styles/variables' as vars;
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 250px;
+  min-height: 0;
+  overflow-y: auto;
+  background: vars.$color-surface;
+  border-left: 1px solid vars.$color-border;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid vars.$color-border;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.heading {
+  margin: 0 0 2px;
+  font-size: vars.$font-size-xs;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: vars.$color-text-muted;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.label {
+  color: vars.$color-text-dim;
+}
+
+.input {
+  padding: 3px 6px;
+  color: vars.$color-text;
+  background: vars.$color-bg;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  outline: none;
+  resize: vertical;
+
+  &:focus {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.status {
+  color: vars.$color-text-dim;
+}
+
+.statusOk {
+  color: #5fb878;
+}
+
+.statusError {
+  color: #e08080;
+}
+
+.issues {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.issue {
+  width: 100%;
+  padding: 3px 6px;
+  border: none;
+  border-radius: vars.$radius-md;
+  background: vars.$color-surface-2;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: vars.$color-surface-hover;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.issueError {
+  color: #e08080;
+}
+
+.issueWarning {
+  color: #d8b45a;
+}
+
+.saveRow {
+  display: flex;
+  gap: 6px;
+
+  > * {
+    flex: 1 1 0;
+  }
+}
+
+.saveSecondary {
+  height: 26px;
+  color: vars.$color-text;
+  background: vars.$color-surface-selected;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: vars.$color-surface-hover;
+  }
+
+  &:disabled {
+    color: vars.$color-text-muted;
+    cursor: default;
+  }
+}
+
+.save {
+  height: 26px;
+  color: #fff;
+  background: vars.$color-accent-blue;
+  border: none;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: vars.$color-accent-blue-hover;
+  }
+
+  &:disabled {
+    color: vars.$color-text-muted;
+    background: vars.$color-surface-selected;
+    cursor: default;
+  }
+}
+
+.saved,
+.saveError,
+.hint {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.saved {
+  color: #5fb878;
+}
+
+.saveError {
+  color: #e08080;
+}
+
+.hint {
+  color: vars.$color-text-muted;
+}
+
+.link {
+  align-self: flex-start;
+  padding: 0;
+  color: vars.$color-accent-blue;
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}

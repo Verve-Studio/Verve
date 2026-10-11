@@ -1,0 +1,138 @@
+@use '@/styles/variables' as vars;
+
+$socket-hit: 16px;
+
+.node {
+  position: absolute;
+  box-sizing: border-box;
+  background: rgb(from vars.$color-surface r g b / 0.96);
+  border-radius: vars.$radius-lg + 1px;
+  // Outline via box-shadow, not border: a border would shift the rows off
+  // the socket positions computed in nodeLayout.ts.
+  box-shadow:
+    0 0 0 1px vars.$color-border,
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text;
+  user-select: none;
+  cursor: default;
+}
+
+.selected {
+  box-shadow:
+    0 0 0 2px vars.$color-accent-blue,
+    0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.error {
+  box-shadow:
+    0 0 0 2px vars.$color-danger,
+    0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: vars.$radius-lg + 1px vars.$radius-lg + 1px 0 0;
+  color: #f0f0f0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: grab;
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.open {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-right: -4px;
+  padding: 0;
+  color: #f0f0f0;
+  background: rgba(0, 0, 0, 0.18);
+  border: none;
+  border-radius: vars.$radius-md;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.35);
+  }
+}
+
+.body {
+  box-sizing: border-box;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 10px;
+  gap: 6px;
+}
+
+.inLabel,
+.outLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: vars.$color-text-dim;
+}
+
+.outLabel {
+  margin-left: auto;
+  text-align: right;
+}
+
+.socket {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: $socket-hit;
+  height: $socket-hit;
+  margin-top: -$socket-hit * 0.5;
+  cursor: crosshair;
+  z-index: 1;
+
+  &:hover > span {
+    transform: scale(1.35);
+  }
+}
+
+.socketIn {
+  left: -$socket-hit * 0.5;
+}
+
+.socketOut {
+  right: -$socket-hit * 0.5;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--socket);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  transition: transform vars.$transition-fast;
+}
+
+.execDot {
+  width: 10px;
+  height: 11px;
+  background: var(--socket);
+  clip-path: polygon(0 0, 55% 0, 100% 50%, 55% 100%, 0 100%);
+  transition: transform vars.$transition-fast;
+}

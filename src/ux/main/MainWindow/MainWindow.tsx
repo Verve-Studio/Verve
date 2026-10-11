@@ -19,6 +19,7 @@ import { RightPanel } from "@/ux/main/RightPanel/RightPanel";
 import { StatusBar } from "@/ux/main/StatusBar/StatusBar";
 import { PlaybackBar } from "@/ux/main/PlaybackBar/PlaybackBar";
 import { AnimationPanel } from "@/ux/main/AnimationPanel/AnimationPanel";
+import { NodeEditorMount } from "@/ux/main/NodeEditor/NodeEditor";
 import { AdjustmentPanel } from "@/ux/windows/ToolWindow";
 import { BrushSettingsPanelMount } from "@/ux/windows/brush/BrushSettingsPanel/BrushSettingsPanel";
 import { PaintBrushesModalMount } from "@/ux/modals/PaintBrushesModal/PaintBrushesModal";
@@ -441,51 +442,54 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
 
       <div className={styles.workspace}>
         <Toolbar activeTool={activeTool} onToolChange={handleToolChange} />
-        <main className={styles.canvasArea}>
-          {tabs.map((tab) => {
-            if (tab.id !== activeTabId) return null;
-            return (
-              <Canvas
-                key={`${tab.id}-${tab.canvasKey}`}
-                ref={tabCanvasRef(tab.id)}
-                width={tab.snapshot.canvasWidth}
-                height={tab.snapshot.canvasHeight}
-                initialLayerData={
-                  pendingLayerData ?? tab.savedLayerData ?? undefined
-                }
-                isActive={true}
-                onStrokeEnd={captureHistory}
-                onReady={handleCanvasReady}
-              />
-            );
-          })}
-          <ProgressOverlay
-            visible={isContentAwareFilling}
-            label={contentAwareFillLabel}
-            sublabel="Analyzing image…"
-          />
-          <ProgressOverlay
-            visible={isRescaling}
-            label={
-              rescaleProgress.layerCount > 1
-                ? `${rescaleProgress.label} layer ${rescaleProgress.layerIdx} of ${rescaleProgress.layerCount}…`
-                : `${rescaleProgress.label} image…`
-            }
-            sublabel={
-              rescaleProgress.tilesTotal > 0
-                ? `Tile ${rescaleProgress.tilesLoaded} of ${rescaleProgress.tilesTotal}`
-                : "Running model…"
-            }
-          />
-          <ProgressOverlay
-            visible={isAutoMasking}
-            label="Detecting subject…"
-          />
-          <ProgressOverlay
-            visible={isInpainting}
-            label="Removing object…"
-          />
-        </main>
+        <div className={styles.centerColumn}>
+          <main className={styles.canvasArea}>
+            {tabs.map((tab) => {
+              if (tab.id !== activeTabId) return null;
+              return (
+                <Canvas
+                  key={`${tab.id}-${tab.canvasKey}`}
+                  ref={tabCanvasRef(tab.id)}
+                  width={tab.snapshot.canvasWidth}
+                  height={tab.snapshot.canvasHeight}
+                  initialLayerData={
+                    pendingLayerData ?? tab.savedLayerData ?? undefined
+                  }
+                  isActive={true}
+                  onStrokeEnd={captureHistory}
+                  onReady={handleCanvasReady}
+                />
+              );
+            })}
+            <ProgressOverlay
+              visible={isContentAwareFilling}
+              label={contentAwareFillLabel}
+              sublabel="Analyzing image…"
+            />
+            <ProgressOverlay
+              visible={isRescaling}
+              label={
+                rescaleProgress.layerCount > 1
+                  ? `${rescaleProgress.label} layer ${rescaleProgress.layerIdx} of ${rescaleProgress.layerCount}…`
+                  : `${rescaleProgress.label} image…`
+              }
+              sublabel={
+                rescaleProgress.tilesTotal > 0
+                  ? `Tile ${rescaleProgress.tilesLoaded} of ${rescaleProgress.tilesTotal}`
+                  : "Running model…"
+              }
+            />
+            <ProgressOverlay
+              visible={isAutoMasking}
+              label="Detecting subject…"
+            />
+            <ProgressOverlay
+              visible={isInpainting}
+              label="Removing object…"
+            />
+          </main>
+          <NodeEditorMount captureHistory={captureHistory} />
+        </div>
         {animationMode && (
           <AnimationPanel
             onCopyPrevFrame={onCopyPrevFrame}

@@ -63,6 +63,7 @@ const EFFECTS_GROUP_ORDER = [
   "fx-lenseffects",
   "fx-shadow",
   "fx-distortion",
+  "fx-custom",
 ];
 const FILTER_GROUP_ORDER = [
   "blur",

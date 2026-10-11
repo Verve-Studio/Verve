@@ -13,6 +13,7 @@ export function buildAdjustmentEntry(
   ls: EffectLayerState,
   mask: GpuLayer | undefined,
   swatches: RGBAColor[],
+  parent?: GpuLayer,
 ): EffectRenderOp | null {
   const effect = effectRegistry.get(ls.effectType);
   if (!effect) {
@@ -20,7 +21,13 @@ export function buildAdjustmentEntry(
       `[buildAdjustmentEntry] no effect registered for effectType=${ls.effectType}`,
     );
   }
-  return effect.buildPlanEntry(ls, { mask, swatches });
+  const parentRect = parent && {
+    x: parent.offsetX,
+    y: parent.offsetY,
+    width: parent.layerWidth,
+    height: parent.layerHeight,
+  };
+  return effect.buildPlanEntry(ls, { mask, swatches, parentRect });
 }
 
 export function buildSubPlan(
@@ -153,6 +160,7 @@ export function buildSubPlan(
             adj as EffectLayerState,
             adjustmentMaskMap.get(adj.id),
             swatches,
+            baseLayer,
           );
           if (op) adjustments.push(op);
         }

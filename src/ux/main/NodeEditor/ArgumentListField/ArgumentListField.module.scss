@@ -1,0 +1,160 @@
+@use '@/styles/variables' as vars;
+
+// Every control is one height and shares the card's left/right edges, so the
+// name, default slider and range boxes line up within and across cards.
+$field-h: 18px;
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.arg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: vars.$color-surface-2;
+  border: 1px solid vars.$color-border;
+  border-radius: vars.$radius-md;
+}
+
+// Shared look of the boxed fields (matches NodeParamField's scrub slider).
+%field {
+  height: $field-h;
+  min-width: 0;
+  color: vars.$color-text;
+  background: vars.$color-surface-selected;
+  border: 1px solid transparent;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  font-size: vars.$font-size-sm;
+  outline: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nameBox {
+  @extend %field;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  cursor: text;
+
+  &:focus-within {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.name,
+.boundInput {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: none;
+  font: inherit;
+  outline: none;
+}
+
+.type {
+  @extend %field;
+  flex: 0 0 72px;
+  padding: 0 2px;
+  cursor: pointer;
+
+  &:focus {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.remove {
+  flex-shrink: 0;
+  width: $field-h;
+  height: $field-h;
+  padding: 0;
+  color: vars.$color-text-muted;
+  background: none;
+  border: none;
+  border-radius: vars.$radius-md;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+}
+
+// Fixed three columns so Min / Max (/ Step) sit in the same place on every
+// card, including int arguments that have no Step.
+.bounds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.bound {
+  @extend %field;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  cursor: text;
+
+  > span {
+    flex-shrink: 0;
+    color: vars.$color-text-dim;
+  }
+
+  &:hover {
+    background: vars.$color-surface-hover;
+  }
+
+  &:focus-within {
+    border-color: vars.$color-accent-blue;
+  }
+}
+
+.boundInput {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+
+  &::placeholder {
+    color: vars.$color-text-muted;
+  }
+}
+
+.add {
+  height: 22px;
+  color: vars.$color-text-dim;
+  background: none;
+  border: 1px dashed vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  font-size: vars.$font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+    border-color: vars.$color-text-muted;
+  }
+}
