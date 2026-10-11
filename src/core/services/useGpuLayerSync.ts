@@ -115,6 +115,18 @@ function parametricSig(ls: LayerState, pixelFormat: PixelFormat): string {
   );
 }
 
+/**
+ * Forget what was last rasterised into `gl`, so the next sync pass
+ * re-rasterises it from its layer state. Called when a history restore wrote
+ * the layer's pixels: the restored raster can be a stale placeholder (a frame
+ * whose content was still decoding, a linked layer mid-rasterise when the
+ * entry was captured) while the restored state's signature is unchanged.
+ */
+export function forgetLayerRaster(gl: GpuLayer): void {
+  parametricRasterSig.delete(gl);
+  lastLinkedRasterSig.delete(gl.id);
+}
+
 /** True when `gl` must be re-rasterised for `ls` (and records the new sig). */
 function needsRaster(gl: GpuLayer, ls: LayerState, pixelFormat: PixelFormat): boolean {
   const sig = parametricSig(ls, pixelFormat);

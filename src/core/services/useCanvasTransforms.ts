@@ -54,7 +54,7 @@ interface UseCanvasTransformsOptions {
   activeTabIdRef: { readonly current: string };
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
-  pendingLayerLabelRef: MutableRefObject<string | null>;
+  pendingRemountLabelRef: MutableRefObject<string | null>;
   canvasWidth: number;
   canvasHeight: number;
   /** Toggle to true while AI rescale is running so MainWindow can render
@@ -250,7 +250,7 @@ export function useCanvasTransforms({
   activeTabId,
   setTabs,
   setPendingLayerData,
-  pendingLayerLabelRef,
+  pendingRemountLabelRef,
   canvasWidth,
   canvasHeight,
   setRescaling,
@@ -374,7 +374,6 @@ export function useCanvasTransforms({
         );
         const pending = encodeLayerBuffers(results, newW, newH);
         if (abandonedAfterTabSwitch(activeTabId, "Resize Image")) return;
-        captureHistory("Before Resize Image");
         const resizeTabId = activeTabId;
         setTabs((prev) =>
           prev.map((t) =>
@@ -392,7 +391,7 @@ export function useCanvasTransforms({
           ),
         );
         setPendingLayerData(pending);
-        pendingLayerLabelRef.current = "Resize Image";
+        pendingRemountLabelRef.current = "Resize Image";
         dispatch({
           type: "RESIZE_CANVAS",
           payload: { width: newW, height: newH },
@@ -415,7 +414,7 @@ export function useCanvasTransforms({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      pendingLayerLabelRef,
+      pendingRemountLabelRef,
       dispatch,
     ],
   );
@@ -499,7 +498,6 @@ export function useCanvasTransforms({
           pending.layers.set(layer.id, { format: "rgba8", data: resized });
         }
         if (abandonedAfterTabSwitch(activeTabId, "Rescale Image")) return;
-        captureHistory("Before Rescale Image");
         const rescaleTabId = activeTabId;
         setTabs((prev) =>
           prev.map((t) =>
@@ -517,7 +515,7 @@ export function useCanvasTransforms({
           ),
         );
         setPendingLayerData(pending);
-        pendingLayerLabelRef.current = "Rescale Image";
+        pendingRemountLabelRef.current = "Rescale Image";
         dispatch({
           type: "RESIZE_CANVAS",
           payload: { width: newW, height: newH },
@@ -543,7 +541,7 @@ export function useCanvasTransforms({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      pendingLayerLabelRef,
+      pendingRemountLabelRef,
       dispatch,
       setRescaling,
       setRescaleProgress,
@@ -616,7 +614,6 @@ export function useCanvasTransforms({
         }
         if (pending.layers.size === 0) return;
         if (abandonedAfterTabSwitch(activeTabId, "Restore Image")) return;
-        captureHistory("Before Restore Image");
         const restoreTabId = activeTabId;
         // No snapshot or dimension change — restore returns pixels at the
         // source resolution. The canvasKey bump just forces a remount so
@@ -629,7 +626,7 @@ export function useCanvasTransforms({
           ),
         );
         setPendingLayerData(pending);
-        pendingLayerLabelRef.current = "Restore Image";
+        pendingRemountLabelRef.current = "Restore Image";
       } catch (err) {
         if (opts?.throwErrors) throw err;
         console.error("[Restore] Failed to restore image:", err);
@@ -651,7 +648,7 @@ export function useCanvasTransforms({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      pendingLayerLabelRef,
+      pendingRemountLabelRef,
       setRescaling,
       setRescaleProgress,
     ],
@@ -693,7 +690,6 @@ export function useCanvasTransforms({
         newH,
       );
 
-      captureHistory("Before Resize Canvas");
       const resizeCanvasTabId = activeTabId;
       setTabs((prev) =>
         prev.map((t) =>
@@ -711,7 +707,7 @@ export function useCanvasTransforms({
         ),
       );
       setPendingLayerData(pending);
-      pendingLayerLabelRef.current = "Resize Canvas";
+      pendingRemountLabelRef.current = "Resize Canvas";
       dispatch({
         type: "RESIZE_CANVAS",
         payload: { width: newW, height: newH },
@@ -729,7 +725,7 @@ export function useCanvasTransforms({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      pendingLayerLabelRef,
+      pendingRemountLabelRef,
       dispatch,
     ],
   );
@@ -768,7 +764,6 @@ export function useCanvasTransforms({
     );
 
     activeScope().crop.clear();
-    captureHistory("Before Crop");
     const cropTabId = activeTabId;
     setTabs((prev) =>
       prev.map((t) =>
@@ -786,7 +781,7 @@ export function useCanvasTransforms({
       ),
     );
     setPendingLayerData(pending);
-    pendingLayerLabelRef.current = "Crop";
+    pendingRemountLabelRef.current = "Crop";
     dispatch({
       type: "RESIZE_CANVAS",
       payload: { width: cropW, height: cropH },
@@ -802,7 +797,7 @@ export function useCanvasTransforms({
     activeTabId,
     setTabs,
     setPendingLayerData,
-    pendingLayerLabelRef,
+    pendingRemountLabelRef,
     dispatch,
   ]);
 
@@ -845,7 +840,6 @@ export function useCanvasTransforms({
               ? "Rotate 270° CW"
               : "Rotate 180°";
         if (abandonedAfterTabSwitch(startTabId, label)) return;
-        captureHistory(`Before ${label}`);
         const tabId = activeTabId;
         setTabs((prev) =>
           prev.map((t) =>
@@ -863,7 +857,7 @@ export function useCanvasTransforms({
           ),
         );
         setPendingLayerData(pending);
-        pendingLayerLabelRef.current = label;
+        pendingRemountLabelRef.current = label;
         if (amount !== "180") {
           dispatch({
             type: "RESIZE_CANVAS",
@@ -888,7 +882,7 @@ export function useCanvasTransforms({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      pendingLayerLabelRef,
+      pendingRemountLabelRef,
       dispatch,
     ],
   );
@@ -918,7 +912,6 @@ export function useCanvasTransforms({
         const label =
           axis === "horizontal" ? "Flip Horizontal" : "Flip Vertical";
         if (abandonedAfterTabSwitch(startTabId, label)) return;
-        captureHistory(`Before ${label}`);
         const tabId = activeTabId;
         setTabs((prev) =>
           prev.map((t) =>
@@ -926,7 +919,7 @@ export function useCanvasTransforms({
           ),
         );
         setPendingLayerData(pending);
-        pendingLayerLabelRef.current = label;
+        pendingRemountLabelRef.current = label;
       } catch (err) {
         if (opts?.throwErrors) throw err;
         console.error("[Flip] Failed:", err);
@@ -945,7 +938,7 @@ export function useCanvasTransforms({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      pendingLayerLabelRef,
+      pendingRemountLabelRef,
     ],
   );
 
@@ -1037,7 +1030,6 @@ export function useCanvasTransforms({
               ? "Rotate Layer 270° CW"
               : "Rotate Layer 180°";
         if (abandonedAfterTabSwitch(startTabId, label)) return;
-        captureHistory(`Before ${label}`);
         for (const op of ops) {
           const gpuLayer = handle.getGpuLayer(op.id);
           if (!gpuLayer) continue;
@@ -1052,6 +1044,7 @@ export function useCanvasTransforms({
               : undefined,
           );
         }
+        captureHistory(label);
       } catch (err) {
         if (opts?.throwErrors) throw err;
         console.error("[RotateLayer] Failed:", err);
@@ -1124,7 +1117,6 @@ export function useCanvasTransforms({
             ? "Flip Layer Horizontal"
             : "Flip Layer Vertical";
         if (abandonedAfterTabSwitch(startTabId, label)) return;
-        captureHistory(`Before ${label}`);
         for (const op of ops) {
           handle.replaceLayerData(
             op.id,
@@ -1135,6 +1127,7 @@ export function useCanvasTransforms({
               : undefined,
           );
         }
+        captureHistory(label);
       } catch (err) {
         if (opts?.throwErrors) throw err;
         console.error("[FlipLayer] Failed:", err);

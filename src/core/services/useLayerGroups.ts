@@ -14,8 +14,10 @@ import { matchPaletteIndices } from "@/wasm";
 interface UseLayerGroupsOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
   stateRef: MutableRefObject<AppState>;
-  captureHistory: (label: string) => void;
   dispatch: Dispatch<AppAction>;
+  /** Labels the history entry captured after the layer-stack change
+   *  (see useHistory). */
+  pendingLayerLabelRef: MutableRefObject<string | null>;
 }
 
 export type ContainerKind = "group" | "composite";
@@ -51,8 +53,8 @@ const isAttachment = (l: LayerState): l is LayerState & { parentId: string } =>
 export function useLayerGroups({
   canvasHandleRef,
   stateRef,
-  captureHistory,
   dispatch,
+  pendingLayerLabelRef,
 }: UseLayerGroupsOptions): UseLayerGroupsReturn {
   const commands = useMemo((): LayerGroupCommands => {
     /** Change a container's kind in place (GROUP_LAYERS / UNGROUP_LAYERS
@@ -90,24 +92,27 @@ export function useLayerGroups({
         }
         const groupId = newLayerId(kind);
         const groupName = name || (kind === "composite" ? "Composite" : "Group");
+        pendingLayerLabelRef.current = kind === "composite" ? "Group Into Composite" : "Group Layers";
         dispatch({ type: "GROUP_LAYERS", payload: { groupId, groupName, layerIds: [...ids] } });
         if (!stateRef.current.layers.some((l) => l.id === groupId)) {
+          pendingLayerLabelRef.current = null;
           throw new Error("The layers can't be grouped (they're inside a locked composite).");
         }
         if (kind === "composite") {
           setContainerKind(groupId, "composite");
           dispatch({ type: "SET_ACTIVE_LAYER", payload: groupId });
         }
-        captureHistory(kind === "composite" ? "Group Into Composite" : "Group Layers");
         return groupId;
       },
 
       ungroup(id) {
         const group = stateRef.current.layers.find((l) => l.id === id);
         if (!group || !isContainerLayer(group)) throw new Error("The layer isn't a group.");
+        const before = stateRef.current.layers;
+        pendingLayerLabelRef.current = "Ungroup Layers";
         if (!isGroupLayer(group)) setContainerKind(id, "group");
         dispatch({ type: "UNGROUP_LAYERS", payload: { groupId: id } });
-        captureHistory("Ungroup Layers");
+        if (stateRef.current.layers === before) pendingLayerLabelRef.current = null;
       },
 
       newGroup({ name, kind = "group", aboveId } = {}) {
@@ -117,6 +122,7 @@ export function useLayerGroups({
           name: name || (kind === "composite" ? "Composite" : "Group"),
           aboveLayerId: aboveId ?? undefined,
         };
+        pendingLayerLabelRef.current = kind === "composite" ? "New Composite Layer" : "New Group";
         if (kind === "composite") dispatch({ type: "ADD_COMPOSITE_LAYER", payload });
         else dispatch({ type: "ADD_LAYER_GROUP", payload });
         if (aboveId) {
@@ -143,7 +149,6 @@ export function useLayerGroups({
         if (!group || !isGroupLayer(group)) throw new Error("The layer isn't a group.");
 
         const merged = await handle.rasterizeGroupChildren(id, layers, swatches, "merge");
-        captureHistory("Merge Group");
 
         const newId = newLayerId("layer");
         const { pixelFormat } = stateRef.current;
@@ -198,12 +203,14 @@ export function useLayerGroups({
           newLayers.push(l);
         }
 
+        // Recorded once the canvas holds the merged layer (useHistory).
+        pendingLayerLabelRef.current = "Merge Group";
         dispatch({ type: "REORDER_LAYERS", payload: newLayers });
         dispatch({ type: "SET_ACTIVE_LAYER", payload: newId });
         return newId;
       },
     };
-  }, [canvasHandleRef, stateRef, captureHistory, dispatch]);
+  }, [canvasHandleRef, stateRef, dispatch, pendingLayerLabelRef]);
 
   const handleGroupLayers = useCallback(
     (layerIds: string[]): void => {

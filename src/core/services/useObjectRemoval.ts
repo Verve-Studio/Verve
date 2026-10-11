@@ -11,6 +11,7 @@ import {
   notifyObjectRemovalStatusChange,
 } from "@/core/tools/ObjectRemoval/ObjectRemoval";
 import { newLayerId } from "@/utils/layerId";
+import { showOperationError } from "@/utils/userFeedback";
 
 interface UseObjectRemovalOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
@@ -80,9 +81,9 @@ export function useObjectRemoval({
       const activeId = state.activeLayerId;
       if (!activeId) return;
       if (state.pixelFormat !== "rgba8") {
-        console.warn(
-          "[ObjectRemoval] Only rgba8 documents supported, got",
-          state.pixelFormat,
+        showOperationError(
+          "Object Removal failed.",
+          "Object Removal only supports 8-bit RGBA documents.",
         );
         return;
       }
@@ -97,10 +98,9 @@ export function useObjectRemoval({
           activeLayer.type === "frame" ||
           activeLayer.type === "group")
       ) {
-        console.warn(
-          "[ObjectRemoval] Active layer is a",
-          activeLayer.type,
-          "— rasterize first",
+        showOperationError(
+          "Object Removal failed.",
+          `The active layer is a ${activeLayer.type} layer. Rasterize it first.`,
         );
         return;
       }
@@ -124,6 +124,9 @@ export function useObjectRemoval({
       runningRef.current = true;
       setBusy?.(true);
       notifyObjectRemovalStatusChange();
+      // The document the run started on: a tab switch during inference must
+      // not write the result into another document.
+      const scope = activeScope();
       try {
         const result = await window.api.inpaint.run({
           rgba: layerPixels,
@@ -135,6 +138,14 @@ export function useObjectRemoval({
           throw new Error(
             `inpaint returned rgba length ${result.rgba.length}; expected ${w * h * 4}`,
           );
+        }
+        if (activeScope() !== scope || canvasHandleRef.current !== handle) {
+          throw new Error(
+            "The document changed while Object Removal was running.",
+          );
+        }
+        if (!stateRef.current.layers.some((l) => l.id === activeId)) {
+          throw new Error("The layer was removed while Object Removal was running.");
         }
         if (objectRemovalOptions.outputToNewLayer) {
           // Build a transparent-outside-mask patch so the new layer holds
@@ -169,12 +180,13 @@ export function useObjectRemoval({
             },
           });
         } else {
-          captureHistory("Before Object Removal");
           handle.writeLayerPixels(activeId, result.rgba);
+          captureHistory("Object Removal");
         }
         maskStore.clear();
       } catch (err) {
         console.error("[ObjectRemoval] inference failed:", err);
+        showOperationError("Object Removal failed.", err);
       } finally {
         runningRef.current = false;
         setBusy?.(false);

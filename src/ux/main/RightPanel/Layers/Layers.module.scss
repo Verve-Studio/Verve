@@ -25,6 +25,12 @@
   flex-shrink: 0;
 }
 
+// Wraps the opacity slider only to catch the end of an edit (events bubble
+// from its portalled popup through React); takes no part in the layout.
+.opacityCommit {
+  display: contents;
+}
+
 .blendSelect {
   @include m.ps-dropdown;
   flex: 1;

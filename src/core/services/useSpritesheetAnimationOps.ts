@@ -61,6 +61,7 @@ export function useSpritesheetAnimationOps({
         const gpu = handle.getGpuLayer(activeLayerId);
         const merged = handle.getLayerCanvasData(activeLayerId);
         if (!gpu || !merged) return;
+        const scope = activeScope();
         const channels = gpu.format === "indexed8" ? 1 : 4;
         const cw = s.canvas.width;
         const ch = s.canvas.height;
@@ -88,6 +89,15 @@ export function useSpritesheetAnimationOps({
               for (let c = 0; c < channels; c++) merged[di + c] = src[si + c];
             }
           }
+        }
+        // The frame conversions above are async: don't plot into another
+        // document (or a layer that's gone) if the user switched meanwhile.
+        if (
+          activeScope() !== scope ||
+          canvasHandleRef.current !== handle ||
+          !stateRef.current.layers.some((l) => l.id === activeLayerId)
+        ) {
+          throw new Error("The document changed while the frames were imported.");
         }
         handle.writeLayerCanvasData(activeLayerId, merged);
 
@@ -118,11 +128,13 @@ export function useSpritesheetAnimationOps({
         if (newFrames.length > 0) {
           dispatch({ type: "SET_SELECTED_FRAME", payload: newFrames[0].id });
         }
+        // One entry for the plotted frames, the grid and the animation.
+        captureHistory("Import Frames");
       })().catch((err: unknown) =>
         showOperationError("Could not import frames.", err),
       );
     },
-    [canvasHandleRef, dispatch, stateRef],
+    [canvasHandleRef, dispatch, stateRef, captureHistory],
   );
 
   const handleExportSpritesheetJson = useCallback(async (): Promise<void> => {
@@ -501,15 +513,10 @@ export function useSpritesheetAnimationOps({
       const srcY = Math.floor(srcIdx / cols) * cellH;
       const dstX = (dstIdx % cols) * cellW;
       const dstY = Math.floor(dstIdx / cols) * cellH;
+      const handle = canvasHandleRef.current;
+      if (!handle) return;
+      handle.copyCellRect(srcX, srcY, dstX, dstY, cellW, cellH);
       captureHistory(label);
-      canvasHandleRef.current?.copyCellRect(
-        srcX,
-        srcY,
-        dstX,
-        dstY,
-        cellW,
-        cellH,
-      );
     },
     [stateRef, captureHistory, canvasHandleRef],
   );

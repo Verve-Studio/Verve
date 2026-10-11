@@ -21,11 +21,14 @@ import styles from "./SwatchPanel.module.scss";
 interface SwatchPanelProps {
   activeTabId: string;
   onGeneratePalette?: () => void;
+  /** Records a palette / swatch-group edit in undo history. */
+  captureHistory: (label: string) => void;
 }
 
 export function SwatchPanel({
   activeTabId,
   onGeneratePalette,
+  captureHistory,
 }: SwatchPanelProps): React.JSX.Element {
   const state = useAppSelector(
     (s) => ({
@@ -43,7 +46,23 @@ export function SwatchPanel({
     handleOpenPalette,
     paletteError,
     clearPaletteError,
-  } = usePaletteFileOps({ swatches: state.swatches, dispatch });
+  } = usePaletteFileOps({ swatches: state.swatches, dispatch, captureHistory });
+
+  // Removing a swatch in indexed8 remaps every layer's indices after the
+  // commit (useIndexedSwatchSync), which clears lastRemovedSwatchIndex when
+  // done: record the removal then, so the entry holds the remapped pixels.
+  const lastRemovedSwatchIndex = useAppSelector((s) => s.lastRemovedSwatchIndex);
+  const pendingIndexedRemovalRef = useRef(false);
+  useEffect(() => {
+    if (lastRemovedSwatchIndex != null || !pendingIndexedRemovalRef.current) return;
+    pendingIndexedRemovalRef.current = false;
+    captureHistory("Delete Swatch");
+  }, [lastRemovedSwatchIndex, captureHistory]);
+  const removeSwatch = (index: number): void => {
+    if (state.pixelFormat === "indexed8") pendingIndexedRemovalRef.current = true;
+    dispatch({ type: "REMOVE_SWATCH", payload: index });
+    if (state.pixelFormat !== "indexed8") captureHistory("Delete Swatch");
+  };
 
   // ── Selection state (transient, not persisted) ────────────────────
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
@@ -254,11 +273,13 @@ export function SwatchPanel({
         type: "RENAME_SWATCH_GROUP",
         payload: { id: activeGroupId!, name },
       });
+      captureHistory("Rename Swatch Group");
     } else {
       dispatch({
         type: "ADD_SWATCH_GROUP",
         payload: { name, swatchIndices: groupPromptIndicesRef.current },
       });
+      captureHistory("New Swatch Group");
     }
     setGroupPromptOpen(false);
     setGroupPromptName("");
@@ -306,6 +327,7 @@ export function SwatchPanel({
           onClick={() => {
             if (activeGroupId === null) return;
             dispatch({ type: "REMOVE_SWATCH_GROUP", payload: activeGroupId });
+            captureHistory("Delete Swatch Group");
             setActiveGroupId(null);
           }}
         >
@@ -382,6 +404,7 @@ export function SwatchPanel({
                   onClick={() => {
                     setMenuOpen(false);
                     dispatch({ type: "SET_SWATCHES", payload: [] });
+                    captureHistory("Clear Palette");
                   }}
                 >
                   Clear Palette
@@ -484,10 +507,7 @@ export function SwatchPanel({
                   setContextMenu(null);
                   return;
                 }
-                dispatch({
-                  type: "REMOVE_SWATCH",
-                  payload: contextMenu.canonicalIndex,
-                });
+                removeSwatch(contextMenu.canonicalIndex);
                 setContextMenu(null);
               }}
             >
@@ -519,6 +539,7 @@ export function SwatchPanel({
                     type: "ADD_SWATCHES_TO_GROUP",
                     payload: { id: activeGroupId, swatchIndices: indices },
                   });
+                  captureHistory("Add to Swatch Group");
                   setContextMenu(null);
                 }}
               >
@@ -610,10 +631,7 @@ export function SwatchPanel({
               primary
               onClick={() => {
                 if (pendingSwatchRemoval !== null) {
-                  dispatch({
-                    type: "REMOVE_SWATCH",
-                    payload: pendingSwatchRemoval,
-                  });
+                  removeSwatch(pendingSwatchRemoval);
                 }
                 setPendingSwatchRemoval(null);
               }}

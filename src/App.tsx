@@ -19,6 +19,7 @@ import { useExportOps } from "@/core/services/useExportOps";
 import { useFileOps } from "@/core/services/useFileOps";
 import { useFilters } from "@/core/services/useFilters";
 import { useFormatRemount } from "@/core/services/useFormatRemount";
+import { useDevTestHook } from "@/core/services/useDevTestHook";
 import { useHistory } from "@/core/services/useHistory";
 import { useKeyboardShortcuts } from "@/core/services/useKeyboardShortcuts";
 import { useLayerArrange } from "@/core/services/useLayerArrange";
@@ -218,8 +219,13 @@ function AppContent(): React.JSX.Element {
   } = useTabs(store.getState, dispatch);
 
   // ── History ───────────────────────────────────────────────────────
-  const { captureHistory, pendingLayerLabelRef, suppressReadyCaptureRef } =
-    useHistory({
+  const {
+    captureHistory,
+    captureReadyHistory,
+    pendingLayerLabelRef,
+    pendingRemountLabelRef,
+    selectionLabelRef,
+  } = useHistory({
       canvasHandleRef,
       stateRef,
       dispatch,
@@ -227,6 +233,7 @@ function AppContent(): React.JSX.Element {
       setTabsRef,
       setPendingLayerData,
       layers: state.layers,
+      subscribe: store.subscribe,
     });
 
   // ── Unsaved-changes guard (main asks before closing) ──────────────
@@ -238,7 +245,6 @@ function AppContent(): React.JSX.Element {
     serializeActiveTabPixels,
     setTabs,
     setPendingLayerData,
-    suppressReadyCaptureRef,
   });
 
   // ── File operations ───────────────────────────────────────────────
@@ -260,13 +266,7 @@ function AppContent(): React.JSX.Element {
     activeTabIdRef,
     captureActiveSnapshot,
     serializeActiveTabPixels,
-    handleSwitchTab: useCallback(
-      (toId: string) => {
-        suppressReadyCaptureRef.current = true;
-        handleSwitchTab(toId);
-      },
-      [handleSwitchTab, suppressReadyCaptureRef],
-    ),
+    handleSwitchTab,
     dispatch,
     onRecentFilesUpdated: setRecentFiles,
   });
@@ -314,7 +314,6 @@ function AppContent(): React.JSX.Element {
   } = useLayers({
     canvasHandleRef,
     stateRef,
-    captureHistory,
     dispatch,
     pendingLayerLabelRef,
   });
@@ -327,7 +326,12 @@ function AppContent(): React.JSX.Element {
     handleUngroupLayers,
     handleCreateGroup,
     handleCreateCompositeLayer,
-  } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch });
+  } = useLayerGroups({
+    canvasHandleRef,
+    stateRef,
+    dispatch,
+    pendingLayerLabelRef,
+  });
 
   // ── Linked layers / open image into layer ─────────────────────────
   const {
@@ -374,7 +378,7 @@ function AppContent(): React.JSX.Element {
     activeTabIdRef,
     setTabs,
     setPendingLayerData,
-    pendingLayerLabelRef,
+    pendingRemountLabelRef,
     canvasWidth: state.canvas.width,
     canvasHeight: state.canvas.height,
     setRescaling: setIsRescaling,
@@ -406,8 +410,10 @@ function AppContent(): React.JSX.Element {
     stateRef,
     captureHistory,
     dispatch,
+    pendingLayerLabelRef,
     layers: state.layers,
     activeLayerId: state.activeLayerId,
+    openAdjustmentLayerId: state.openAdjustmentLayerId,
     getSelectionPixels,
     registerAdjMask,
   });
@@ -479,12 +485,15 @@ function AppContent(): React.JSX.Element {
   );
 
   // ── View actions ──────────────────────────────────────────────────
+  // A pending Free Transform holds the layer's pixels off-canvas: undoing
+  // underneath it would restore them and then Apply would composite a
+  // second copy. Settle the transform first.
   const handleUndo = useCallback(() => {
-    activeScope().history.undo();
-  }, []);
+    requireTransformDecision(() => activeScope().history.undo());
+  }, [requireTransformDecision]);
   const handleRedo = useCallback(() => {
-    activeScope().history.redo();
-  }, []);
+    requireTransformDecision(() => activeScope().history.redo());
+  }, [requireTransformDecision]);
 
   const {
     findLayersCounter,
@@ -553,7 +562,7 @@ function AppContent(): React.JSX.Element {
     activeTabId,
     setTabs,
     setPendingLayerData,
-    captureHistory,
+    pendingRemountLabelRef,
   });
 
   const colorMode = useColorMode({
@@ -571,6 +580,7 @@ function AppContent(): React.JSX.Element {
     dispatch,
     canvasHandleRef,
     captureHistory,
+    pendingLayerLabelRef,
     tabs,
     setTabs,
     activeTabIdRef,
@@ -622,6 +632,7 @@ function AppContent(): React.JSX.Element {
     canvasHandleRef,
     stateRef,
     captureHistory,
+    pendingLayerLabelRef,
     dispatch,
     setBusy: setIsAutoMasking,
   });
@@ -649,12 +660,9 @@ function AppContent(): React.JSX.Element {
 
   const guardedSwitchTab = useCallback(
     (toId: string): void => {
-      requireTransformDecision(() => {
-        suppressReadyCaptureRef.current = true;
-        handleSwitchTab(toId);
-      });
+      requireTransformDecision(() => handleSwitchTab(toId));
     },
-    [requireTransformDecision, handleSwitchTab, suppressReadyCaptureRef],
+    [requireTransformDecision, handleSwitchTab],
   );
 
   const guardedCloseTab = useCallback(
@@ -853,12 +861,21 @@ function AppContent(): React.JSX.Element {
       // one. Both menus go through this same wrapper now.
       onFreeTransform: () => requireTransformDecision(handleEnterTransform),
       // ── Select ──────────────────────────────────────────────────
-      onSelectAll: handleSelectAll,
-      onDeselect: handleDeselect,
+      onSelectAll: () => {
+        selectionLabelRef.current = "Select All";
+        handleSelectAll();
+      },
+      onDeselect: () => {
+        selectionLabelRef.current = "Deselect";
+        handleDeselect();
+      },
       onSelectAllLayers: handleSelectAllLayers,
       onDeselectLayers: handleDeselectLayers,
       onFindLayers: handleFindLayers,
-      onInvertSelection: () => activeScope().selection.invert(),
+      onInvertSelection: () => {
+        selectionLabelRef.current = "Invert Selection";
+        activeScope().selection.invert();
+      },
       // ── Layer ───────────────────────────────────────────────────
       onNewLayer: handleNewLayer,
       onNewLayerGroup: handleCreateGroup,
@@ -1007,6 +1024,7 @@ function AppContent(): React.JSX.Element {
   };
   const menuHandlersRef = useRef(menuHandlersNow);
   menuHandlersRef.current = menuHandlersNow;
+  useDevTestHook({ store, canvasHandleRef, menuHandlersRef });
   const menuHandlers = useMemo(
     () => stableHandlers(menuHandlersRef),
     [],
@@ -1141,6 +1159,7 @@ function AppContent(): React.JSX.Element {
         releaseMountedLayerData={releaseMountedLayerData}
         tabCanvasRef={tabCanvasRef}
         captureHistory={captureHistory}
+        captureReadyHistory={captureReadyHistory}
         pendingLayerLabelRef={pendingLayerLabelRef}
         dispatch={dispatch}
         hasActiveDocument={hasActiveDocument}

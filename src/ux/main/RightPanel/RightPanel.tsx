@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { ColorPicker } from "@/ux/main/RightPanel/ColorPicker/ColorPicker";
 import { Layers } from "@/ux/main/RightPanel/Layers/Layers";
 import { Navigator } from "@/ux/main/RightPanel/Navigator/Navigator";
@@ -14,6 +15,12 @@ import styles from "./RightPanel.module.scss";
 interface RightPanelProps {
   activeTabId: string;
   findLayersTrigger?: number;
+  /** Records a document change in undo history. */
+  captureHistory: (label: string) => void;
+  /** Label for the entry captured after the next layer-stack change. */
+  pendingLayerLabelRef: MutableRefObject<string | null>;
+  /** Runs a History panel action once any pending Free Transform is settled. */
+  guardHistoryAction: (action: () => void) => void;
   onMergeSelected: (ids: string[]) => void;
   onMergeVisible: () => void;
   onMergeDown: () => void;
@@ -37,6 +44,9 @@ const STORAGE_KEY = "verve-right-panel-width";
 function RightPanelImpl({
   activeTabId,
   findLayersTrigger,
+  captureHistory,
+  pendingLayerLabelRef,
+  guardHistoryAction,
   onMergeSelected,
   onMergeVisible,
   onMergeDown,
@@ -107,6 +117,7 @@ function RightPanelImpl({
           <SwatchPanel
             activeTabId={activeTabId}
             onGeneratePalette={onGeneratePalette}
+            captureHistory={captureHistory}
           />
         );
       case "Navigator":
@@ -128,10 +139,12 @@ function RightPanelImpl({
             onRefreshLinkedLayer={onRefreshLinkedLayer}
             activeTabId={activeTabId}
             findLayersTrigger={findLayersTrigger}
+            captureHistory={captureHistory}
+            pendingLayerLabelRef={pendingLayerLabelRef}
           />
         );
       case "History":
-        return <HistoryPanel />;
+        return <HistoryPanel guard={guardHistoryAction} />;
       case "Info":
         return <InfoPanel />;
       case "Display":

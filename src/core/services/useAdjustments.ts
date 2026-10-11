@@ -4,7 +4,7 @@ import type { AppAction } from "@/core/store/AppContext";
 import type { AppState, LayerState } from "@/types";
 import type { EffectLayerState, EffectParamsMap, EffectType } from "@/core/effects/effectTypes";
 import type { Dispatch, MutableRefObject } from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { activeScope } from "@/core/store/scope";
 import { newLayerId } from "@/utils/layerId";
 
@@ -14,8 +14,13 @@ interface UseAdjustmentsOptions {
   stateRef: MutableRefObject<AppState>;
   captureHistory: (label: string) => void;
   dispatch: Dispatch<AppAction>;
+  /** Labels the entry captured after the effect layer is added (useHistory). */
+  pendingLayerLabelRef: MutableRefObject<string | null>;
   layers: LayerState[];
   activeLayerId: string | null;
+  /** state.openAdjustmentLayerId: an effect's param edits are recorded when
+   *  its panel closes, however it closes. */
+  openAdjustmentLayerId: string | null;
   getSelectionPixels?: () => Uint8Array | null;
   registerAdjMask?: (layerId: string, pixels: Uint8Array) => void;
 }
@@ -70,8 +75,10 @@ export function useAdjustments({
   stateRef,
   captureHistory,
   dispatch,
+  pendingLayerLabelRef,
   layers,
   activeLayerId,
+  openAdjustmentLayerId: openAdjustmentId,
   getSelectionPixels,
   registerAdjMask,
 }: UseAdjustmentsOptions): UseAdjustmentsReturn {
@@ -89,12 +96,43 @@ export function useAdjustments({
     return false;
   }, [layers, activeLayerId]);
 
+  /** Record the param edits made in an effect's panel (de-dup drops a
+   *  panel closed without changes). Skipped when the layer is gone: its
+   *  removal is recorded by the layer-change capture. */
+  const captureAdjustmentEdit = useCallback(
+    (layerId: string): void => {
+      const layer = stateRef.current.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      captureHistory(layer.name || "Adjustment");
+    },
+    [stateRef, captureHistory],
+  );
+
   const handleCloseAdjustmentPanel = useCallback((): void => {
     const openLayerId = stateRef.current.openAdjustmentLayerId;
-    if (openLayerId) activeScope().adjustmentPreview.clear(openLayerId);
-    captureHistory("Adjustment");
+    if (openLayerId) {
+      activeScope().adjustmentPreview.clear(openLayerId);
+      captureAdjustmentEdit(openLayerId);
+    }
     dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
-  }, [stateRef, captureHistory, dispatch]);
+  }, [stateRef, captureAdjustmentEdit, dispatch]);
+
+  // The panel also closes without handleCloseAdjustmentPanel: selecting
+  // another layer (SET_ACTIVE_LAYER), opening another effect, deleting it.
+  // Record the edits of whichever panel just closed in this document.
+  const prevOpenRef = useRef<{ id: string | null; scope: ReturnType<typeof activeScope> }>({
+    id: openAdjustmentId,
+    scope: activeScope(),
+  });
+  useEffect(() => {
+    const prev = prevOpenRef.current;
+    const scope = activeScope();
+    prevOpenRef.current = { id: openAdjustmentId, scope };
+    if (prev.id === null || prev.id === openAdjustmentId) return;
+    // Tab switch: the other document's panel state, not an edit here.
+    if (prev.scope !== scope) return;
+    captureAdjustmentEdit(prev.id);
+  }, [openAdjustmentId, captureAdjustmentEdit]);
 
   const addEffect = useCallback(
     <T extends EffectType>({
@@ -121,7 +159,8 @@ export function useAdjustments({
 
       if (openAdjustmentLayerId !== null) {
         activeScope().adjustmentPreview.clear(openAdjustmentLayerId);
-        captureHistory("Adjustment");
+        // Its own entry, before the new effect's.
+        captureAdjustmentEdit(openAdjustmentLayerId);
         dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
       }
 
@@ -142,20 +181,22 @@ export function useAdjustments({
         hasMask: selPixels !== null,
       } as EffectLayerState;
 
+      // The creation is recorded after the commit (useHistory); edits made
+      // in the panel get their own entry when it closes.
+      pendingLayerLabelRef.current = label;
       dispatch({ type: "ADD_ADJUSTMENT_LAYER", payload: newLayer });
+      if (!stateRef.current.layers.some((l) => l.id === newId)) {
+        pendingLayerLabelRef.current = null;
+        throw new Error(`"${parent.name}" can't take effects.`);
+      }
       if (selPixels && registerAdjMask) registerAdjMask(newId, selPixels);
 
-      if (!openPanel) {
-        captureHistory(label);
-      } else if (effect.openEditor?.(newLayer)) {
-        // No floating panel to close later, so record the creation now.
-        captureHistory(label);
-      } else {
+      if (openPanel && !effect.openEditor?.(newLayer)) {
         dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
       }
       return newId;
     },
-    [stateRef, captureHistory, dispatch, getSelectionPixels, registerAdjMask],
+    [stateRef, captureAdjustmentEdit, dispatch, pendingLayerLabelRef, getSelectionPixels, registerAdjMask],
   );
 
   const handleCreateAdjustmentLayer = useCallback(

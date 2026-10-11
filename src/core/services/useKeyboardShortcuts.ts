@@ -128,7 +128,10 @@ export function useKeyboardShortcuts({
       // uppercase when it is — match both forms with toLowerCase() so Ctrl+Shift+S
       // dispatches as expected on all keyboard layouts.
       const k = e.key.toLowerCase();
-      if (k === "z") {
+      if (k === "z" && e.shiftKey) {
+        e.preventDefault();
+        handleRedo();
+      } else if (k === "z") {
         e.preventDefault();
         handleUndo();
       } else if (k === "y") {

@@ -18,7 +18,8 @@ import { newLayerId as makeLayerId } from "@/utils/layerId";
 interface UseContentAwareFillOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
   stateRef: MutableRefObject<AppState>;
-  captureHistory: (label: string) => void;
+  /** Unused: the result is recorded through `pendingLayerLabelRef`. */
+  captureHistory?: (label: string) => void;
   dispatch: Dispatch<AppAction>;
   pendingLayerLabelRef: MutableRefObject<string | null>;
   setIsContentAwareFilling: (v: boolean) => void;
@@ -36,7 +37,6 @@ export interface UseContentAwareFillReturn {
 export function useContentAwareFill({
   canvasHandleRef,
   stateRef,
-  captureHistory,
   dispatch,
   pendingLayerLabelRef,
   setIsContentAwareFilling,
@@ -45,14 +45,15 @@ export function useContentAwareFill({
 }: UseContentAwareFillOptions): UseContentAwareFillReturn {
   const isRunningRef = useRef(false);
 
-  const runInpaint = useCallback(
+  const runInpaintOnce = useCallback(
     async (
       eraseActiveLayer: boolean,
       samplingRadius: number,
     ): Promise<void> => {
-      if (isRunningRef.current) return;
-      isRunningRef.current = true;
       const handle = canvasHandleRef.current;
+      // The document the operation started on: a tab switch during the
+      // awaits below must not drop the result into another document.
+      const scope = activeScope();
 
       // Guard: selection must exist
       if (!activeScope().selection.hasSelection()) return;
@@ -104,7 +105,6 @@ export function useContentAwareFill({
             "Sampling radius is too small — no source pixels available. " +
               "Try a larger radius or set it to 0.",
           );
-          isRunningRef.current = false;
           return;
         }
       }
@@ -152,11 +152,9 @@ export function useContentAwareFill({
           }
         }
 
-        // Capture pre-operation history snapshot
-        captureHistory(label);
-        // Also set pendingLayerLabelRef so the auto-capture (on layer count increase)
-        // uses the correct label instead of 'New Layer'
-        pendingLayerLabelRef.current = label;
+        if (activeScope() !== scope || canvasHandleRef.current !== handle) {
+          throw new Error("the document changed while it was running");
+        }
 
         // Prepare GPU layer (before dispatching so the sync effect is a no-op).
         // The inpainting algorithm always returns sRGB RGBA8 bytes; they're
@@ -180,6 +178,9 @@ export function useContentAwareFill({
           undefined,
           docFormat,
         );
+        if (activeScope() !== scope || canvasHandleRef.current !== handle) {
+          throw new Error("the document changed while it was running");
+        }
 
         // Content-Aware Delete: erase BEFORE REORDER_LAYERS dispatch so that the
         // auto-history-capture triggered by layer count change records the fully
@@ -209,6 +210,9 @@ export function useContentAwareFill({
           ...currentLayers.slice(insertIdx),
         ];
 
+        // One entry for the whole result (fill layer + erased pixels),
+        // recorded by useHistory once the new layer is committed.
+        pendingLayerLabelRef.current = label;
         dispatch({ type: "REORDER_LAYERS", payload: updatedLayers });
         dispatch({ type: "SET_ACTIVE_LAYER", payload: newLayerId });
       } catch (error) {
@@ -217,19 +221,35 @@ export function useContentAwareFill({
         );
       } finally {
         setIsContentAwareFilling(false);
-        isRunningRef.current = false;
       }
     },
     [
       canvasHandleRef,
       stateRef,
-      captureHistory,
       dispatch,
       pendingLayerLabelRef,
       setIsContentAwareFilling,
       setFillLabel,
       onError,
     ],
+  );
+
+  const runInpaint = useCallback(
+    async (
+      eraseActiveLayer: boolean,
+      samplingRadius: number,
+    ): Promise<void> => {
+      if (isRunningRef.current) return;
+      isRunningRef.current = true;
+      try {
+        await runInpaintOnce(eraseActiveLayer, samplingRadius);
+      } finally {
+        // Every exit (guards included) must release the lock, or one
+        // "selection too small" error disables the command for good.
+        isRunningRef.current = false;
+      }
+    },
+    [runInpaintOnce],
   );
 
   const runContentAwareFill = useCallback(

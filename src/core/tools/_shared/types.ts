@@ -67,7 +67,9 @@ export interface ToolContext {
    * May be null if the canvas is not yet mounted.
    */
   overlayCanvas: HTMLCanvasElement | null;
-  /** Create a new text layer at a canvas position (used by the text tool on pointerDown). */
+  /** Create a new text layer at a canvas position (used by the text tool on
+   *  pointerDown) and open its editor. Records no history entry: the editor
+   *  records one when it closes with text (an abandoned box leaves none). */
   addTextLayer: (layer: TextLayerState) => void;
   /** Update an existing text layer's content / style (dispatches state update + re-rasterizes). */
   updateTextLayer: (layer: TextLayerState) => void;
@@ -81,8 +83,10 @@ export interface ToolContext {
    * app state. Used by the move tool for smooth live drag previews of text layers.
    */
   previewTextAt: (ls: TextLayerState, x: number, y: number) => void;
-  /** Create a new shape layer, rasterize it, add to state and set as active. */
-  addShapeLayer: (layer: ShapeLayerState) => void;
+  /** Create a new shape layer, rasterize it, add to state and set as active.
+   *  Records one history entry (`label`) once the layer is committed — don't
+   *  also call `commitStroke`. */
+  addShapeLayer: (layer: ShapeLayerState, label?: string) => void;
   /** Dispatch UPDATE_SHAPE_LAYER — sync effect re-rasterizes from new state. */
   updateShapeLayer: (layer: ShapeLayerState) => void;
   /**
@@ -94,8 +98,9 @@ export interface ToolContext {
   shapeLayers: ShapeLayerState[];
   /** The active shape layer, if the currently active layer is a shape type. */
   activeShapeLayer: ShapeLayerState | null;
-  /** Create a new path (Pen-tool) layer, rasterize it, add to state and set as active. */
-  addPathLayer: (layer: PathLayerState) => void;
+  /** Create a new path (Pen-tool) layer, rasterize it, add to state and set
+   *  as active. Records one history entry (`label`) — see `addShapeLayer`. */
+  addPathLayer: (layer: PathLayerState, label?: string) => void;
   /** Dispatch UPDATE_PATH_LAYER — sync effect re-rasterizes from the new state. */
   updatePathLayer: (layer: PathLayerState) => void;
   /**
@@ -107,8 +112,9 @@ export interface ToolContext {
   pathLayers: PathLayerState[];
   /** The active path layer, if the currently active layer is a path type. */
   activePathLayer: PathLayerState | null;
-  /** Create a new frame layer, rasterize it (placeholder), add to state and set as active. */
-  addFrameLayer: (layer: FrameLayerState) => void;
+  /** Create a new frame layer, rasterize it (placeholder), add to state and
+   *  set as active. Records one history entry (`label`) — see `addShapeLayer`. */
+  addFrameLayer: (layer: FrameLayerState, label?: string) => void;
   /** Dispatch UPDATE_FRAME_LAYER — sync effect re-rasterizes from the new state. */
   updateFrameLayer: (layer: FrameLayerState) => void;
   /**

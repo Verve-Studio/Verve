@@ -496,8 +496,7 @@ function createFrameHandler(): ToolHandler {
         const ls = drawPreview;
         const hasSize = ls.w > 2 && ls.h > 2;
         if (hasSize) {
-          ctx.addFrameLayer(ls);
-          ctx.commitStroke(`Frame (${ls.frameType})`);
+          ctx.addFrameLayer(ls, `Frame (${ls.frameType})`);
           if (ctx.overlayCanvas) drawHandles(ctx.overlayCanvas, ls, ctx.zoom);
         }
         drawPreview = null;
@@ -510,9 +509,15 @@ function createFrameHandler(): ToolHandler {
       if (finalState && mode.t !== "idle") {
         editLayer = null;
         ctx.renderer.setPreviewMode(false);
-        ctx.previewFrameLayer(finalState);
-        ctx.updateFrameLayer(finalState);
-        ctx.commitStroke("Edit frame");
+        // `last` starts as the layer's state object: a click on a handle
+        // without dragging changed nothing and is not an edit.
+        if (finalState !== frame) {
+          ctx.previewFrameLayer(finalState);
+          ctx.updateFrameLayer(finalState);
+          ctx.commitStroke("Edit frame");
+        } else {
+          ctx.render();
+        }
         if (ctx.overlayCanvas)
           drawHandles(ctx.overlayCanvas, finalState, ctx.zoom);
       } else if (editLayer) {

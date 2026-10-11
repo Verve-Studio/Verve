@@ -19,6 +19,7 @@ import {
 } from "@/graphics/rasterization";
 import { getPixelOpsSync, matchPaletteIndices, syncIfGrew } from "@/wasm";
 import { DocumentChangedError } from "@/core/io/verveContainer";
+import { forgetLayerRaster } from "@/core/services/useGpuLayerSync";
 import type { LiveLayerPixels } from "@/core/io/verveDocument";
 import {
   snapshotFull,
@@ -353,7 +354,7 @@ function restoreGpuLayer(
   snap: TiledLayerSnapshot,
   fresh: boolean,
   palette: RGBAColor[] | undefined,
-): void {
+): boolean {
   const change = renderer.takeLayerHistoryChange(layer);
   let rect;
   if (
@@ -382,6 +383,7 @@ function restoreGpuLayer(
     renderer.flushLayer(layer, palette);
   }
   renderer.setLayerHistoryBase(layer, snap);
+  return rect !== null;
 }
 
 export function useCanvasHandle({
@@ -869,7 +871,7 @@ export function useCanvasHandle({
             layer.offsetX = geo.offsetX;
             layer.offsetY = geo.offsetY;
           }
-          restoreGpuLayer(
+          const wrote = restoreGpuLayer(
             renderer,
             layer,
             snap,
@@ -878,6 +880,9 @@ export function useCanvasHandle({
               ? (swatchesRef.current as RGBAColor[])
               : undefined,
           );
+          // Parametric / linked layers re-rasterise from the restored state
+          // on the next sync pass (the restored pixels may be a placeholder).
+          if (wrote || fresh) forgetLayerRaster(layer);
         }
         // Note: layerStateForRender is currently unused — Canvas.tsx's doRender
         // builds the plan from the live state.layers via buildRenderPlan().

@@ -4,6 +4,7 @@ import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,
   ToolPointerPos,
+  ToolPointerUpResult,
   ToolContext,
   ToolOptionsStyles,
 } from "../_shared/types";
@@ -267,6 +268,8 @@ function createPatchHandler(): ToolHandler {
   let dragStartX = 0;
   let dragStartY = 0;
   let snapshot: PatchSnapshot | null = null;
+  // Context of the patch drag, for restoring the layer on cancel.
+  let patchCtx: ToolContext | null = null;
 
   function captureSnapshot(ctx: ToolContext): PatchSnapshot | null {
     const mask = ctx.selectionMask;
@@ -306,6 +309,7 @@ function createPatchHandler(): ToolHandler {
         snapshot = captureSnapshot(ctx);
         if (!snapshot) return;
         patching = true;
+        patchCtx = ctx;
         dragStartX = Math.round(x);
         dragStartY = Math.round(y);
         ctx.setCursor("move");
@@ -346,7 +350,7 @@ function createPatchHandler(): ToolHandler {
     onPointerUp(
       { x, y, shiftKey, altKey }: ToolPointerPos,
       ctx: ToolContext,
-    ): void {
+    ): ToolPointerUpResult {
       if (drawingPath) {
         pathPoints.push({ x, y });
         const mode = altKey ? "subtract" : shiftKey ? "add" : "set";
@@ -359,9 +363,11 @@ function createPatchHandler(): ToolHandler {
         activeScope().selection.setPolygon(pathPoints, mode, effectiveFeather);
         drawingPath = false;
         pathPoints = [];
-        return;
+        // Only the selection changed: useHistory records it as a selection
+        // step on its own.
+        return { skipHistory: true };
       }
-      if (!patching || !snapshot) return;
+      if (!patching || !snapshot) return { skipHistory: true };
       const dx = Math.round(x) - dragStartX;
       const dy = Math.round(y) - dragStartY;
       if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
@@ -373,6 +379,10 @@ function createPatchHandler(): ToolHandler {
         }
         ctx.renderer.flushLayer(ctx.layer);
         ctx.render();
+        patching = false;
+        snapshot = null;
+        patchCtx = null;
+        return { skipHistory: true };
       } else {
         applyPatch(ctx, snapshot, dx, dy, patchOptions.mode);
         ctx.renderer.flushLayer(ctx.layer);
@@ -381,10 +391,34 @@ function createPatchHandler(): ToolHandler {
           activeScope().selection.translateMask(dx, dy);
         }
         ctx.render();
-        ctx.commitStroke("Patch");
       }
       patching = false;
       snapshot = null;
+      patchCtx = null;
+      // The pointer-up auto capture records pixels and (destination mode)
+      // the moved selection together in one "Patch" entry.
+      return {};
+    },
+
+    onCancel(): void {
+      if (drawingPath) activeScope().selection.setPending(null);
+      // The live patch preview is written into the layer: put the pre-drag
+      // pixels back (no entry is recorded for a cancelled patch).
+      const c = patchCtx;
+      if (patching && snapshot && c && c.renderer.isLayerLive(c.layer)) {
+        if (c.layer.format === "rgba32f") {
+          (c.layer.data as Float32Array).set(snapshot.pixels as Float32Array);
+        } else {
+          (c.layer.data as Uint8Array).set(snapshot.pixels as Uint8Array);
+        }
+        c.renderer.flushLayer(c.layer);
+        c.render();
+      }
+      drawingPath = false;
+      pathPoints = [];
+      patching = false;
+      snapshot = null;
+      patchCtx = null;
     },
 
     onHover(pos: ToolPointerPos, ctx: ToolContext): void {

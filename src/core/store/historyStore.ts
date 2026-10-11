@@ -1,4 +1,10 @@
-import type { LayerState, PixelFormat, RGBAColor } from "@/types";
+import type {
+  LayerState,
+  PixelFormat,
+  RGBAColor,
+  SpritesheetState,
+  SwatchGroup,
+} from "@/types";
 import type { TiledLayerSnapshot } from "./tiledSnapshot";
 
 // ─── History entry ────────────────────────────────────────────────────────────
@@ -30,6 +36,11 @@ export interface HistoryEntry {
   canvasHeight: number;
   /** Swatch collection at the time of this snapshot. Optional so old entries are backward-compatible. */
   swatches?: RGBAColor[];
+  /** Swatch groups (they index into `swatches`, so they travel with it). */
+  swatchGroups?: SwatchGroup[];
+  /** Committed selection mask (canvas-sized, 1 byte per pixel, tiled and
+   *  shared like `layerPixels`); null when nothing is selected. */
+  selection?: TiledLayerSnapshot | null;
   /** Document ICC profile bytes at the time of this snapshot. `undefined`
    *  means the document was untagged. Optional for backward-compat with
    *  pre-CMS history entries. */
@@ -37,7 +48,24 @@ export interface HistoryEntry {
   /** Document-wide pixel format at the time of this snapshot. Optional for
    *  backward-compat with pre-format-history entries. */
   pixelFormat?: PixelFormat;
+  /** Sprite-sheet grid and animations (document content; onion-skin and
+   *  the selected animation / frame are view state and not recorded).
+   *  Optional for entries that predate it. */
+  spritesheet?: HistorySpritesheet;
 }
+
+export type HistorySpritesheet = Pick<
+  SpritesheetState,
+  "enabled" | "cellWidth" | "cellHeight" | "animations"
+>;
+
+/**
+ * Value for `pendingLayerLabelRef` (useHistory) meaning "this layer change
+ * is not an undo step yet": the operation records its own entry later (a new
+ * text box is recorded when its editor commits) or leaves none (an abandoned
+ * empty text box).
+ */
+export const SKIP_LAYER_HISTORY = "<skip-layer-history>";
 
 export interface ClearHistoryOptions {
   recaptureSnapshot?: boolean;
@@ -59,14 +87,19 @@ let globalCapBytes = 4 * 1024 * 1024 * 1024;
 /** Unique pixel buffers referenced by `entry` (with their sizes). */
 function entryBuffers(entry: HistoryEntry): Map<ArrayBufferLike, number> {
   const out = new Map<ArrayBufferLike, number>();
-  for (const snaps of [entry.layerPixels, entry.adjustmentMasks]) {
-    for (const snap of snaps.values()) {
-      for (const tile of snap.tiles) {
-        if (!out.has(tile.buffer)) out.set(tile.buffer, tile.byteLength);
-      }
+  for (const snap of entrySnapshots(entry)) {
+    for (const tile of snap.tiles) {
+      if (!out.has(tile.buffer)) out.set(tile.buffer, tile.byteLength);
     }
   }
   return out;
+}
+
+/** Every tiled snapshot an entry holds (layers, adjustment masks, selection). */
+function* entrySnapshots(entry: HistoryEntry): Iterable<TiledLayerSnapshot> {
+  yield* entry.layerPixels.values();
+  yield* entry.adjustmentMasks.values();
+  if (entry.selection) yield entry.selection;
 }
 
 // App-level handlers registered once (by App.tsx / useHistory) and shared
@@ -74,12 +107,12 @@ function entryBuffers(entry: HistoryEntry): Map<ArrayBufferLike, number> {
 // below for why these aren't per-instance fields.
 const appHandlers: {
   onJumpTo: ((index: number) => void) | null;
-  onPreview: ((index: number) => void) | null;
   onClear: ((options?: ClearHistoryOptions) => void) | null;
+  onBeforeNavigate: (() => void) | null;
 } = {
   onJumpTo: null,
-  onPreview: null,
   onClear: null,
+  onBeforeNavigate: null,
 };
 
 export class HistoryStore {
@@ -97,10 +130,18 @@ export class HistoryStore {
    * while it sits on its first history entry.
    */
   private savedEntryId: string | null = null;
+  /** Id of the first entry pushed since the store was created or cleared:
+   *  the state "the baseline" refers to. Kept by id so evicting it (it is
+   *  the oldest entry) can't make an edited document look clean. */
+  private baselineEntryId: string | null = null;
+  /** The baseline itself had unsaved changes (Clear History on a dirty
+   *  document). */
+  private baselineDirty = false;
 
   /** Record the current state as saved (called after a successful Save). */
   markSaved(): void {
     this.savedEntryId = this.entries[this.currentIndex]?.id ?? null;
+    this.baselineDirty = false;
     this.notify();
   }
 
@@ -108,7 +149,9 @@ export class HistoryStore {
   isDirty(): boolean {
     const current = this.entries[this.currentIndex];
     if (!current) return false;
-    if (this.savedEntryId === null) return this.currentIndex > 0;
+    if (this.savedEntryId === null) {
+      return current.id !== this.baselineEntryId || this.baselineDirty;
+    }
     return current.id !== this.savedEntryId;
   }
 
@@ -128,11 +171,16 @@ export class HistoryStore {
     appHandlers.onJumpTo = fn;
   }
 
-  get onPreview(): ((index: number) => void) | null {
-    return appHandlers.onPreview;
+  /**
+   * Registered by useHistory: records edits whose capture is still deferred
+   * (selection change, safety-net edit) before undo / redo / a jump reads
+   * `currentIndex`. Otherwise undo would skip past them and lose them.
+   */
+  get onBeforeNavigate(): (() => void) | null {
+    return appHandlers.onBeforeNavigate;
   }
-  set onPreview(fn: ((index: number) => void) | null) {
-    appHandlers.onPreview = fn;
+  set onBeforeNavigate(fn: (() => void) | null) {
+    appHandlers.onBeforeNavigate = fn;
   }
 
   get onClear(): ((options?: ClearHistoryOptions) => void) | null {
@@ -174,14 +222,12 @@ export class HistoryStore {
     const seen = new Set<ArrayBufferLike>();
     let total = 0;
     for (const e of this.entries) {
-      for (const snaps of [e.layerPixels, e.adjustmentMasks]) {
-        for (const snap of snaps.values()) {
-          for (const tile of snap.tiles) {
-            const ab = tile.buffer;
-            if (seen.has(ab)) continue;
-            seen.add(ab);
-            total += tile.byteLength;
-          }
+      for (const snap of entrySnapshots(e)) {
+        for (const tile of snap.tiles) {
+          const ab = tile.buffer;
+          if (seen.has(ab)) continue;
+          seen.add(ab);
+          total += tile.byteLength;
         }
       }
     }
@@ -192,6 +238,7 @@ export class HistoryStore {
     e.layerPixels.clear();
     e.layerGeometry.clear();
     e.adjustmentMasks.clear();
+    e.selection = null;
   }
 
   /**
@@ -228,7 +275,9 @@ export class HistoryStore {
     while (total > globalCapBytes) {
       let victim: (typeof states)[number] | null = null;
       for (const state of states) {
-        if (state.store.entries.length <= 1) continue;
+        // Never evict the entry the document is showing, only entries
+        // before it (a store sitting at index 0 keeps everything).
+        if (state.store.currentIndex <= 0) continue;
         if (
           !victim ||
           state.store.entries[0].timestamp < victim.store.entries[0].timestamp
@@ -247,7 +296,7 @@ export class HistoryStore {
         }
       }
       store.releaseEntry(oldest);
-      store.currentIndex = Math.max(0, store.currentIndex - 1);
+      store.currentIndex -= 1;
       store.selectedIndex = Math.max(0, store.selectedIndex - 1);
     }
   }
@@ -257,6 +306,7 @@ export class HistoryStore {
     const redo = this.entries.splice(this.currentIndex + 1);
     redo.forEach((e) => this.releaseEntry(e));
 
+    if (this.entries.length === 0) this.baselineEntryId = entry.id;
     this.entries.push(entry);
     this.currentIndex = this.entries.length - 1;
     this.selectedIndex = this.currentIndex;
@@ -270,27 +320,36 @@ export class HistoryStore {
     this.notify();
   }
 
-  /** Select an entry visually and preview it on the canvas. */
+  /**
+   * Click on a history entry: the document goes to that state (Photoshop
+   * semantics); later entries stay available as redo until the next action
+   * truncates them. A separate "preview" used to leave the document showing
+   * one entry while undo, save and the next capture worked from another.
+   */
   select(index: number): void {
-    if (index < 0 || index >= this.entries.length) return;
-    this.selectedIndex = index;
-    this.notify();
-    this.onPreview?.(index);
+    this.jumpTo(index);
   }
 
-  /** Apply the selected entry, truncating all future entries. */
+  /** Go to an entry; later entries remain as redo until the next push. */
   jumpTo(index: number): void {
-    if (index < 0 || index >= this.entries.length) return;
+    const target = this.entries[index];
+    if (!target) return;
+    this.onBeforeNavigate?.();
+    // A flushed pending edit truncates the redo chain: the clicked entry may
+    // be gone.
+    if (this.entries[index] !== target) return;
     if (index === this.currentIndex) return;
     this.onJumpTo?.(index);
   }
 
   undo(): void {
+    this.onBeforeNavigate?.();
     if (this.currentIndex <= 0) return;
     this.onJumpTo?.(this.currentIndex - 1);
   }
 
   redo(): void {
+    this.onBeforeNavigate?.();
     if (this.currentIndex >= this.entries.length - 1) return;
     this.onJumpTo?.(this.currentIndex + 1);
   }
@@ -324,39 +383,18 @@ export class HistoryStore {
   }
 
   clear(options?: ClearHistoryOptions): void {
+    // The state recorded next becomes the new baseline: clean exactly when
+    // the document was clean before the clear.
+    const wasDirty = this.isDirty();
+    this.savedEntryId = null;
+    this.baselineEntryId = null;
+    this.baselineDirty = wasDirty;
     this.entries.forEach((e) => this.releaseEntry(e));
     this.entries = [];
     this.currentIndex = -1;
     this.selectedIndex = -1;
     this.notify();
     this.onClear?.(options);
-  }
-
-  /**
-   * Bulk-restore a previously snapshotted history state (e.g. when switching tabs).
-   * Does NOT invoke onJumpTo/onPreview — the caller is responsible for
-   * restoring canvas pixels separately.
-   */
-  restore(entries: HistoryEntry[], currentIndex: number): void {
-    this.entries = entries;
-    this.currentIndex = currentIndex;
-    this.selectedIndex = currentIndex;
-    this.notify();
-  }
-
-  /**
-   * Transfer ownership of the current entries out of the store in O(1).
-   * This performs NO allocation — the returned
-   * object owns the arrays. The store is left empty after the call.
-   * Use this when switching tabs so the caller can stash the history cheaply.
-   */
-  detach(): { entries: HistoryEntry[]; currentIndex: number } {
-    const result = { entries: this.entries, currentIndex: this.currentIndex };
-    this.entries = [];
-    this.currentIndex = -1;
-    this.selectedIndex = -1;
-    this.notify();
-    return result;
   }
 
   subscribe(cb: () => void): () => void {

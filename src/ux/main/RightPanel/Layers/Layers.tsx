@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import type {
   LayerState,
   BlendMode,
@@ -314,6 +315,11 @@ interface LayerPanelProps {
   onRefreshLinkedLayer: () => void;
   activeTabId?: string;
   findLayersTrigger?: number;
+  /** Records a document change in undo history (after it is dispatched). */
+  captureHistory: (label: string) => void;
+  /** Label for the entry captured after the next layer-stack change
+   *  (layers added / removed; see useHistory). */
+  pendingLayerLabelRef: MutableRefObject<string | null>;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -333,6 +339,8 @@ export function Layers({
   onRefreshLinkedLayer,
   activeTabId,
   findLayersTrigger,
+  captureHistory,
+  pendingLayerLabelRef,
 }: LayerPanelProps): React.JSX.Element {
   const state = useAppSelector(
     (s) => ({
@@ -367,26 +375,48 @@ export function Layers({
   const onLayerDelete = (id: string): void => {
     dispatch({ type: "REMOVE_LAYER", payload: id });
   };
+  // Property edits create / destroy no GPU layers, so the entry is
+  // captured right after the dispatch (the store state is already updated).
   const onLayerToggleVisibility = (id: string): void => {
     dispatch({ type: "TOGGLE_LAYER_VISIBILITY", payload: id });
+    captureHistory("Layer Visibility");
   };
   const onLayerToggleLock = (id: string): void => {
+    const layer = layers.find((l) => l.id === id);
     dispatch({ type: "TOGGLE_LAYER_LOCK", payload: id });
+    captureHistory(
+      layer && "locked" in layer && layer.locked ? "Unlock Layer" : "Lock Layer",
+    );
   };
+  // Opacity changes on every slider tick; the entry is captured once the
+  // edit is released (pointer up, key up, blur) or the layer changes.
+  const opacityEditPendingRef = useRef(false);
   const onLayerOpacityChange = (id: string, opacity: number): void => {
     dispatch({ type: "SET_LAYER_OPACITY", payload: { id, opacity } });
+    opacityEditPendingRef.current = true;
   };
+  const commitOpacityEdit = (): void => {
+    if (!opacityEditPendingRef.current) return;
+    opacityEditPendingRef.current = false;
+    captureHistory("Layer Opacity");
+  };
+  const commitOpacityEditRef = useRef(commitOpacityEdit);
+  commitOpacityEditRef.current = commitOpacityEdit;
+  useEffect(() => () => commitOpacityEditRef.current(), [activeLayerId]);
   const onLayerBlendChange = (id: string, blendMode: BlendMode): void => {
     dispatch({ type: "SET_LAYER_BLEND", payload: { id, blendMode } });
+    captureHistory("Blend Mode");
   };
   const onLayerColorSpaceChange = (
     id: string,
     colorSpace: LayerColorSpace,
   ): void => {
     dispatch({ type: "SET_LAYER_COLOR_SPACE", payload: { id, colorSpace } });
+    captureHistory("Layer Color Space");
   };
   const onLayerRename = (id: string, name: string): void => {
     dispatch({ type: "RENAME_LAYER", payload: { id, name } });
+    captureHistory("Rename Layer");
   };
   const onAddMaskLayer = (parentId: string): void => {
     const hasMask = layers.some(
@@ -396,6 +426,7 @@ export function Layers({
         (l as { parentId: string }).parentId === parentId,
     );
     if (hasMask) return;
+    pendingLayerLabelRef.current = "Add Layer Mask";
     dispatch({
       type: "ADD_MASK_LAYER",
       payload: {
@@ -838,6 +869,7 @@ export function Layers({
       onGroupSelected(effective);
     } else {
       const id = newLayerId("group");
+      pendingLayerLabelRef.current = "New Group";
       dispatch({
         type: "ADD_LAYER_GROUP",
         payload: {
@@ -920,6 +952,7 @@ export function Layers({
       type: "REORDER_ADJUSTMENT_LAYERS",
       payload: { parentId, orderedChildIds: without },
     });
+    captureHistory("Reorder Effects");
   };
 
   const handleDragOver = (
@@ -958,6 +991,13 @@ export function Layers({
   };
 
   const handleDrop = (e: React.DragEvent): void => {
+    applyDrop(e);
+    // Moves and reorders create no GPU layers: capture right away. A drop
+    // that changed nothing is dropped by the history de-dup.
+    captureHistory("Reorder Layers");
+  };
+
+  const applyDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     const srcId = dragSrcLayerIdRef.current;
     if (!srcId || !dropTarget) {
@@ -1154,6 +1194,12 @@ export function Layers({
           ))}
         </select>
         <label className={styles.numLabel}>Opacity:</label>
+        <span
+          className={styles.opacityCommit}
+          onPointerUp={commitOpacityEdit}
+          onKeyUp={commitOpacityEdit}
+          onBlur={commitOpacityEdit}
+        >
         <SliderInput
           key={activeLayerId}
           value={opacityValue}
@@ -1167,6 +1213,7 @@ export function Layers({
             activeLayer && onLayerOpacityChange(activeLayer.id, n / 100)
           }
         />
+        </span>
       </div>
 
       {/* ── Lock row ─────────────────────────────────────────────────── */}

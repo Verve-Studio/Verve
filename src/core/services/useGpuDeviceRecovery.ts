@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { TabRecord } from "@/core/store/tabTypes";
 import {
   onGpuDeviceLost,
@@ -13,7 +13,6 @@ interface UseGpuDeviceRecoveryOptions {
   serializeActiveTabPixels: () => LayerDataBundle | null;
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
-  suppressReadyCaptureRef: MutableRefObject<boolean>;
 }
 
 /**
@@ -33,7 +32,6 @@ export function useGpuDeviceRecovery({
   serializeActiveTabPixels,
   setTabs,
   setPendingLayerData,
-  suppressReadyCaptureRef,
 }: UseGpuDeviceRecoveryOptions): void {
   const serializeRef = useRef(serializeActiveTabPixels);
   serializeRef.current = serializeActiveTabPixels;
@@ -47,7 +45,6 @@ export function useGpuDeviceRecovery({
       const tabId = activeTabIdRef.current;
       if (!tabId) return;
       const pixels = serializeRef.current();
-      suppressReadyCaptureRef.current = true;
       setTabs((prev) =>
         prev.map((t) =>
           t.id === tabId ? { ...t, canvasKey: t.canvasKey + 1 } : t,
@@ -69,5 +66,5 @@ export function useGpuDeviceRecovery({
       unsubscribeLost();
       unsubscribeError();
     };
-  }, [activeTabIdRef, setTabs, setPendingLayerData, suppressReadyCaptureRef]);
+  }, [activeTabIdRef, setTabs, setPendingLayerData]);
 }

@@ -640,8 +640,10 @@ function createPenHandler(): ToolHandler {
     draft = null;
     selectedIdx = null;
     pinnedDraftIdx.clear();
-    ctx.addPathLayer(finalLayer);
-    ctx.commitStroke(close ? "Create closed path" : "Create open path");
+    ctx.addPathLayer(
+      finalLayer,
+      close ? "Create closed path" : "Create open path",
+    );
     const o = ctx.overlayCanvas?.getContext("2d");
     if (o) clearOverlay(o);
   }

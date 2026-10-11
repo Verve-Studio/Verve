@@ -168,7 +168,6 @@ export function useLayerArrange({
           break;
       }
 
-      captureHistory("Before Align");
       for (const { gpuLayer, bbox } of infos) {
         switch (edge) {
           case "left":
@@ -192,6 +191,7 @@ export function useLayerArrange({
         }
       }
       handle.invalidate();
+      captureHistory("Align Layers");
     },
     [canvasHandleRef, stateRef, captureHistory, getEffectiveIds],
   );
@@ -220,7 +220,6 @@ export function useLayerArrange({
       }
       if (infos.length < 3) return;
 
-      captureHistory("Before Distribute");
       if (axis === "horizontal") {
         infos.sort((a, b) => a.bbox.l + a.bbox.r - (b.bbox.l + b.bbox.r));
         const firstCenter = (infos[0].bbox.l + infos[0].bbox.r) / 2;
@@ -245,6 +244,7 @@ export function useLayerArrange({
         }
       }
       handle.invalidate();
+      captureHistory("Distribute Layers");
     },
     [canvasHandleRef, stateRef, captureHistory, getEffectiveIds],
   );
@@ -322,11 +322,12 @@ export function useLayerArrange({
         }
       }
 
-      captureHistory("Before Reorder");
       dispatch({
         type: "REORDER_LAYERS",
         payload: [...newClusters.flat(), ...remaining],
       });
+      // No layers created or destroyed: stateRef already holds the new order.
+      captureHistory("Reorder Layers");
     },
     [stateRef, captureHistory, dispatch, getEffectiveIds],
   );

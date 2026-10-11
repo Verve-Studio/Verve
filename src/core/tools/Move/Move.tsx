@@ -18,6 +18,7 @@ import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type {
   ToolHandler,
   ToolPointerPos,
+  ToolPointerUpResult,
   ToolContext,
   ToolOptionsStyles,
 } from "../_shared/types";
@@ -490,6 +491,46 @@ function createMoveHandler(): ToolHandler {
   // includes the layer's offsetX/Y, so shifting offset would otherwise bust
   // the cache and force every layer effect to recompute every frame).
   let hiddenTextLayer: { visible: boolean } | null = null;
+  // Pointer-down context of the current drag (for onCancel, which gets none).
+  let strokeCtx: ToolContext | null = null;
+
+  /** Undo the live drag preview of a whole-layer / parametric move: preview
+   *  mode off, hidden text layer shown, overlay cleared, every displaced
+   *  offset back at its origin, the frame preview re-rasterised in place. */
+  function revertLayerDragPreview(c: ToolContext): void {
+    c.renderer.setPreviewMode(false);
+    if (hiddenTextLayer) {
+      hiddenTextLayer.visible = true;
+      hiddenTextLayer = null;
+    }
+    if (c.overlayCanvas) {
+      c.overlayCanvas
+        .getContext("2d")
+        ?.clearRect(0, 0, c.overlayCanvas.width, c.overlayCanvas.height);
+    }
+    if (textLayerSnapshot || shapeLayerSnapshot || pathLayerSnapshot) {
+      c.layer.offsetX = originalOffsetX;
+      c.layer.offsetY = originalOffsetY;
+    }
+    if (frameLayerSnapshot) c.previewFrameLayer(frameLayerSnapshot);
+    for (const f of offsetFollowers) {
+      f.gl.offsetX = f.origX;
+      f.gl.offsetY = f.origY;
+    }
+  }
+
+  function resetDragState(): void {
+    isDown = false;
+    strokeCtx = null;
+    textLayerSnapshot = null;
+    shapeLayerSnapshot = null;
+    frameLayerSnapshot = null;
+    pathLayerSnapshot = null;
+    originalPixels = null;
+    originalMask = null;
+    offsetFollowers = [];
+    boundsAreCanvasSpace = false;
+  }
 
   return {
     onPointerDown({ x, y }: ToolPointerPos, ctx: ToolContext) {
@@ -498,6 +539,7 @@ function createMoveHandler(): ToolHandler {
       lastDx = 0;
       lastDy = 0;
       isDown = true;
+      strokeCtx = ctx;
       textLayerSnapshot =
         ctx.textLayers.find((t) => t.id === ctx.layer.id) ?? null;
       shapeLayerSnapshot =
@@ -709,9 +751,10 @@ function createMoveHandler(): ToolHandler {
       );
     },
 
-    onPointerUp({ x, y }: ToolPointerPos, ctx: ToolContext) {
-      if (!isDown) return;
+    onPointerUp({ x, y }: ToolPointerPos, ctx: ToolContext): ToolPointerUpResult {
+      if (!isDown) return { skipHistory: true };
       isDown = false;
+      strokeCtx = null;
       const dx = Math.round(x) - startX;
       const dy = Math.round(y) - startY;
 
@@ -721,6 +764,8 @@ function createMoveHandler(): ToolHandler {
           activeScope().selection.translateMask(dx, dy);
         originalPixels = null;
         originalMask = null;
+        // Pixels and the moved selection: one "Move" entry (auto capture).
+        return {};
       } else {
         const finalDx = dx !== lastDx || dy !== lastDy ? dx : lastDx;
         const finalDy = dx !== lastDx || dy !== lastDy ? dy : lastDy;
@@ -741,6 +786,15 @@ function createMoveHandler(): ToolHandler {
           ctx.guides,
           ctx.zoom,
         );
+
+        if (sdx === 0 && sdy === 0) {
+          // A click without a (net) drag moves nothing: no state updates,
+          // no history entry.
+          revertLayerDragPreview(ctx);
+          resetDragState();
+          ctx.render(ctx.layers);
+          return { skipHistory: true };
+        }
 
         ctx.renderer.setPreviewMode(false);
 
@@ -883,6 +937,39 @@ function createMoveHandler(): ToolHandler {
         boundsAreCanvasSpace = false;
         ctx.render(ctx.layers);
       }
+      return {};
+    },
+
+    onCancel(): void {
+      // The drag can't finish (layer gone, tool threw): drop the preview so
+      // nothing stays displaced, hidden or in preview mode.
+      const c = strokeCtx;
+      if (c && isDown) {
+        if (originalPixels) {
+          // Selection move: put the lifted pixels back.
+          if (
+            c.renderer.isLayerLive(c.layer) &&
+            c.layer.data.length === originalPixels.length
+          ) {
+            (c.layer.data as Float32Array).set(originalPixels);
+            c.renderer.markDirtyRect(
+              c.layer,
+              0,
+              0,
+              c.layer.layerWidth,
+              c.layer.layerHeight,
+            );
+            c.renderer.flushLayer(
+              c.layer,
+              c.layer.format === "indexed8" ? c.swatches : undefined,
+            );
+          }
+        } else {
+          revertLayerDragPreview(c);
+        }
+        c.render();
+      }
+      resetDragState();
     },
   };
 }

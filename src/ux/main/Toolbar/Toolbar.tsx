@@ -18,6 +18,8 @@ import styles from "./Toolbar.module.scss";
 interface ToolbarProps {
   activeTool?: Tool;
   onToolChange?: (tool: Tool) => void;
+  /** Records a document change (palette edits) in undo history. */
+  captureHistory?: (label: string) => void;
 }
 
 /**
@@ -58,6 +60,7 @@ function StandardToolButton({
 function ToolbarImpl({
   activeTool = "pencil",
   onToolChange,
+  captureHistory,
 }: ToolbarProps): React.JSX.Element {
   const state = useAppSelector(
     (s) => ({
@@ -131,6 +134,7 @@ function ToolbarImpl({
           a: Math.round(color.a * 255),
         },
       });
+      captureHistory?.("Add Swatch");
     } else {
       dispatch({
         type:
@@ -260,7 +264,7 @@ function ToolbarImpl({
           setDialogIsSwatchAdd(false);
           setDialogOpen(false);
         }}
-        onAddSwatch={(c) =>
+        onAddSwatch={(c) => {
           dispatch({
             type: "ADD_SWATCH",
             payload: {
@@ -269,8 +273,9 @@ function ToolbarImpl({
               b: Math.round(c.b * 255),
               a: Math.round(c.a * 255),
             },
-          })
-        }
+          });
+          captureHistory?.("Add Swatch");
+        }}
         pixelFormat={state.pixelFormat}
       />
       {indexedPickerTarget !== null && (

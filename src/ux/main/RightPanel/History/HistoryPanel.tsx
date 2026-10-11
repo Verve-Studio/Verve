@@ -101,7 +101,12 @@ function formatTime(ts: number): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function HistoryPanel(): React.JSX.Element {
+export function HistoryPanel({
+  guard,
+}: {
+  /** Runs a history action once any pending Free Transform is settled. */
+  guard: (action: () => void) => void;
+}): React.JSX.Element {
   const [, forceUpdate] = useState(0);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
@@ -118,8 +123,6 @@ export function HistoryPanel(): React.JSX.Element {
     return <div className={styles.empty}>No history yet</div>;
   }
 
-  const canRestore = selectedIndex !== currentIndex && selectedIndex >= 0;
-
   return (
     <div className={styles.container}>
       <div className={styles.list}>
@@ -135,7 +138,7 @@ export function HistoryPanel(): React.JSX.Element {
             ]
               .filter(Boolean)
               .join(" ")}
-            onClick={() => activeScope().history.select(i)}
+            onClick={() => guard(() => activeScope().history.select(i))}
             title={formatTime(entry.timestamp)}
           >
             <span className={styles.icon}>
@@ -147,14 +150,7 @@ export function HistoryPanel(): React.JSX.Element {
         ))}
       </div>
       <div className={styles.footer}>
-        <DialogButton
-          onClick={() => activeScope().history.jumpTo(selectedIndex)}
-          disabled={!canRestore}
-          primary
-        >
-          Restore to here
-        </DialogButton>
-        <DialogButton onClick={() => activeScope().history.clear()}>
+        <DialogButton onClick={() => guard(() => activeScope().history.clear())}>
           Clear History
         </DialogButton>
       </div>

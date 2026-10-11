@@ -7,6 +7,8 @@ import { useCallback, useRef, useState } from "react";
 interface UsePaletteFileOpsOptions {
   swatches: RGBAColor[];
   dispatch: Dispatch<AppAction>;
+  /** Records the opened palette in undo history (it's part of the document). */
+  captureHistory?: (label: string) => void;
 }
 
 export interface UsePaletteFileOpsReturn {
@@ -20,6 +22,7 @@ export interface UsePaletteFileOpsReturn {
 export function usePaletteFileOps({
   swatches,
   dispatch,
+  captureHistory,
 }: UsePaletteFileOpsOptions): UsePaletteFileOpsReturn {
   const lastUsedPathRef = useRef<string | null>(null);
   const [paletteError, setPaletteError] = useState<string | null>(null);
@@ -61,11 +64,12 @@ export function usePaletteFileOps({
       const json = await window.api.readPaletteFile(path);
       const parsed = parsePaletteFile(json);
       dispatch({ type: "SET_SWATCHES", payload: parsed });
+      captureHistory?.("Open Palette");
       lastUsedPathRef.current = path;
     } catch (e) {
       setPaletteError((e as Error).message);
     }
-  }, [dispatch]);
+  }, [dispatch, captureHistory]);
 
   return {
     handleSavePalette,

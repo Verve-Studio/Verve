@@ -179,10 +179,15 @@ export function snapshotIncremental(
 ): TiledLayerSnapshot {
   const { width, height, channels, tilesX } = prev;
   const tiles = prev.tiles.slice();
+  const src32 = u32View(src);
   for (let i = 0; i < tiles.length; i++) {
     if (!dirtyTiles[i]) continue;
     const tx = i % tilesX;
-    tiles[i] = copyTile(src, width, height, channels, tx, (i - tx) / tilesX);
+    const ty = (i - tx) / tilesX;
+    // Flagged is "may have changed": a full re-flush (palette change, a
+    // write that restored the same pixels) keeps the old tile when equal.
+    if (tileEquals(src, src32, width, height, channels, tx, ty, tiles[i])) continue;
+    tiles[i] = copyTile(src, width, height, channels, tx, ty);
   }
   return { ...prev, tiles };
 }

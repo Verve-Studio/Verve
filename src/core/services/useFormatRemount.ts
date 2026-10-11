@@ -14,7 +14,9 @@ interface UseFormatRemountOptions {
   activeTabId: string;
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   setPendingLayerData: Dispatch<SetStateAction<LayerDataBundle | null>>;
-  captureHistory: (label: string) => void;
+  /** useHistory's remount label: the conversion is recorded once the new
+   *  canvas is ready (its layers are what the document now holds). */
+  pendingRemountLabelRef: MutableRefObject<string | null>;
 }
 
 /** Puts every pixel layer's converted data (from `converted`, handed over
@@ -28,7 +30,7 @@ export function useFormatRemount({
   activeTabId,
   setTabs,
   setPendingLayerData,
-  captureHistory,
+  pendingRemountLabelRef,
 }: UseFormatRemountOptions): (
   toFormat: PixelFormat,
   converted: ReadonlyMap<string, Uint8Array | Float32Array>,
@@ -55,12 +57,12 @@ export function useFormatRemount({
         });
       }
       setPendingLayerData(pending);
+      pendingRemountLabelRef.current = "Convert Color Mode";
       setTabs((prev) =>
         prev.map((t) =>
           t.id === activeTabId ? { ...t, canvasKey: t.canvasKey + 1 } : t,
         ),
       );
-      captureHistory("Convert Color Mode");
     },
     [
       canvasHandleRef,
@@ -68,7 +70,7 @@ export function useFormatRemount({
       activeTabId,
       setTabs,
       setPendingLayerData,
-      captureHistory,
+      pendingRemountLabelRef,
     ],
   );
 }

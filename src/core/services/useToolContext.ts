@@ -23,6 +23,7 @@ import { useCallback, useRef } from "react";
 import { TOOL_REGISTRY } from "@/core/tools";
 import type { ToolContext } from "@/core/tools";
 import { activeScope } from "@/core/store/scope";
+import { SKIP_LAYER_HISTORY } from "@/core/store/historyStore";
 import type {
   AppState,
   Tool,
@@ -91,6 +92,10 @@ export interface ToolContextDeps {
   doRender: () => void;
   /** Stroke commit callback. */
   onStrokeEndRef: React.RefObject<((label: string) => void) | undefined>;
+  /** useHistory's label for the next committed layer change (see
+   *  `UseHistoryReturn.pendingLayerLabelRef`): layer creation records its
+   *  entry once the new layer is in the stack. */
+  pendingLayerLabelRef: React.MutableRefObject<string | null>;
   /** Open the inline text editor on a text layer, optionally placing the
    *  caret at a canvas-space point. */
   openTextEditor: (id: string, at?: { x: number; y: number }) => void;
@@ -206,6 +211,9 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         rasterizeTextToLayer(ls, gl, renderer);
         d.glLayersRef.current.set(ls.id, gl);
         d.doRender();
+        // The empty box isn't an undo step: closing the editor records the
+        // text (or, abandoned, removes the layer without an entry).
+        d.pendingLayerLabelRef.current = SKIP_LAYER_HISTORY;
         dispatch({ type: "ADD_TEXT_LAYER", payload: ls });
         d.openTextEditor(ls.id);
       },
@@ -225,7 +233,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         rasterizeTextToLayer({ ...ls, x, y }, gl, renderer);
         d.doRender();
       },
-      addShapeLayer: (ls) => {
+      addShapeLayer: (ls, label) => {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
@@ -233,6 +241,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         renderer.flushLayer(gl);
         d.glLayersRef.current.set(ls.id, gl);
         d.doRender();
+        d.pendingLayerLabelRef.current = label ?? "New Layer";
         dispatch({ type: "ADD_SHAPE_LAYER", payload: ls });
       },
       updateShapeLayer: (ls) => {
@@ -254,7 +263,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         const l = state.layers.find((l) => l.id === activeId);
         return l && "type" in l && l.type === "shape" ? l : null;
       })(),
-      addPathLayer: (ls) => {
+      addPathLayer: (ls, label) => {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
@@ -262,6 +271,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         renderer.flushLayer(gl);
         d.glLayersRef.current.set(ls.id, gl);
         d.doRender();
+        d.pendingLayerLabelRef.current = label ?? "New Layer";
         dispatch({ type: "ADD_PATH_LAYER", payload: ls });
       },
       updatePathLayer: (ls) => {
@@ -283,7 +293,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         const l = state.layers.find((l) => l.id === activeId);
         return l && "type" in l && l.type === "path" ? l : null;
       })(),
-      addFrameLayer: (ls) => {
+      addFrameLayer: (ls, label) => {
         const cw = renderer.pixelWidth;
         const ch = renderer.pixelHeight;
         const gl = renderer.createLayer(ls.id, ls.name, cw, ch, 0, 0);
@@ -291,6 +301,7 @@ export function useToolContext(deps: ToolContextDeps): () => ToolContext | null 
         renderer.flushLayer(gl);
         d.glLayersRef.current.set(ls.id, gl);
         d.doRender();
+        d.pendingLayerLabelRef.current = label ?? "New Layer";
         dispatch({ type: "ADD_FRAME_LAYER", payload: ls });
       },
       updateFrameLayer: (ls) => {

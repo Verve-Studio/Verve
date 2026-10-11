@@ -66,6 +66,8 @@ export interface AutomationHostDeps {
   dispatch: Dispatch<AppAction>;
   canvasHandleRef: { readonly current: CanvasHandle | null };
   captureHistory: (label: string) => void;
+  /** Labels the entry captured after a layer-stack change (useHistory). */
+  pendingLayerLabelRef: MutableRefObject<string | null>;
   tabs: TabRecord[];
   setTabs: Dispatch<SetStateAction<TabRecord[]>>;
   activeTabIdRef: { readonly current: string };
@@ -716,6 +718,7 @@ export function useAutomationHost(deps: AutomationHostDeps): void {
           if (isAttachment(l)) throw new Error("Masks and effects can't have a layer mask.");
           id = newLayerId("mask");
           handle().prepareMaskLayer(id, "Layer Mask", mask);
+          d().pendingLayerLabelRef.current = "Add Layer Mask";
           d().dispatch({
             type: "ADD_MASK_LAYER",
             payload: { id, name: "Layer Mask", visible: true, type: "mask", parentId: l.id },
@@ -871,6 +874,9 @@ export function useAutomationHost(deps: AutomationHostDeps): void {
             });
             if (prepared) {
               d().dispatch({ type: "UPDATE_ADJUSTMENT_LAYER", payload: { ...layer, params: prepared } as EffectLayerState });
+              // The creation entry (captured after the layer was added) holds
+              // the unprepared params; record the prepared ones.
+              d().captureHistory(layer.name);
               await nextFrame();
             }
           }

@@ -14,7 +14,6 @@ import { getDescendantIds, getParentGroup } from "@/utils/layerTree";
 interface UseLayersOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
   stateRef: MutableRefObject<AppState>;
-  captureHistory: (label: string) => void;
   dispatch: Dispatch<AppAction>;
   pendingLayerLabelRef: MutableRefObject<string | null>;
 }
@@ -95,7 +94,6 @@ const mergedLayer = (id: string, name: string): PixelLayerState => ({
 export function useLayers({
   canvasHandleRef,
   stateRef,
-  captureHistory,
   dispatch,
   pendingLayerLabelRef,
 }: UseLayersOptions): UseLayersReturn {
@@ -145,7 +143,6 @@ export function useLayers({
         layers.filter((l) => mergeIds.has(l.id)),
         "merge",
       )).data;
-      captureHistory(label);
       const newId = newLayerId("layer");
       await prepareMerged(handle, newId, name, merged);
       const topIdx = layers.findLastIndex((l) => rootIds.has(l.id));
@@ -154,6 +151,8 @@ export function useLayers({
         if (i === topIdx) newLayers.push(mergedLayer(newId, name));
         if (!mergeIds.has(l.id)) newLayers.push(l);
       });
+      // Recorded once the canvas holds the merged layer (useHistory).
+      pendingLayerLabelRef.current = label;
       dispatch({ type: "REORDER_LAYERS", payload: newLayers });
       dispatch({ type: "SET_ACTIVE_LAYER", payload: newId });
       return newId;
@@ -281,9 +280,9 @@ export function useLayers({
       async flatten() {
         const handle = requireHandle();
         const flat = await handle.rasterizeComposite("flatten");
-        captureHistory("Flatten Image");
         const newId = newLayerId("layer");
         await prepareMerged(handle, newId, "Background", flat.data);
+        pendingLayerLabelRef.current = "Flatten Image";
         dispatch({ type: "REORDER_LAYERS", payload: [mergedLayer(newId, "Background")] });
         dispatch({ type: "SET_ACTIVE_LAYER", payload: newId });
         return newId;
@@ -305,7 +304,6 @@ export function useLayers({
           layers.filter((l) => l.id === id || childIds.has(l.id)),
           "merge",
         );
-        captureHistory("Rasterize Layer");
 
         const newId = newLayerId("layer");
         // Preserve opacity + blend mode from the source layer.
@@ -325,6 +323,7 @@ export function useLayers({
           .map((l) =>
             isContainerLayer(l) ? { ...l, childIds: l.childIds.map((c) => (c === id ? newId : c)) } : l,
           );
+        pendingLayerLabelRef.current = "Rasterize Layer";
         dispatch({ type: "REORDER_LAYERS", payload: next });
         dispatch({ type: "SET_ACTIVE_LAYER", payload: newId });
         return newId;
@@ -338,14 +337,16 @@ export function useLayers({
         );
         if (existing) return existing.id;
         const maskId = newLayerId("mask");
+        pendingLayerLabelRef.current = "Add Layer Mask";
         dispatch({
           type: "ADD_MASK_LAYER",
           payload: { id: maskId, name: "Layer Mask", visible: true, type: "mask", parentId: id },
         });
+        if (!stateRef.current.layers.some((l) => l.id === maskId)) pendingLayerLabelRef.current = null;
         return maskId;
       },
     };
-  }, [canvasHandleRef, stateRef, captureHistory, dispatch, pendingLayerLabelRef]);
+  }, [canvasHandleRef, stateRef, dispatch, pendingLayerLabelRef]);
 
   /** Run a command from a menu / panel: failures are reported, not thrown. */
   const report = useCallback(

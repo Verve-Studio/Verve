@@ -143,17 +143,19 @@ export function useColorMode({
       }
 
       // ── Phase 2: Apply all conversions ────────────────────────────────────
-      // Applied to the current canvas even when a remount follows: the
-      // "Convert Color Mode" history entry is captured from it. The remount
-      // then hydrates from `conversions` (same content) instead of copying
-      // every layer back out of the canvas.
-      for (const [layerId, newData] of conversions) {
-        handle.replaceLayerData(
-          layerId,
-          newData,
-          toFormat,
-          toFormat === "indexed8" ? palette : undefined,
-        );
+      // A conversion to / from rgba32f remounts the canvas, which hydrates
+      // straight from `conversions`; the history entry is recorded on the
+      // new canvas. Otherwise the current canvas takes the converted data.
+      const involvesF32 = fromFormat === "rgba32f" || toFormat === "rgba32f";
+      if (!involvesF32) {
+        for (const [layerId, newData] of conversions) {
+          handle.replaceLayerData(
+            layerId,
+            newData,
+            toFormat,
+            toFormat === "indexed8" ? palette : undefined,
+          );
+        }
       }
 
       if (
@@ -216,7 +218,6 @@ export function useColorMode({
         }
       }
 
-      const involvesF32 = fromFormat === "rgba32f" || toFormat === "rgba32f";
       if (involvesF32) {
         onFormatChangeRequiresRemount(toFormat, conversions);
       } else {

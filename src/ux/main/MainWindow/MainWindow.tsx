@@ -105,6 +105,9 @@ export interface MainWindowProps {
     label: string,
     overrides?: { swatches?: RGBAColor[] },
   ) => void;
+  captureReadyHistory: () => void;
+  /** Label for the history entry captured after the next layer-stack
+   *  change (see useHistory). */
   pendingLayerLabelRef: MutableRefObject<string | null>;
   dispatch: Dispatch<AppAction>;
 
@@ -297,6 +300,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     pendingLayerData,
     tabCanvasRef,
     captureHistory,
+    pendingLayerLabelRef,
     dispatch,
     hasActiveDocument,
     adjustments,
@@ -415,11 +419,15 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
   const handleCanvasReady = useCallback((): void => {
     const p = propsRef.current;
     p.releaseMountedLayerData();
-    p.captureHistory(p.pendingLayerLabelRef.current ?? "Initial State");
-    p.pendingLayerLabelRef.current = null;
+    p.captureReadyHistory();
     p.canvasHandleRef.current?.fitToWindow();
     const tab = p.tabs.find((t) => t.id === p.activeTabId);
     if (tab) canvasReadyStore.markReady(`${tab.id}-${tab.canvasKey}`);
+  }, []);
+  // History panel clicks go through the same Free Transform guard as
+  // undo / redo: jumping underneath a pending transform duplicates pixels.
+  const guardHistoryAction = useCallback((action: () => void): void => {
+    propsRef.current.requireTransformDecision(action);
   }, []);
   const handleOpenAdjustmentPanel = useCallback((id: string): void => {
     const p = propsRef.current;
@@ -457,7 +465,11 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
       )}
 
       <div className={styles.workspace}>
-        <Toolbar activeTool={activeTool} onToolChange={handleToolChange} />
+        <Toolbar
+          activeTool={activeTool}
+          onToolChange={handleToolChange}
+          captureHistory={captureHistory}
+        />
         <div className={styles.centerColumn}>
           <main className={styles.canvasArea}>
             {tabs.map((tab) => {
@@ -473,6 +485,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
                   }
                   isActive={true}
                   onStrokeEnd={captureHistory}
+                  pendingLayerLabelRef={pendingLayerLabelRef}
                   onReady={handleCanvasReady}
                 />
               );
@@ -514,6 +527,9 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         )}
         <RightPanel
           activeTabId={activeTabId}
+          captureHistory={captureHistory}
+          pendingLayerLabelRef={pendingLayerLabelRef}
+          guardHistoryAction={guardHistoryAction}
           onMergeSelected={handleMergeSelected}
           onMergeVisible={handleMergeVisible}
           onMergeDown={handleMergeDown}
@@ -718,7 +734,6 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         swatches={swatches}
         hasActiveDocument={hasActiveDocument}
         onApply={(palette, groups) => {
-          captureHistory("Generate Palette", { swatches: palette });
           dispatch({ type: "SET_SWATCHES", payload: palette });
           // The old groups indexed the replaced palette; the generated
           // palette brings its own (Time of Day: one ramp group per colour).
@@ -726,6 +741,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
             type: "SET_SWATCH_GROUPS",
             payload: groups.map((g) => ({ id: crypto.randomUUID(), ...g })),
           });
+          // After both dispatches: the entry records palette and groups.
+          captureHistory("Generate Palette");
         }}
       />
 

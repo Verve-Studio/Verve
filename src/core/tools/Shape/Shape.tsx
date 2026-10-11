@@ -695,8 +695,7 @@ function createShapeHandler(): ToolHandler {
             ? Math.hypot(ls.x2 - ls.x1, ls.y2 - ls.y1) > 2
             : ls.w > 2 && ls.h > 2;
         if (hasSize) {
-          ctx.addShapeLayer(ls);
-          ctx.commitStroke(`Shape (${ls.shapeType})`);
+          ctx.addShapeLayer(ls, `Shape (${ls.shapeType})`);
           // Redraw handles now the shape exists in state
           if (ctx.overlayCanvas) drawHandles(ctx.overlayCanvas, ls, ctx.zoom);
         }
@@ -714,9 +713,15 @@ function createShapeHandler(): ToolHandler {
           editLayer = null;
         }
         ctx.renderer.setPreviewMode(false);
-        ctx.previewShapeLayer(finalState);
-        ctx.updateShapeLayer(finalState);
-        ctx.commitStroke(`Edit shape`);
+        // `last` starts as the layer's state object: a click on a handle
+        // without dragging changed nothing and is not an edit.
+        if (finalState !== shape) {
+          ctx.previewShapeLayer(finalState);
+          ctx.updateShapeLayer(finalState);
+          ctx.commitStroke(`Edit shape`);
+        } else {
+          ctx.render();
+        }
         if (ctx.overlayCanvas)
           drawHandles(ctx.overlayCanvas, finalState, ctx.zoom);
       } else if (editLayer) {

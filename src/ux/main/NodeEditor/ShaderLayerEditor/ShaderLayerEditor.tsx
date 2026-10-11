@@ -13,6 +13,7 @@ import { nodeRegistry } from "@/core/nodes/nodeRegistry";
 import type { GraphNode, NodeGraph } from "@/core/nodes/graphTypes";
 import { NodeCanvas } from "../NodeCanvas/NodeCanvas";
 import { nodeEditorStore } from "../nodeEditorStore";
+import { activeScope, type DocumentScope } from "@/core/store/scope";
 import styles from "./ShaderLayerEditor.module.scss";
 
 /** The node to flag for `error` when looking at the graph at `path`: the
@@ -111,10 +112,22 @@ function BoundEditor({
   const captureRef = useRef(captureHistory);
   captureRef.current = captureHistory;
   const historyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The document the pending (debounced) capture belongs to.
+  const historyScope = useRef<DocumentScope | null>(null);
 
   // Editor → layer. Mid-gesture previews (node drags) are skipped; the
   // document notifies again when the gesture ends.
   useEffect(() => {
+    /** Record the pending edit now — only into the document it was made in
+     *  (after a tab switch the canvas and history are another document's;
+     *  the edit is then part of that document's next entry). */
+    const flushHistory = (): void => {
+      if (historyTimer.current) clearTimeout(historyTimer.current);
+      historyTimer.current = null;
+      const scope = historyScope.current;
+      historyScope.current = null;
+      if (scope && scope === activeScope()) captureRef.current("Edit Custom Shader");
+    };
     const sync = (): void => {
       const current = layerRef.current;
       if (doc.inGesture || doc.graph === current.params.graph) return;
@@ -123,20 +136,25 @@ function BoundEditor({
         payload: { ...current, params: { ...current.params, graph: doc.graph } },
       });
       if (historyTimer.current) clearTimeout(historyTimer.current);
-      historyTimer.current = setTimeout(() => {
-        historyTimer.current = null;
-        captureRef.current("Edit Custom Shader");
-      }, HISTORY_DEBOUNCE_MS);
+      historyScope.current = activeScope();
+      historyTimer.current = setTimeout(flushHistory, HISTORY_DEBOUNCE_MS);
     };
+    // Any click or shortcut may switch documents (tab bar, Ctrl+Tab, close)
+    // or start another action: record the pending edit before it runs.
+    const onUserAction = (e: Event): void => {
+      if (historyTimer.current === null) return;
+      if (e instanceof KeyboardEvent && !(e.ctrlKey || e.metaKey || e.altKey)) return;
+      flushHistory();
+    };
+    window.addEventListener("pointerdown", onUserAction, true);
+    window.addEventListener("keydown", onUserAction, true);
     const unsubscribe = doc.subscribe(sync);
     return () => {
       unsubscribe();
+      window.removeEventListener("pointerdown", onUserAction, true);
+      window.removeEventListener("keydown", onUserAction, true);
       // Don't lose the last edit's history entry when the editor closes.
-      if (historyTimer.current) {
-        clearTimeout(historyTimer.current);
-        historyTimer.current = null;
-        captureRef.current("Edit Custom Shader");
-      }
+      if (historyTimer.current) flushHistory();
     };
   }, [doc, dispatch]);
 
@@ -147,6 +165,7 @@ function BoundEditor({
     if (historyTimer.current) {
       clearTimeout(historyTimer.current);
       historyTimer.current = null;
+      historyScope.current = null;
     }
     doc.reset(layer.params.graph);
   }, [doc, layer.params.graph]);

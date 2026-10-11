@@ -10,12 +10,18 @@ import {
   type AutoMaskRoi,
 } from "@/core/tools/AutoMask/AutoMask";
 import { newLayerId } from "@/utils/layerId";
+import { showOperationError } from "@/utils/userFeedback";
+import { activeScope } from "@/core/store/scope";
 
 interface UseAutoMaskOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
   stateRef: MutableRefObject<AppState>;
   captureHistory: (label: string) => void;
   dispatch: Dispatch<AppAction>;
+  /** useHistory's label for the next layer-stack change: a new mask layer
+   *  is recorded as "Auto-Mask" once it is committed (without it, useHistory
+   *  records the generic "New Layer"). */
+  pendingLayerLabelRef?: MutableRefObject<string | null>;
   /** Flips while inference is in flight so MainWindow can render a
    *  blocking progress overlay. */
   setBusy?: Dispatch<SetStateAction<boolean>>;
@@ -44,6 +50,7 @@ export function useAutoMask({
   stateRef,
   captureHistory,
   dispatch,
+  pendingLayerLabelRef,
   setBusy,
 }: UseAutoMaskOptions): void {
   const runningRef = useRef(false);
@@ -81,9 +88,9 @@ export function useAutoMask({
       const activeId = state.activeLayerId;
       if (!activeId) return;
       if (state.pixelFormat !== "rgba8") {
-        console.warn(
-          "[AutoMask] Only rgba8 documents supported, got",
-          state.pixelFormat,
+        showOperationError(
+          "Auto-Mask failed.",
+          "Auto-Mask only supports 8-bit RGBA documents.",
         );
         return;
       }
@@ -148,6 +155,9 @@ export function useAutoMask({
       runningRef.current = true;
       setBusy?.(true);
       notifyAutoMaskStatusChange();
+      // The document the run started on: a tab switch during inference must
+      // not write the mask into another document.
+      const scope = activeScope();
       try {
         const result = await window.api.isnet.run({
           rgba: inputRgba,
@@ -172,22 +182,28 @@ export function useAutoMask({
           }
         }
 
-        const existingMask = state.layers.find(
+        if (activeScope() !== scope || canvasHandleRef.current !== handle) {
+          throw new Error("The document changed while Auto-Mask was running.");
+        }
+        const live = stateRef.current;
+        if (!live.layers.some((l) => l.id === activeId)) {
+          throw new Error("The layer was removed while Auto-Mask was running.");
+        }
+        const existingMask = live.layers.find(
           (l) =>
             "type" in l &&
             l.type === "mask" &&
             (l as { parentId: string }).parentId === activeId,
         );
 
-        captureHistory(
-          existingMask ? "Before Auto-Mask Update" : "Before Auto-Mask",
-        );
-
         if (existingMask) {
           handle.writeLayerPixels(existingMask.id, maskRgba);
+          captureHistory("Auto-Mask");
         } else {
           const maskId = newLayerId("mask");
           handle.prepareNewLayer(maskId, "Auto Mask", maskRgba);
+          // Recorded by useHistory once the mask layer is committed.
+          if (pendingLayerLabelRef) pendingLayerLabelRef.current = "Auto-Mask";
           dispatch({
             type: "ADD_MASK_LAYER",
             payload: {
@@ -201,6 +217,7 @@ export function useAutoMask({
         }
       } catch (err) {
         console.error("[AutoMask] inference failed:", err);
+        showOperationError("Auto-Mask failed.", err);
       } finally {
         runningRef.current = false;
         setBusy?.(false);
@@ -211,5 +228,12 @@ export function useAutoMask({
       autoMaskRunner.run = async () => {};
       autoMaskRunner.isRunning = () => false;
     };
-  }, [canvasHandleRef, stateRef, captureHistory, dispatch, setBusy]);
+  }, [
+    canvasHandleRef,
+    stateRef,
+    captureHistory,
+    dispatch,
+    pendingLayerLabelRef,
+    setBusy,
+  ]);
 }

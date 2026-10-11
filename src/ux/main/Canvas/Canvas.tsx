@@ -7,6 +7,8 @@ import React, {
   useRef,
   useState,
 } from "react";
+import type { MutableRefObject } from "react";
+import { SKIP_LAYER_HISTORY } from "@/core/store/historyStore";
 import type { LayerDataBundle } from "@/core/store/layerPayload";
 import { useWebGPU } from "@/core/services/useWebGPU";
 import {
@@ -59,6 +61,11 @@ interface CanvasProps {
   initialLayerData?: LayerDataBundle;
   /** Called with the tool label after a pixel-modifying stroke completes. */
   onStrokeEnd?: (label: string) => void;
+  /** useHistory's `pendingLayerLabelRef`: tools that create layers (shape,
+   *  frame, pen, text) label — or skip — the entry recorded once the new
+   *  layer is committed. Without it those layers get the generic
+   *  "New Layer" entry. */
+  pendingLayerLabelRef?: MutableRefObject<string | null>;
   /** Called once after the canvas has finished its first initialization render. */
   onReady?: () => void;
   /** When false the canvas is hidden and all interactive effects are suspended. Default true. */
@@ -70,7 +77,15 @@ const MIRROR_MAX_DIM = 512;
 
 export const Canvas = memo(
   forwardRef<CanvasHandle, CanvasProps>(function Canvas(
-  { width, height, initialLayerData, onStrokeEnd, onReady, isActive = true },
+  {
+    width,
+    height,
+    initialLayerData,
+    onStrokeEnd,
+    pendingLayerLabelRef: pendingLayerLabelProp,
+    onReady,
+    isActive = true,
+  },
   ref,
 ) {
   // Everything the canvas view renders from — but not the colours: a
@@ -135,6 +150,10 @@ export const Canvas = memo(
   pixelFormatRef.current = state.pixelFormat;
   const onStrokeEndRef = useRef(onStrokeEnd);
   onStrokeEndRef.current = onStrokeEnd;
+  // Stand-in when the host doesn't pass useHistory's ref (labels then go
+  // nowhere and layer creation records the generic entry).
+  const localLayerLabelRef = useRef<string | null>(null);
+  const pendingLayerLabelRef = pendingLayerLabelProp ?? localLayerLabelRef;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
@@ -523,11 +542,18 @@ export const Canvas = memo(
         .layers.find((l) => l.id === final.id);
       if (!current || !("type" in current) || current.type !== "text") return;
       if (final.text.trim() === "") {
-        // Emptied text removes the layer; only a layer that had content
-        // before this session gets a history entry for it.
+        // Emptied text removes the layer. Only a layer that had content
+        // before this session gets an entry, recorded once the removal is
+        // committed; an abandoned new (empty) box leaves no entry at all —
+        // its creation wasn't recorded either (see addTextLayer).
+        const before = store.getState().layers;
+        pendingLayerLabelRef.current =
+          initial.text.trim() !== "" ? "Delete Text" : SKIP_LAYER_HISTORY;
         dispatch({ type: "REMOVE_LAYER", payload: final.id });
-        if (initial.text.trim() !== "") onStrokeEndRef.current?.("Text");
-        return;
+        if (store.getState().layers !== before) return;
+        // The reducer keeps a document's last layer: record the emptied
+        // text as an edit instead, and don't leave the label pending.
+        pendingLayerLabelRef.current = null;
       }
       const next = {
         ...current,
@@ -545,7 +571,7 @@ export const Canvas = memo(
         onStrokeEndRef.current?.("Text");
       }
     },
-    [store, dispatch],
+    [store, dispatch, pendingLayerLabelRef],
   );
   const onTextEditorLost = useCallback(() => setEditingLayerId(null), []);
 
@@ -617,6 +643,7 @@ export const Canvas = memo(
     buildOutputPlan,
     doRender,
     onStrokeEndRef,
+    pendingLayerLabelRef,
     openTextEditor,
   });
 
