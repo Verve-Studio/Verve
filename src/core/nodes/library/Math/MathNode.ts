@@ -34,6 +34,30 @@ const OPS: Record<string, Op> = {
   sqrt: { label: "Square Root", unary: true, wgsl: (a) => `sqrt(max(${a}, 0.0))`, js: (a) => Math.sqrt(Math.max(a, 0)) },
   sin: { label: "Sine", unary: true, wgsl: (a) => `sin(${a})`, js: Math.sin },
   cos: { label: "Cosine", unary: true, wgsl: (a) => `cos(${a})`, js: Math.cos },
+  tan: { label: "Tangent", unary: true, wgsl: (a) => `tan(${a})`, js: Math.tan },
+  atan2: { label: "Arctan2 (A = y, B = x)", wgsl: (a, b) => `atan2(${a}, ${b})`, js: Math.atan2 },
+  round: { label: "Round", unary: true, wgsl: (a) => `round(${a})`, js: (a) => Math.round(a) },
+  ceil: { label: "Ceil", unary: true, wgsl: (a) => `ceil(${a})`, js: Math.ceil },
+  snap: {
+    label: "Snap (to multiple of B)",
+    wgsl: (a, b) => `select(round(${a} / ${b}) * ${b}, ${a}, ${b} == 0.0)`,
+    js: (a, b) => (b === 0 ? a : Math.round(a / b) * b),
+  },
+  sign: { label: "Sign", unary: true, wgsl: (a) => `sign(${a})`, js: Math.sign },
+  negate: { label: "Negate", unary: true, wgsl: (a) => `-${a}`, js: (a) => -a },
+  oneMinus: { label: "One Minus", unary: true, wgsl: (a) => `1.0 - ${a}`, js: (a) => 1 - a },
+  step: {
+    label: "Step (A ≥ B → 1)",
+    wgsl: (a, b) => `step(${b}, ${a})`,
+    js: (a, b) => (a >= b ? 1 : 0),
+  },
+  exp: { label: "Exponent", unary: true, wgsl: (a) => `exp(${a})`, js: Math.exp },
+  log: {
+    label: "Logarithm",
+    unary: true,
+    wgsl: (a) => `select(log(${a}), 0.0, ${a} <= 0.0)`,
+    js: (a) => (a <= 0 ? 0 : Math.log(a)),
+  },
 };
 
 const A = { id: "a", label: "A", type: "float", value: floatSpec(0) } as const;

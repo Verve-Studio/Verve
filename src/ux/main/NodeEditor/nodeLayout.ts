@@ -113,6 +113,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Math: "#2f5a85",
   Color: "#857528",
   Texture: "#9a5a26",
+  Surface: "#3a7a6a",
   Output: "#6e3a64",
   Events: "#8a2f2f",
   Flow: "#5a5a5a",

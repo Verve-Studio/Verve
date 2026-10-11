@@ -31,6 +31,7 @@ import { automationHostProvider } from "@/core/nodes/automationHostProvider";
 import type { DocumentRef, LayerRef } from "@/core/nodes/values";
 import type { AppAction } from "@/core/store/AppContext";
 import { activeScope } from "@/core/store/scope";
+import { SELECTION_MODES } from "@/core/store/selectionStore";
 import { upscaleModelStore } from "@/core/store/upscaleModelStore";
 import type { TabRecord } from "@/core/store/tabTypes";
 import type { AppState, LayerState, RGBAColor } from "@/types";
@@ -200,6 +201,14 @@ export function useAutomationHost(deps: AutomationHostDeps): void {
         if (ready) return;
         if (performance.now() > deadline) throw new Error("Timed out waiting for the document to update.");
         await nextFrame();
+      }
+    };
+
+    /** Workflow files are user data: reject a mode the selection store
+     *  doesn't know rather than applying something else. */
+    const assertSelectionMode = (mode: string): void => {
+      if (!(SELECTION_MODES as readonly string[]).includes(mode)) {
+        throw new Error(`Unknown selection mode "${mode}" (expected ${SELECTION_MODES.join(", ")}).`);
       }
     };
 
@@ -930,6 +939,7 @@ export function useAutomationHost(deps: AutomationHostDeps): void {
         activeScope().selection.invert();
       },
       async selectRect({ x, y, width, height }, mode, feather) {
+        assertSelectionMode(mode);
         if (width <= 0 || height <= 0) throw new Error("The rectangle is empty.");
         activeScope().selection.setRect(
           Math.round(x),
@@ -941,6 +951,7 @@ export function useAutomationHost(deps: AutomationHostDeps): void {
         );
       },
       async selectLayerAlpha(ref, mode) {
+        assertSelectionMode(mode);
         const l = await resolve(ref);
         const pixels = handle().getLayerPixels(l.id);
         if (!pixels) throw new Error(`"${l.name}" has no pixels.`);

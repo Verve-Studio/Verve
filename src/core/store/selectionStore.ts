@@ -1,7 +1,8 @@
 // ─── Selection store ──────────────────────────────────────────────────────────
 // Module-level singleton. Tools and the canvas overlay both import this directly.
 
-export type SelectionMode = "set" | "add" | "subtract" | "intersect";
+export const SELECTION_MODES = ["set", "add", "subtract", "intersect"] as const;
+export type SelectionMode = (typeof SELECTION_MODES)[number];
 
 /**
  * PendingSelection represents a live drag preview that hasn't been committed
@@ -414,6 +415,10 @@ export class SelectionStore {
   }
 
   private applyMask(newMask: Uint8Array, mode: SelectionMode): void {
+    // An unknown mode used to fall through to subtract.
+    if (!SELECTION_MODES.includes(mode)) {
+      throw new Error(`Unknown selection mode "${String(mode)}"`);
+    }
     if (mode === "set" || !this.mask) {
       this.mask = newMask;
     } else if (mode === "add") {
@@ -439,7 +444,7 @@ export class SelectionStore {
         this.borderSegments = null;
         return;
       }
-    } else {
+    } else if (mode === "subtract") {
       // Subtract: reduce by the subtracted strength
       for (let i = 0; i < this.mask.length; i++) {
         if (newMask[i]) this.mask[i] = Math.max(0, this.mask[i] - newMask[i]);

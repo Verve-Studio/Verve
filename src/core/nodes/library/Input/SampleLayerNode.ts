@@ -1,6 +1,6 @@
-import type { INode, ParamDef, ShaderContext, ShaderOutputs } from "../../INode";
-import { enumSpec, vec2Spec } from "../_shared/nodeKit";
-import { registerSampler, type SampleEdge, type SampleFilter } from "../../wgslSampling";
+import type { INode, ShaderContext, ShaderOutputs } from "../../INode";
+import { vec2Spec } from "../_shared/nodeKit";
+import { EDGE_PARAM, FILTER_PARAM, LAYER_PARAM, layerSampler } from "../_shared/shaderKit";
 
 /** Read the layer — or another layer of the document, by name — at another
  *  position (distortions, offsets, tiling, layers driving the shader). */
@@ -22,41 +22,10 @@ class SampleLayerNode implements INode {
     { id: "color", label: "Color", type: "color" },
     { id: "alpha", label: "Alpha", type: "float" },
   ] as const;
-  readonly params: readonly ParamDef[] = [
-    {
-      id: "layer",
-      label: "Layer",
-      spec: { kind: "string", default: "", placeholder: "This layer", suggest: "layers" },
-    },
-    {
-      id: "filter",
-      label: "Filter",
-      spec: enumSpec("bilinear", [
-        ["nearest", "Nearest"],
-        ["bilinear", "Bilinear"],
-        ["bicubic", "Bicubic"],
-      ]),
-    },
-    {
-      id: "edge",
-      label: "Edges",
-      spec: enumSpec("clamp", [
-        ["clamp", "Clamp"],
-        ["repeat", "Repeat"],
-        ["mirror", "Mirror"],
-        ["transparent", "Transparent"],
-      ]),
-    },
-  ];
+  readonly params = [LAYER_PARAM, FILTER_PARAM, EDGE_PARAM];
 
   generateShader(ctx: ShaderContext): ShaderOutputs {
-    const layer = String(ctx.param("layer")).trim();
-    const sample = registerSampler(
-      (name, code) => ctx.helper(name, code),
-      String(ctx.param("filter")) as SampleFilter,
-      String(ctx.param("edge")) as SampleEdge,
-      layer ? ctx.layerFetch(layer) : undefined,
-    );
+    const sample = layerSampler(ctx);
     const uv = ctx.input("uv") ?? ctx.uv;
     const offset = ctx.input("offset") ?? "vec2f(0.0)";
     const color = `${sample}((${uv}) + (${offset}) * ${ctx.texelSize})`;

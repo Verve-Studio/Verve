@@ -34,6 +34,25 @@ import { separateRgbaNode } from "./library/Color/SeparateRgbaNode";
 import { combineRgbaNode } from "./library/Color/CombineRgbaNode";
 import { noiseNode } from "./library/Texture/NoiseNode";
 import { checkerNode } from "./library/Texture/CheckerNode";
+import { normalFromHeightNode } from "./library/Surface/NormalFromHeightNode";
+import { normalMapNode } from "./library/Surface/NormalMapNode";
+import { lightingNode } from "./library/Surface/LightingNode";
+import { vector3MathNode } from "./library/Vector/Vector3MathNode";
+import { separateXyzNode } from "./library/Vector/SeparateXyzNode";
+import { combineXyzNode } from "./library/Vector/CombineXyzNode";
+import { polarCoordinatesNode } from "./library/Vector/PolarCoordinatesNode";
+import { distortUvNode } from "./library/Vector/DistortUvNode";
+import { gradientTextureNode } from "./library/Texture/GradientTextureNode";
+import { shapeNode } from "./library/Texture/ShapeNode";
+import { voronoiNode } from "./library/Texture/VoronoiNode";
+import { waveTextureNode } from "./library/Texture/WaveTextureNode";
+import { colorRampNode } from "./library/Color/ColorRampNode";
+import { levelsNode } from "./library/Color/LevelsNode";
+import { luminanceNode } from "./library/Color/LuminanceNode";
+import { posterizeNode } from "./library/Color/PosterizeNode";
+import { separateHsvNode } from "./library/Color/SeparateHsvNode";
+import { combineHsvNode } from "./library/Color/CombineHsvNode";
+import { blurNode } from "./library/Filter/BlurNode";
 import { layerOutputNode } from "./library/Output/LayerOutputNode";
 import { onRunNode } from "./library/Events/OnRunNode";
 import { branchNode } from "./library/Flow/BranchNode";
@@ -190,6 +209,25 @@ for (const node of [
   combineRgbaNode,
   noiseNode,
   checkerNode,
+  normalFromHeightNode,
+  normalMapNode,
+  lightingNode,
+  vector3MathNode,
+  separateXyzNode,
+  combineXyzNode,
+  polarCoordinatesNode,
+  distortUvNode,
+  gradientTextureNode,
+  shapeNode,
+  voronoiNode,
+  waveTextureNode,
+  colorRampNode,
+  levelsNode,
+  luminanceNode,
+  posterizeNode,
+  separateHsvNode,
+  combineHsvNode,
+  blurNode,
   layerOutputNode,
   onRunNode,
   branchNode,
