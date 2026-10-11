@@ -9,10 +9,30 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { buildRootLayerIds } from "@/utils/layerTree";
 
+/** Name → pixel-bearing GPU layer lookup, built on first use. */
+function layerResolver(
+  layers: readonly LayerState[],
+  glLayers: Map<string, GpuLayer>,
+): (name: string) => GpuLayer | undefined {
+  let byName: Map<string, GpuLayer> | null = null;
+  return (name) => {
+    if (!byName) {
+      byName = new Map();
+      for (const l of layers) {
+        if ("type" in l && (l.type === "adjustment" || l.type === "mask")) continue;
+        const gl = glLayers.get(l.id);
+        if (gl && !byName.has(l.name)) byName.set(l.name, gl);
+      }
+    }
+    return byName.get(name);
+  };
+}
+
 export function buildAdjustmentEntry(
   ls: EffectLayerState,
   mask: GpuLayer | undefined,
   swatches: RGBAColor[],
+  resolveLayer: (name: string) => GpuLayer | undefined,
   parent?: GpuLayer,
 ): EffectRenderOp | null {
   const effect = effectRegistry.get(ls.effectType);
@@ -27,7 +47,7 @@ export function buildAdjustmentEntry(
     width: parent.layerWidth,
     height: parent.layerHeight,
   };
-  return effect.buildPlanEntry(ls, { mask, swatches, parentRect });
+  return effect.buildPlanEntry(ls, { mask, swatches, parentRect, resolveLayer });
 }
 
 export function buildSubPlan(
@@ -41,6 +61,7 @@ export function buildSubPlan(
   pixelFormat: PixelFormat = "rgba8",
 ): RenderPlanEntry[] {
   const layersById = new Map(layers.map((l) => [l.id, l]));
+  const resolveLayer = layerResolver(layers, glLayers);
   const plan: RenderPlanEntry[] = [];
 
   for (const id of orderedIds) {
@@ -68,6 +89,7 @@ export function buildSubPlan(
         adjLs,
         adjustmentMaskMap.get(ls.id),
         swatches,
+        resolveLayer,
       );
       if (entry) plan.push(entry);
       continue;
@@ -113,6 +135,7 @@ export function buildSubPlan(
               adj as EffectLayerState,
               adjustmentMaskMap.get(adj.id),
               swatches,
+              resolveLayer,
             );
             if (op) attachedAdj.push(op);
           }
@@ -160,6 +183,7 @@ export function buildSubPlan(
             adj as EffectLayerState,
             adjustmentMaskMap.get(adj.id),
             swatches,
+            resolveLayer,
             baseLayer,
           );
           if (op) adjustments.push(op);

@@ -1,6 +1,8 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import { isKernelValue, type KernelValue, type ParamValue } from "@/core/nodes/graphTypes";
 import type { ParamSpec } from "@/core/nodes/INode";
+import { useAppSelector } from "@/core/store/AppContext";
+import { isContainerLayer } from "@/types";
 import { ColorSwatch } from "@/ux/widgets/ColorSwatch/ColorSwatch";
 import styles from "./NodeParamField.module.scss";
 
@@ -107,18 +109,76 @@ export const NodeParamField = memo(function NodeParamField({
       return (
         <div className={styles.labeled} data-nodrag>
           <span className={styles.label}>{label}</span>
-          <input
-            className={styles.text}
-            type="text"
-            value={String(v)}
-            placeholder={spec.placeholder}
-            spellCheck={false}
-            onChange={(e) => onChange(e.target.value)}
-          />
+          {spec.suggest === "layers" ? (
+            <LayerNameSelect
+              label={label}
+              value={String(v)}
+              placeholder={spec.placeholder}
+              onChange={onChange}
+            />
+          ) : (
+            <input
+              className={styles.text}
+              type="text"
+              value={String(v)}
+              placeholder={spec.placeholder}
+              spellCheck={false}
+              onChange={(e) => onChange(e.target.value)}
+            />
+          )}
         </div>
       );
   }
 });
+
+// ─── Layer name ───────────────────────────────────────────────────────────────
+
+/** Dropdown of the document's pixel-bearing layers (not groups, composites,
+ *  adjustments or masks). "" is `placeholder` (e.g. "This layer"). A stored
+ *  name no layer has (a graph from another document) stays selected, marked
+ *  as not found. */
+function LayerNameSelect({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: ParamValue) => void;
+}): React.JSX.Element {
+  // Joined, so the selector result compares by value.
+  const joined = useAppSelector((s) => {
+    const out = new Set<string>();
+    // Top of the layer stack first, as in the Layers panel.
+    for (let i = s.layers.length - 1; i >= 0; i--) {
+      const l = s.layers[i];
+      if ("type" in l && (l.type === "adjustment" || l.type === "mask")) continue;
+      if (isContainerLayer(l)) continue;
+      out.add(l.name);
+    }
+    return [...out].join("\n");
+  });
+  const names = joined ? joined.split("\n") : [];
+  const missing = value !== "" && !names.includes(value);
+  return (
+    <select
+      className={styles.select}
+      title={missing ? `No layer named "${value}"` : label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">{placeholder ?? "None"}</option>
+      {missing && <option value={value}>{value} (not found)</option>}
+      {names.map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 // ─── Kernel grid ──────────────────────────────────────────────────────────────
 

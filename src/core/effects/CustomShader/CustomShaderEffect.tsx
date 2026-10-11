@@ -13,10 +13,15 @@ import {
   CONTEXT_SLOTS,
   compileShaderGraph,
   writeShaderContext,
+  type LayerSource,
   type ShaderCompileResult,
 } from "@/core/nodes/shaderCompiler";
-import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
-import { PASSTHROUGH_SOURCE, assembleShaderSource } from "./customShaderSource";
+import { STD_BINDINGS, type AdjBinding } from "@/graphics/webgpu/EffectRuntime";
+import {
+  LAYER_SOURCE_BINDING,
+  PASSTHROUGH_SOURCE,
+  assembleShaderSource,
+} from "./customShaderSource";
 import { DEFAULT_INFO } from "./effectFile";
 import { EffectFallbackIcon } from "../_shared/icons";
 import { openShaderGraph } from "./openShaderGraph";
@@ -68,6 +73,10 @@ interface Program {
   uniforms: Float32Array;
   /** Uniform slot of each argument the shader reads. */
   argumentSlots: ReadonlyMap<string, number>;
+  /** Other layers the shader samples (Sample Layer by name). */
+  layerSources: readonly LayerSource[];
+  /** STD_BINDINGS + one texture per layer source. */
+  bindings: AdjBinding[];
 }
 
 /** Renders the layer unchanged while its graph doesn't compile. */
@@ -75,6 +84,8 @@ const PASSTHROUGH: Program = {
   source: PASSTHROUGH_SOURCE,
   uniforms: new Float32Array(CONTEXT_SLOTS * 4),
   argumentSlots: new Map(),
+  layerSources: [],
+  bindings: STD_BINDINGS,
 };
 
 // Graphs are immutable, so a compile is cached on the graph object and
@@ -94,9 +105,11 @@ function programFor(graph: NodeGraph, linear: boolean): Program | null {
     const r: ShaderCompileResult = compileShaderGraph(graph, { linear });
     entry[i] = r.ok
       ? {
-          source: assembleShaderSource(r.code, r.uniforms.length / 4),
+          source: assembleShaderSource(r.code, r.uniforms.length / 4, r.layerSources.length),
           uniforms: r.uniforms,
           argumentSlots: r.argumentSlots,
+          layerSources: r.layerSources,
+          bindings: [...STD_BINDINGS, ...r.layerSources.map((): AdjBinding => "tex")],
         }
       : PASSTHROUGH;
   }
@@ -109,7 +122,10 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
   menu: { root: "effects", submenu: "fx-custom" },
   defaultParams: { graph: starterGraph() },
 
-  buildPlanEntry(layer, { mask, parentRect }) {
+  buildPlanEntry(layer, { mask, parentRect, resolveLayer }) {
+    // Layer names don't depend on the document kind: the sRGB compile
+    // serves both.
+    const sources = programFor(layer.params.graph, false)?.layerSources ?? [];
     return {
       kind: "custom-shader",
       layerId: layer.id,
@@ -120,6 +136,8 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
       parentY: parentRect?.y ?? 0,
       parentW: parentRect?.width ?? 0,
       parentH: parentRect?.height ?? 0,
+      sourceLayers:
+        sources.length > 0 ? sources.map((s) => resolveLayer(s.name) ?? null) : undefined,
     };
   },
 
@@ -130,10 +148,11 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
     else if (program !== PASSTHROUGH) customShaderStatus.setGpuError(entry.layerId, null);
 
     const source = program.source;
-    const pair = engine.runtime.getRenderPipelinePairForSource(
+    const runtime = engine.runtime;
+    const pair = runtime.getRenderPipelinePairForSource(
       source,
       "fs_custom_shader",
-      STD_BINDINGS,
+      program.bindings,
       (message) => {
         console.error(`[custom-shader] WGSL compile error:\n${message}\n${source}`);
         gpuRejected.add(source);
@@ -161,14 +180,39 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
       const packed = packValue(resolveArgumentValue(arg, entry.params.args?.[id]), linear);
       if (packed) uniforms.set(packed.data, slot * 4);
     }
-    engine.runtime.encodeStdAdjRenderPass(
+    if (program.layerSources.length === 0) {
+      runtime.encodeStdAdjRenderPass(
+        encoder,
+        pair,
+        srcTex,
+        dstTex,
+        format,
+        uniforms.buffer as ArrayBuffer,
+        entry.selMaskLayer,
+      );
+      return;
+    }
+    // Other layers: texture + (offset, present) per source. A missing layer
+    // binds the source texture as a placeholder and reads as transparent.
+    const layerEntries: GPUBindGroupEntry[] = program.layerSources.map((s, i) => {
+      const gl = entry.sourceLayers?.[i] ?? null;
+      uniforms.set(gl ? [gl.offsetX, gl.offsetY, 1, 0] : [0, 0, 0, 0], s.slot * 4);
+      return { binding: LAYER_SOURCE_BINDING + i, resource: (gl?.texture ?? srcTex).createView() };
+    });
+    const mask = entry.selMaskLayer;
+    runtime.encodeRenderPass(
       encoder,
-      pair,
-      srcTex,
+      runtime.selectPipeline(pair, format),
       dstTex,
-      format,
-      uniforms.buffer as ArrayBuffer,
-      entry.selMaskLayer,
+      [
+        { binding: 0, resource: srcTex.createView() },
+        { binding: 1, resource: runtime.adjSampler },
+        { binding: 2, resource: { buffer: runtime.makeParamsBuf(uniforms.buffer as ArrayBuffer) } },
+        { binding: 3, resource: (mask?.texture ?? srcTex).createView() },
+        { binding: 4, resource: { buffer: runtime.makeMaskFlagsBuf(!!mask, linear) } },
+        ...layerEntries,
+      ],
+      pair.bgl,
     );
   },
 

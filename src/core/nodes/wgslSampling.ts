@@ -1,35 +1,41 @@
 /**
- * WGSL helpers for sampling the layer with a choice of filter and edge
- * handling. Built on the host's `ng_load(p: vec2i)` (clamped texel fetch)
+ * WGSL helpers for sampling a layer with a choice of filter and edge
+ * handling. Built on a clamped texel fetch — the host's `ng_load(p: vec2i)`
+ * for the shaded layer, or `ShaderContext.layerFetch` for another layer —
  * and the canvas size in `ng_u.v[0]` (see shaderCompiler.ts).
  */
 
 export type SampleFilter = "nearest" | "bilinear" | "bicubic";
 export type SampleEdge = "clamp" | "repeat" | "mirror" | "transparent";
 
-/** Texel fetch at integer pixel `p` with edge handling. */
-function edgeFetch(edge: SampleEdge): [string, string] {
-  const name = `ng_fetch_${edge}`;
+/** Name suffix that keeps helpers built on different fetches apart. */
+function suffix(load: string): string {
+  return load === "ng_load" ? "" : `_${load}`;
+}
+
+/** Texel fetch at integer pixel `p` with edge handling, built on `load`. */
+function edgeFetch(edge: SampleEdge, load: string): [string, string] {
+  const name = `ng_fetch_${edge}${suffix(load)}`;
   const size = "let s = vec2i(ng_u.v[0].xy);";
   let body: string;
   switch (edge) {
     case "clamp":
-      body = "return ng_load(p);";
+      body = `return ${load}(p);`;
       break;
     case "repeat":
       body = `${size}
-  return ng_load(((p % s) + s) % s);`;
+  return ${load}(((p % s) + s) % s);`;
       break;
     case "mirror":
       body = `${size}
   let period = 2 * s;
   let m = ((p % period) + period) % period;
-  return ng_load(select(m, period - vec2i(1) - m, m >= s));`;
+  return ${load}(select(m, period - vec2i(1) - m, m >= s));`;
       break;
     case "transparent":
       body = `${size}
   if (any(p < vec2i(0)) || any(p >= s)) { return vec4f(0.0); }
-  return ng_load(p);`;
+  return ${load}(p);`;
       break;
   }
   return [name, `fn ${name}(p: vec2i) -> vec4f {\n  ${body}\n}`];
@@ -83,17 +89,19 @@ const CATMULL_ROM = `fn ng_catmull_rom(x: f32) -> f32 {
 /**
  * Register the helpers for a filter/edge combination through `helper`
  * (`ShaderContext.helper`) and return the name of the sampling function,
- * `fn(uv: vec2f) -> vec4f`.
+ * `fn(uv: vec2f) -> vec4f`. `load` is the texel fetch to build on (default:
+ * the shaded layer).
  */
 export function registerSampler(
   helper: (name: string, code: string) => string,
   filter: SampleFilter,
   edge: SampleEdge,
+  load = "ng_load",
 ): string {
-  const [fetchName, fetchCode] = edgeFetch(edge);
+  const [fetchName, fetchCode] = edgeFetch(edge, load);
   helper(fetchName, fetchCode);
   if (filter === "bicubic") helper("ng_catmull_rom", CATMULL_ROM);
-  const name = `ng_sample_${filter}_${edge}`;
+  const name = `ng_sample_${filter}_${edge}${suffix(load)}`;
   return helper(name, filterCode(name, fetchName, filter));
 }
 
@@ -102,6 +110,6 @@ export function registerFetch(
   helper: (name: string, code: string) => string,
   edge: SampleEdge,
 ): string {
-  const [name, code] = edgeFetch(edge);
+  const [name, code] = edgeFetch(edge, "ng_load");
   return helper(name, code);
 }

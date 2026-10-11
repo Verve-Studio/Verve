@@ -47,6 +47,7 @@ export function serializeAdjOpStatic(op: EffectRenderOp): string {
       k === "layerId" ||
       k === "visible" ||
       k === "selMaskLayer" ||
+      k === "sourceLayers" ||
       k === "luts"
     )
       continue;
@@ -54,6 +55,17 @@ export function serializeAdjOpStatic(op: EffectRenderOp): string {
       parts.push(`${k}:${serializeValue(v)}`);
     } else {
       parts.push(`${k}:${v}`);
+    }
+  }
+  // Source layers are part of the static key, content included: the op
+  // can read them anywhere, so the dirty-rect path can't patch its output.
+  if (op.sourceLayers) {
+    for (const l of op.sourceLayers) {
+      parts.push(
+        l
+          ? `src:${l.id}:${l.contentVersion}:${l.offsetX}:${l.offsetY}:${l.layerWidth}x${l.layerHeight}`
+          : "src:-",
+      );
     }
   }
   const key = parts.join("~");

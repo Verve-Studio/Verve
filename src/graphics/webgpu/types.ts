@@ -99,6 +99,10 @@ export type EffectRenderOp = {
     layerId: string;
     visible: boolean;
     selMaskLayer?: GpuLayer;
+    /** Other layers the effect reads (Custom Shader's Sample Layer by
+     *  name); null where no layer matched. Its output may change anywhere
+     *  when one of them changes, so render caches key on their content. */
+    sourceLayers?: readonly (GpuLayer | null)[];
     params: EffectParamsMap[K];
   } & (K extends keyof PlanExtrasMap ? PlanExtrasMap[K] : object);
 }[keyof EffectParamsMap];

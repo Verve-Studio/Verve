@@ -105,6 +105,11 @@ export interface ShaderContext {
   /** Unfiltered texel fetch at integer pixel coordinates (`vec2i`
    *  expression, clamped to the canvas). Returns `vec4f`. */
   load(pixel: string): string;
+  /** Name of a fetch function, `fn(p: vec2i) -> vec4f`, reading another
+   *  layer of the document by name at integer canvas pixel `p` (clamped to
+   *  the canvas; transparent outside the layer, or when no layer has that
+   *  name). The layer's own pixels: no opacity, mask or effects. */
+  layerFetch(layerName: string): string;
   /** `vec4f` expression sampling the layer at a `vec2f` UV expression
    *  (bilinear, clamped to the edge). */
   sampleLayer(uv: string): string;

@@ -29,6 +29,9 @@ export interface PlanContext {
   /** Canvas-pixel rectangle of the parent layer, for per-layer
    *  attachments. Absent for composite / group parents (whole canvas). */
   parentRect?: { x: number; y: number; width: number; height: number };
+  /** The document's pixel-bearing layer with this name (the first one in
+   *  the layer list), for effects that read other layers. */
+  resolveLayer(name: string): GpuLayer | undefined;
 }
 
 export interface EncodeContext {

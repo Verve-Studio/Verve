@@ -45,7 +45,13 @@ export type ParamSpec =
   /** sRGB 0–1. */
   | { kind: "color"; default: readonly [number, number, number, number] }
   | { kind: "vec2"; default: readonly [number, number]; step?: number }
-  | { kind: "string"; default: string; placeholder?: string }
+  | {
+      kind: "string";
+      default: string;
+      placeholder?: string;
+      /** Offer completions: "layers" = the active document's layer names. */
+      suggest?: "layers";
+    }
   /** Square convolution kernel (odd size); weights edited in a grid. */
   | {
       kind: "kernel";

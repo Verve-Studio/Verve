@@ -80,7 +80,8 @@ $field-h: 18px;
   width: 100%;
   font-size: vars.$font-size-sm;
 
-  .text {
+  .text,
+  .select {
     flex: 1 1 auto;
     min-width: 0;
   }

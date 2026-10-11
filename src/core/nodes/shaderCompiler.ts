@@ -7,6 +7,8 @@
  *
  * The host shader calls it from its fragment entry point and must define
  *  - `fn ng_load(p: vec2i) -> vec4f` — texel fetch of the layer, clamped;
+ *  - one texture per other layer the graph samples (`ng_layer0`, …; see
+ *    `layerSourceDeclarations` and `ShaderCompileResult.layerSources`);
  *  - the uniform `ng_u` (see `uniformDeclaration`). Its first
  *    `CONTEXT_SLOTS` vec4s carry per-frame context (`writeShaderContext`);
  *    after them come inline values and uniform params, so the code only
@@ -54,6 +56,41 @@ export function writeShaderContext(uniforms: Float32Array, c: ShaderFrameContext
   );
 }
 
+/** Most other layers one graph can sample (one texture binding each). */
+export const MAX_LAYER_SOURCES = 8;
+
+/** Another layer a compiled graph samples, by name. The host binds the
+ *  layer's texture to `ng_layer{index}` and writes `(offsetX, offsetY,
+ *  present, 0)` into `ng_u.v[slot]` each frame; while `present` is 0 (no
+ *  such layer) the layer reads as transparent. */
+export interface LayerSource {
+  readonly name: string;
+  readonly slot: number;
+}
+
+/** WGSL declarations of the layer-source textures, at consecutive bindings. */
+export function layerSourceDeclarations(count: number, group: number, firstBinding: number): string {
+  const lines: string[] = [];
+  for (let i = 0; i < count; i++) {
+    lines.push(`@group(${group}) @binding(${firstBinding + i}) var ng_layer${i}: texture_2d<f32>;`);
+  }
+  return lines.join("\n");
+}
+
+/** Texel fetch of layer source `i` at canvas pixel `p` (clamped to the
+ *  canvas, like `ng_load`); transparent outside the layer. */
+function layerFetchCode(name: string, index: number, slot: number): string {
+  return `fn ${name}(p: vec2i) -> vec4f {
+  let info = ng_u.v[${slot}];
+  let c = clamp(p, vec2i(0, 0), vec2i(ng_u.v[0].xy) - vec2i(1, 1));
+  let q = c - vec2i(info.xy);
+  if (info.z == 0.0 || any(q < vec2i(0, 0)) || any(q >= vec2i(textureDimensions(ng_layer${index})))) {
+    return vec4f(0.0);
+  }
+  return textureLoad(ng_layer${index}, q, 0);
+}`;
+}
+
 /** WGSL declaration of the value uniform for a compiled graph. */
 export function uniformDeclaration(slots: number, group: number, binding: number): string {
   return `struct NgUniforms { v: array<vec4f, ${Math.max(1, slots)}> }
@@ -86,6 +123,8 @@ export type ShaderCompileResult =
       /** `ng_u.v` slot of each argument the shader reads (filled with the
        *  default; overwrite with the layer's value per frame). */
       argumentSlots: ReadonlyMap<string, number>;
+      /** Other layers the shader samples; index i is texture `ng_layer{i}`. */
+      layerSources: readonly LayerSource[];
     }
   | { ok: false; errors: ShaderCompileError[] };
 
@@ -131,6 +170,21 @@ export function compileShaderGraph(
       argumentSlots.set(id, slot);
     }
     return `ng_u.v[${slot}]${packed.swizzle}`;
+  };
+  const layerSources: LayerSource[] = [];
+  /** Fetch function of the layer named `layerName`, one per distinct name.
+   *  Returns null when the graph already uses MAX_LAYER_SOURCES layers. */
+  const layerFetch = (layerName: string): string | null => {
+    let index = layerSources.findIndex((l) => l.name === layerName);
+    if (index < 0) {
+      if (layerSources.length >= MAX_LAYER_SOURCES) return null;
+      index = layerSources.length;
+      const slot = uniforms.length / 4;
+      uniforms.push(0, 0, 0, 0);
+      layerSources.push({ name: layerName, slot });
+    }
+    const fn = `ng_load_layer${index}`;
+    return addHelper(fn, layerFetchCode(fn, index, layerSources[index].slot));
   };
   /** Statement buffers: the innermost open block is last. */
   const blocks: string[][] = [[]];
@@ -250,6 +304,9 @@ export function compileShaderGraph(
         layerSize: "ng_u.v[1].zw",
         isFloat: "ng_u.v[2].x",
         load: (p) => `ng_load(${p})`,
+        layerFetch: (layerName) =>
+          layerFetch(layerName) ??
+          fail(nodeId, `A shader can sample at most ${MAX_LAYER_SOURCES} other layers`),
         sampleLayer: (uv) => `${registerSampler(addHelper, "bilinear", "clamp")}(${uv})`,
         helper: addHelper,
         linear: options.linear,
@@ -347,5 +404,12 @@ export function compileShaderGraph(
     `  return ${result};`,
     `}`,
   ].join("\n");
-  return { ok: true, code, uniforms: new Float32Array(uniforms), used, argumentSlots };
+  return {
+    ok: true,
+    code,
+    uniforms: new Float32Array(uniforms),
+    used,
+    argumentSlots,
+    layerSources,
+  };
 }
