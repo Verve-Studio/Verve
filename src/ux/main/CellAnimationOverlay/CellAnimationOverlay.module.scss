@@ -1,0 +1,38 @@
+// Layers drawn with the document while cell animation is on. `.under` sits
+// beneath the WebGPU canvas (the canvas wrapper isolates a stacking context
+// for it); `.layer`s sit above it, below the tool overlay.
+
+.under {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  // Same colours as the GPU checker (DisplayPresenter), which is off in
+  // cell mode so this and the reference image show through.
+  background-color: #8c8c8c;
+  background-image:
+    linear-gradient(45deg, #646464 25%, transparent 25%),
+    linear-gradient(-45deg, #646464 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #646464 75%),
+    linear-gradient(-45deg, transparent 75%, #646464 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}

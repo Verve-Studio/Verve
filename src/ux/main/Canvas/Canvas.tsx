@@ -48,6 +48,12 @@ import { activeScope } from "@/core/store/scope";
 import { selectionRevision } from "@/core/store/selectionStore";
 import { rasterizeTextToLayer } from "./textRasterizer";
 import styles from "./Canvas.module.scss";
+import { displayStore } from "./displayStore";
+import {
+  CellAnimationOverlay,
+  useCellOverlayActive,
+  useCellPlaybackShowing,
+} from "@/ux/main/CellAnimationOverlay/CellAnimationOverlay";
 
 // Re-export so external importers (App.tsx etc.) don't need to change their paths.
 export type { CanvasHandle } from "./canvasHandle";
@@ -211,6 +217,17 @@ export const Canvas = memo(
       thumbnailCanvasRef.current = null;
     };
   }, [mirrorW, mirrorH, thumbnailCanvasRef]);
+
+  // ── Cell animation: reference background / onion skin / playback ─────────
+  // The GPU checker is off while the cell layers show (they draw their own
+  // beneath the canvas), and playback covers the document entirely.
+  const cellOverlay = useCellOverlayActive();
+  const cellPlaybackShowing = useCellPlaybackShowing() && cellOverlay;
+  useEffect(() => {
+    if (!isActive) return;
+    displayStore.setTransparentBackdrop(cellOverlay);
+    return () => displayStore.setTransparentBackdrop(false);
+  }, [isActive, cellOverlay]);
 
   // ── Frame-clip info: drives layout + clip in animation mode ───────────────
   const frameClipInfo = useMemo(() => {
@@ -738,9 +755,18 @@ export const Canvas = memo(
                   top: `max(${h}px, calc(50% - ${h / 2}px))`,
                   width: w,
                   height: h,
+                  // Own stacking context: the cell underlay sits beneath
+                  // the canvas at z-index -1.
+                  isolation: cellOverlay ? ("isolate" as const) : undefined,
                 };
               })()}
             >
+              <CellAnimationOverlay
+                part="under"
+                width={width}
+                height={height}
+                pixelated={state.canvas.zoom >= 1}
+              />
               <canvas
                 ref={canvasRef}
                 className={styles.canvas}
@@ -748,6 +774,9 @@ export const Canvas = memo(
                 height={backingH}
                 style={{
                   display: state.canvas.tiledMode ? "none" : "block",
+                  // Playback shows frame previews in place of the document
+                  // (hidden, it also takes no pointer input).
+                  visibility: cellPlaybackShowing ? "hidden" : undefined,
                   width: (width * state.canvas.zoom) / window.devicePixelRatio,
                   height:
                     (height * state.canvas.zoom) / window.devicePixelRatio,
@@ -810,6 +839,12 @@ export const Canvas = memo(
                   onLostPointerCapture={tiledInput.handlePointerCancel}
                 />
               )}
+              <CellAnimationOverlay
+                part="over"
+                width={width}
+                height={height}
+                pixelated={state.canvas.zoom >= 1}
+              />
               <canvas
                 ref={toolOverlayRef}
                 className={styles.overlay}

@@ -347,6 +347,8 @@ export interface MenuDeps {
   animationMode?: boolean;
   isPlaying?: boolean;
   paletteAnimationActive?: boolean;
+  /** Cell animation is on: frames are files, not spritesheet animations. */
+  cellAnimationActive?: boolean;
   onPlayPause?: () => void;
   onPrevFrame?: () => void;
   onNextFrame?: () => void;
@@ -1128,40 +1130,46 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           actionId: "prevAnimation",
           action: deps.onPrevAnimation,
           shortcut: "Up",
-          disabled: !deps.animationMode || !!deps.paletteAnimationActive,
+          disabled:
+            !deps.animationMode ||
+            !!deps.paletteAnimationActive ||
+            !!deps.cellAnimationActive,
         },
         {
           label: "Next Animation",
           actionId: "nextAnimation",
           action: deps.onNextAnimation,
           shortcut: "Down",
-          disabled: !deps.animationMode || !!deps.paletteAnimationActive,
+          disabled:
+            !deps.animationMode ||
+            !!deps.paletteAnimationActive ||
+            !!deps.cellAnimationActive,
         },
         SEP,
         {
           label: "Import Frames Into Spritesheet…",
           actionId: "importSpritesheetFrames",
           action: deps.onImportSpritesheetFrames,
-          disabled: !deps.animationMode,
+          disabled: !deps.animationMode || !!deps.cellAnimationActive,
         },
         {
           label: "Export Spritesheet JSON…",
           actionId: "exportSpritesheetJson",
           action: deps.onExportSpritesheetJson,
-          disabled: !deps.animationMode,
+          disabled: !deps.animationMode || !!deps.cellAnimationActive,
         },
         {
           label: "Export Palette Animation JSON…",
           actionId: "exportPaletteAnimationJson",
           action: deps.onExportPaletteAnimationJson,
-          disabled: !deps.animationMode,
+          disabled: !deps.animationMode || !!deps.cellAnimationActive,
         },
         SEP,
         {
           label: "Export Animation to Frames…",
           actionId: "exportAnimationFrames",
           action: deps.onExportAnimationFrames,
-          disabled: !deps.animationMode,
+          disabled: !deps.animationMode || !!deps.cellAnimationActive,
         },
       ],
     },

@@ -16,6 +16,7 @@ import { registerMlHandlers } from './ml/mlIpc'
 import { registerEffectHandlers } from './effects'
 import { registerFileSystemHandlers } from './fileSystem'
 import { registerAutomationHandlers } from './automations'
+import { registerCellAnimationHandlers } from './cellAnimation'
 import { SUPPORTED_FILE_TYPES, getRegisteredExtensions, applyExtensions } from './fileAssociations'
 
 export function registerIpcHandlers(): void {
@@ -494,6 +495,7 @@ export function registerIpcHandlers(): void {
   registerEffectHandlers()
   registerFileSystemHandlers()
   registerAutomationHandlers()
+  registerCellAnimationHandlers()
 
   // ── File Associations ─────────────────────────────────────────────────────────
 

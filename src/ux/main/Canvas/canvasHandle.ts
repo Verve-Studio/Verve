@@ -179,6 +179,10 @@ export interface CanvasHandle {
   }>;
   /** Zoom to fit the whole canvas inside the current viewport with a small margin. */
   fitToWindow: () => void;
+  /** The viewport's scroll offset (CSS px), to carry a view across a remount. */
+  getViewScroll: () => { left: number; top: number } | null;
+  /** Restore a scroll offset from `getViewScroll` (same zoom and size). */
+  setViewScroll: (pos: { left: number; top: number }) => void;
   /**
    * Write a canvas-size RGBA pixel buffer into an existing layer, flush to GPU,
    * and re-render. `pixels` must be Uint8Array of length (canvasWidth × canvasHeight × 4),
@@ -800,6 +804,23 @@ export function useCanvasHandle({
           if (snap) result.set(layerId, snap);
         }
         return result;
+      },
+
+      getViewScroll: () => {
+        const vp = viewportRef.current;
+        return vp ? { left: vp.scrollLeft, top: vp.scrollTop } : null;
+      },
+
+      setViewScroll: (pos) => {
+        const apply = (): void => {
+          const vp = viewportRef.current;
+          if (!vp) return;
+          vp.scrollLeft = pos.left;
+          vp.scrollTop = pos.top;
+        };
+        apply();
+        // Again once the remounted viewport has laid out at full size.
+        requestAnimationFrame(apply);
       },
 
       fitToWindow: () => {

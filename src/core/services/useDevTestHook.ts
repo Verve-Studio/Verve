@@ -5,7 +5,7 @@ import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 
 /**
  * Development builds only: exposes the live store, canvas handle, menu
- * handlers and active scope as `window.__verveTest`, so an end-to-end test
+ * handlers, cell animation commands and active scope as `window.__verveTest`, so an end-to-end test
  * driver attached over the DevTools protocol can run real app operations and
  * inspect the document (e.g. undo/redo round-trip tests). Production builds
  * drop the hook entirely.
@@ -14,8 +14,10 @@ export function useDevTestHook(deps: {
   store: AppStore;
   canvasHandleRef: { readonly current: CanvasHandle | null };
   menuHandlersRef: MutableRefObject<object>;
+  /** Cell animation commands and playback (latest render). */
+  cellRef?: MutableRefObject<object>;
 }): void {
-  const { store, canvasHandleRef, menuHandlersRef } = deps;
+  const { store, canvasHandleRef, menuHandlersRef, cellRef } = deps;
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const w = window as unknown as Record<string, unknown>;
@@ -28,10 +30,13 @@ export function useDevTestHook(deps: {
       get menu() {
         return menuHandlersRef.current;
       },
+      get cell() {
+        return cellRef?.current;
+      },
       scope: activeScope,
     };
     return () => {
       delete w.__verveTest;
     };
-  }, [store, canvasHandleRef, menuHandlersRef]);
+  }, [store, canvasHandleRef, menuHandlersRef, cellRef]);
 }

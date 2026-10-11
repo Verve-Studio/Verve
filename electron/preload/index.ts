@@ -142,6 +142,15 @@ const api = {
   /** Create a folder (and missing parents). */
   makeDirectory: (path: string): Promise<void> => ipcRenderer.invoke('fs:mkdir', path),
 
+  // ── Cell animation folders ───────────────────────────────────────────────────
+  /** Text of the folder's `verve-cells.json`, or null when it has none. */
+  readCellManifest: (folder: string): Promise<string | null> =>
+    ipcRenderer.invoke('cells:readManifest', folder),
+  writeCellManifest: (folder: string, text: string): Promise<void> =>
+    ipcRenderer.invoke('cells:writeManifest', folder, text),
+  /** Move a frame file (or its preview) to the OS trash. */
+  trashCellFile: (path: string): Promise<void> => ipcRenderer.invoke('cells:trash', path),
+
   // ── Automation workflows (.automation) ───────────────────────────────────────
   /** Open dialog; resolves to the file's path and text, or null. */
   openAutomationFile: (): Promise<{ path: string; text: string } | null> =>

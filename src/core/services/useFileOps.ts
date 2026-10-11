@@ -6,7 +6,11 @@ import {
   createLayerDataBundle,
   type LayerDataBundle,
 } from "@/core/store/layerPayload";
-import { decodeExrLayers } from "@/wasm";
+import {
+  decodeExrDocument,
+  decodeVerveDocument,
+  directoryOf,
+} from "@/core/io/documentDecode";
 import {
   IMAGE_EXTENSIONS,
   EXT_TO_MIME,
@@ -17,7 +21,6 @@ import type { TabRecord, TabSnapshot } from "@/core/store/tabTypes";
 import type {
   LayerState,
   BackgroundFill,
-  SwatchGroup,
   PixelFormat,
   ToneMappingOperator,
 } from "@/types";
@@ -38,18 +41,14 @@ import { preferencesStore } from "@/core/store/preferencesStore";
 import { brushStore } from "@/core/store/brushStore";
 import {
   VerveBlobWriter,
-  decodeVerveContainer,
-  isVerveContainer,
   type VerveByteSink,
 } from "@/core/io/verveContainer";
 import {
   VERVE_DOC_VERSION,
-  readVervePayloads,
   serializeBrushes,
   serializeLayer,
   serializeLayerPixels,
   serializePixelBrushes,
-  type SavedLayerPayloads,
 } from "@/core/io/verveDocument";
 
 // ─── Linked-layer path helpers ────────────────────────────────────────────────
@@ -62,13 +61,6 @@ import {
 
 function detectSep(p: string): "\\" | "/" {
   return p.includes("\\") && !p.includes("/") ? "\\" : "/";
-}
-
-/** Strip the trailing path component (filename) and return the directory. */
-function directoryOf(p: string): string {
-  const sep = detectSep(p);
-  const i = p.lastIndexOf(sep);
-  return i >= 0 ? p.slice(0, i) : "";
 }
 
 /** Compute `target` expressed relative to `fromDir`. Falls back to the
@@ -101,23 +93,6 @@ function relativePathFrom(fromDir: string, target: string): string {
   const down = targetParts.slice(common);
   const rel = [...up, ...down].join(sep);
   return rel || ".";
-}
-
-/** Resolve `relative` against `fromDir`, collapsing `..` and `.` segments. */
-function resolveRelative(fromDir: string, relative: string): string {
-  if (!fromDir) return relative;
-  const sep = detectSep(fromDir);
-  const parts = (fromDir + sep + relative)
-    .split(/[\\/]+/)
-    .filter((p) => p.length > 0 && p !== ".");
-  const out: string[] = [];
-  for (const part of parts) {
-    if (part === "..") out.pop();
-    else out.push(part);
-  }
-  // Preserve a leading separator on POSIX paths (lost by the split).
-  const leading = fromDir.startsWith("/") ? "/" : "";
-  return leading + out.join(sep);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -160,6 +135,9 @@ export interface DocumentFileCommands {
   saveDocument(path?: string): Promise<void>;
   /** Write a .verve copy of the active document without relinking it. */
   saveDocumentCopy(path: string): Promise<void>;
+  /** Write the active document as .verve to `path`: no tab relink, no
+   *  history mark, no status message (cell animation frames). */
+  writeVerve(path: string): Promise<void>;
 }
 
 export interface UseFileOpsReturn {
@@ -173,53 +151,6 @@ export interface UseFileOpsReturn {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function isValidSwatchArray(
-  val: unknown,
-): val is { r: number; g: number; b: number; a: number }[] {
-  if (!Array.isArray(val)) return false;
-  for (const item of val) {
-    if (typeof item !== "object" || item === null) return false;
-    const { r, g, b, a } = item as Record<string, unknown>;
-    if (
-      !Number.isInteger(r) ||
-      (r as number) < 0 ||
-      (r as number) > 255 ||
-      !Number.isInteger(g) ||
-      (g as number) < 0 ||
-      (g as number) > 255 ||
-      !Number.isInteger(b) ||
-      (b as number) < 0 ||
-      (b as number) > 255 ||
-      !Number.isInteger(a) ||
-      (a as number) < 0 ||
-      (a as number) > 255
-    )
-      return false;
-  }
-  return true;
-}
-
-function isValidSwatchGroupsArray(
-  val: unknown,
-  swatchCount: number,
-): val is SwatchGroup[] {
-  if (!Array.isArray(val)) return false;
-  const names = new Set<string>();
-  for (const item of val) {
-    if (typeof item !== "object" || item === null) return false;
-    const { id, name, swatchIndices } = item as Record<string, unknown>;
-    if (typeof id !== "string" || id === "") return false;
-    if (typeof name !== "string" || name === "") return false;
-    if (names.has(name)) return false;
-    names.add(name);
-    if (!Array.isArray(swatchIndices)) return false;
-    for (const idx of swatchIndices) {
-      if (!Number.isInteger(idx) || idx < 0 || idx >= swatchCount) return false;
-    }
-  }
-  return true;
-}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -564,47 +495,18 @@ export function useFileOps({
       }
       // ── Multi-layer EXR ───────────────────────────────────────────────
       if (ext === ".exr") {
-        const bytes = await window.api.readFile(path);
-        const exr = await decodeExrLayers(bytes);
+        const exr = await decodeExrDocument(await window.api.readFile(path));
         if (exr.layers.length > 1) {
           const newId = makeTabId();
-      const newScope = createDocumentScope();
-          const layerData = createLayerDataBundle();
-          const layers: LayerState[] = [];
-          // Track names already used so we can disambiguate duplicates.
-          const seenNames = new Map<string, number>();
-          exr.layers.forEach((L, i) => {
-            const layerId = `layer-${i}`;
-            let name = L.name.trim() || `Layer ${i + 1}`;
-            const n = seenNames.get(name) ?? 0;
-            if (n > 0) name = `${name} (${n + 1})`;
-            seenNames.set(name, n + 1);
-            layerData.layers.set(layerId, {
-              format: "rgba32f",
-              data: L.pixels,
-              geo: {
-                layerWidth: L.width,
-                layerHeight: L.height,
-                offsetX: L.offsetX,
-                offsetY: L.offsetY,
-              },
-            });
-            layers.push({
-              id: layerId,
-              name,
-              visible: true,
-              opacity: 1,
-              locked: false,
-              blendMode: "normal",
-            });
-          });
+          const newScope = createDocumentScope();
+          const layers = exr.layers;
           const title = fileTitle(path);
           const newSnapshot: TabSnapshot = {
-            canvasWidth: exr.canvasWidth,
-            canvasHeight: exr.canvasHeight,
+            canvasWidth: exr.width,
+            canvasHeight: exr.height,
             backgroundFill: "transparent",
             layers,
-            activeLayerId: layers[layers.length - 1]?.id ?? null,
+            activeLayerId: exr.activeLayerId,
             zoom: 1,
             swatches: DEFAULT_SWATCHES,
             swatchGroups: [],
@@ -612,21 +514,21 @@ export function useFileOps({
             pixelFormat: "rgba32f",
           };
           addTabBackgroundingActive({
-              id: newId,
-              title,
-              filePath: path,
-              snapshot: newSnapshot,
-              savedLayerData: layerData,
+            id: newId,
+            title,
+            filePath: path,
+            snapshot: newSnapshot,
+            savedLayerData: exr.layerData,
             scope: newScope,
-              canvasKey: 1,
-              tiledMode: false,
-              showTileGrid: false,
-              pixelFormat: "rgba32f" as PixelFormat,
-              exposureEV: 0,
-              toneMappingOperator: "clamp",
+            canvasKey: 1,
+            tiledMode: false,
+            showTileGrid: false,
+            pixelFormat: "rgba32f" as PixelFormat,
+            exposureEV: 0,
+            toneMappingOperator: "clamp",
             viewTransformLutId: null,
-              animationMode: false,
-            });
+            animationMode: false,
+          });
           setActiveScope(newScope);
           activateTab(newId);
           activeScope().history.clear({ recaptureSnapshot: false });
@@ -634,8 +536,8 @@ export function useFileOps({
           dispatch({
             type: "SWITCH_TAB",
             payload: {
-              width: exr.canvasWidth,
-              height: exr.canvasHeight,
+              width: exr.width,
+              height: exr.height,
               backgroundFill: "transparent",
               layers,
               activeLayerId: newSnapshot.activeLayerId,
@@ -863,113 +765,18 @@ export function useFileOps({
       }
 
       // ── .verve file ──────────────────────────────────────────────────────
-      const fileBytes = await window.api.openverveFile(path);
-      const container = isVerveContainer(fileBytes)
-        ? decodeVerveContainer<Record<string, unknown>>(fileBytes)
-        : null;
-      const doc = (container
-        ? container.doc
-        : JSON.parse(new TextDecoder().decode(fileBytes))) as {
-        version: number;
-        pixelFormat?: string;
-        canvas: {
-          width: number;
-          height: number;
-          backgroundFill?: BackgroundFill;
-        };
-        activeLayerId: string | null;
-        layers: Array<LayerState & SavedLayerPayloads>;
-        swatches?: unknown;
-        swatchGroups?: unknown;
-        pixelBrushes?: unknown;
-        brushes?: unknown;
-        activeBrushId?: unknown;
-        spritesheet?: unknown;
-        iccProfile?: string | null;
-        /** Version ≤ 6. */
-        iccProfileBase64?: string | null;
-      };
-
-      // ── Legacy field migration ────────────────────────────────────────────
-      // Older .verve files (pre-EffectType rename) tagged adjustment/effect/
-      // filter layers with `adjustmentType` instead of `effectType`. Copy the
-      // legacy field forward in-place so downstream code only ever sees the
-      // new name. Idempotent: if `effectType` is already present we leave it.
-      if (Array.isArray(doc.layers)) {
-        for (const rawLayer of doc.layers as unknown as Array<
-          Record<string, unknown>
-        >) {
-          if (
-            rawLayer &&
-            typeof rawLayer === "object" &&
-            "adjustmentType" in rawLayer
-          ) {
-            if (!("effectType" in rawLayer)) {
-              rawLayer.effectType = rawLayer.adjustmentType;
-            }
-            delete rawLayer.adjustmentType;
-          }
-        }
-      }
-
-      const docDir = directoryOf(path);
-      // Resolve every binary payload (blobs, or base64 / PNG in older files)
-      // to typed arrays before the tab is created.
-      const payloads = await readVervePayloads(
-        doc,
-        container ? container.blob : null,
-        doc.canvas.width,
-        doc.canvas.height,
+      const doc = await decodeVerveDocument(
+        await window.api.openverveFile(path),
+        path,
       );
-      const layerData = payloads.data;
-      const layers: LayerState[] = payloads.layers.map(
-        (meta) => {
-          // For linked layers, prefer the relative path (resolved against
-          // the document we just opened) over the stale absolute path. The
-          // init hook just reads `source.absolutePath`, so re-stamp it here.
-          if ("type" in meta && meta.type === "linked") {
-            const m = meta as unknown as import("@/types").LinkedLayerState;
-            if (m.source && m.source.relativePath && docDir) {
-              return {
-                ...m,
-                source: {
-                  ...m.source,
-                  absolutePath: resolveRelative(docDir, m.source.relativePath),
-                },
-              } as LayerState;
-            }
-          }
-          return meta as LayerState;
-        },
-      );
+      const layers = doc.layers;
+      const layerData = doc.layerData;
       const title = fileTitle(path);
-      const bg = doc.canvas.backgroundFill ?? "transparent";
-      if (doc.version >= 2) {
-        if (!isValidSwatchArray(doc.swatches)) {
-          showOperationError(
-            "Could not open file.",
-            "The file contains invalid swatch data.",
-          );
-          return;
-        }
-      }
-      const docSwatches =
-        doc.version >= 2
-          ? (doc.swatches as { r: number; g: number; b: number; a: number }[])
-          : DEFAULT_SWATCHES;
-      let docSwatchGroups: SwatchGroup[] = [];
-      if (doc.version >= 3) {
-        if (!isValidSwatchGroupsArray(doc.swatchGroups, docSwatches.length)) {
-          showOperationError(
-            "Could not open file.",
-            "The file contains invalid swatch group data.",
-          );
-          return;
-        }
-        docSwatchGroups = doc.swatchGroups as SwatchGroup[];
-      }
-      const docPixelBrushes = doc.version >= 4 ? payloads.pixelBrushes : [];
-      const docBrushes = payloads.brushes;
+      const bg = doc.backgroundFill;
+      const docSwatches = doc.swatches ?? DEFAULT_SWATCHES;
+      const docSwatchGroups = doc.swatchGroups ?? [];
+      const docPixelBrushes = doc.pixelBrushes ?? [];
+      const docBrushes = doc.brushes ?? [];
       // The saved active brush, if it still exists (a document brush or one
       // in the user library); else keep the current user-library brush.
       const userBrushIds = new Set(brushStore.getUserBrushes().map((b) => b.id));
@@ -981,33 +788,15 @@ export function useFileOps({
         : state.activeBrushId && userBrushIds.has(state.activeBrushId)
           ? state.activeBrushId
           : (brushStore.getUserBrushes()[0]?.id ?? null);
-      let docPixelFormat: PixelFormat = "rgba8";
-      if (doc.version >= 5) {
-        const fmt = doc.pixelFormat;
-        if (fmt !== "rgba8" && fmt !== "rgba32f" && fmt !== "indexed8") {
-          showOperationError(
-            "Could not open file.",
-            "This document uses an unsupported pixel format and cannot be opened.",
-          );
-          return;
-        }
-        docPixelFormat = fmt as PixelFormat;
-      }
-      let docSpritesheet: import("@/types").SpritesheetState | undefined;
-      if (
-        doc.version >= 6 &&
-        doc.spritesheet &&
-        typeof doc.spritesheet === "object"
-      ) {
-        docSpritesheet = doc.spritesheet as import("@/types").SpritesheetState;
-      }
-      const docIccProfile = payloads.iccProfile;
+      const docPixelFormat = doc.pixelFormat;
+      const docSpritesheet = doc.spritesheet;
+      const docIccProfile = doc.iccProfile;
       const newSnapshot: TabSnapshot = {
-        canvasWidth: doc.canvas.width,
-        canvasHeight: doc.canvas.height,
+        canvasWidth: doc.width,
+        canvasHeight: doc.height,
         backgroundFill: bg,
         layers,
-        activeLayerId: doc.activeLayerId ?? layers[0]?.id ?? null,
+        activeLayerId: doc.activeLayerId,
         zoom: 1,
         swatches: docSwatches,
         swatchGroups: docSwatchGroups,
@@ -1043,8 +832,8 @@ export function useFileOps({
       dispatch({
         type: "SWITCH_TAB",
         payload: {
-          width: doc.canvas.width,
-          height: doc.canvas.height,
+          width: doc.width,
+          height: doc.height,
           backgroundFill: bg,
           layers,
           activeLayerId: newSnapshot.activeLayerId,
@@ -1288,8 +1077,9 @@ export function useFileOps({
         await handleSaveNow(false, path ? verve(path) : undefined);
       },
       saveDocumentCopy: (path) => handleSaveACopyNow(verve(path)),
+      writeVerve: (path) => writeDocument(verve(path)),
     };
-  }, [handleNewConfirm, openPathQueued, handleSaveNow, handleSaveACopyNow, tabs, activeTabId]);
+  }, [handleNewConfirm, openPathQueued, handleSaveNow, handleSaveACopyNow, writeDocument, tabs, activeTabId]);
 
   return {
     commands,

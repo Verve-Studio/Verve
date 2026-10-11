@@ -5,6 +5,8 @@ import type { TabRecord } from "@/core/store/tabTypes";
 import type { LayerDataBundle } from "@/core/store/layerPayload";
 import type { UseAdjustmentsReturn } from "@/core/services/useAdjustments";
 import type { UseColorModeReturn } from "@/core/services/useColorMode";
+import type { CellAnimationCommands } from "@/core/services/useCellAnimation";
+import type { CellPlayback } from "@/core/services/useCellPlayback";
 import type { Tool, PixelFormat, RGBAColor } from "@/types";
 import { makeDefaultBrush } from "@/types";
 import { brushStore } from "@/core/store/brushStore";
@@ -270,6 +272,11 @@ export interface MainWindowProps {
   // Animation panel
   onCopyPrevFrame: (animationId: string, frameId: string) => void;
   onCopyNextFrame: (animationId: string, frameId: string) => void;
+
+  // Cell animation
+  cellCommands: CellAnimationCommands;
+  /** Cell playback controls while cell animation is on, else null. */
+  cellPlayback: CellPlayback | null;
 }
 
 // ─── MainWindow ───────────────────────────────────────────────────────────────
@@ -408,6 +415,8 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     paletteAnimationActive,
     onCopyPrevFrame,
     onCopyNextFrame,
+    cellCommands,
+    cellPlayback,
   } = props;
 
   // Stable callbacks for the memoized Canvas / RightPanel / TopBar. The
@@ -420,7 +429,9 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
     const p = propsRef.current;
     p.releaseMountedLayerData();
     p.captureReadyHistory();
-    p.canvasHandleRef.current?.fitToWindow();
+    const keptView = canvasReadyStore.takeKeptView();
+    if (keptView) p.canvasHandleRef.current?.setViewScroll(keptView);
+    else p.canvasHandleRef.current?.fitToWindow();
     const tab = p.tabs.find((t) => t.id === p.activeTabId);
     if (tab) canvasReadyStore.markReady(`${tab.id}-${tab.canvasKey}`);
   }, []);
@@ -523,6 +534,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           <AnimationPanel
             onCopyPrevFrame={onCopyPrevFrame}
             onCopyNextFrame={onCopyNextFrame}
+            cellCommands={cellCommands}
           />
         )}
         <RightPanel
@@ -560,6 +572,15 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           onNextAnimation={onNextAnimation}
           onLoopToggle={onLoopToggle}
           paletteAnimationActive={paletteAnimationActive}
+          cell={
+            cellPlayback
+              ? {
+                  onRewind: cellPlayback.rewind,
+                  onStop: cellPlayback.stop,
+                  onToEnd: cellPlayback.toEnd,
+                }
+              : undefined
+          }
         />
       )}
       {!editorFullWindow && <StatusBar />}

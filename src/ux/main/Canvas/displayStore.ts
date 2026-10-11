@@ -59,6 +59,11 @@ class DisplayStore {
    *  the above changes via `setProofSetup`. */
   proofLut: LutTransform | null = null;
 
+  /** Present transparent pixels as transparent instead of over the
+   *  checkerboard, so page content under the canvas shows through (cell
+   *  animation draws its own checker and reference background there). */
+  transparentBackdrop: boolean = false;
+
   private listeners = new Set<Listener>();
 
   subscribe(fn: Listener): void {
@@ -131,6 +136,12 @@ class DisplayStore {
 
   setProofLut(lut: LutTransform | null): void {
     this.proofLut = lut;
+    this.notify();
+  }
+
+  setTransparentBackdrop(on: boolean): void {
+    if (this.transparentBackdrop === on) return;
+    this.transparentBackdrop = on;
     this.notify();
   }
 

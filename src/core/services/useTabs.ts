@@ -1,4 +1,5 @@
 import type { AppAction } from "@/core/store/AppContext";
+import { INITIAL_CELL_ANIMATION } from "@/core/store/AppContext";
 
 import type { TabRecord, TabSnapshot } from "@/core/store/tabTypes";
 import { DEFAULT_SWATCHES } from "@/core/store/tabTypes";
@@ -122,6 +123,7 @@ export function useTabs(
       pixelFormat: state.pixelFormat,
       spritesheet: state.spritesheet,
       paletteAnimation: state.paletteAnimation,
+      cellAnimation: state.cellAnimation,
       iccProfile: state.iccProfile,
     };
   }, [getState]);
@@ -244,6 +246,10 @@ export function useTabs(
           enabled: false,
           fps: 8,
         },
+      });
+      dispatch({
+        type: "SET_CELL_ANIMATION",
+        payload: toTab.snapshot.cellAnimation ?? INITIAL_CELL_ANIMATION,
       });
     },
     [dispatch],

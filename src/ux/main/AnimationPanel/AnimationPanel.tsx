@@ -5,7 +5,10 @@ import {
   useAppSelector,
 } from "@/core/store/AppContext";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
+import { ToggleSwitch } from "@/ux/widgets/ToggleSwitch/ToggleSwitch";
 import type { AnimationPlaybackMode } from "@/types";
+import type { CellAnimationCommands } from "@/core/services/useCellAnimation";
+import { CellAnimationPanel } from "@/ux/main/CellAnimationPanel/CellAnimationPanel";
 import styles from "./AnimationPanel.module.scss";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -20,6 +23,7 @@ const STORAGE_KEY = "verve-animation-panel-width";
 export interface AnimationPanelProps {
   onCopyPrevFrame: (animationId: string, frameId: string) => void;
   onCopyNextFrame: (animationId: string, frameId: string) => void;
+  cellCommands: CellAnimationCommands;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -28,43 +32,17 @@ function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-interface ToggleProps {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}
-
-function Toggle({
-  checked,
-  onChange,
-  disabled,
-}: ToggleProps): React.JSX.Element {
-  return (
-    <label
-      className={`${styles.toggle} ${disabled ? styles.toggleDisabled : ""}`}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className={styles.toggleTrack} />
-    </label>
-  );
-}
-
 // ─── AnimationPanel ───────────────────────────────────────────────────────────
 
 export function AnimationPanel({
   onCopyPrevFrame,
   onCopyNextFrame,
+  cellCommands,
 }: AnimationPanelProps): React.JSX.Element {
   const state = useAppSelector(
     (s) => ({
       canvas: { height: s.canvas.height, width: s.canvas.width },
+      cellAnimationEnabled: s.cellAnimation.enabled,
       paletteAnimation: s.paletteAnimation,
       pixelFormat: s.pixelFormat,
       spritesheet: s.spritesheet,
@@ -189,7 +167,7 @@ export function AnimationPanel({
 
           <div className={styles.row}>
             <span className={styles.label}>Sprite Sheet</span>
-            <Toggle
+            <ToggleSwitch
               checked={ss.enabled}
               onChange={(v) =>
                 dispatch({ type: "SET_SPRITESHEET", payload: { enabled: v } })
@@ -206,7 +184,7 @@ export function AnimationPanel({
             }
           >
             <span className={styles.label}>Palette Animation</span>
-            <Toggle
+            <ToggleSwitch
               checked={pa.enabled}
               disabled={!isIndexed8}
               onChange={(v) =>
@@ -217,7 +195,19 @@ export function AnimationPanel({
               }
             />
           </div>
+
+          <div className={styles.row}>
+            <span className={styles.label}>Cell Animation</span>
+            <ToggleSwitch
+              checked={state.cellAnimationEnabled}
+              onChange={(v) =>
+                dispatch({ type: "SET_CELL_ANIMATION", payload: { enabled: v } })
+              }
+            />
+          </div>
         </div>
+
+        {state.cellAnimationEnabled && <CellAnimationPanel commands={cellCommands} />}
 
         {/* ── Sprite Sheet ──────────────────────────────────── */}
         {ss.enabled && (
@@ -316,7 +306,7 @@ export function AnimationPanel({
                     <span className={styles.cycleGroupName} title={g.name}>
                       {g.name}
                     </span>
-                    <Toggle
+                    <ToggleSwitch
                       checked={cyc.enabled}
                       onChange={(v) => setCycle({ ...cyc, enabled: v })}
                     />

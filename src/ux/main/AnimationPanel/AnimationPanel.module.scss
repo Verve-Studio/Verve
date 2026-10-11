@@ -86,61 +86,6 @@
   white-space: nowrap;
 }
 
-// ─── Toggle ───────────────────────────────────────────────────────────────────
-
-.toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-  flex-shrink: 0;
-
-  input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-}
-
-.toggleDisabled {
-  opacity: 0.38;
-  pointer-events: none;
-}
-
-.toggleTrack {
-  display: block;
-  width: 28px;
-  height: 16px;
-  background: vars.$color-surface-hover;
-  border-radius: 8px;
-  border: 1px solid vars.$color-border-light;
-  transition: background vars.$transition-base, border-color vars.$transition-base;
-  position: relative;
-
-  &::after {
-    content: '';
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    background: vars.$color-text-muted;
-    border-radius: 50%;
-    top: 2px;
-    left: 2px;
-    transition: transform vars.$transition-base, background vars.$transition-base;
-  }
-}
-
-.toggle input:checked + .toggleTrack {
-  background: vars.$color-accent-blue;
-  border-color: vars.$color-accent-blue;
-
-  &::after {
-    background: #fff;
-    transform: translateX(12px);
-  }
-}
-
 // ─── Buttons ──────────────────────────────────────────────────────────────────
 
 .addBtn {

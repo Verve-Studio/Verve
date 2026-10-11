@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useSyncExternalStore } from "react";
+import { useAppSelector } from "@/core/store/AppContext";
+import { cellPlaybackStore } from "@/core/store/cellPlaybackStore";
 import styles from "./PlaybackBar.module.scss";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -56,6 +58,14 @@ function IconNextAnim(): React.JSX.Element {
   );
 }
 
+function IconStop(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+      <rect x="3" y="3" width="10" height="10" />
+    </svg>
+  );
+}
+
 function IconLoop(): React.JSX.Element {
   return (
     <svg
@@ -92,6 +102,37 @@ export interface PlaybackBarProps {
   /** When true, the Prev/Next Animation buttons are disabled — palette
    *  animation has no concept of "next animation". */
   paletteAnimationActive?: boolean;
+  /** Cell animation controls: rewind, previous, play / pause, stop, next,
+   *  to end and loop. The frame readout follows playback live. */
+  cell?: {
+    onRewind: () => void;
+    onStop: () => void;
+    onToEnd: () => void;
+  };
+}
+
+/** "Frame i of n" for cell animation, updated per playback tick without
+ *  re-rendering the app. */
+function CellFrameReadout(): React.JSX.Element {
+  const playback = useSyncExternalStore(
+    (fn) => cellPlaybackStore.subscribe(fn),
+    () => cellPlaybackStore.snapshot,
+  );
+  const { index, total } = useAppSelector(
+    (s) => ({
+      index: s.cellAnimation.frames.findIndex(
+        (f) => f.id === s.cellAnimation.currentFrameId,
+      ),
+      total: s.cellAnimation.frames.length,
+    }),
+    (a, b) => a.index === b.index && a.total === b.total,
+  );
+  const shown = playback.showing ? playback.index : index;
+  return (
+    <span className={styles.frameLabel}>
+      Frame {total === 0 ? 0 : shown + 1} of {total}
+    </span>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -108,7 +149,51 @@ export function PlaybackBar({
   onNextAnimation,
   onLoopToggle,
   paletteAnimationActive,
+  cell,
 }: PlaybackBarProps): React.JSX.Element {
+  if (cell) {
+    return (
+      <div className={styles.playbackBar}>
+        <div className={styles.controls}>
+          <button className={styles.btn} title="Rewind" aria-label="Rewind" onClick={cell.onRewind}>
+            <IconPrevAnim />
+          </button>
+          <button className={styles.btn} title="Previous Frame" aria-label="Previous Frame" onClick={onPrevFrame}>
+            <IconPrevFrame />
+          </button>
+          <button
+            className={`${styles.btn} ${styles.playBtn}`}
+            title={isPlaying ? "Pause" : "Play"}
+            aria-label={isPlaying ? "Pause" : "Play"}
+            onClick={onPlayPause}
+          >
+            {isPlaying ? <IconPause /> : <IconPlay />}
+          </button>
+          <button className={styles.btn} title="Stop" aria-label="Stop" onClick={cell.onStop}>
+            <IconStop />
+          </button>
+          <button className={styles.btn} title="Next Frame" aria-label="Next Frame" onClick={onNextFrame}>
+            <IconNextFrame />
+          </button>
+          <button className={styles.btn} title="To End" aria-label="To End" onClick={cell.onToEnd}>
+            <IconNextAnim />
+          </button>
+          <button
+            className={`${styles.btn} ${isLooping ? styles.btnActive : ""}`}
+            title={isLooping ? "Loop: On" : "Loop: Off"}
+            aria-label={isLooping ? "Loop: On" : "Loop: Off"}
+            aria-pressed={isLooping}
+            onClick={onLoopToggle}
+          >
+            <IconLoop />
+          </button>
+        </div>
+        <div className={styles.frameInfo}>
+          <CellFrameReadout />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.playbackBar}>
       <div className={styles.controls}>

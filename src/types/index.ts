@@ -117,7 +117,8 @@ export interface SwatchGroup {
 
 export interface PaletteAnimationState {
   /** When true, the palette-cycle pre-pass is applied to the displayed
-   *  indexed8 canvas. Mutually exclusive with `spritesheet.enabled`. */
+   *  indexed8 canvas. Mutually exclusive with `spritesheet.enabled` and
+   *  `cellAnimation.enabled`. */
   enabled: boolean;
   /** Cycle ticks per second. */
   fps: number;
@@ -864,6 +865,59 @@ export interface SpritesheetState {
   selectedFrameId: string | null;
 }
 
+// ─── Cell animation ───────────────────────────────────────────────────────────
+
+/** File format new cells are written in. */
+export type CellFileType = "verve" | "exr";
+
+export interface CellFrame {
+  id: string;
+  /** File name inside the cell folder (e.g. `frame_0003.verve`). */
+  file: string;
+  /** How many playback ticks this frame persists at the animation fps. */
+  duration: number;
+}
+
+export interface CellOnionSkin {
+  enabled: boolean;
+  /** Previous frames shown (0–5). */
+  before: number;
+  /** Next frames shown (0–5). */
+  after: number;
+  /** Opacity of the nearest onion frame, 0–1 (farther frames fade). */
+  opacity: number;
+  /** Tint previous frames red and next frames green. */
+  tint: boolean;
+}
+
+export interface CellBackground {
+  /** Absolute path of the reference image, or null for none. */
+  path: string | null;
+  /** 0–1. */
+  opacity: number;
+  visible: boolean;
+}
+
+/**
+ * Cell animation: every frame is a separate file in `folder`. The document
+ * on the canvas is the current frame (`currentFrameId`); switching frames
+ * saves it and loads the next file. Order, durations and settings persist
+ * in the folder's `verve-cells.json` (see `core/io/cellAnimationFiles.ts`).
+ */
+export interface CellAnimationState {
+  enabled: boolean;
+  folder: string | null;
+  fileType: CellFileType;
+  fps: number;
+  frames: CellFrame[];
+  /** The frame loaded on the canvas; null when the canvas isn't a cell. */
+  currentFrameId: string | null;
+  /** Frames selected in the panel (move / delete / duration act on them). */
+  selectedFrameIds: string[];
+  onionSkin: CellOnionSkin;
+  background: CellBackground;
+}
+
 export interface AppState {
   activeTool: Tool;
   activeShape: ShapeType;
@@ -896,6 +950,7 @@ export interface AppState {
   animationMode: boolean;
   spritesheet: SpritesheetState;
   paletteAnimation: PaletteAnimationState;
+  cellAnimation: CellAnimationState;
   /** Raw ICC profile bytes embedded in the source file (or assigned later),
    *  preserved verbatim on round-trip. `undefined` means "no profile" —
    *  the renderer treats untagged rgba8 as sRGB and untagged rgba32f as

@@ -8,6 +8,8 @@ import {
   useStartupFile,
 } from "@/core/services/useAppLifecycle";
 import { useCanvasTransforms } from "@/core/services/useCanvasTransforms";
+import { useCellAnimation } from "@/core/services/useCellAnimation";
+import { useCellPlayback } from "@/core/services/useCellPlayback";
 import { useGpuDeviceRecovery } from "@/core/services/useGpuDeviceRecovery";
 import { useUnsavedDocumentsReporter } from "@/core/services/useUnsavedDocumentsReporter";
 import { useClipboard } from "@/core/services/useClipboard";
@@ -528,6 +530,35 @@ function AppContent(): React.JSX.Element {
   // ── Playback state ────────────────────────────────────────────────
   const playback = useAnimationPlayback(state, dispatch, canvasHandleRef);
 
+  // ── Cell animation (one file per frame) ───────────────────────────
+  const cellAnimation = useCellAnimation({
+    getState: store.getState,
+    dispatch,
+    canvasHandleRef,
+    tabs,
+    setTabs,
+    activeTabIdRef,
+    setPendingLayerData,
+    files: fileCommands,
+    exportDocument,
+  });
+  const cellActive = state.animationMode && state.cellAnimation.enabled;
+  const cellPlayback = useCellPlayback({
+    getState: store.getState,
+    cell: cellAnimation,
+    activeTabId,
+    active: cellActive,
+  });
+  /** Whether Save / playback act on the cell animation (read at call time). */
+  const isCellActive = (): boolean => {
+    const s = stateRef.current;
+    return s.animationMode && s.cellAnimation.enabled;
+  };
+  const isCellFrame = (): boolean => {
+    const c = stateRef.current.cellAnimation;
+    return c.enabled && c.folder !== null && c.currentFrameId !== null;
+  };
+
   // ── Spritesheet / animation import & export ──────────────────────
   const {
     handleImportSpritesheetFrames,
@@ -746,8 +777,11 @@ function AppContent(): React.JSX.Element {
       void handleOpen();
     }, [handleOpen]),
     handleSave: useCallback(() => {
-      void handleSave(false);
-    }, [handleSave]),
+      // A cell animation frame saves to its own file.
+      if (isCellFrame()) void cellAnimation.saveCurrentFrame();
+      else void handleSave(false);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [handleSave, cellAnimation]),
     handleSaveAs: useCallback(() => {
       void handleSave(true);
     }, [handleSave]),
@@ -832,7 +866,8 @@ function AppContent(): React.JSX.Element {
       onOpen: () => void handleOpen(),
       onOpenAsLayer: () => void handleOpenAsLayer(),
       onPrint: () => setShowPrintPreviewDialog(true),
-      onSave: () => void handleSave(false),
+      onSave: () =>
+        isCellFrame() ? void cellAnimation.saveCurrentFrame() : void handleSave(false),
       onSaveAs: () => void handleSave(true),
       onSaveACopy: () => void handleSaveACopy(),
       onNewAutomation: () => void startNewAutomation(),
@@ -977,9 +1012,9 @@ function AppContent(): React.JSX.Element {
       onOpenFilterDialog: handleOpenFilterDialog,
       onInstantFilter: (key) =>
         requireTransformDecision(() => filters.handleInstantFilter(key)),
-      onPlayPause: playback.onPlayPause,
-      onPrevFrame: playback.onPrevFrame,
-      onNextFrame: playback.onNextFrame,
+      onPlayPause: () => (isCellActive() ? cellPlayback.togglePlay() : playback.onPlayPause()),
+      onPrevFrame: () => (isCellActive() ? cellPlayback.prevFrame() : playback.onPrevFrame()),
+      onNextFrame: () => (isCellActive() ? cellPlayback.nextFrame() : playback.onNextFrame()),
       onPrevAnimation: playback.onPrevAnimation,
       onNextAnimation: playback.onNextAnimation,
       onImportSpritesheetFrames: () =>
@@ -1024,7 +1059,9 @@ function AppContent(): React.JSX.Element {
   };
   const menuHandlersRef = useRef(menuHandlersNow);
   menuHandlersRef.current = menuHandlersNow;
-  useDevTestHook({ store, canvasHandleRef, menuHandlersRef });
+  const cellTestRef = useRef<object>({});
+  cellTestRef.current = { commands: cellAnimation, playback: cellPlayback };
+  useDevTestHook({ store, canvasHandleRef, menuHandlersRef, cellRef: cellTestRef });
   const menuHandlers = useMemo(
     () => stableHandlers(menuHandlersRef),
     [],
@@ -1064,8 +1101,9 @@ function AppContent(): React.JSX.Element {
       filterMenuItems: FILTER_MENU_ITEMS,
       // ── Animation ───────────────────────────────────────────────
       animationMode: state.animationMode,
-      isPlaying: playback.isPlaying,
+      isPlaying: cellActive ? cellPlayback.isPlaying : playback.isPlaying,
       paletteAnimationActive: state.paletteAnimation.enabled,
+      cellAnimationActive: cellActive,
       showGrid: state.canvas.showGrid,
       showRulers: state.canvas.showRulers,
       showGuides: state.canvas.showGuides,
@@ -1090,6 +1128,8 @@ function AppContent(): React.JSX.Element {
       adjustments.isAdjustmentMenuEnabled,
       state.animationMode,
       playback.isPlaying,
+      cellActive,
+      cellPlayback.isPlaying,
       state.paletteAnimation.enabled,
       state.canvas.showGrid,
       state.canvas.showRulers,
@@ -1310,8 +1350,8 @@ function AppContent(): React.JSX.Element {
         handleRescaleImage={handleRescaleImage}
         handleRestoreImage={handleRestoreImage}
         handleResizeCanvas={handleResizeCanvas}
-        isPlaying={playback.isPlaying}
-        isLooping={playback.isLooping}
+        isPlaying={cellActive ? cellPlayback.isPlaying : playback.isPlaying}
+        isLooping={cellActive ? cellPlayback.isLooping : playback.isLooping}
         currentFrame={
           state.paletteAnimation.enabled
             ? playback.paletteFrameIdx + 1
@@ -1322,13 +1362,15 @@ function AppContent(): React.JSX.Element {
             ? playback.paletteTotalFrames
             : (playback.selectedAnim?.frames.length ?? 0)
         }
-        onPlayPause={playback.onPlayPause}
-        onLoopToggle={playback.onLoopToggle}
-        onPrevFrame={playback.onPrevFrame}
-        onNextFrame={playback.onNextFrame}
+        onPlayPause={cellActive ? cellPlayback.togglePlay : playback.onPlayPause}
+        onLoopToggle={cellActive ? cellPlayback.toggleLoop : playback.onLoopToggle}
+        onPrevFrame={cellActive ? cellPlayback.prevFrame : playback.onPrevFrame}
+        onNextFrame={cellActive ? cellPlayback.nextFrame : playback.onNextFrame}
         onPrevAnimation={playback.onPrevAnimation}
         onNextAnimation={playback.onNextAnimation}
         paletteAnimationActive={state.paletteAnimation.enabled}
+        cellCommands={cellAnimation}
+        cellPlayback={cellActive ? cellPlayback : null}
         onCopyPrevFrame={handleCopyPrevFrame}
         onCopyNextFrame={handleCopyNextFrame}
         findLayersCounter={findLayersCounter}

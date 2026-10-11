@@ -87,6 +87,9 @@ declare global {
         created: number
       }>
       makeDirectory: (path: string) => Promise<void>
+      readCellManifest: (folder: string) => Promise<string | null>
+      writeCellManifest: (folder: string, text: string) => Promise<void>
+      trashCellFile: (path: string) => Promise<void>
       // Automation workflows (.automation)
       openAutomationFile: () => Promise<{ path: string; text: string } | null>
       saveAutomationFileAs: (text: string, suggestedPath?: string) => Promise<string | null>

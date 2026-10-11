@@ -10,6 +10,7 @@ import type {
   PixelFormat,
   ToneMappingOperator,
   SpritesheetState,
+  CellAnimationState,
   PaletteAnimationState,
 } from "@/types";
 
@@ -56,6 +57,7 @@ export interface TabSnapshot {
   pixelFormat: PixelFormat;
   spritesheet?: SpritesheetState;
   paletteAnimation?: PaletteAnimationState;
+  cellAnimation?: CellAnimationState;
   /** Raw ICC profile bytes carried with the document. Travels through tab
    *  switches and document re-opens; serialized to disk when the document
    *  itself is saved (PNG/JPEG/TIFF embed it as part of export). */

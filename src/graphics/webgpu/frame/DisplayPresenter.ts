@@ -153,15 +153,18 @@ export class DisplayPresenter {
         },
       ],
     });
-    pass.setPipeline(r.checkerPipeline);
-    pass.setBindGroup(0, r.checkerBindGroup);
-    pass.setVertexBuffer(0, r.canvasQuadVertBuf);
-    pass.setVertexBuffer(1, r.texCoordBuffer);
-    if (this.viewportScissor) {
-      const s = this.viewportScissor;
-      pass.setScissorRect(s.x, s.y, s.w, s.h);
+    // Transparent backdrop: the clear above is all (see displayStore).
+    if (!displayStore.transparentBackdrop) {
+      pass.setPipeline(r.checkerPipeline);
+      pass.setBindGroup(0, r.checkerBindGroup);
+      pass.setVertexBuffer(0, r.canvasQuadVertBuf);
+      pass.setVertexBuffer(1, r.texCoordBuffer);
+      if (this.viewportScissor) {
+        const s = this.viewportScissor;
+        pass.setScissorRect(s.x, s.y, s.w, s.h);
+      }
+      pass.draw(6);
     }
-    pass.draw(6);
     pass.end();
   }
 

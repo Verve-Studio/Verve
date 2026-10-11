@@ -7,7 +7,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame, LinkedLayerState } from "@/types";
+import type { AppState, Tool, ShapeType, RGBAColor, LayerState, TextLayerState, ShapeLayerState, FrameLayerState, MaskLayerState, GroupLayerState, CompositeLayerState, BlendMode, BackgroundFill, GridType, SwatchGroup, PixelBrush, Brush, PixelFormat, AnimationDef, AnimationFrame, CellAnimationState, LinkedLayerState } from "@/types";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import { isGroupLayer, isContainerLayer, isCompositeLayer } from "@/types";
 import {
@@ -211,6 +211,10 @@ export type AppAction =
       payload: Partial<import("@/types").PaletteAnimationState>;
     }
   | {
+      type: "SET_CELL_ANIMATION";
+      payload: Partial<import("@/types").CellAnimationState>;
+    }
+  | {
       type: "UPDATE_SWATCH_GROUP_CYCLE";
       payload: {
         groupId: string;
@@ -233,6 +237,24 @@ export type AppAction =
   | { type: "DELETE_FRAME"; payload: { animationId: string; frameId: string } };
 
 // ─── Initial state ────────────────────────────────────────────────────────────
+
+/** Cell animation off, no folder. Also what a document without a cell
+ *  folder restores to on tab switch. */
+export const INITIAL_CELL_ANIMATION: CellAnimationState = {
+  enabled: false,
+  folder: null,
+  fileType: "verve",
+  fps: 12,
+  frames: [],
+  currentFrameId: null,
+  selectedFrameIds: [],
+  onionSkin: { enabled: false, before: 1, after: 1, opacity: 0.35, tint: true },
+  background: { path: null, opacity: 1, visible: true },
+};
+
+function disabled<T extends { enabled: boolean }>(mode: T): T {
+  return mode.enabled ? { ...mode, enabled: false } : mode;
+}
 
 const initialState: AppState = {
   activeTool: "pencil",
@@ -294,6 +316,7 @@ const initialState: AppState = {
     enabled: false,
     fps: 8,
   },
+  cellAnimation: INITIAL_CELL_ANIMATION,
 };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -873,25 +896,39 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_ANIMATION_MODE":
       return { ...state, animationMode: action.payload };
 
+    // Sprite sheet, palette animation and cell animation are mutually
+    // exclusive — turning one on turns the others off.
     case "SET_SPRITESHEET": {
       const next = { ...state.spritesheet, ...action.payload };
-      // Sprite-sheet and palette animation are mutually exclusive — turning
-      // sprite sheet on disables palette animation.
-      const paletteAnimation =
-        next.enabled && state.paletteAnimation.enabled
-          ? { ...state.paletteAnimation, enabled: false }
-          : state.paletteAnimation;
-      return { ...state, spritesheet: next, paletteAnimation };
+      if (!next.enabled) return { ...state, spritesheet: next };
+      return {
+        ...state,
+        spritesheet: next,
+        paletteAnimation: disabled(state.paletteAnimation),
+        cellAnimation: disabled(state.cellAnimation),
+      };
     }
 
     case "SET_PALETTE_ANIMATION": {
       const next = { ...state.paletteAnimation, ...action.payload };
-      // Mutual exclusion with sprite sheet (see SET_SPRITESHEET).
-      const spritesheet =
-        next.enabled && state.spritesheet.enabled
-          ? { ...state.spritesheet, enabled: false }
-          : state.spritesheet;
-      return { ...state, paletteAnimation: next, spritesheet };
+      if (!next.enabled) return { ...state, paletteAnimation: next };
+      return {
+        ...state,
+        paletteAnimation: next,
+        spritesheet: disabled(state.spritesheet),
+        cellAnimation: disabled(state.cellAnimation),
+      };
+    }
+
+    case "SET_CELL_ANIMATION": {
+      const next = { ...state.cellAnimation, ...action.payload };
+      if (!next.enabled) return { ...state, cellAnimation: next };
+      return {
+        ...state,
+        cellAnimation: next,
+        spritesheet: disabled(state.spritesheet),
+        paletteAnimation: disabled(state.paletteAnimation),
+      };
     }
 
     case "UPDATE_SWATCH_GROUP_CYCLE": {
@@ -1068,6 +1105,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         animationMode: false,
         spritesheet: initialState.spritesheet,
         paletteAnimation: initialState.paletteAnimation,
+        cellAnimation: initialState.cellAnimation,
         iccProfile: undefined,
         canvas: {
           ...state.canvas,
@@ -1173,6 +1211,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         animationMode: false,
         spritesheet: initialState.spritesheet,
         paletteAnimation: initialState.paletteAnimation,
+        cellAnimation: initialState.cellAnimation,
         canvas: {
           ...state.canvas,
           width: action.payload.width,
