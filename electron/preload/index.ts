@@ -20,8 +20,16 @@ const api = {
     ipcRenderer.invoke('dialog:saveverve', defaultPath),
   openverveFile: (path: string): Promise<Uint8Array> =>
     ipcRenderer.invoke('file:openverve', path),
-  saveverveFile: (path: string, data: Uint8Array): Promise<void> =>
-    ipcRenderer.invoke('file:saveverve', path, data),
+  /** Streamed `.verve` save: `begin` returns a write id; chunks are
+   *  appended in order; `commit` atomically replaces the target. */
+  saveverveBegin: (path: string): Promise<number> =>
+    ipcRenderer.invoke('file:saveverveBegin', path),
+  saveverveChunk: (id: number, data: Uint8Array): Promise<void> =>
+    ipcRenderer.invoke('file:saveverveChunk', id, data),
+  saveverveCommit: (id: number): Promise<void> =>
+    ipcRenderer.invoke('file:saveverveCommit', id),
+  saveverveAbort: (id: number): Promise<void> =>
+    ipcRenderer.invoke('file:saveverveAbort', id),
   exportBrowse: (ext: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:exportBrowse', ext),
   /** Write an exported image's file bytes. */

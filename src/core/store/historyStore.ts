@@ -11,13 +11,6 @@ export interface HistoryEntry {
    *  with neighbouring entries wherever the layer didn't change (see
    *  tiledSnapshot.ts). Materialize with `materializeLayerPixels`. */
   layerPixels: Map<string, TiledLayerSnapshot>;
-  /**
-   * Per-layer contentVersion at the time of the snapshot. Used by
-   * `useHistory.captureHistory` to share pixel buffer references across
-   * entries when a layer hasn't changed — dramatically reduces per-entry
-   * RAM (one paint stroke on a 10-layer doc clones 1 buffer, not 10).
-   */
-  layerContentVersions?: Map<string, number>;
   /** Per-layer dimensions and canvas-space offset at the time of the snapshot. */
   layerGeometry: Map<
     string,
@@ -28,8 +21,9 @@ export interface HistoryEntry {
       offsetY: number;
     }
   >;
-  /** Baked adjustment mask pixels keyed by adjustment layer ID. */
-  adjustmentMasks: Map<string, Uint8Array>;
+  /** Baked adjustment masks (canvas-sized rgba8) keyed by adjustment layer
+   *  ID, tiled and shared like `layerPixels`. */
+  adjustmentMasks: Map<string, TiledLayerSnapshot>;
   layerState: LayerState[];
   activeLayerId: string | null;
   canvasWidth: number;
@@ -49,70 +43,6 @@ export interface ClearHistoryOptions {
   recaptureSnapshot?: boolean;
 }
 
-function cloneLayerPixels(
-  layerPixels: Map<string, TiledLayerSnapshot>,
-): Map<string, TiledLayerSnapshot> {
-  // Snapshot tiles are immutable, so a clone can share them.
-  return new Map(layerPixels);
-}
-
-function cloneLayerGeometry(
-  layerGeometry: Map<
-    string,
-    {
-      layerWidth: number;
-      layerHeight: number;
-      offsetX: number;
-      offsetY: number;
-    }
-  >,
-): Map<
-  string,
-  { layerWidth: number; layerHeight: number; offsetX: number; offsetY: number }
-> {
-  const cloned = new Map<
-    string,
-    {
-      layerWidth: number;
-      layerHeight: number;
-      offsetX: number;
-      offsetY: number;
-    }
-  >();
-  for (const [layerId, geometry] of layerGeometry)
-    cloned.set(layerId, { ...geometry });
-  return cloned;
-}
-
-function cloneAdjustmentMasks(
-  adjustmentMasks: Map<string, Uint8Array>,
-): Map<string, Uint8Array> {
-  const cloned = new Map<string, Uint8Array>();
-  for (const [layerId, maskPixels] of adjustmentMasks)
-    cloned.set(layerId, new Uint8Array(maskPixels));
-  return cloned;
-}
-
-export function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
-  return {
-    ...entry,
-    layerPixels: cloneLayerPixels(entry.layerPixels),
-    layerGeometry: cloneLayerGeometry(entry.layerGeometry),
-    adjustmentMasks: cloneAdjustmentMasks(entry.adjustmentMasks),
-    layerState: structuredClone(entry.layerState),
-    layerContentVersions: entry.layerContentVersions
-      ? new Map(entry.layerContentVersions)
-      : undefined,
-    swatches: entry.swatches ? [...entry.swatches] : undefined,
-    iccProfile: entry.iccProfile ? new Uint8Array(entry.iccProfile) : undefined,
-    pixelFormat: entry.pixelFormat,
-  };
-}
-
-export function cloneHistoryEntries(entries: HistoryEntry[]): HistoryEntry[] {
-  return entries.map(cloneHistoryEntry);
-}
-
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 const listeners = new Set<() => void>();
@@ -129,13 +59,12 @@ let globalCapBytes = 4 * 1024 * 1024 * 1024;
 /** Unique pixel buffers referenced by `entry` (with their sizes). */
 function entryBuffers(entry: HistoryEntry): Map<ArrayBufferLike, number> {
   const out = new Map<ArrayBufferLike, number>();
-  for (const snap of entry.layerPixels.values()) {
-    for (const tile of snap.tiles) {
-      if (!out.has(tile.buffer)) out.set(tile.buffer, tile.byteLength);
+  for (const snaps of [entry.layerPixels, entry.adjustmentMasks]) {
+    for (const snap of snaps.values()) {
+      for (const tile of snap.tiles) {
+        if (!out.has(tile.buffer)) out.set(tile.buffer, tile.byteLength);
+      }
     }
-  }
-  for (const buf of entry.adjustmentMasks.values()) {
-    if (!out.has(buf.buffer)) out.set(buf.buffer, buf.byteLength);
   }
   return out;
 }
@@ -245,19 +174,15 @@ export class HistoryStore {
     const seen = new Set<ArrayBufferLike>();
     let total = 0;
     for (const e of this.entries) {
-      for (const snap of e.layerPixels.values()) {
-        for (const tile of snap.tiles) {
-          const ab = tile.buffer;
-          if (seen.has(ab)) continue;
-          seen.add(ab);
-          total += tile.byteLength;
+      for (const snaps of [e.layerPixels, e.adjustmentMasks]) {
+        for (const snap of snaps.values()) {
+          for (const tile of snap.tiles) {
+            const ab = tile.buffer;
+            if (seen.has(ab)) continue;
+            seen.add(ab);
+            total += tile.byteLength;
+          }
         }
-      }
-      for (const buf of e.adjustmentMasks.values()) {
-        const ab = buf.buffer;
-        if (seen.has(ab)) continue;
-        seen.add(ab);
-        total += buf.byteLength;
       }
     }
     return total;
@@ -267,7 +192,6 @@ export class HistoryStore {
     e.layerPixels.clear();
     e.layerGeometry.clear();
     e.adjustmentMasks.clear();
-    e.layerContentVersions?.clear();
   }
 
   /**
@@ -422,7 +346,7 @@ export class HistoryStore {
 
   /**
    * Transfer ownership of the current entries out of the store in O(1).
-   * Unlike cloneHistoryEntries, this performs NO allocation — the returned
+   * This performs NO allocation — the returned
    * object owns the arrays. The store is left empty after the call.
    * Use this when switching tabs so the caller can stash the history cheaply.
    */

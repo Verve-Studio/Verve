@@ -12,9 +12,11 @@ import {
 } from "@/core/store/memoryStore";
 import {
   serializeAdjOp,
+  serializeAdjOpStatic,
   computeAdjGroupParamsKey,
+  computeAdjGroupStaticKey,
 } from "../rendering/cacheKeys";
-import { displayStore } from "@/ux/main/Canvas/displayStore";
+import { effectRegistry } from "@/core/effects";
 import { ensureLutOnGpu, sweepIdleLuts } from "@/core/lut/lutGpu";
 import { lutStore } from "@/core/lut/lutStore";
 import { effectiveColorSpace, idtLutIdFor } from "@/core/lut/layerColorSpace";
@@ -25,6 +27,15 @@ import {
 import type { GpuLayer, EffectRenderOp } from "../types";
 import { BLEND_MODE_INDEX } from "../types";
 import { writeUniformBuffer } from "../utils";
+
+/** Usage of every canvas-sized composite target. stableTex shares it because
+ *  it trades places with ping / pong after a full render. */
+const PING_PONG_USAGE =
+  GPUTextureUsage.TEXTURE_BINDING |
+  GPUTextureUsage.COPY_DST |
+  GPUTextureUsage.COPY_SRC |
+  GPUTextureUsage.STORAGE_BINDING |
+  GPUTextureUsage.RENDER_ATTACHMENT;
 
 /** Pooled scratch textures unused for this long are released. */
 const TEMP_TEX_IDLE_MS = 5000;
@@ -141,6 +152,18 @@ export class RenderPlanExecutor {
   // If the next renderPlan() call has an identical fingerprint, the entire
   // frame is skipped (no encoder, no clear, no copy, no composite, no submit).
   lastPlanFp: string | null = null;
+  // Structural fingerprint (everything except pixel-content versions) of the
+  // last rendered frame. The incremental path is only valid when it is
+  // unchanged: an opacity / blend / params change landing in the same frame
+  // as a flush would otherwise only be applied inside the dirty rect.
+  private lastStructFp: string | null = null;
+  // Incremented on every executed (non-noop) screen render. Cache entries
+  // record the serial they were last valid at; a dirty-rect update of a
+  // cached effect output is only correct on top of the previous render's.
+  private renderSerial = 0;
+  // Set when a mid-stroke frame showed a stale or bypassed effect output, so
+  // strokeEnd must recompute it with a full render.
+  private strokeBypassed = false;
 
   // ─── Per-frame dirty tracking ─────────────────────────────────────────────
   // Canvas-space union of regions touched since the last successful render.
@@ -254,12 +277,7 @@ export class RenderPlanExecutor {
     this.identityLutShaperView = args.resources.identityLutShaperView;
     this.lutBlitSampler = args.resources.lutBlitSampler;
 
-    const texUsage =
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.COPY_SRC |
-      GPUTextureUsage.STORAGE_BINDING |
-      GPUTextureUsage.RENDER_ATTACHMENT;
+    const texUsage = PING_PONG_USAGE;
     this.pingTex = this.createPingPongTex(
       this.pixelWidth,
       this.pixelHeight,
@@ -327,9 +345,25 @@ export class RenderPlanExecutor {
     slot.lastUsed = performance.now();
     this.scheduleTempTexTrim();
     // A fresh texture used to be zero-initialised; a pooled one holds the
-    // previous frame's contents.
-    encodeClearTexture(encoder, slot.tex);
+    // previous frame's contents. The incremental path only reads the dirty
+    // rect, so only that needs clearing.
+    const scissor = this.incrementalScissor;
+    if (scissor !== null) this.clearRect(encoder, slot.tex, scissor);
+    else encodeClearTexture(encoder, slot.tex);
     return slot.tex;
+  }
+
+  /** Zero one sub-rect of a canvas-sized texture. */
+  private clearRect(
+    encoder: GPUCommandEncoder,
+    tex: GPUTexture,
+    r: { x: number; y: number; w: number; h: number },
+  ): void {
+    encoder.copyTextureToTexture(
+      { texture: this.zeroTexFor(r.w, r.h) },
+      { texture: tex, origin: { x: r.x, y: r.y } },
+      { width: r.w, height: r.h },
+    );
   }
 
   /** Persistent all-zero texture used as a copy source to clear sub-rects;
@@ -515,16 +549,19 @@ export class RenderPlanExecutor {
   /** Mark the start of a continuous painting stroke. */
   strokeStart(): void {
     this.strokeActive = true;
+    this.strokeBypassed = false;
   }
 
   /** End the stroke and trigger one final render. */
   strokeEnd(): void {
     if (!this.strokeActive) return;
     this.strokeActive = false;
-    // Full composite for the stroke's final frame (not incremental): it
-    // re-applies the effects bypassed mid-stroke and rebuilds stableTex from
-    // scratch, so nothing stroke-related can stay stale on screen.
-    this.invalidateRenderCache();
+    // When a mid-stroke frame bypassed an effect (raw base layer under its
+    // adjustments, stale standalone output), the final frame is a full
+    // composite that re-applies it. Otherwise every frame was already exact
+    // and stableTex is current, so a full recomposite would only cost time.
+    if (this.strokeBypassed) this.invalidateRenderCache();
+    this.strokeBypassed = false;
     this.refreshCallback?.();
   }
 
@@ -581,6 +618,8 @@ export class RenderPlanExecutor {
             )
               continue;
           }
+        } else if (this.adjGroupIncrementalMode(entry) !== null) {
+          continue;
         }
         return false;
       }
@@ -599,27 +638,113 @@ export class RenderPlanExecutor {
         this.appendPlanFp(entry.children, parts);
         if (cached.childFp === parts.join("")) continue;
         if (entry.adjustments.length > 0) return false;
+        // The children are re-encoded under the dirty-rect scissor, so they
+        // must all be renderable incrementally themselves.
+        if (!this.planIsFlatLayersOnly(entry.children)) return false;
         continue;
       }
       if (this.previewMode) continue;
+      if (!entry.visible) continue;
+      if (this.standaloneIncrementalMode(entry as EffectRenderOp) !== null)
+        continue;
       return false;
     }
     return true;
   }
 
+  private static isPerPixel(op: EffectRenderOp): boolean {
+    return effectRegistry.get(op.kind)?.perPixel === true;
+  }
+
+  private static allPerPixel(ops: EffectRenderOp[]): boolean {
+    for (const op of ops) {
+      if (op.visible && !RenderPlanExecutor.isPerPixel(op)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * How the incremental (dirty-rect) path renders an adjustment group, or
+   * null when it can't and the frame must take the full path:
+   *  - `cached`    — the output cache matches every input; composite it.
+   *  - `rescissor` — per-pixel adjustments only, and the cache was exact at
+   *                  the previous render: re-run the chain inside the dirty
+   *                  rect and patch the cache.
+   *  - `throttled` — mid-stroke on the base layer: composite the raw base
+   *                  (the effects are re-applied at stroke end).
+   * Shared by {@link planIsFlatLayersOnly} and {@link encodeSubPlan} so the
+   * two never disagree.
+   */
+  private adjGroupIncrementalMode(
+    entry: Extract<RenderPlanEntry, { kind: "adjustment-group" }>,
+  ): "cached" | "rescissor" | "throttled" | null {
+    const cached = this.cache.adjGroup.get(entry.parentLayerId);
+    if (!cached) return null;
+    const l = entry.baseLayer;
+    const m = entry.baseMask;
+    if (
+      cached.offsetX !== l.offsetX ||
+      cached.offsetY !== l.offsetY ||
+      cached.baseMaskOffsetX !== (m ? m.offsetX : 0) ||
+      cached.baseMaskOffsetY !== (m ? m.offsetY : 0)
+    )
+      return null;
+    const paramsKey = computeAdjGroupParamsKey(entry.adjustments);
+    const sameInputs =
+      cached.paramsKey === paramsKey &&
+      cached.baseMaskVersion === (m ? m.contentVersion : -1);
+    if (sameInputs && cached.baseContentVersion === l.contentVersion)
+      return "cached";
+    if (
+      cached.serial === this.renderSerial - 1 &&
+      RenderPlanExecutor.allPerPixel(entry.adjustments)
+    )
+      return "rescissor";
+    if (sameInputs && this.strokeActive) return "throttled";
+    return null;
+  }
+
+  /**
+   * Incremental-path counterpart of {@link adjGroupIncrementalMode} for a
+   * standalone effect:
+   *  - `rescissor` — per-pixel effect whose cache was exact at the previous
+   *                  render: re-run it inside the dirty rect.
+   *  - `copy`      — mid-stroke with unchanged params: reuse the cached
+   *                  output (exact when nothing below changed, otherwise
+   *                  stale until stroke end).
+   */
+  private standaloneIncrementalMode(
+    op: EffectRenderOp,
+  ): "rescissor" | "copy" | null {
+    const cached = this.cache.standaloneOp.get(op.layerId);
+    if (!cached) return null;
+    if (
+      RenderPlanExecutor.isPerPixel(op) &&
+      cached.serial === this.renderSerial - 1
+    )
+      return "rescissor";
+    if (this.strokeActive && cached.paramsKey === serializeAdjOp(op))
+      return "copy";
+    return null;
+  }
+
   /** Walk the plan tree and produce a fingerprint string covering everything
    *  that affects the rendered output. Mirrors the inputFp accumulation in
    *  encodeSubPlan plus the inputs touched by renderPlan(). */
-  computePlanFingerprint(plan: RenderPlanEntry[]): string {
+  computePlanFingerprint(
+    plan: RenderPlanEntry[],
+    structural = false,
+  ): string {
     const parts: string[] = [
       `W:${this.pixelWidth}`,
       `H:${this.pixelHeight}`,
       `F:${this.pixelFormat}`,
+      // Display settings (exposure, tone mapping, LUTs) are applied by the
+      // presenter's blit, not the composite: changing them re-blits via
+      // markViewportDirty instead of recompositing every layer.
       `P:${this.previewMode ? 1 : 0}`,
-      `EV:${displayStore.exposureEV}`,
-      `OP:${displayStore.toneMappingOperator}`,
     ];
-    this.appendPlanFp(plan, parts);
+    this.appendPlanFp(plan, parts, structural);
     return parts.join("");
   }
 
@@ -627,11 +752,25 @@ export class RenderPlanExecutor {
    *  fingerprint chunk into `out`. Mirrors the cache-key shapes that
    *  {@link encodeSubPlan} accumulates so up-front cache lookups computed by
    *  `planIsFlatLayersOnly` match what the encoder will produce. */
-  appendPlanFp(plan: RenderPlanEntry[], out: string[]): void {
+  /** With `structural`, pixel-content versions and layer offsets (which the
+   *  dirty rect covers, via flushes and {@link detectDragDirty}) are left
+   *  out, as are op params that only differ in selection-mask content. */
+  appendPlanFp(
+    plan: RenderPlanEntry[],
+    out: string[],
+    structural = false,
+  ): void {
     for (const entry of plan) {
       if (entry.kind === "layer") {
         if (this.isHidden(entry.layer) || entry.layer.opacity === 0) continue;
         const l = entry.layer;
+        if (structural) {
+          const m = entry.mask;
+          out.push(
+            `|L:${l.id}:${l.opacity}:${l.blendMode}:CS${l.colorSpace}${m ? `:M${m.id}:${m.offsetX - l.offsetX}:${m.offsetY - l.offsetY}` : ""}`,
+          );
+          continue;
+        }
         const maskPart = entry.mask
           ? `:M${entry.mask.contentVersion}:${entry.mask.offsetX}:${entry.mask.offsetY}`
           : "";
@@ -642,13 +781,13 @@ export class RenderPlanExecutor {
         if (!entry.visible) continue;
         if (entry.children.length === 0) continue;
         if (entry.blendMode === "pass-through") {
-          this.appendPlanFp(entry.children, out);
+          this.appendPlanFp(entry.children, out, structural);
           out.push(`|GRP-end:${entry.groupId}`);
         } else {
           out.push(
             `|GRP:${entry.groupId}:${entry.opacity}:${entry.blendMode}:[`,
           );
-          this.appendPlanFp(entry.children, out);
+          this.appendPlanFp(entry.children, out, structural);
           out.push(`]`);
         }
       } else if (entry.kind === "composite-layer") {
@@ -657,13 +796,22 @@ export class RenderPlanExecutor {
           out.push(`|LCL:${entry.layerId}:${entry.opacity}:${entry.blendMode}`);
           continue;
         }
-        const adjKey = computeAdjGroupParamsKey(entry.adjustments);
+        const adjKey = structural
+          ? computeAdjGroupStaticKey(entry.adjustments)
+          : computeAdjGroupParamsKey(entry.adjustments);
         out.push(`|CL:${entry.layerId}:${entry.opacity}:${entry.blendMode}:[`);
-        this.appendPlanFp(entry.children, out);
+        this.appendPlanFp(entry.children, out, structural);
         out.push(`]:${adjKey}`);
       } else if (entry.kind === "adjustment-group") {
         if (this.isHidden(entry.baseLayer) || entry.baseLayer.opacity === 0) continue;
         const l = entry.baseLayer;
+        if (structural) {
+          const m = entry.baseMask;
+          out.push(
+            `|AG:${entry.parentLayerId}:${l.opacity}:${l.blendMode}:${m ? `M${m.id}:${m.offsetX - l.offsetX}:${m.offsetY - l.offsetY}` : "-"}:${computeAdjGroupStaticKey(entry.adjustments)}`,
+          );
+          continue;
+        }
         const baseMaskVersion = entry.baseMask
           ? entry.baseMask.contentVersion
           : -1;
@@ -679,7 +827,9 @@ export class RenderPlanExecutor {
           out.push(`|SKIP:${entry.layerId}`);
           continue;
         }
-        out.push(`|SO:${entry.layerId}:${serializeAdjOp(entry)}`);
+        out.push(
+          `|SO:${entry.layerId}:${structural ? serializeAdjOpStatic(entry) : serializeAdjOp(entry)}`,
+        );
       }
     }
   }
@@ -781,8 +931,14 @@ export class RenderPlanExecutor {
     encoder: GPUCommandEncoder,
     entry: Extract<RenderPlanEntry, { kind: "adjustment-group" }>,
   ): GPUTexture {
-    encodeClearTexture(encoder, this.groupPingTex);
-    encodeClearTexture(encoder, this.groupPongTex);
+    const scissor = this.incrementalScissor;
+    if (scissor !== null) {
+      this.clearRect(encoder, this.groupPingTex, scissor);
+      this.clearRect(encoder, this.groupPongTex, scissor);
+    } else {
+      encodeClearTexture(encoder, this.groupPingTex);
+      encodeClearTexture(encoder, this.groupPongTex);
+    }
 
     let srcTex = this.groupPongTex;
     let dstTex = this.groupPingTex;
@@ -802,10 +958,18 @@ export class RenderPlanExecutor {
     );
     [srcTex, dstTex] = [dstTex, srcTex];
 
-    for (const op of entry.adjustments) {
-      if (!op.visible) continue;
-      this.adjEncoder.encode(encoder, op, srcTex, dstTex, this.internalFormat);
-      [srcTex, dstTex] = [dstTex, srcTex];
+    // Under the incremental scissor only per-pixel chains get here (see
+    // adjGroupIncrementalMode), so their passes can be clipped to the rect.
+    const runtime = this.adjEncoder.runtime;
+    runtime.scissor = scissor;
+    try {
+      for (const op of entry.adjustments) {
+        if (!op.visible) continue;
+        this.adjEncoder.encode(encoder, op, srcTex, dstTex, this.internalFormat);
+        [srcTex, dstTex] = [dstTex, srcTex];
+      }
+    } finally {
+      runtime.scissor = null;
     }
 
     return srcTex;
@@ -1000,7 +1164,9 @@ export class RenderPlanExecutor {
       this.compositeBufferIndex = 0;
     this.tempTexUsed = 0;
       this.lastPlanFp = null;
+      this.lastStructFp = null;
       this.hasStableTex = false;
+      this.adjEncoder.runtime.scissor = null;
       // Nothing from this frame was submitted, so its queued temporaries can
       // be released right away.
       this.flushPendingDestroys();
@@ -1087,18 +1253,20 @@ export class RenderPlanExecutor {
       return { kind: "noop" };
     }
 
+    this.renderSerial++;
     this.detectDragDirty(plan);
 
     const dirty = this.frameDirtyCanvasRect;
-    const flatPlan = this.planIsFlatLayersOnly(plan);
+    const structFp = this.computePlanFingerprint(plan, true);
     const canIncremental =
       this.hasStableTex &&
       this.stableTex !== null &&
       dirty !== null &&
       dirty.w > 0 &&
       dirty.h > 0 &&
-      flatPlan &&
-      dirty.w * dirty.h < w * h * 0.6;
+      dirty.w * dirty.h < w * h * 0.6 &&
+      structFp === this.lastStructFp &&
+      this.planIsFlatLayersOnly(plan);
     // Strokes use the incremental path too. It used to be disabled for the
     // whole stroke (a full re-composite + full-canvas stableTex copy every
     // frame) to hide dirty-rect leaks: stamp bboxes that missed rotated /
@@ -1154,22 +1322,22 @@ export class RenderPlanExecutor {
       const finalTex = this.encodePlanToComposite(encoder, plan);
       this.adjGroupCacheEnabled = false;
 
-      if (this.stableTex === null) {
-        this.stableTex = this.createPingPongTex(
-          w,
-          h,
-          GPUTextureUsage.TEXTURE_BINDING |
-            GPUTextureUsage.COPY_DST |
-            GPUTextureUsage.COPY_SRC |
-            GPUTextureUsage.RENDER_ATTACHMENT,
+      // Keep the finished composite as stableTex by swapping it with the
+      // ping-pong slot that produced it, instead of a full-canvas copy.
+      if (finalTex === this.pingTex || finalTex === this.pongTex) {
+        const spare =
+          this.stableTex ?? this.createPingPongTex(w, h, PING_PONG_USAGE);
+        if (finalTex === this.pingTex) this.pingTex = spare;
+        else this.pongTex = spare;
+        this.stableTex = finalTex;
+      } else {
+        this.stableTex ??= this.createPingPongTex(w, h, PING_PONG_USAGE);
+        encoder.copyTextureToTexture(
+          { texture: finalTex },
+          { texture: this.stableTex },
+          { width: w, height: h },
         );
       }
-      const stable = this.stableTex;
-      encoder.copyTextureToTexture(
-        { texture: finalTex },
-        { texture: stable },
-        { width: w, height: h },
-      );
 
       const screenView = this.gpu.context.getCurrentTexture().createView();
       this.presenter.presentToScreen(encoder, finalTex, screenView);
@@ -1182,6 +1350,7 @@ export class RenderPlanExecutor {
     }
 
     this.lastPlanFp = planFp;
+    this.lastStructFp = structFp;
     this.frameDirtyCanvasRect = null;
     this.updateLastRenderedOffsets(plan);
     this.presenter.viewportDirty = false;
@@ -1582,8 +1751,30 @@ export class RenderPlanExecutor {
             cached!.baseContentVersion === entry.baseLayer.contentVersion;
 
           if (fullMatch) {
+            cached!.serial = this.renderSerial;
             groupResult = cached!.tex;
+          } else if (
+            this.incrementalScissor !== null &&
+            this.adjGroupIncrementalMode(entry) === "rescissor"
+          ) {
+            // Per-pixel chain on a cache that was exact last frame: only the
+            // dirty rect can differ, so recompute and patch just that.
+            const dirty = this.incrementalScissor;
+            const result = this.encodeAdjustmentGroup(encoder, entry);
+            const c = cached!;
+            encoder.copyTextureToTexture(
+              { texture: result, origin: { x: dirty.x, y: dirty.y } },
+              { texture: c.tex, origin: { x: dirty.x, y: dirty.y } },
+              { width: dirty.w, height: dirty.h },
+            );
+            c.baseContentVersion = entry.baseLayer.contentVersion;
+            c.baseMaskVersion = baseMaskVersion;
+            c.paramsKey = paramsKey;
+            c.lastEncodeTime = performance.now();
+            c.serial = this.renderSerial;
+            groupResult = c.tex;
           } else if (throttledMatch) {
+            this.strokeBypassed = true;
             this.encodeCompositeLayer(
               encoder,
               entry.baseLayer,
@@ -1594,7 +1785,9 @@ export class RenderPlanExecutor {
             );
             [src, dst] = [dst, src];
             srcIsEmpty = false;
-            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${baseMaskOx}:${baseMaskOy}:${paramsKey}`;
+            // `~T` marks the accumulated input as stale, so no cache further
+            // up the plan records an output computed from it as exact.
+            inputFp += `|AG:${entry.parentLayerId}:${entry.baseLayer.contentVersion}:${entry.baseLayer.opacity}:${entry.baseLayer.blendMode}:${entry.baseLayer.offsetX}:${entry.baseLayer.offsetY}:M${baseMaskVersion}:${baseMaskOx}:${baseMaskOy}:${paramsKey}~T`;
             continue;
           } else if (moveOnlyMatch) {
             const dx = entry.baseLayer.offsetX - cached!.offsetX;
@@ -1644,6 +1837,7 @@ export class RenderPlanExecutor {
               paramsKey,
               tex: cacheTex,
               lastEncodeTime: performance.now(),
+              serial: this.renderSerial,
             });
 
             groupResult = result;
@@ -1702,15 +1896,55 @@ export class RenderPlanExecutor {
             !!cached &&
             cached.paramsKey === opParamsKey &&
             this.strokeActive;
-          if (fullMatch || throttledMatch) {
+          const scissor = this.incrementalScissor;
+          if (
+            !fullMatch &&
+            scissor !== null &&
+            this.standaloneIncrementalMode(op) === "rescissor"
+          ) {
+            // Per-pixel effect on a cache that was exact last frame: re-run
+            // it inside the dirty rect and patch the cache there.
+            const runtime = this.adjEncoder.runtime;
+            runtime.scissor = scissor;
+            try {
+              this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat);
+            } finally {
+              runtime.scissor = null;
+            }
+            [src, dst] = [dst, src];
+            srcIsEmpty = false;
+            const c = cached!;
             encoder.copyTextureToTexture(
-              { texture: cached!.tex },
-              { texture: dst },
-              { width: this.pixelWidth, height: this.pixelHeight },
+              { texture: src, origin: { x: scissor.x, y: scissor.y } },
+              { texture: c.tex, origin: { x: scissor.x, y: scissor.y } },
+              { width: scissor.w, height: scissor.h },
+            );
+            c.inputFp = inputFp;
+            c.paramsKey = opParamsKey;
+            c.lastEncodeTime = performance.now();
+            c.serial = this.renderSerial;
+            inputFp += `|SO:${op.layerId}:${opParamsKey}`;
+            continue;
+          }
+          if (fullMatch || throttledMatch) {
+            if (fullMatch) cached!.serial = this.renderSerial;
+            else this.strokeBypassed = true;
+            // The incremental path only consumes the dirty rect.
+            const r = scissor ?? {
+              x: 0,
+              y: 0,
+              w: this.pixelWidth,
+              h: this.pixelHeight,
+            };
+            encoder.copyTextureToTexture(
+              { texture: cached!.tex, origin: { x: r.x, y: r.y } },
+              { texture: dst, origin: { x: r.x, y: r.y } },
+              { width: r.w, height: r.h },
             );
             [src, dst] = [dst, src];
             srcIsEmpty = false;
-            inputFp += `|SO:${op.layerId}:${opParamsKey}`;
+            // A throttled (stale) output is marked `~T`; see the AG branch.
+            inputFp += `|SO:${op.layerId}:${opParamsKey}${fullMatch ? "" : "~T"}`;
             continue;
           }
           this.adjEncoder.encode(encoder, op, src, dst, this.internalFormat);
@@ -1738,6 +1972,7 @@ export class RenderPlanExecutor {
             paramsKey: opParamsKey,
             tex: cacheTex,
             lastEncodeTime: performance.now(),
+            serial: this.renderSerial,
           });
           inputFp += `|SO:${op.layerId}:${opParamsKey}`;
         } else {

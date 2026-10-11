@@ -33,6 +33,7 @@ export const HueSaturationEffect: IPipelineEffect<
   id: "hue-saturation",
   label: "Hue/Saturation…",
   menu: { root: "adjustments", submenu: "adj-color" },
+  perPixel: true,
   defaultParams: { hue: 0, saturation: 0, lightness: 0 },
   paramFields: [
     numberField("hue", "Hue", { min: -180, max: 180, int: true }),

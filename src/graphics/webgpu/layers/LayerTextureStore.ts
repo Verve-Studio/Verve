@@ -4,6 +4,12 @@ import type { PixelFormat, RGBAColor } from "@/types";
 import { createGpuTexture } from "../utils";
 import { destroyTrackedTexture } from "@/core/store/memoryStore";
 import { getStrategy } from "./formats";
+import {
+  SNAP_TILE,
+  snapTileCount,
+  snapshotMatches,
+  type TiledLayerSnapshot,
+} from "@/core/store/tiledSnapshot";
 
 /** Layer-local dirty rectangle. */
 export interface LayerDirtyRect {
@@ -22,19 +28,29 @@ interface Entry {
   width: number;
   height: number;
   format: PixelFormat;
-  /** Layer-local region uploaded since the last history capture (union of
-   *  flushed rects) — lets history copy only the tiles that changed. */
-  histDirty: LayerDirtyRect | null;
+  /** History snapshot the layer's pixels equal outside the flagged tiles
+   *  (set by history capture / restore via {@link setHistoryBase}). */
+  histBase: TiledLayerSnapshot | null;
+  /** Per SNAP_TILE tile (row-major, sized for width × height): written since
+   *  `histBase` was set — lets history copy only the tiles that changed,
+   *  not the bounding box of a stroke. */
+  histTiles: Uint8Array;
+  /** Whether any `histTiles` flag is set. */
+  histAny: boolean;
   /** Something replaced the layer's contents wholesale (new layer, grow,
-   *  replaced texture): the next history capture must copy everything. */
+   *  replaced texture): `histBase` no longer describes the layer. */
   histAll: boolean;
 }
 
-/** What changed in a layer since the last history capture. */
+/** What changed in a layer since its history base was set. */
 export type LayerHistoryChange =
-  | { kind: "none" }
-  | { kind: "rect"; rect: LayerDirtyRect }
+  | { kind: "none"; base: TiledLayerSnapshot }
+  | { kind: "tiles"; base: TiledLayerSnapshot; tiles: Uint8Array }
   | { kind: "all" };
+
+function newHistTiles(width: number, height: number): Uint8Array {
+  return new Uint8Array(snapTileCount(width) * snapTileCount(height));
+}
 
 /**
  * Content versions are drawn from one process-wide counter instead of a
@@ -87,7 +103,9 @@ export class LayerTextureStore {
       width: layer.layerWidth,
       height: layer.layerHeight,
       format: layer.format,
-      histDirty: null,
+      histBase: null,
+      histTiles: newHistTiles(layer.layerWidth, layer.layerHeight),
+      histAny: false,
       histAll: true,
     });
     layer.texture = texture;
@@ -126,7 +144,12 @@ export class LayerTextureStore {
   bumpVersion(layerId: string): number {
     const version = nextVersion();
     const e = this.entries.get(layerId);
-    if (e) e.version = version;
+    if (e) {
+      e.version = version;
+      // A new version without a flushed rect means the contents changed in a
+      // way history can't localise.
+      e.histAll = true;
+    }
     return version;
   }
 
@@ -162,21 +185,56 @@ export class LayerTextureStore {
   }
 
   /**
-   * What changed in the layer since the last call (the last history
-   * capture), then reset. Unknown layers report "all".
+   * What changed in the layer since its history base was set, then reset
+   * the tracking. Unknown layers, layers without a base and layers replaced
+   * wholesale report "all". The caller must follow up with
+   * {@link setHistoryBase} (the snapshot it captured or restored, or null).
    */
   takeHistoryChange(layerId: string): LayerHistoryChange {
     const e = this.entries.get(layerId);
     if (!e) return { kind: "all" };
     // Marked but not yet uploaded changes are in `layer.data` too.
-    if (e.dirty) unionHist(e, e.dirty);
+    if (e.dirty) markHistRect(e, e.dirty);
+    const base = e.histBase;
     let change: LayerHistoryChange;
-    if (e.histAll) change = { kind: "all" };
-    else if (e.histDirty) change = { kind: "rect", rect: e.histDirty };
-    else change = { kind: "none" };
+    if (
+      e.histAll ||
+      !snapshotMatches(
+        base,
+        e.width,
+        e.height,
+        e.format === "indexed8" ? 1 : 4,
+        e.format === "rgba32f",
+      )
+    ) {
+      change = { kind: "all" };
+    } else if (e.histAny) {
+      change = { kind: "tiles", base, tiles: e.histTiles };
+      e.histTiles = newHistTiles(e.width, e.height);
+    } else {
+      change = { kind: "none", base };
+    }
     e.histAll = false;
-    e.histDirty = null;
+    e.histAny = false;
     return change;
+  }
+
+  /**
+   * Record that the layer's pixels now equal `base` exactly (history just
+   * captured or restored it) and clear the change tracking. `null` forgets
+   * the base, so the next {@link takeHistoryChange} reports "all".
+   */
+  setHistoryBase(layerId: string, base: TiledLayerSnapshot | null): void {
+    const e = this.entries.get(layerId);
+    if (!e) return;
+    e.histBase = base;
+    e.histAll = false;
+    if (e.histAny) {
+      e.histTiles.fill(0);
+      e.histAny = false;
+    }
+    // Still-pending marked rects are re-flagged when they're flushed —
+    // redundant for a capture (already in `base`), harmless either way.
   }
 
   /** Clear the dirty region (called after upload). */
@@ -217,7 +275,7 @@ export class LayerTextureStore {
       const rect = e.dirty;
       e.dirty = null;
       strategy.uploadPatch(this.device, e.texture, layer, rect, palette);
-      unionHist(e, rect);
+      markHistRect(e, rect);
       return {
         canvasX: layer.offsetX + rect.lx,
         canvasY: layer.offsetY + rect.ly,
@@ -227,7 +285,7 @@ export class LayerTextureStore {
     }
     e.dirty = null;
     strategy.uploadFull(this.device, e.texture, layer, palette);
-    unionHist(e, { lx: 0, ly: 0, rx: layer.layerWidth, ry: layer.layerHeight });
+    markHistRect(e, { lx: 0, ly: 0, rx: layer.layerWidth, ry: layer.layerHeight });
     return {
       canvasX: layer.offsetX,
       canvasY: layer.offsetY,
@@ -260,7 +318,9 @@ export class LayerTextureStore {
       e.height = newHeight;
       e.format = newFormat;
       e.histAll = true;
-      e.histDirty = null;
+      e.histBase = null;
+      e.histTiles = newHistTiles(newWidth, newHeight);
+      e.histAny = false;
     } else {
       this.entries.set(layer.id, {
         texture: newTexture,
@@ -269,7 +329,9 @@ export class LayerTextureStore {
         width: newWidth,
         height: newHeight,
         format: newFormat,
-        histDirty: null,
+        histBase: null,
+        histTiles: newHistTiles(newWidth, newHeight),
+        histAny: false,
         histAll: true,
       });
     }
@@ -277,14 +339,21 @@ export class LayerTextureStore {
   }
 }
 
-function unionHist(e: Entry, r: LayerDirtyRect): void {
-  const h = e.histDirty;
-  if (!h) {
-    e.histDirty = { lx: r.lx, ly: r.ly, rx: r.rx, ry: r.ry };
-    return;
+/** Flag the SNAP_TILE tiles a layer-local rect touches as history-dirty. */
+function markHistRect(e: Entry, r: LayerDirtyRect): void {
+  const lx = Math.max(0, r.lx);
+  const ly = Math.max(0, r.ly);
+  const rx = Math.min(e.width, r.rx);
+  const ry = Math.min(e.height, r.ry);
+  if (rx <= lx || ry <= ly) return;
+  const tilesX = snapTileCount(e.width);
+  const tx0 = Math.floor(lx / SNAP_TILE);
+  const ty0 = Math.floor(ly / SNAP_TILE);
+  const tx1 = Math.floor((rx - 1) / SNAP_TILE);
+  const ty1 = Math.floor((ry - 1) / SNAP_TILE);
+  const tiles = e.histTiles;
+  for (let ty = ty0; ty <= ty1; ty++) {
+    tiles.fill(1, ty * tilesX + tx0, ty * tilesX + tx1 + 1);
   }
-  if (r.lx < h.lx) h.lx = r.lx;
-  if (r.ly < h.ly) h.ly = r.ly;
-  if (r.rx > h.rx) h.rx = r.rx;
-  if (r.ry > h.ry) h.ry = r.ry;
+  e.histAny = true;
 }

@@ -67,6 +67,7 @@ export const VignetteEffect: IPipelineEffect<
   id: "vignette",
   label: "Vignette…",
   menu: { root: "effects", submenu: "fx-lenseffects" },
+  perPixel: true,
   defaultParams: {
     shape: "ellipse",
     spread: 0.55,

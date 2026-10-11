@@ -64,6 +64,7 @@ export const ColorGradingEffect: IPipelineEffect<
   id: "color-grading",
   label: "Color Grading…",
   menu: { root: "adjustments", submenu: "adj-style" },
+  perPixel: true,
   defaultParams: {
     lift: { r: 0, g: 0, b: 0, master: 0 },
     gamma: { r: 0, g: 0, b: 0, master: 0 },

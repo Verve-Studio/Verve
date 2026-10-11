@@ -6,6 +6,7 @@ import {
   type LayerHistoryChange,
 } from "../layers/LayerTextureStore";
 import { getStrategy } from "../layers/formats";
+import type { TiledLayerSnapshot } from "@/core/store/tiledSnapshot";
 import { RenderCache } from "../frame/RenderCache";
 import { DisplayPresenter } from "../frame/DisplayPresenter";
 import { RenderPlanExecutor, type RenderPlanResult } from "../frame/RenderPlanExecutor";
@@ -49,25 +50,69 @@ function pinLayerToWasm(layer: GpuLayer): void {
   const m = getPixelOpsSync();
   if (!m) return;
   const src = layer.data;
-  if (layer.format === "rgba32f") {
-    const f32 = src as Float32Array;
-    const got = allocWasmF32(m, f32.length, (newView) => {
-      layer.data = newView;
-    });
-    if (!got) return;
-    got.view.set(f32);
-    layer.data = got.view;
-    layer.wasmPtr = got.ptr;
-  } else {
-    const u8 = src as Uint8Array;
-    const got = allocWasmU8(m, u8.length, (newView) => {
-      layer.data = newView;
-    });
-    if (!got) return;
-    got.view.set(u8);
-    layer.data = got.view;
-    layer.wasmPtr = got.ptr;
-  }
+  // A source that is itself a heap view is detached if the `_malloc` below
+  // grows memory: remember its offset and copy within the heap instead.
+  const heapOff = src.buffer === m.HEAPU8.buffer ? src.byteOffset : -1;
+  const byteLen = src.byteLength;
+  const got = allocLayerInWasm(layer, layer.format, src.length);
+  if (!got) return;
+  if (heapOff >= 0) m.HEAPU8.copyWithin(got.ptr, heapOff, heapOff + byteLen);
+  else got.view.set(src as Uint8Array & Float32Array);
+  layer.data = got.view;
+  layer.wasmPtr = got.ptr;
+}
+
+/**
+ * Allocate `length` elements (bytes, or floats for rgba32f) for `layer` in
+ * the WASM heap. The contents are *uninitialised* (`_malloc` recycles freed
+ * memory). The growth-refresh callback re-binds `layer.data` only once
+ * `layer.wasmPtr` names this allocation, so a buffer that is still being
+ * filled (grow reblit) never replaces the layer's current view early; the
+ * caller must adopt it without an intervening `_malloc`. Returns null when
+ * the module isn't loaded or the heap / memory cap refuses.
+ */
+function allocLayerInWasm(
+  layer: GpuLayer,
+  format: PixelFormat,
+  length: number,
+): { ptr: number; view: Uint8Array | Float32Array } | null {
+  const m = getPixelOpsSync();
+  if (!m) return null;
+  let ptr = -1;
+  const rebind = (view: Uint8Array | Float32Array): void => {
+    if (layer.wasmPtr === ptr) layer.data = view;
+  };
+  const got =
+    format === "rgba32f"
+      ? allocWasmF32(m, length, rebind)
+      : allocWasmU8(m, length, rebind);
+  if (!got) return null;
+  ptr = got.ptr;
+  return got;
+}
+
+/**
+ * Fresh, cleared pixel storage for a `w × h` layer: directly in the WASM
+ * heap when possible (one allocation — no zero-filled JS twin that is then
+ * copied in and left for the GC), else a JS-heap buffer from the format
+ * strategy. `ptr` is the heap pointer to store in `layer.wasmPtr` when the
+ * caller adopts `data`.
+ */
+function allocLayerStorage(
+  layer: GpuLayer,
+  format: PixelFormat,
+  w: number,
+  h: number,
+): { data: Uint8Array | Float32Array; ptr: number | undefined } {
+  const got = allocLayerInWasm(
+    layer,
+    format,
+    w * h * (format === "indexed8" ? 1 : 4),
+  );
+  if (!got) return { data: getStrategy(format).allocateBuffer(w, h), ptr: undefined };
+  // Same initial contents as the strategy's buffer: transparent.
+  got.view.fill(format === "indexed8" ? 255 : 0);
+  return { data: got.view, ptr: got.ptr };
 }
 
 /** Release a layer's WASM-heap allocation if it was pinned. */
@@ -400,7 +445,7 @@ export class WebGPURenderer {
       id,
       name,
       texture: null as unknown as GPUTexture, // overwritten by register()
-      data: getStrategy(format).allocateBuffer(lw, lh),
+      data: null as unknown as Uint8Array, // set just below
       format,
       layerWidth: lw,
       layerHeight: lh,
@@ -412,10 +457,12 @@ export class WebGPURenderer {
       contentVersion: 0,
       colorSpace: "auto",
     };
-    // Promote layer storage to the WASM heap when the module is loaded.
-    // Lets the brush kernel (and any future per-pixel kernel) read/write
-    // the layer in-place — no slice marshalling per stamp.
-    pinLayerToWasm(layer);
+    // Layer storage lives in the WASM heap when the module is loaded, so
+    // the brush kernel (and any per-pixel kernel) reads/writes the layer
+    // in place — no slice marshalling per stamp.
+    const storage = allocLayerStorage(layer, format, lw, lh);
+    layer.data = storage.data;
+    layer.wasmPtr = storage.ptr;
     this.layerTextures.register(layer);
     this.liveLayers.add(layer);
     return layer;
@@ -483,6 +530,14 @@ export class WebGPURenderer {
     return this.layerTextures.takeHistoryChange(layer.id);
   }
 
+  /** Record the history snapshot the layer's pixels now equal (or null). */
+  setLayerHistoryBase(
+    layer: GpuLayer,
+    base: TiledLayerSnapshot | null,
+  ): void {
+    this.layerTextures.setHistoryBase(layer.id, base);
+  }
+
   /** Whether the layer has CPU-side changes not yet uploaded to its texture. */
   hasPendingUpload(layer: GpuLayer): boolean {
     return this.layerTextures.getDirty(layer.id) !== null;
@@ -516,6 +571,9 @@ export class WebGPURenderer {
     );
     // Re-pin to WASM heap so the new buffer is in shared memory too
     // (the brush kernel checks `wasmPtr` to decide on the zero-copy path).
+    // The old allocation is freed first so the peak is `newData` + its heap
+    // copy. `newData` is not referenced afterwards (the colour-mode remount
+    // reuses it as its hydration buffer instead of copying the layer out).
     unpinLayerFromWasm(layer);
     layer.data = newData;
     layer.format = newFormat;
@@ -656,8 +714,19 @@ export class WebGPURenderer {
     const copyY = layer.offsetY - newY;
     const strategy = getStrategy(layer.format);
 
-    const newData = strategy.allocateBuffer(newW, newH);
-    strategy.reblitForGrow(layer, newData, newW, copyX, copyY);
+    // Allocate the grown buffer directly in the WASM heap (when possible)
+    // and reblit the old pixels into it, then free the old allocation: peak
+    // is old + new, not old + new JS + new WASM. No `_malloc` may run
+    // between the allocation and adopting it below (see allocLayerInWasm).
+    const grown = allocLayerStorage(layer, layer.format, newW, newH);
+    strategy.reblitForGrow(layer, grown.data, newW, copyX, copyY);
+    unpinLayerFromWasm(layer);
+    layer.data = grown.data;
+    layer.wasmPtr = grown.ptr;
+    layer.layerWidth = newW;
+    layer.layerHeight = newH;
+    layer.offsetX = newX;
+    layer.offsetY = newY;
 
     const newTex = createGpuTexture(
       this.device,
@@ -666,18 +735,7 @@ export class WebGPURenderer {
       null,
       strategy.gpuTextureFormat,
     );
-    strategy.uploadAfterGrow(this.device, newTex, newW, newH, newData);
-
-    // Grow swaps the entire pixel buffer; re-pin the new one to WASM heap
-    // so kernel zero-copy stays available after the layer extends past
-    // its previous bounds (common during long brush strokes).
-    unpinLayerFromWasm(layer);
-    layer.data = newData;
-    layer.layerWidth = newW;
-    layer.layerHeight = newH;
-    layer.offsetX = newX;
-    layer.offsetY = newY;
-    pinLayerToWasm(layer);
+    strategy.uploadAfterGrow(this.device, newTex, newW, newH, layer.data);
     // rgba8 / rgba32f uploaded the grown buffer above (uploadAfterGrow);
     // indexed8 skips that upload and still needs the full flush.
     this.layerTextures.replaceTexture(

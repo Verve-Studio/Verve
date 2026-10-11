@@ -23,6 +23,14 @@ function samePalette(
   return true;
 }
 
+// Reused patch-expansion scratch (was a fresh w*h*4 array per flush, i.e.
+// per pencil move) plus a packed-RGBA LUT for the palette (little-endian
+// u32 = r | g<<8 | b<<16 | a<<24; out-of-range indices stay 0 = transparent).
+let patchScratch = new Uint32Array(0);
+const paletteLut = new Uint32Array(256);
+/** Scratch above this size is released after the upload. */
+const PATCH_SCRATCH_KEEP_PX = 16 * 1024 * 1024;
+
 /**
  * Indexed8 stores 1 byte/pixel: a palette index (0–254) or the transparent
  * sentinel (255). The GPU side is always rgba8unorm — uploads expand indices
@@ -84,27 +92,34 @@ export const Indexed8Strategy: PixelFormatStrategy = {
     const h = rect.ry - rect.ly;
     if (w <= 0 || h <= 0) return;
     const indices = layer.data as Uint8Array;
-    const out = new Uint8Array(w * h * 4);
+    const n = Math.min(palette.length, 256);
+    for (let i = 0; i < n; i++) {
+      const c = palette[i];
+      paletteLut[i] =
+        ((c.r & 0xff) | ((c.g & 0xff) << 8) | ((c.b & 0xff) << 16) | ((c.a & 0xff) << 24)) >>> 0;
+    }
+    paletteLut.fill(0, n);
+    const px = w * h;
+    if (patchScratch.length < px) {
+      let cap = patchScratch.length || 16384;
+      while (cap < px) cap *= 2;
+      patchScratch = new Uint32Array(cap);
+    }
+    const out = patchScratch;
     for (let y = 0; y < h; y++) {
       let src = (rect.ly + y) * layer.layerWidth + rect.lx;
-      let dst = y * w * 4;
-      for (let x = 0; x < w; x++, src++, dst += 4) {
-        const idx = indices[src];
-        if (idx < palette.length) {
-          const col = palette[idx];
-          out[dst] = col.r;
-          out[dst + 1] = col.g;
-          out[dst + 2] = col.b;
-          out[dst + 3] = col.a;
-        }
-      }
+      let dst = y * w;
+      const end = dst + w;
+      while (dst < end) out[dst++] = paletteLut[indices[src++]];
     }
     device.queue.writeTexture(
       { texture, origin: { x: rect.lx, y: rect.ly } },
-      out,
+      out as Uint32Array<ArrayBuffer>,
       { bytesPerRow: w * 4, rowsPerImage: h },
       { width: w, height: h },
     );
+    // writeTexture copies synchronously: a huge scratch can go right away.
+    if (patchScratch.length > PATCH_SCRATCH_KEEP_PX) patchScratch = new Uint32Array(0);
   },
 
   reblitForGrow(src: GpuLayer, dstBuffer, dstWidth, copyX, copyY) {

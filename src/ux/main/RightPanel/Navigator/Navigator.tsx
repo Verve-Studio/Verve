@@ -74,61 +74,98 @@ export function Navigator(): React.JSX.Element {
   }, [thumbnailCanvasRef, bufW, bufH]);
 
   // ─── Viewport rect via bounding-rect intersection ────────────────
-  const getViewportRect = useCallback((): React.CSSProperties => {
-    const canvas = canvasElRef.current;
-    const container = document.querySelector<HTMLElement>(
-      "[data-active-viewport]",
-    );
-    if (!canvas || !container) return { display: "none" };
+  const getViewportRect = useCallback(
+    (
+      canvas: HTMLElement | null,
+      container: HTMLElement | null,
+    ): React.CSSProperties => {
+      if (!canvas || !container) return { display: "none" };
 
-    const cr = canvas.getBoundingClientRect(); // canvas position on screen
-    const vr = container.getBoundingClientRect(); // scroll container position on screen
+      const cr = canvas.getBoundingClientRect(); // canvas position on screen
+      const vr = container.getBoundingClientRect(); // scroll container position on screen
 
-    // Intersection (visible portion of canvas)
-    const iLeft = Math.max(cr.left, vr.left);
-    const iTop = Math.max(cr.top, vr.top);
-    const iRight = Math.min(cr.right, vr.right);
-    const iBottom = Math.min(cr.bottom, vr.bottom);
+      // Intersection (visible portion of canvas)
+      const iLeft = Math.max(cr.left, vr.left);
+      const iTop = Math.max(cr.top, vr.top);
+      const iRight = Math.min(cr.right, vr.right);
+      const iBottom = Math.min(cr.bottom, vr.bottom);
 
-    if (iRight <= iLeft || iBottom <= iTop) return { display: "none" };
+      if (iRight <= iLeft || iBottom <= iTop) return { display: "none" };
 
-    // Convert to fractions of the canvas element
-    const fl = (iLeft - cr.left) / cr.width;
-    const ft = (iTop - cr.top) / cr.height;
-    const fr = (iRight - cr.left) / cr.width;
-    const fb = (iBottom - cr.top) / cr.height;
+      // Convert to fractions of the canvas element
+      const fl = (iLeft - cr.left) / cr.width;
+      const ft = (iTop - cr.top) / cr.height;
+      const fr = (iRight - cr.left) / cr.width;
+      const fb = (iBottom - cr.top) / cr.height;
 
-    // Entire canvas visible → hide rect
-    if (fl <= 0 && ft <= 0 && fr >= 1 && fb >= 1) return { display: "none" };
+      // Entire canvas visible → hide rect
+      if (fl <= 0 && ft <= 0 && fr >= 1 && fb >= 1) return { display: "none" };
 
-    // Use percentages so the overlay scales with the CSS-scaled thumbnail
-    return {
-      left: `${fl * 100}%`,
-      top: `${ft * 100}%`,
-      width: `${Math.max(0.5, (fr - fl) * 100)}%`,
-      height: `${Math.max(0.5, (fb - ft) * 100)}%`,
-    };
-  }, [canvasElRef]);
+      // Use percentages so the overlay scales with the CSS-scaled thumbnail
+      return {
+        left: `${fl * 100}%`,
+        top: `${ft * 100}%`,
+        width: `${Math.max(0.5, (fr - fl) * 100)}%`,
+        height: `${Math.max(0.5, (fb - ft) * 100)}%`,
+      };
+    },
+    [],
+  );
 
-  // Poll once per animation frame while mounted, but only do work when
-  // something changed: the thumbnail is copied only when the canvas mirror
-  // has a new version, and React state is only set when the viewport rect
-  // actually moved. (It used to redraw and re-render 60×/s even when idle.)
+  // Set when the viewport rect may have moved: scroll of the active
+  // viewport, a resize of it or of the canvas element (zoom), a window
+  // resize, a document / zoom change, or a different active canvas.
+  const rectDirtyRef = useRef(true);
+  useEffect(() => {
+    rectDirtyRef.current = true;
+  }, [zoom, docW, docH]);
+
+  // Per frame the loop only does two cheap checks: whether the canvas
+  // mirror has a new version (the thumbnail is copied only then) and
+  // whether the active canvas element changed (to rebind the observers).
+  // Layout reads (getBoundingClientRect) and the React update happen only
+  // when an event marked the rect dirty, and React state is only set when
+  // the rect actually moved.
   useEffect(() => {
     let active = true;
     let drawnVersion = -1;
     let lastRectKey = "";
+    let canvasEl: HTMLElement | null = null;
+    let containerEl: HTMLElement | null = null;
+    const markDirty = (): void => {
+      rectDirtyRef.current = true;
+    };
+    const ro = new ResizeObserver(markDirty);
+    const bind = (): void => {
+      containerEl?.removeEventListener("scroll", markDirty);
+      ro.disconnect();
+      canvasEl = canvasElRef.current;
+      containerEl =
+        canvasEl?.closest<HTMLElement>("[data-active-viewport]") ??
+        document.querySelector<HTMLElement>("[data-active-viewport]");
+      if (canvasEl) ro.observe(canvasEl);
+      if (containerEl) {
+        ro.observe(containerEl);
+        containerEl.addEventListener("scroll", markDirty, { passive: true });
+      }
+      rectDirtyRef.current = true;
+    };
+    window.addEventListener("resize", markDirty);
     const loop = (): void => {
       if (!active) return;
+      if (canvasElRef.current !== canvasEl) bind();
       if (thumbnailMirror.version !== drawnVersion) {
         drawnVersion = thumbnailMirror.version;
         drawThumb();
       }
-      const rect = getViewportRect();
-      const key = JSON.stringify(rect);
-      if (key !== lastRectKey) {
-        lastRectKey = key;
-        setViewRect(rect);
+      if (rectDirtyRef.current) {
+        rectDirtyRef.current = false;
+        const rect = getViewportRect(canvasEl, containerEl);
+        const key = `${rect.display ?? ""}|${rect.left ?? ""}|${rect.top ?? ""}|${rect.width ?? ""}|${rect.height ?? ""}`;
+        if (key !== lastRectKey) {
+          lastRectKey = key;
+          setViewRect(rect);
+        }
       }
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -136,8 +173,11 @@ export function Navigator(): React.JSX.Element {
     return () => {
       active = false;
       cancelAnimationFrame(rafRef.current);
+      window.removeEventListener("resize", markDirty);
+      containerEl?.removeEventListener("scroll", markDirty);
+      ro.disconnect();
     };
-  }, [drawThumb, getViewportRect]);
+  }, [drawThumb, getViewportRect, canvasElRef]);
 
   // Keep zoom input in sync when zoom changes externally
   useEffect(() => {

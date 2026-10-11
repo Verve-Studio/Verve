@@ -32,14 +32,14 @@ function serializeValue(v: object): string {
   return key;
 }
 
-export function serializeAdjOp(op: EffectRenderOp): string {
+/** Key for an op's params, excluding its selection mask's content version.
+ *  Two ops with equal static keys differ at most in mask pixels, which the
+ *  dirty-rect path can re-render locally. */
+export function serializeAdjOpStatic(op: EffectRenderOp): string {
   const cached = opKeyCache.get(op);
-  // An op with a selection mask is always re-keyed: the mask's
-  // contentVersion can change while the op object stays the same (its
-  // field values still hit valueKeyCache).
-  if (cached !== undefined && !op.selMaskLayer) return cached;
+  if (cached !== undefined) return cached;
   const parts: string[] = [`${op.kind}|${op.layerId}|${op.visible ? 1 : 0}`];
-  if (op.selMaskLayer) parts.push(`selV:${op.selMaskLayer.contentVersion}`);
+  if (op.selMaskLayer) parts.push("selM");
   const record = op as Record<string, unknown>;
   for (const [k, v] of Object.entries(record)) {
     if (
@@ -61,9 +61,23 @@ export function serializeAdjOp(op: EffectRenderOp): string {
   return key;
 }
 
+// An op with a selection mask is re-keyed with the mask's contentVersion:
+// it can change while the op object stays the same.
+export function serializeAdjOp(op: EffectRenderOp): string {
+  const key = serializeAdjOpStatic(op);
+  return op.selMaskLayer ? `${key}~selV:${op.selMaskLayer.contentVersion}` : key;
+}
+
 /** Stable key for a list of adjustment ops — used as the params portion of the group cache key. */
 export function computeAdjGroupParamsKey(
   adjustments: EffectRenderOp[],
 ): string {
   return adjustments.map(serializeAdjOp).join("§");
+}
+
+/** {@link computeAdjGroupParamsKey} without selection-mask content versions. */
+export function computeAdjGroupStaticKey(
+  adjustments: EffectRenderOp[],
+): string {
+  return adjustments.map(serializeAdjOpStatic).join("§");
 }

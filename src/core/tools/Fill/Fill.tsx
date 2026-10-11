@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { floodFill, floodFillF32 } from "@/wasm";
+import { floodFill, floodFillF32, floodFillInPlace } from "@/wasm";
 import { activeScope } from "@/core/store/scope";
 import { notificationStore } from "@/core/store/notificationStore";
 import { extractErrorMessage } from "@/utils/userFeedback";
@@ -259,7 +259,33 @@ function createFillHandler(): ToolHandler {
         return;
       }
 
-      if (fillOptions.contiguous) {
+      const isF32 = layer.format === "rgba32f";
+      if (
+        fillOptions.contiguous &&
+        layer.wasmPtr !== undefined &&
+        floodFillInPlace(
+          layer.wasmPtr,
+          isF32 ? "rgba32f" : "rgba8",
+          layer.layerWidth,
+          layer.layerHeight,
+          lx,
+          ly,
+          isF32 ? fr : r,
+          isF32 ? fg : g,
+          isF32 ? fb : b,
+          isF32 ? fa : a,
+          // Float tolerance is normalised to [0,1] (slider is 0-255).
+          isF32 ? fillOptions.tolerance / 255 : fillOptions.tolerance,
+        )
+      ) {
+        // The layer lives in the WASM heap: filled in place, synchronously
+        // — no copies of the layer (only the selection snapshot above).
+        ++fillGeneration; // drop any async fill still in flight
+        applySelectionMask();
+        renderer.flushLayer(layer);
+        render(layers);
+        commitStroke("Fill");
+      } else if (fillOptions.contiguous) {
         // Async WASM flood fill (contiguous). The result is applied after an
         // await, so anything could have happened to the layer meanwhile (a
         // second click, undo, another tool, a tab switch). Only apply it if
@@ -283,8 +309,10 @@ function createFillHandler(): ToolHandler {
         if (layer.format === "rgba32f") {
           // Float32 path: tolerance normalised to [0,1] space (slider is 0-255)
           const tolF32 = fillOptions.tolerance / 255;
+          // Only JS-heap layers get here (pinned ones filled in place
+          // above); the wrapper copies the input, so no slice is needed.
           floodFillF32(
-            layer.data.slice() as Float32Array,
+            layer.data as Float32Array,
             layer.layerWidth,
             layer.layerHeight,
             lx,
@@ -306,7 +334,7 @@ function createFillHandler(): ToolHandler {
             .catch(reportFailure);
         } else {
           floodFill(
-            layer.data.slice() as Uint8Array,
+            layer.data as Uint8Array,
             layer.layerWidth,
             layer.layerHeight,
             lx,

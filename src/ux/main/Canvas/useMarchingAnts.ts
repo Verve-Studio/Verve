@@ -3,6 +3,146 @@ import { useEffect } from "react";
 import { measureStore } from "@/core/tools/Measure/measureStore";
 import { activeScope } from "@/core/store/scope";
 
+/** Dash length of the selection ants, physical px. */
+const ANT_DASH = 4;
+
+/**
+ * 2-colour stripe pattern (ANT_DASH black, ANT_DASH white) along x
+ * (`horizontal`) or y. Equivalent to the black dash stroke plus the white
+ * dash stroke offset by ANT_DASH that the ants used to draw per segment.
+ */
+function makeAntPattern(
+  ctx: OffscreenCanvasRenderingContext2D,
+  horizontal: boolean,
+): CanvasPattern | null {
+  const n = ANT_DASH * 2;
+  const c = new OffscreenCanvas(horizontal ? n : 1, horizontal ? 1 : n);
+  const g = c.getContext("2d");
+  if (!g) return null;
+  g.fillStyle = "#000000";
+  g.fillRect(0, 0, horizontal ? ANT_DASH : 1, horizontal ? 1 : ANT_DASH);
+  g.fillStyle = "#ffffff";
+  if (horizontal) g.fillRect(ANT_DASH, 0, ANT_DASH, 1);
+  else g.fillRect(0, ANT_DASH, 1, ANT_DASH);
+  return ctx.createPattern(c, "repeat");
+}
+
+/** Split border segments into a horizontal and a vertical Path2D in
+ *  image-pixel space. */
+function buildAntPaths(segs: Float32Array): { h: Path2D; v: Path2D } {
+  const h = new Path2D();
+  const v = new Path2D();
+  for (let i = 0; i < segs.length; i += 4) {
+    const x1 = segs[i];
+    const y1 = segs[i + 1];
+    const x2 = segs[i + 2];
+    const y2 = segs[i + 3];
+    const p = y1 === y2 ? h : v;
+    p.moveTo(x1, y1);
+    p.lineTo(x2, y2);
+  }
+  return { h, v };
+}
+
+/**
+ * Selection-ants renderer whose per-frame cost doesn't depend on the number
+ * of border segments (a noisy selection has millions).
+ *
+ * The segments become two Path2Ds (horizontal / vertical, image space), built
+ * once per mask. Whenever the view changes (zoom, scroll, overlay size) they
+ * are stroked once, solid, into two viewport-sized alpha masks. Each frame
+ * only colourises those masks with a screen-anchored stripe pattern shifted
+ * by the animation phase — x stripes for horizontal edges, y stripes for
+ * vertical ones — which reproduces the old per-segment dashes anchored to
+ * each segment's physical start coordinate.
+ */
+class AntsRenderer {
+  private segs: Float32Array | null = null;
+  private paths: { h: Path2D; v: Path2D } | null = null;
+  private hMask: OffscreenCanvas | null = null;
+  private vMask: OffscreenCanvas | null = null;
+  private scratch: OffscreenCanvas | null = null;
+  private hPattern: CanvasPattern | null = null;
+  private vPattern: CanvasPattern | null = null;
+  private keyZoom = NaN;
+  private keyX = NaN;
+  private keyY = NaN;
+
+  draw(
+    target: CanvasRenderingContext2D,
+    segs: Float32Array,
+    zoom: number,
+    originX: number,
+    originY: number,
+    phase: number,
+  ): void {
+    const w = target.canvas.width;
+    const h = target.canvas.height;
+    if (w === 0 || h === 0) return;
+    if (segs !== this.segs) {
+      this.segs = segs;
+      this.paths = buildAntPaths(segs);
+      this.keyZoom = NaN;
+    }
+    if (!this.scratch || this.scratch.width !== w || this.scratch.height !== h) {
+      this.hMask = new OffscreenCanvas(w, h);
+      this.vMask = new OffscreenCanvas(w, h);
+      this.scratch = new OffscreenCanvas(w, h);
+      this.hPattern = null;
+      this.vPattern = null;
+      this.keyZoom = NaN;
+    }
+    const sctx = this.scratch.getContext("2d");
+    if (!sctx) return;
+    if (!this.hPattern) this.hPattern = makeAntPattern(sctx, true);
+    if (!this.vPattern) this.vPattern = makeAntPattern(sctx, false);
+
+    if (
+      zoom !== this.keyZoom ||
+      originX !== this.keyX ||
+      originY !== this.keyY
+    ) {
+      this.keyZoom = zoom;
+      this.keyX = originX;
+      this.keyY = originY;
+      for (const [mask, path] of [
+        [this.hMask!, this.paths!.h],
+        [this.vMask!, this.paths!.v],
+      ] as [OffscreenCanvas, Path2D][]) {
+        const m = mask.getContext("2d");
+        if (!m) continue;
+        m.setTransform(1, 0, 0, 1, 0, 0);
+        m.clearRect(0, 0, w, h);
+        // Image space → physical px; 1 physical px line width.
+        m.setTransform(zoom, 0, 0, zoom, originX, originY);
+        m.lineWidth = 1 / zoom;
+        m.strokeStyle = "#ffffff";
+        m.stroke(path);
+      }
+    }
+
+    for (const [mask, pattern, horizontal] of [
+      [this.hMask!, this.hPattern, true],
+      [this.vMask!, this.vPattern, false],
+    ] as [OffscreenCanvas, CanvasPattern | null, boolean][]) {
+      if (!pattern) continue;
+      sctx.globalCompositeOperation = "copy";
+      sctx.drawImage(mask, 0, 0);
+      sctx.globalCompositeOperation = "source-in";
+      // Stripe colour at physical p = pattern[(p + phase) mod 2·DASH].
+      pattern.setTransform(
+        horizontal
+          ? new DOMMatrix([1, 0, 0, 1, -phase, 0])
+          : new DOMMatrix([1, 0, 0, 1, 0, -phase]),
+      );
+      sctx.fillStyle = pattern;
+      sctx.fillRect(0, 0, w, h);
+      sctx.globalCompositeOperation = "source-over";
+      target.drawImage(this.scratch, 0, 0);
+    }
+  }
+}
+
 /**
  * Drives the marching-ants / crop-overlay / polygonal-selection RAF animation
  * loop on a single viewport-level canvas.
@@ -28,6 +168,7 @@ export function useMarchingAnts(
     // True once the overlay has been cleared with nothing to draw: idle
     // frames then skip all DOM / canvas work until something appears.
     let idleCleared = false;
+    const ants = new AntsRenderer();
 
     const tick = (): void => {
       rafId = requestAnimationFrame(tick);
@@ -88,37 +229,17 @@ export function useMarchingAnts(
       const toY = (iy: number): number => originY + iy * zoom;
 
       // All sizes below are in physical pixels (canvas is physical-pixel-sized).
-      const DASH = 4; // dash length, physical px
+      const DASH = ANT_DASH; // dash length, physical px
 
       // ── Selection marching ants ──────────────────────────────────────────
-      // Each segment is stroked individually with a phase offset based on its
-      // *physical* start position, so the ant pattern is anchored to a single
-      // global screen-space grid. Ant size is constant (DASH px) regardless of
-      // zoom — fewer ants when zoomed out, more when zoomed in.
+      // The ant pattern is anchored to a single global screen-space grid
+      // (horizontal edges by x, vertical edges by y). Ant size is constant
+      // (DASH px) regardless of zoom — fewer ants when zoomed out, more when
+      // zoomed in. See AntsRenderer: cost per frame is independent of the
+      // segment count.
       if (borderSegments && borderSegments.length > 0) {
         dashOffset = (dashOffset + 0.5) % (DASH * 2);
-        ctx2d.lineWidth = 1;
-        ctx2d.setLineDash([DASH, DASH]);
-        for (const [color, extra] of [
-          ["#000000", 0],
-          ["#ffffff", DASH],
-        ] as [string, number][]) {
-          ctx2d.strokeStyle = color;
-          for (let i = 0; i < borderSegments.length; i += 4) {
-            const x1 = toX(borderSegments[i]);
-            const y1 = toY(borderSegments[i + 1]);
-            const x2 = toX(borderSegments[i + 2]);
-            const y2 = toY(borderSegments[i + 3]);
-            // Anchor dash phase to the segment's physical start coordinate
-            // along the segment's axis (horizontal → x, vertical → y).
-            const along = y1 === y2 ? x1 : y1;
-            ctx2d.lineDashOffset = along + dashOffset + extra;
-            ctx2d.beginPath();
-            ctx2d.moveTo(x1, y1);
-            ctx2d.lineTo(x2, y2);
-            ctx2d.stroke();
-          }
-        }
+        ants.draw(ctx2d, borderSegments, zoom, originX, originY, dashOffset);
       }
 
       // ── Pending drag preview ─────────────────────────────────────────────

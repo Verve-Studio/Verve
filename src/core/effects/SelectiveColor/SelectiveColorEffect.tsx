@@ -48,6 +48,7 @@ export const SelectiveColorEffect: IPipelineEffect<
   id: "selective-color",
   label: "Selective Color…",
   menu: { root: "adjustments", submenu: "adj-color" },
+  perPixel: true,
   defaultParams: {
     reds: { ...ZERO_CHANNEL },
     yellows: { ...ZERO_CHANNEL },

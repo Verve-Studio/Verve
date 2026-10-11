@@ -14,6 +14,11 @@ import {
   type StrokePoseInputs,
 } from "./stampEngine";
 import { getCachedTipSampler } from "./tipSampler";
+import { markCanvasRectDirty } from "../_shared/primitives";
+import {
+  requestPreRenderFlush,
+  cancelPreRenderFlush,
+} from "@/core/services/useCanvasRenderLoop";
 import type {
   ToolHandler,
   ToolPointerPos,
@@ -35,40 +40,6 @@ import brushIconSvg from "./brush.svg?raw";
 const activeBrushRef: { current: Brush } = {
   current: makeDefaultBrush("__bootstrap", "Default"),
 };
-
-/** Split the canvas-space span [a, b) into pieces wrapped into [0, n). */
-function wrapSpans(a: number, b: number, n: number): Array<[number, number]> {
-  if (b - a >= n) return [[0, n]];
-  const a0 = ((a % n) + n) % n;
-  const len = b - a;
-  if (a0 + len <= n) return [[a0, a0 + len]];
-  return [
-    [a0, n],
-    [0, a0 + len - n],
-  ];
-}
-
-/** Mark a canvas-space rect dirty on a tiled (wrapping) canvas. */
-function markWrappedDirty(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): void {
-  const W = renderer.pixelWidth;
-  const H = renderer.pixelHeight;
-  for (const [ax, bx] of wrapSpans(x0, x1, W)) {
-    for (const [ay, by] of wrapSpans(y0, y1, H)) {
-      const lx = Math.max(0, ax - layer.offsetX);
-      const ly = Math.max(0, ay - layer.offsetY);
-      const rx = Math.min(layer.layerWidth, bx - layer.offsetX);
-      const ry = Math.min(layer.layerHeight, by - layer.offsetY);
-      if (rx > lx && ry > ly) renderer.markDirtyRect(layer, lx, ly, rx, ry);
-    }
-  }
-}
 
 export const brushOptions = {
   size: activeBrushRef.current.tip.size,
@@ -133,7 +104,6 @@ function createBrushHandler(): ToolHandler {
   // commit is deferred. The drainPendingFlush() helper makes pointer-up /
   // wet-edges run their final commit synchronously so the stroke ends with
   // a fully-presented frame.
-  let pendingFlushRAF: number | null = null;
   let pendingFlushRenderer: WebGPURenderer | null = null;
   let pendingFlushLayer: GpuLayer | null = null;
   let pendingFlushLayers: GpuLayer[] | null = null;
@@ -174,18 +144,15 @@ function createBrushHandler(): ToolHandler {
     pendingFlushLayer = layer;
     pendingFlushLayers = layers;
     pendingFlushRender = render;
-    if (pendingFlushRAF !== null) return;
-    pendingFlushRAF = requestAnimationFrame(() => {
-      pendingFlushRAF = null;
-      commitPendingFlush();
-    });
+    // The render loop's rAF runs the commit right before compositing, so
+    // the upload and the present happen in the same frame (a separate rAF
+    // here flushed, then render() scheduled ANOTHER rAF: +1 frame latency).
+    requestPreRenderFlush(commitPendingFlush);
+    render(layers);
   }
 
   function drainPendingFlush(): void {
-    if (pendingFlushRAF !== null) {
-      cancelAnimationFrame(pendingFlushRAF);
-      pendingFlushRAF = null;
-    }
+    cancelPreRenderFlush(commitPendingFlush);
     commitPendingFlush();
   }
 
@@ -356,13 +323,14 @@ function createBrushHandler(): ToolHandler {
       // Tiled mode wraps stamps around the canvas edges: mark the segment's
       // bbox split into its (up to 4) wrapped pieces. Without any dirty
       // rect the flush was skipped and mouse strokes never reached the GPU.
-      markWrappedDirty(
+      markCanvasRectDirty(
         renderer,
         layer,
         Math.floor(segDirtyMinX),
         Math.floor(segDirtyMinY),
         Math.ceil(segDirtyMaxX) + 1,
         Math.ceil(segDirtyMaxY) + 1,
+        true,
       );
     } else if (!ctx.tiledMode && segDirtyMaxX >= segDirtyMinX) {
       const lx = Math.max(0, Math.floor(segDirtyMinX - layer.offsetX));
@@ -648,10 +616,7 @@ function createBrushHandler(): ToolHandler {
       // and drop per-stroke state without touching pixels.
       stopBuildUp();
       // Drop (don't commit) the pending flush: its layer may be gone.
-      if (pendingFlushRAF !== null) {
-        cancelAnimationFrame(pendingFlushRAF);
-        pendingFlushRAF = null;
-      }
+      cancelPreRenderFlush(commitPendingFlush);
       pendingFlushRenderer = null;
       pendingFlushLayer = null;
       pendingFlushLayers = null;

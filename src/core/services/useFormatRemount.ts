@@ -17,10 +17,11 @@ interface UseFormatRemountOptions {
   captureHistory: (label: string) => void;
 }
 
-/** Copies every pixel layer's (already converted) data + geometry into a
- *  pending bundle and bumps `canvasKey` to force a Canvas remount in the new
- *  pixel format. Used when switching color modes between rgba8 / rgba32f /
- *  indexed8. */
+/** Puts every pixel layer's converted data (from `converted`, handed over
+ *  as-is — no copy) + geometry into a pending bundle and bumps `canvasKey`
+ *  to force a Canvas remount in the new pixel format. Used when switching
+ *  color modes to / from rgba32f. A layer missing from `converted` is
+ *  copied out of the canvas unchanged. */
 export function useFormatRemount({
   canvasHandleRef,
   stateRef,
@@ -28,9 +29,12 @@ export function useFormatRemount({
   setTabs,
   setPendingLayerData,
   captureHistory,
-}: UseFormatRemountOptions): (toFormat: PixelFormat) => void {
+}: UseFormatRemountOptions): (
+  toFormat: PixelFormat,
+  converted: ReadonlyMap<string, Uint8Array | Float32Array>,
+) => void {
   return useCallback(
-    (_toFormat: PixelFormat): void => {
+    (toFormat, converted): void => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
       const pending = createLayerDataBundle();
@@ -38,9 +42,10 @@ export function useFormatRemount({
         if ("type" in ls) continue;
         const gpu = handle.getGpuLayer(ls.id);
         if (!gpu) continue;
+        const data = converted.get(ls.id);
         pending.layers.set(ls.id, {
-          format: gpu.format,
-          data: gpu.data.slice(),
+          format: data ? toFormat : gpu.format,
+          data: data ?? gpu.data.slice(),
           geo: {
             layerWidth: gpu.layerWidth,
             layerHeight: gpu.layerHeight,

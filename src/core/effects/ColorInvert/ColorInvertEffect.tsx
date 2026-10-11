@@ -40,6 +40,7 @@ export const ColorInvertEffect: IPipelineEffect<
   id: "color-invert",
   label: "Invert",
   menu: { root: "adjustments", submenu: "adj-style" },
+  perPixel: true,
   defaultParams: {},
   paramFields: [],
 

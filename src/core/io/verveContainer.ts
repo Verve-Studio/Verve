@@ -45,53 +45,135 @@ export function isVerveContainer(bytes: Uint8Array): boolean {
   return true;
 }
 
+/**
+ * A payload read from live memory while the document is written (a layer's
+ * pixels) instead of copied up front, so saving never holds a second copy
+ * of every layer.
+ */
+export interface LiveBlobSource {
+  readonly byteLength: number;
+  /** Deflate this payload (8-bit data) or store it raw (float data). */
+  readonly deflate: boolean;
+  /** The payload's current bytes. Valid only until the next await (the
+   *  backing memory may move). Throws {@link DocumentChangedError} once the
+   *  source no longer matches what was registered. */
+  view(): Uint8Array;
+}
+
+/** The document changed while it was being saved; the save was cancelled. */
+export class DocumentChangedError extends Error {
+  constructor() {
+    super("The document changed while it was being saved. Save again.");
+    this.name = "DocumentChangedError";
+  }
+}
+
+/** Receives the container bytes in order. The chunk may be kept (it is
+ *  never written to again). */
+export type VerveByteSink = (chunk: Uint8Array) => Promise<void>;
+
+/** Raw blobs are written in pieces of at most this many bytes. */
+const WRITE_CHUNK_BYTES = 64 * 1024 * 1024;
+
+type BlobPayload = Uint8Array | LiveBlobSource;
+
+const isLive = (p: BlobPayload): p is LiveBlobSource => !(p instanceof Uint8Array);
+
+/** A copy of `bytes[start, end)` the sink may keep, without copying when the
+ *  range already is the whole buffer (IPC clones a view's entire buffer). */
+function ownedRange(bytes: Uint8Array, start: number, end: number): Uint8Array {
+  if (
+    start === 0 &&
+    end === bytes.byteLength &&
+    bytes.byteOffset === 0 &&
+    bytes.buffer.byteLength === end
+  ) {
+    return bytes;
+  }
+  return bytes.slice(start, end);
+}
+
 /** Collects blobs while a document is being serialized. */
 export class VerveBlobWriter {
-  private readonly blobs: { bytes: Uint8Array; deflate: boolean }[] = [];
+  private readonly blobs: { payload: BlobPayload; deflate: boolean }[] = [];
 
   /** Register a payload and return the string to store in the JSON. 8-bit
-   *  payloads are deflated; Float32 payloads are stored raw. */
-  add(data: Uint8Array | Float32Array): string {
-    const isBytes = data instanceof Uint8Array;
-    const bytes = isBytes
-      ? data
-      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    this.blobs.push({ bytes, deflate: isBytes });
+   *  payloads are deflated; Float32 payloads are stored raw; live sources
+   *  say which. */
+  add(data: Uint8Array | Float32Array | LiveBlobSource): string {
+    if (data instanceof Uint8Array) {
+      this.blobs.push({ payload: data, deflate: true });
+    } else if (data instanceof Float32Array) {
+      this.blobs.push({
+        payload: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+        deflate: false,
+      });
+    } else {
+      this.blobs.push({ payload: data, deflate: data.deflate });
+    }
     return `${BLOB_PREFIX}${this.blobs.length - 1}`;
   }
 
-  /** Serialize `doc` plus the registered blobs into one byte array. */
-  async encode(doc: object): Promise<Uint8Array> {
-    const stored = await Promise.all(
-      this.blobs.map((b) => (b.deflate ? deflate(b.bytes, "deflate-raw") : b.bytes)),
-    );
+  /**
+   * Serialize `doc` plus the registered blobs into `sink`, in file order:
+   * header, then each blob. The bytes are identical to building the whole
+   * container in one buffer, but only the compressed 8-bit blobs and one
+   * bounded chunk of a raw blob exist at a time.
+   *
+   * Every deflated payload is snapshotted synchronously on entry (the
+   * compressor copies its input before the first await), so they all
+   * reflect the moment `write` is called. Raw payloads are read chunk by
+   * chunk; a live source that changes meanwhile throws
+   * {@link DocumentChangedError}, which the caller turns into a cancelled
+   * save.
+   */
+  async write(doc: object, sink: VerveByteSink): Promise<void> {
+    const compressed: (Promise<Uint8Array> | null)[] = this.blobs.map((b) => {
+      if (!b.deflate) return null;
+      const bytes = isLive(b.payload) ? b.payload.view() : b.payload;
+      return deflate(bytes, "deflate-raw");
+    });
+    const stored: (Uint8Array | null)[] = await Promise.all(compressed);
+
     const blobTable: BlobTableEntry[] = [];
     let blobSize = 0;
-    stored.forEach((blob, i) => {
-      blobTable.push({
-        offset: blobSize,
-        length: blob.byteLength,
-        ...(this.blobs[i].deflate ? { deflated: true } : {}),
-      });
-      blobSize = align8(blobSize + blob.byteLength);
+    this.blobs.forEach((b, i) => {
+      const length = stored[i]?.byteLength ?? b.payload.byteLength;
+      blobTable.push({ offset: blobSize, length, ...(b.deflate ? { deflated: true } : {}) });
+      blobSize = align8(blobSize + length);
     });
     const json = new TextEncoder().encode(JSON.stringify({ ...doc, blobTable }));
     const blobStart = align8(MAGIC_BYTES.length + 4 + json.length);
-    const out = new Uint8Array(blobStart + blobSize);
-    out.set(MAGIC_BYTES, 0);
-    new DataView(out.buffer).setUint32(MAGIC_BYTES.length, json.length, true);
-    out.set(json, MAGIC_BYTES.length + 4);
-    stored.forEach((blob, i) => {
-      out.set(blob, blobStart + blobTable[i].offset);
-    });
-    return out;
+    const header = new Uint8Array(blobStart);
+    header.set(MAGIC_BYTES, 0);
+    new DataView(header.buffer).setUint32(MAGIC_BYTES.length, json.length, true);
+    header.set(json, MAGIC_BYTES.length + 4);
+    await sink(header);
+
+    for (let i = 0; i < this.blobs.length; i++) {
+      const { payload } = this.blobs[i];
+      const length = blobTable[i].length;
+      const packed = stored[i];
+      stored[i] = null; // drop each compressed blob once it is written
+      for (let at = 0; at < length; at += WRITE_CHUNK_BYTES) {
+        const end = Math.min(length, at + WRITE_CHUNK_BYTES);
+        // Re-derive the view per chunk: a WASM-heap layer's memory can
+        // move across the await.
+        const bytes = packed ?? (isLive(payload) ? payload.view() : payload);
+        await sink(ownedRange(bytes, at, end));
+      }
+      const pad = align8(length) - length;
+      // Every blob, the last included, is padded to 8 bytes.
+      if (pad > 0) await sink(new Uint8Array(pad));
+    }
   }
 }
 
 export interface DecodedVerveContainer<T> {
   doc: T;
-  /** Resolve a `"blob:<n>"` reference to (a copy of) its bytes, inflating
-   *  compressed blobs. Throws if the value isn't a blob reference. */
+  /** Resolve a `"blob:<n>"` reference to its bytes, inflating compressed
+   *  blobs. A raw (float) blob is a read-only view into the file buffer, not
+   *  a copy. Throws if the value isn't a blob reference. */
   blob: (ref: string) => Promise<Uint8Array>;
 }
 
@@ -120,10 +202,15 @@ export function decodeVerveContainer<T>(
         throw new Error("The document is truncated (layer data exceeds file size).");
       }
       const stored = bytes.subarray(start, start + entry.length);
-      // Raw blobs are copied: the result must own an aligned buffer
-      // (Float32Array views need 4-byte alignment) and must not pin the
-      // whole file in memory.
-      return entry.deflated ? inflate(stored, "deflate-raw") : stored.slice();
+      if (entry.deflated) return inflate(stored, "deflate-raw");
+      // Raw blobs (float layers, the bulk of an HDR file) are views into the
+      // file buffer: copies coexisted with the file, doubling peak memory
+      // while opening. Layer init copies each payload into its layer buffer
+      // and drops it from the bundle, so the views keep the file alive only
+      // until the document is loaded. Blobs sit on 8-byte boundaries, so a
+      // Float32Array view is aligned unless the file buffer itself is
+      // offset oddly — then copy.
+      return (stored.byteOffset & 7) === 0 ? stored : stored.slice();
     },
   };
 }

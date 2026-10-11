@@ -1,6 +1,10 @@
 import React, { useState } from "react";
 import { eraseQuadBezier, eraseThickLine } from "./eraseStroke";
-import { bresenham } from "../_shared/primitives";
+import {
+  bresenham,
+  markCanvasRectDirty,
+  flushIfPending,
+} from "../_shared/primitives";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import type {
   ToolHandler,
@@ -117,7 +121,17 @@ function createEraserHandler(): ToolHandler {
           tiledH,
         );
       });
-      renderer.flushLayer(layer, ctx.swatches);
+      const half = Math.ceil(eraserOptions.size / 2) + 1;
+      markCanvasRectDirty(
+        renderer,
+        layer,
+        Math.min(x0r, x1r) - half,
+        Math.min(y0r, y1r) - half,
+        Math.max(x0r, x1r) + half + 1,
+        Math.max(y0r, y1r) + half + 1,
+        ctx.tiledMode,
+      );
+      flushIfPending(renderer, layer, ctx.swatches);
       render(layers);
       return;
     }
@@ -169,28 +183,19 @@ function createEraserHandler(): ToolHandler {
       );
     }
 
-    // Bounded GPU upload over the arc bounding box (was full-layer DMA before).
-    if (!ctx.tiledMode) {
-      const lx = Math.max(
-        0,
-        Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR,
-      );
-      const ly = Math.max(
-        0,
-        Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR,
-      );
-      const rx = Math.min(
-        layer.layerWidth,
-        Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1,
-      );
-      const ry = Math.min(
-        layer.layerHeight,
-        Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1,
-      );
-      renderer.markDirtyRect(layer, lx, ly, rx, ry);
-    }
+    // Bounded GPU upload over the arc bounding box; in tiled mode its
+    // wrapped pieces (an unmarked flush re-uploaded the whole layer).
+    markCanvasRectDirty(
+      renderer,
+      layer,
+      Math.floor(Math.min(p0x, cpx, p1x)) - padR,
+      Math.floor(Math.min(p0y, cpy, p1y)) - padR,
+      Math.ceil(Math.max(p0x, cpx, p1x)) + padR + 1,
+      Math.ceil(Math.max(p0y, cpy, p1y)) + padR + 1,
+      ctx.tiledMode,
+    );
 
-    renderer.flushLayer(layer);
+    flushIfPending(renderer, layer);
     render(layers);
   }
 

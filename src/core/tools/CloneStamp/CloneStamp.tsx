@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { stampCloneSegment } from "./cloneStampStroke";
-import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { CloneSource } from "./cloneStampStroke";
+import { CowLayerSnapshot } from "../_shared/cowLayerSnapshot";
 import { notificationStore } from "@/core/store/notificationStore";
 
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
@@ -31,13 +32,7 @@ export const cloneStampOptions = {
 function createCloneStampHandler(): ToolHandler {
   let lastPos: { x: number; y: number } | null = null;
   let touched: import("../_shared/primitives").TouchedBuffer | null = null;
-  let sourceBuffer: Uint8Array | Float32Array | null = null;
-  let sourceBounds: {
-    offsetX: number;
-    offsetY: number;
-    layerWidth: number;
-    layerHeight: number;
-  } | null = null;
+  let cloneSource: CloneSource | null = null;
   let strokeOffsetDX = 0;
   let strokeOffsetDY = 0;
   let isStrokeReady = false;
@@ -47,10 +42,9 @@ function createCloneStampHandler(): ToolHandler {
   // paint nothing), and a pointer-up that comes first defers the stroke end.
   let pendingSegments: Array<[number, number, number, number]> = [];
   let upBeforeReady = false;
-  // A different source layer is read live (it isn't modified by the
-  // stroke); `layer.data` is re-read per segment because WASM heap growth
-  // replaces it.
-  let liveSourceLayer: GpuLayer | null = null;
+  // Layer sources go through a CowLayerSnapshot: a different layer is read
+  // live (it isn't modified by the stroke); the painted layer is read
+  // copy-on-write — each segment's write box is copied before it lands.
 
   function paintSegment(
     x0: number,
@@ -67,8 +61,30 @@ function createCloneStampHandler(): ToolHandler {
     // Re-read AFTER growing: the grow allocates on the WASM heap, and a heap
     // growth detaches every earlier view — a source view taken before it
     // reads as empty and painted transparent holes for the rest of the
-    // segment.
-    if (liveSourceLayer) sourceBuffer = liveSourceLayer.data;
+    // segment. (A grow also shifts the painted layer's geometry.)
+    if (cloneSource!.kind === "layer") {
+      const snap = cloneSource!.snapshot;
+      snap.refresh();
+      // Copy the stroke-start pixels this segment is about to overwrite
+      // (same box stampCloneSegment iterates; wrapped in tiled mode).
+      const sp = Math.ceil(cloneStampOptions.size / 2) + 1;
+      const bx0 = Math.floor(Math.min(x0, x1)) - sp;
+      const bx1 = Math.ceil(Math.max(x0, x1)) + sp;
+      const by0 = Math.floor(Math.min(y0, y1)) - sp;
+      const by1 = Math.ceil(Math.max(y0, y1)) + sp;
+      if (ctx.tiledMode) {
+        snap.protectWrapped(
+          bx0,
+          by0,
+          bx1,
+          by1,
+          renderer.pixelWidth,
+          renderer.pixelHeight,
+        );
+      } else {
+        snap.protect(bx0, by0, bx1, by1);
+      }
+    }
 
     const sel = selectionMask
       ? { mask: selectionMask, width: renderer.pixelWidth }
@@ -88,9 +104,7 @@ function createCloneStampHandler(): ToolHandler {
       cloneStampOptions.hardness,
       strokeOffsetDX,
       strokeOffsetDY,
-      sourceBuffer!,
-      sourceBounds === null,
-      sourceBounds,
+      cloneSource!,
       renderer.pixelWidth,
       renderer.pixelHeight,
       cloneStampOptions.opacity,
@@ -132,9 +146,7 @@ function createCloneStampHandler(): ToolHandler {
     strokeToken = null;
     lastPos = null;
     touched = null;
-    sourceBuffer = null;
-    sourceBounds = null;
-    liveSourceLayer = null;
+    cloneSource = null;
     pendingSegments = [];
     upBeforeReady = false;
     isStrokeReady = false;
@@ -202,9 +214,7 @@ function createCloneStampHandler(): ToolHandler {
       touched = ctx.renderer.acquireTouchedBuffer();
       lastPos = { x, y };
       isStrokeReady = false;
-      sourceBuffer = null;
-      sourceBounds = null;
-      liveSourceLayer = null;
+      cloneSource = null;
       pendingSegments = [];
       upBeforeReady = false;
 
@@ -217,8 +227,7 @@ function createCloneStampHandler(): ToolHandler {
           .readCompositePixels()
           .then((buf) => {
             if (strokeToken !== token) return;
-            sourceBuffer = buf;
-            sourceBounds = null;
+            cloneSource = { kind: "canvas", data: buf };
             isStrokeReady = true;
             for (const [x0, y0, x1, y1] of pendingSegments) {
               paintSegment(x0, y0, x1, y1, capturedCtx);
@@ -236,18 +245,12 @@ function createCloneStampHandler(): ToolHandler {
             if (upBeforeReady) finishStroke(capturedCtx, false);
           });
       } else if (sourceLayer) {
-        if (sourceLayer === ctx.layer) {
-          // Cloning within the layer being painted: sample a stable copy.
-          sourceBuffer = ctx.renderer.readLayerPixels(sourceLayer);
-        } else {
-          liveSourceLayer = sourceLayer;
-          sourceBuffer = sourceLayer.data;
-        }
-        sourceBounds = {
-          offsetX: sourceLayer.offsetX,
-          offsetY: sourceLayer.offsetY,
-          layerWidth: sourceLayer.layerWidth,
-          layerHeight: sourceLayer.layerHeight,
+        // Cloning within the layer being painted samples its stroke-start
+        // pixels copy-on-write (only the tiles the stroke overwrites are
+        // copied — not the whole layer per stroke).
+        cloneSource = {
+          kind: "layer",
+          snapshot: new CowLayerSnapshot(sourceLayer, sourceLayer === ctx.layer),
         };
         isStrokeReady = true;
         paintSegment(x, y, x, y, ctx);
@@ -262,7 +265,7 @@ function createCloneStampHandler(): ToolHandler {
         lastPos = { x, y };
         return;
       }
-      if (!sourceBuffer) return;
+      if (!cloneSource) return;
       paintSegment(lastPos.x, lastPos.y, x, y, ctx);
       lastPos = { x, y };
       if (cloneStampOptions.aligned && ctx.scope.cloneStamp.alignedOffset) {
@@ -282,7 +285,7 @@ function createCloneStampHandler(): ToolHandler {
         upBeforeReady = true;
         return { skipHistory: true };
       }
-      if (isStrokeReady && sourceBuffer) {
+      if (isStrokeReady && cloneSource) {
         paintSegment(lastPos.x, lastPos.y, x, y, ctx);
       }
       finishStroke(ctx, false);
@@ -292,9 +295,7 @@ function createCloneStampHandler(): ToolHandler {
       strokeToken = null;
       lastPos = null;
       touched = null;
-      sourceBuffer = null;
-      sourceBounds = null;
-      liveSourceLayer = null;
+      cloneSource = null;
       pendingSegments = [];
       upBeforeReady = false;
       isStrokeReady = false;

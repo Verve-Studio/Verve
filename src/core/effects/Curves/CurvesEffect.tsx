@@ -203,6 +203,7 @@ export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
   id: "curves",
   label: "Curves…",
   menu: { root: "adjustments", submenu: "adj-tone" },
+  perPixel: true,
   defaultParams: createDefaultCurvesParams(),
   paramFields: [
     curveField("rgb", "RGB Curve"),

@@ -27,7 +27,7 @@ import {
   serializedTipPayloads,
 } from "@/core/tools/Brush/brushPreset";
 import { loadImagePixels } from "./imageLoader";
-import { isBlobRef, type VerveBlobWriter } from "./verveContainer";
+import { isBlobRef, type LiveBlobSource, type VerveBlobWriter } from "./verveContainer";
 
 export const VERVE_DOC_VERSION = 7;
 
@@ -73,12 +73,20 @@ export function serializeLayer(
   return layer;
 }
 
+/** A layer's pixels as the canvas exposes them for saving: read from the
+ *  live layer buffer while the file is written, not copied up front. */
+export interface LiveLayerPixels {
+  format: PixelFormat;
+  geo: LayerGeometry;
+  source: LiveBlobSource;
+}
+
 export function serializeLayerPixels(
-  payload: LayerPayload | null,
+  pixels: LiveLayerPixels | null,
   blobs: VerveBlobWriter,
 ): SavedPixels | null {
-  if (!payload || !payload.geo) return null;
-  return { format: payload.format, data: blobs.add(payload.data), geo: payload.geo };
+  if (!pixels) return null;
+  return { format: pixels.format, data: blobs.add(pixels.source), geo: pixels.geo };
 }
 
 export function serializePixelBrushes(

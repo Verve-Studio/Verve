@@ -5,18 +5,26 @@ import type {
 import { blendPixelOver } from "../_shared/primitives";
 import type { SelMask, TouchedBuffer } from "../_shared/primitives";
 import { linearToSrgbChannel } from "@/utils/pixelFormatConvert";
+import type { CowLayerSnapshot } from "../_shared/cowLayerSnapshot";
+
+/** Where a clone stamp reads from: a canvas-sized composite buffer
+ *  ("sample all layers"), or a layer view (stroke-start copy-on-write
+ *  snapshot for the painted layer, live view for another layer). */
+export type CloneSource =
+  | { kind: "canvas"; data: Uint8Array | Float32Array }
+  | { kind: "layer"; snapshot: CowLayerSnapshot };
 
 /**
  * Paints a clone-stamp capsule segment from (x0,y0) to (x1,y1).
  * For each pixel in the capsule SDF area, the source color is sampled from
- * `sourceBuffer` at (canvasX + offsetDX, canvasY + offsetDY) and composited
+ * `source` at (canvasX + offsetDX, canvasY + offsetDY) and composited
  * onto `destLayer` using Porter-Duff "over" with per-stroke coverage tracking.
  *
  * @param offsetDX        source = dest + offset (X); computed at stroke start
  * @param offsetDY        source = dest + offset (Y)
- * @param sourceIsCanvas  when true, sourceBuffer is canvas-sized (canvasW × canvasH × 4);
- *                        when false, sourceBounds must be provided (layer-local buffer)
- * @param sourceBounds    geometry of the source layer; ignored when sourceIsCanvas=true
+ * @param source          canvas-sized composite (canvasW × canvasH × 4) or a layer
+ *                        snapshot; a snapshot of `destLayer` must already have
+ *                        `protect`ed this segment's write box
  * @param hardness        0-100; 100 = hard circular edge, lower = SDF feather
  */
 export function stampCloneSegment(
@@ -30,14 +38,7 @@ export function stampCloneSegment(
   hardness: number,
   offsetDX: number,
   offsetDY: number,
-  sourceBuffer: Uint8Array | Float32Array,
-  sourceIsCanvas: boolean,
-  sourceBounds: {
-    offsetX: number;
-    offsetY: number;
-    layerWidth: number;
-    layerHeight: number;
-  } | null,
+  source: CloneSource,
   canvasW: number,
   canvasH: number,
   opacity: number,
@@ -59,6 +60,13 @@ export function stampCloneSegment(
   const maxX = Math.ceil(Math.max(x0, x1)) + pad;
   const minY = Math.floor(Math.min(y0, y1)) - pad;
   const maxY = Math.ceil(Math.max(y0, y1)) + pad;
+
+  const canvasBuf = source.kind === "canvas" ? source.data : null;
+  const snapshot = source.kind === "layer" ? source.snapshot : null;
+  const isF32 = canvasBuf
+    ? canvasBuf instanceof Float32Array
+    : snapshot!.isFloat;
+  const sample = new Float64Array(4);
 
   for (let py = minY; py <= maxY; py++) {
     for (let px = minX; px <= maxX; px++) {
@@ -87,8 +95,7 @@ export function stampCloneSegment(
         sg = 0,
         sb = 0,
         sa = 0;
-      const isF32 = sourceBuffer instanceof Float32Array;
-      if (sourceIsCanvas) {
+      if (canvasBuf) {
         let sx = Math.round(srcX),
           sy = Math.round(srcY);
         if (tiledW !== undefined && tiledH !== undefined) {
@@ -97,26 +104,22 @@ export function stampCloneSegment(
         }
         if (sx >= 0 && sy >= 0 && sx < canvasW && sy < canvasH) {
           const i = (sy * canvasW + sx) * 4;
-          sr = sourceBuffer[i];
-          sg = sourceBuffer[i + 1];
-          sb = sourceBuffer[i + 2];
-          sa = sourceBuffer[i + 3];
+          sr = canvasBuf[i];
+          sg = canvasBuf[i + 1];
+          sb = canvasBuf[i + 2];
+          sa = canvasBuf[i + 3];
         }
-      } else if (sourceBounds) {
-        const lx = Math.round(srcX) - sourceBounds.offsetX;
-        const ly = Math.round(srcY) - sourceBounds.offsetY;
-        if (
-          lx >= 0 &&
-          ly >= 0 &&
-          lx < sourceBounds.layerWidth &&
-          ly < sourceBounds.layerHeight
-        ) {
-          const i = (ly * sourceBounds.layerWidth + lx) * 4;
-          sr = sourceBuffer[i];
-          sg = sourceBuffer[i + 1];
-          sb = sourceBuffer[i + 2];
-          sa = sourceBuffer[i + 3];
-        }
+      } else if (
+        snapshot!.sampleLocal(
+          Math.round(srcX) - snapshot!.offsetX,
+          Math.round(srcY) - snapshot!.offsetY,
+          sample,
+        )
+      ) {
+        sr = sample[0];
+        sg = sample[1];
+        sb = sample[2];
+        sa = sample[3];
       }
       if (sa === 0) continue;
 

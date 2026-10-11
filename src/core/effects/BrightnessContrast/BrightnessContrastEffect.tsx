@@ -40,6 +40,7 @@ export const BrightnessContrastEffect: IPipelineEffect<
   id: "brightness-contrast",
   label: "Brightness/Contrast…",
   menu: { root: "adjustments", submenu: "adj-tone" },
+  perPixel: true,
   defaultParams: { brightness: 0, contrast: 0 },
   paramFields: [
     numberField("brightness", "Brightness", { min: -100, max: 100, int: true }),

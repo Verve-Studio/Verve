@@ -19,6 +19,10 @@ interface AdjGroupEntry {
   paramsKey: string;
   tex: GPUTexture;
   lastEncodeTime: number;
+  /** Executor render serial at which `tex` last matched its inputs
+   *  everywhere. A dirty-rect update is only valid on top of the previous
+   *  render's output. */
+  serial: number;
 }
 
 interface StandaloneOpEntry {
@@ -26,6 +30,8 @@ interface StandaloneOpEntry {
   paramsKey: string;
   tex: GPUTexture;
   lastEncodeTime: number;
+  /** See {@link AdjGroupEntry.serial}. */
+  serial: number;
 }
 
 interface CompositeLayerEntry {

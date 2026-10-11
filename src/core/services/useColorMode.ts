@@ -29,7 +29,12 @@ interface UseColorModeOptions {
   state: AppShellState;
   dispatch: Dispatch<AppAction>;
   captureHistory: (label: string) => void;
-  onFormatChangeRequiresRemount: (toFormat: PixelFormat) => void;
+  /** Remounts the canvas in `toFormat`, hydrating each converted layer
+   *  from `converted` (layer id → buffer in `toFormat`). */
+  onFormatChangeRequiresRemount: (
+    toFormat: PixelFormat,
+    converted: ReadonlyMap<string, Uint8Array | Float32Array>,
+  ) => void;
   onRequestConversionDialog: (toFormat: PixelFormat) => void;
 }
 
@@ -92,7 +97,7 @@ export function useColorMode({
         if (opts?.throwErrors) {
           throw detail instanceof Error ? detail : new Error(`${title} ${String(detail)}`);
         }
-        fail(title, detail);
+        showOperationError(title, detail);
       };
       const fromFormat = state.pixelFormat;
       if (toFormat === fromFormat) return;
@@ -117,7 +122,10 @@ export function useColorMode({
           !isPixelLayer(ls as unknown as { id: string; [key: string]: unknown })
         )
           continue;
-        const raw = handle.getLayerRawData(ls.id);
+        // The live layer view, not a copy: every conversion reads it
+        // synchronously at call time (the WASM palette match reads a
+        // heap-resident view in place) and never writes it.
+        const raw = handle.getGpuLayer(ls.id)?.data;
         if (!raw) continue;
         try {
           const converted = await convertPixelBuffer(
@@ -135,6 +143,10 @@ export function useColorMode({
       }
 
       // ── Phase 2: Apply all conversions ────────────────────────────────────
+      // Applied to the current canvas even when a remount follows: the
+      // "Convert Color Mode" history entry is captured from it. The remount
+      // then hydrates from `conversions` (same content) instead of copying
+      // every layer back out of the canvas.
       for (const [layerId, newData] of conversions) {
         handle.replaceLayerData(
           layerId,
@@ -206,7 +218,7 @@ export function useColorMode({
 
       const involvesF32 = fromFormat === "rgba32f" || toFormat === "rgba32f";
       if (involvesF32) {
-        onFormatChangeRequiresRemount(toFormat);
+        onFormatChangeRequiresRemount(toFormat, conversions);
       } else {
         captureHistory("Convert Color Mode");
       }

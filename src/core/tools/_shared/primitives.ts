@@ -4,6 +4,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
 import { allocUint8 } from "@/core/store/memoryStore";
+import type { RGBAColor } from "@/types";
 
 // Selection mask shorthand used by draw/erase helpers.
 export type SelMask = { mask: Uint8Array; width: number };
@@ -101,6 +102,95 @@ export function makeTouchedBuffer(
 
 export function clearTouchedBuffer(buf: TouchedBuffer): void {
   buf.data.fill(0);
+}
+
+/** Mark the layer-local intersection of canvas rect [x0, x1) × [y0, y1). */
+function markClippedCanvasRect(
+  renderer: WebGPURenderer,
+  layer: GpuLayer,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const lx = Math.max(0, x0 - layer.offsetX);
+  const ly = Math.max(0, y0 - layer.offsetY);
+  const rx = Math.min(layer.layerWidth, x1 - layer.offsetX);
+  const ry = Math.min(layer.layerHeight, y1 - layer.offsetY);
+  if (rx > lx && ry > ly) renderer.markDirtyRect(layer, lx, ly, rx, ry);
+}
+
+/**
+ * Mark a canvas-space rect [x0, x1) × [y0, y1) dirty on `layer` (clipped to
+ * the layer), so the next flush uploads just that patch. In tiled mode writes
+ * wrap around the canvas edges: the rect is split into its (up to 4) wrapped
+ * pieces. Every pixel write must be covered by a mark before the flush — a
+ * flush with nothing pending falls back to a full-layer upload.
+ */
+export function markCanvasRectDirty(
+  renderer: WebGPURenderer,
+  layer: GpuLayer,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  tiled: boolean,
+): void {
+  x0 = Math.floor(x0);
+  y0 = Math.floor(y0);
+  x1 = Math.ceil(x1);
+  y1 = Math.ceil(y1);
+  if (x1 <= x0 || y1 <= y0) return;
+  if (!tiled) {
+    markClippedCanvasRect(renderer, layer, x0, y0, x1, y1);
+    return;
+  }
+  const W = renderer.pixelWidth;
+  const H = renderer.pixelHeight;
+  // Wrapped spans along each axis (allocation-free: at most two per axis).
+  let ax0: number, ax1: number, bx0 = 0, bx1 = 0;
+  if (x1 - x0 >= W) {
+    ax0 = 0;
+    ax1 = W;
+  } else {
+    ax0 = ((x0 % W) + W) % W;
+    ax1 = ax0 + (x1 - x0);
+    if (ax1 > W) {
+      bx1 = ax1 - W;
+      ax1 = W;
+    }
+  }
+  let ay0: number, ay1: number, by0 = 0, by1 = 0;
+  if (y1 - y0 >= H) {
+    ay0 = 0;
+    ay1 = H;
+  } else {
+    ay0 = ((y0 % H) + H) % H;
+    ay1 = ay0 + (y1 - y0);
+    if (ay1 > H) {
+      by1 = ay1 - H;
+      ay1 = H;
+    }
+  }
+  markClippedCanvasRect(renderer, layer, ax0, ay0, ax1, ay1);
+  if (bx1 > bx0) markClippedCanvasRect(renderer, layer, bx0, ay0, bx1, ay1);
+  if (by1 > by0) {
+    markClippedCanvasRect(renderer, layer, ax0, by0, ax1, by1);
+    if (bx1 > bx0) markClippedCanvasRect(renderer, layer, bx0, by0, bx1, by1);
+  }
+}
+
+/**
+ * Flush `layer` only when something is pending. A flush with nothing pending
+ * falls back to a full-layer upload (and a full history snapshot + full
+ * recomposite), e.g. when a previous event already uploaded the patch.
+ */
+export function flushIfPending(
+  renderer: WebGPURenderer,
+  layer: GpuLayer,
+  palette?: readonly RGBAColor[],
+): void {
+  if (renderer.hasPendingUpload(layer)) renderer.flushLayer(layer, palette);
 }
 
 /**

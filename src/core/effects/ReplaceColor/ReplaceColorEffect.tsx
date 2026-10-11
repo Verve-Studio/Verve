@@ -54,6 +54,7 @@ export const ReplaceColorEffect: IPipelineEffect<
   id: "replace-color",
   label: "Replace Color…",
   menu: { root: "adjustments", submenu: "adj-color" },
+  perPixel: true,
   defaultParams: {
     // Pre-fill with a recognisable but visually-muted swap so the swatch
     // isn't a glaring red on first add — the user immediately changes

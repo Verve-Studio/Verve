@@ -185,10 +185,6 @@ function flippedGeo(geo: LayerGeo, W: number, H: number, axis: 0 | 1): LayerGeo 
     : { ...geo, offsetY: H - geo.offsetY - geo.layerHeight };
 }
 
-/** A JS-heap copy of an 8-bit layer buffer. Layer buffers may be views into
- *  the WASM heap, which a WASM call that grows memory would detach. */
-const copyOf = (buf: LayerBuffer): Uint8Array => (buf.data as Uint8Array).slice();
-
 /** Rotate one layer buffer (in its own format and layer-local space) with
  *  the whole canvas (W×H). */
 async function rotateLayerBuffer(
@@ -202,8 +198,8 @@ async function rotateLayerBuffer(
     buf.format === "rgba32f"
       ? rotateF32(buf.data as Float32Array, lw, lh, amount).data
       : buf.format === "indexed8"
-        ? await rotateIndexed(copyOf(buf), lw, lh, amount)
-        : await rotateRgba(copyOf(buf), lw, lh, amount);
+        ? await rotateIndexed(buf.data as Uint8Array, lw, lh, amount)
+        : await rotateRgba(buf.data as Uint8Array, lw, lh, amount);
   const geo = rotatedGeo(
     { layerWidth: lw, layerHeight: lh, offsetX: buf.offsetX, offsetY: buf.offsetY },
     W,
@@ -233,8 +229,8 @@ async function flipLayerBuffer(
     buf.format === "rgba32f"
       ? flipF32(buf.data as Float32Array, lw, lh, axis)
       : buf.format === "indexed8"
-        ? await flipIndexed(copyOf(buf), lw, lh, axis)
-        : await flipRgba(copyOf(buf), lw, lh, axis);
+        ? await flipIndexed(buf.data as Uint8Array, lw, lh, axis)
+        : await flipRgba(buf.data as Uint8Array, lw, lh, axis);
   const geo = flippedGeo(
     { layerWidth: lw, layerHeight: lh, offsetX: buf.offsetX, offsetY: buf.offsetY },
     W,
@@ -281,7 +277,11 @@ export function useCanvasTransforms({
    * Every layer's pixel buffer in its own format and layer-local space
    * (rgba32f floats, indexed8 palette indices, rgba8 bytes), plus baked
    * effect-layer selection masks (canvas-sized rgba8), for a canvas
-   * dimension transform. Buffers are live views: transforms must copy.
+   * dimension transform. Layer `data` is a live getter, not a captured
+   * view: pinned layers live in the WASM heap, and a sibling layer's
+   * `_malloc` growing memory detaches views taken earlier. The WASM
+   * wrappers read such a view in place (no copy) synchronously at call
+   * time; transforms must not write to it.
    */
   const collectLayerBuffers = useCallback(
     (handle: CanvasHandle): { id: string; mask: boolean; buf: LayerBuffer }[] => {
@@ -306,7 +306,9 @@ export function useCanvasTransforms({
           id: layer.id,
           mask: false,
           buf: {
-            data: gpu.data,
+            get data() {
+              return gpu.data;
+            },
             format: gpu.format,
             width: gpu.layerWidth,
             height: gpu.layerHeight,
@@ -440,7 +442,7 @@ export function useCanvasTransforms({
       // Filter to the layers we'll actually feed into the model so the
       // progress numerator/denominator matches what the user sees moving.
       const eligibleLayers = stateRef.current.layers.filter(
-        (l) => handle.getLayerPixels(l.id) !== null,
+        (l) => handle.getGpuLayer(l.id) !== null,
       );
       setRescaling?.(true);
       setRescaleProgress?.({
@@ -567,7 +569,7 @@ export function useCanvasTransforms({
         return;
       }
       const eligibleLayers = stateRef.current.layers.filter(
-        (l) => handle.getLayerPixels(l.id) !== null,
+        (l) => handle.getGpuLayer(l.id) !== null,
       );
       setRescaling?.(true);
       setRescaleProgress?.({
@@ -978,8 +980,9 @@ export function useCanvasTransforms({
                 if (!gpuLayer) return null;
                 const lw = gpuLayer.layerWidth,
                   lh = gpuLayer.layerHeight;
-                const raw = handle.getLayerRawData(layer.id);
-                if (!raw) return null;
+                // Live view (no copy): the WASM wrappers and the f32 JS
+                // paths read it synchronously at call time.
+                const raw = gpuLayer.data;
                 if (gpuLayer.format === "indexed8") {
                   const result = await rotateIndexed(
                     raw as Uint8Array,
@@ -1086,8 +1089,9 @@ export function useCanvasTransforms({
                 if (!gpuLayer) return null;
                 const lw = gpuLayer.layerWidth,
                   lh = gpuLayer.layerHeight;
-                const raw = handle.getLayerRawData(layer.id);
-                if (!raw) return null;
+                // Live view (no copy): the WASM wrappers and the f32 JS
+                // paths read it synchronously at call time.
+                const raw = gpuLayer.data;
                 if (gpuLayer.format === "indexed8") {
                   const result = await flipIndexed(
                     raw as Uint8Array,

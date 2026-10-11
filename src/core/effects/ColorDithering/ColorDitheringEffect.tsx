@@ -80,6 +80,7 @@ export const ColorDitheringEffect: IPipelineEffect<
   id: "color-dithering",
   label: "Color Dithering…",
   menu: { root: "adjustments", submenu: "adj-indexed" },
+  perPixel: true,
   defaultParams: { style: "bayer4", opacity: 100 },
   paramFields: [
     enumField("style", "Style", [

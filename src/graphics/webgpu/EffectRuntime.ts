@@ -120,6 +120,10 @@ export class EffectRuntime {
   readonly intermediate: GPUTexture;
 
   /** Buffers accumulated during command encoding; flushed after submit. */
+  /** Dirty-rect scissor applied by `encodeRenderPass`. Set by the executor
+   *  only around `perPixel` effects in the incremental path; null otherwise. */
+  scissor: { x: number; y: number; w: number; h: number } | null = null;
+
   pendingDestroyBuffers: GPUBuffer[] = [];
   /** Textures accumulated during command encoding; flushed after submit. */
   pendingDestroyTextures: GPUTexture[] = [];
@@ -557,16 +561,20 @@ export class EffectRuntime {
       layout: bgl ?? pipeline.getBindGroupLayout(0),
       entries,
     });
+    const scissor = this.scissor;
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
           view: dstTex.createView(),
-          loadOp: "clear",
+          // A clear ignores the scissor; under a scissor only the rect is
+          // consumed, so keep the rest and skip the full-texture clear.
+          loadOp: scissor ? "load" : "clear",
           storeOp: "store",
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
         },
       ],
     });
+    if (scissor) pass.setScissorRect(scissor.x, scissor.y, scissor.w, scissor.h);
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(6);

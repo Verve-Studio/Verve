@@ -160,10 +160,13 @@ export function useCanvasViewport(params: CanvasViewportParams): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
-  // ── Re-render on HDR display change (EV, tone-mapping operator) ───────────
+  // ── Re-blit on display change (EV, tone mapping, view LUT, proof) ─────────
+  // The presenter applies every display setting while blitting stableTex,
+  // so the composite stays valid: only the blit has to run again.
   useEffect(() => {
     if (!isActive) return;
     const onDisplayChange = (): void => {
+      rendererRef.current?.markViewportDirty();
       doRenderRef.current();
     };
     displayStore.subscribe(onDisplayChange);

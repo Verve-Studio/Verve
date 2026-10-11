@@ -12,14 +12,21 @@ import {
   buildSubPlan,
 } from "./canvasPlan";
 
-import type { LayerPayload } from "@/core/store/layerPayload";
 import {
   rasterizeDocument,
   type RasterBackend,
   type RasterReason,
 } from "@/graphics/rasterization";
-import { matchPaletteIndices } from "@/wasm";
-import type { LayerHistoryChange } from "@/graphics/webgpu/layers/LayerTextureStore";
+import { getPixelOpsSync, matchPaletteIndices, syncIfGrew } from "@/wasm";
+import { DocumentChangedError } from "@/core/io/verveContainer";
+import type { LiveLayerPixels } from "@/core/io/verveDocument";
+import {
+  snapshotFull,
+  snapshotLayer,
+  snapshotMatches,
+  writeSnapshotTiles,
+  type TiledLayerSnapshot,
+} from "@/core/store/tiledSnapshot";
 import {
   clampF32ToUint8,
   linearToSrgbChannel,
@@ -29,9 +36,12 @@ import {
 // ─── Public handle type (imported by App.tsx and other callers) ────────────
 
 export interface CanvasHandle {
-  /** Copy a layer's pixels in its native format (rgba32f floats, rgba8
-   *  bytes, indexed8 indices) with its layer-local geometry. */
-  exportLayerData: (layerId: string) => LayerPayload | null;
+  /** A layer's pixels in its native format (rgba32f floats, rgba8 bytes,
+   *  indexed8 indices) with its layer-local geometry, for saving. Nothing
+   *  is copied: `source.view()` reads the live buffer and throws
+   *  `DocumentChangedError` once the layer's pixels, size or format change
+   *  (or the layer is destroyed). */
+  exportLayerData: (layerId: string) => LiveLayerPixels | null;
   /** Copy a baked adjustment mask (canvas-sized rgba8). */
   exportAdjustmentMask: (layerId: string) => Uint8Array | null;
   /**
@@ -96,14 +106,15 @@ export interface CanvasHandle {
   /** Snapshot all current layers' raw pixel data + geometry for history. */
   captureAllLayerPixels: () => Map<string, Uint8Array | Float32Array>;
   /**
-   * Snapshot per-layer contentVersion. Used by history capture to deduplicate
-   * unchanged layers across entries (sharing buffer references) so a 10-layer
-   * doc doesn't allocate 10× the per-entry RAM when only one layer changed.
+   * Tiled history snapshot of every layer. Tiles unchanged since the layer's
+   * history base (the snapshot last captured or restored for it) are shared
+   * with it; only tiles written since are copied. `prev` (the current
+   * entry's snapshots) is used for content de-dup when a layer has no base
+   * (new, grown, remounted). Sets each layer's history base to the result.
    */
-  captureAllLayerContentVersions: () => Map<string, number>;
-  /** Per layer: what changed since the previous call (history capture);
-   *  resets the tracking. */
-  takeAllLayerHistoryChanges: () => Map<string, LayerHistoryChange>;
+  captureAllLayerSnapshots: (
+    prev?: ReadonlyMap<string, TiledLayerSnapshot>,
+  ) => Map<string, TiledLayerSnapshot>;
   /**
    * Return direct references to layer data buffers — no copy.
    * Only safe when the Canvas is about to unmount (tab switch / file open).
@@ -120,12 +131,16 @@ export interface CanvasHandle {
       offsetY: number;
     }
   >;
-  /** Snapshot baked selection masks for adjustment layers. */
-  captureAllAdjustmentMasks: () => Map<string, Uint8Array>;
-  /** Restore previously snapshotted pixel data + geometry and flush+render for each layer.
-   * Pass layerStateForRender (the history snapshot's layer state) so the render uses the correct mask map. */
+  /** Tiled history snapshots of the baked adjustment-layer masks (same
+   *  sharing rules as {@link captureAllLayerSnapshots}). */
+  captureAllAdjustmentMasks: (
+    prev?: ReadonlyMap<string, TiledLayerSnapshot>,
+  ) => Map<string, TiledLayerSnapshot>;
+  /** Restore history snapshots + geometry and flush+render. Per layer, only
+   *  the tiles that differ from what the layer currently holds are written
+   *  (none when it already shows that snapshot). */
   restoreAllLayerPixels: (
-    data: Map<string, Uint8Array | Float32Array>,
+    data: ReadonlyMap<string, TiledLayerSnapshot>,
     geometry?: Map<
       string,
       {
@@ -138,7 +153,9 @@ export interface CanvasHandle {
     layerStateForRender?: readonly LayerState[],
   ) => void;
   /** Restore baked selection masks for adjustment layers and re-render. */
-  restoreAllAdjustmentMasks: (masks: Map<string, Uint8Array>) => void;
+  restoreAllAdjustmentMasks: (
+    masks: ReadonlyMap<string, TiledLayerSnapshot>,
+  ) => void;
   /** Return full-canvas RGBA pixels that feed into the target adjustment layer. Float32Array for f32 docs, Uint8Array otherwise. */
   readAdjustmentInputPixels: (
     adjustmentLayerId: string,
@@ -298,6 +315,75 @@ interface UseCanvasHandleParams {
   requestRender: () => void;
 }
 
+// ─── History snapshot helpers ──────────────────────────────────────────────
+
+/**
+ * Snapshot one GPU layer for history and make the result its history base.
+ * Returns null for an empty layer (its base is cleared, so the next capture
+ * starts over with a full snapshot).
+ */
+function snapshotGpuLayer(
+  renderer: WebGPURenderer | null,
+  layer: GpuLayer,
+  prev: TiledLayerSnapshot | undefined,
+): TiledLayerSnapshot | null {
+  const w = layer.layerWidth;
+  const h = layer.layerHeight;
+  const channels: 1 | 4 = layer.format === "indexed8" ? 1 : 4;
+  if (!renderer) {
+    return w * h > 0 ? snapshotFull(layer.data, w, h, channels, prev) : null;
+  }
+  const change = renderer.takeLayerHistoryChange(layer);
+  const snap =
+    w * h > 0 ? snapshotLayer(layer.data, w, h, channels, change, prev) : null;
+  renderer.setLayerHistoryBase(layer, snap);
+  return snap;
+}
+
+/**
+ * Bring a GPU layer (same geometry and format as `snap`) to `snap`'s pixels,
+ * writing only the tiles that can differ: those whose tile object differs
+ * from the layer's history base, plus those written since the base was set.
+ * Everything when the layer is `fresh` or has no usable base. Afterwards the
+ * layer's history base is `snap`, so the next capture shares its tiles.
+ */
+function restoreGpuLayer(
+  renderer: WebGPURenderer,
+  layer: GpuLayer,
+  snap: TiledLayerSnapshot,
+  fresh: boolean,
+  palette: RGBAColor[] | undefined,
+): void {
+  const change = renderer.takeLayerHistoryChange(layer);
+  let rect;
+  if (
+    !fresh &&
+    change.kind !== "all" &&
+    snapshotMatches(
+      change.base,
+      snap.width,
+      snap.height,
+      snap.channels,
+      snap.float,
+    )
+  ) {
+    const baseTiles = change.base.tiles;
+    const written = change.kind === "tiles" ? change.tiles : null;
+    rect = writeSnapshotTiles(
+      snap,
+      layer.data,
+      (i) => snap.tiles[i] !== baseTiles[i] || (written !== null && written[i] !== 0),
+    );
+  } else {
+    rect = writeSnapshotTiles(snap, layer.data);
+  }
+  if (rect) {
+    renderer.markDirtyRect(layer, rect.lx, rect.ly, rect.rx, rect.ry);
+    renderer.flushLayer(layer, palette);
+  }
+  renderer.setLayerHistoryBase(layer, snap);
+}
+
 export function useCanvasHandle({
   ref,
   rendererRef,
@@ -365,14 +451,38 @@ export function useCanvasHandle({
       exportLayerData: (layerId) => {
         const layer = glLayersRef.current.get(layerId);
         if (!layer) return null;
+        const { format, layerWidth, layerHeight, offsetX, offsetY, wasmPtr } = layer;
+        const version = layer.contentVersion;
+        const byteLength = layer.data.byteLength;
         return {
-          format: layer.format,
-          data: layer.data.slice(),
-          geo: {
-            layerWidth: layer.layerWidth,
-            layerHeight: layer.layerHeight,
-            offsetX: layer.offsetX,
-            offsetY: layer.offsetY,
+          format,
+          geo: { layerWidth, layerHeight, offsetX, offsetY },
+          source: {
+            byteLength,
+            deflate: format !== "rgba32f",
+            view: () => {
+              // Same layer, same pixels (flushes bump contentVersion; grow,
+              // format change and destroy swap the buffer / wasmPtr).
+              if (
+                glLayersRef.current.get(layerId) !== layer ||
+                layer.contentVersion !== version ||
+                layer.format !== format ||
+                layer.layerWidth !== layerWidth ||
+                layer.layerHeight !== layerHeight ||
+                layer.offsetX !== offsetX ||
+                layer.offsetY !== offsetY ||
+                layer.wasmPtr !== wasmPtr
+              ) {
+                throw new DocumentChangedError();
+              }
+              // A WASM-heap layer's view detaches when the heap grows;
+              // rebind before reading.
+              const m = getPixelOpsSync();
+              if (m) syncIfGrew(m);
+              const d = layer.data;
+              if (d.byteLength !== byteLength) throw new DocumentChangedError();
+              return new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+            },
           },
         };
       },
@@ -636,27 +746,14 @@ export function useCanvasHandle({
         return result;
       },
 
-      takeAllLayerHistoryChanges: () => {
-        const result = new Map<string, LayerHistoryChange>();
+      captureAllLayerSnapshots: (prev) => {
+        const result = new Map<string, TiledLayerSnapshot>();
         const renderer = rendererRef.current;
         for (const ls of layersStateRef.current) {
           const layer = glLayersRef.current.get(ls.id);
           if (!layer) continue;
-          result.set(
-            ls.id,
-            renderer
-              ? renderer.takeLayerHistoryChange(layer)
-              : { kind: "all" },
-          );
-        }
-        return result;
-      },
-
-      captureAllLayerContentVersions: () => {
-        const result = new Map<string, number>();
-        for (const ls of layersStateRef.current) {
-          const layer = glLayersRef.current.get(ls.id);
-          if (layer) result.set(ls.id, layer.contentVersion);
+          const snap = snapshotGpuLayer(renderer, layer, prev?.get(ls.id));
+          if (snap) result.set(ls.id, snap);
         }
         return result;
       },
@@ -693,10 +790,12 @@ export function useCanvasHandle({
         return result;
       },
 
-      captureAllAdjustmentMasks: () => {
-        const result = new Map<string, Uint8Array>();
+      captureAllAdjustmentMasks: (prev) => {
+        const result = new Map<string, TiledLayerSnapshot>();
+        const renderer = rendererRef.current;
         for (const [layerId, maskLayer] of adjustmentMaskMap.current) {
-          result.set(layerId, maskLayer.data.slice() as Uint8Array);
+          const snap = snapshotGpuLayer(renderer, maskLayer, prev?.get(layerId));
+          if (snap) result.set(layerId, snap);
         }
         return result;
       },
@@ -739,57 +838,44 @@ export function useCanvasHandle({
       restoreAllLayerPixels: (data, geometry?, layerStateForRender?) => {
         const renderer = rendererRef.current;
         if (!renderer) return;
-        for (const [id, pixels] of data) {
+        for (const [id, snap] of data) {
           const geo = geometry?.get(id);
+          const fmt: PixelFormat = snap.float
+            ? "rgba32f"
+            : snap.channels === 1
+              ? "indexed8"
+              : "rgba8";
           let layer = glLayersRef.current.get(id);
-          const isF32 = (pixels as unknown) instanceof Float32Array;
-          const isIndexed8 =
-            !isF32 &&
-            pixels.length !==
-              (geo?.layerWidth ?? renderer.pixelWidth) *
-                (geo?.layerHeight ?? renderer.pixelHeight) *
-                4;
-          const fmt = isF32 ? "rgba32f" : isIndexed8 ? "indexed8" : "rgba8";
-          if (geo) {
-            if (
-              !layer ||
-              layer.layerWidth !== geo.layerWidth ||
-              layer.layerHeight !== geo.layerHeight ||
-              layer.format !== fmt
-            ) {
-              if (layer) renderer.destroyLayer(layer);
-              layer = renderer.createLayer(
-                id,
-                layer?.name ?? "Restored",
-                geo.layerWidth,
-                geo.layerHeight,
-                geo.offsetX,
-                geo.offsetY,
-                fmt,
-              );
-              glLayersRef.current.set(id, layer);
-            } else {
-              layer.offsetX = geo.offsetX;
-              layer.offsetY = geo.offsetY;
-            }
-          }
-          if (!layer) {
+          let fresh = false;
+          if (
+            !layer ||
+            layer.layerWidth !== snap.width ||
+            layer.layerHeight !== snap.height ||
+            layer.format !== fmt
+          ) {
+            if (layer) renderer.destroyLayer(layer);
             layer = renderer.createLayer(
               id,
-              "Restored",
-              renderer.pixelWidth,
-              renderer.pixelHeight,
-              0,
-              0,
+              layer?.name ?? "Restored",
+              snap.width,
+              snap.height,
+              geo?.offsetX ?? 0,
+              geo?.offsetY ?? 0,
               fmt,
             );
             glLayersRef.current.set(id, layer);
+            fresh = true;
+          } else if (geo) {
+            layer.offsetX = geo.offsetX;
+            layer.offsetY = geo.offsetY;
           }
-          layer.data.set(pixels as Uint8Array);
-          renderer.flushLayer(
+          restoreGpuLayer(
+            renderer,
             layer,
+            snap,
+            fresh,
             fmt === "indexed8"
-              ? (swatchesRef.current as import("@/types").RGBAColor[])
+              ? (swatchesRef.current as RGBAColor[])
               : undefined,
           );
         }
@@ -809,21 +895,27 @@ export function useCanvasHandle({
             adjustmentMaskMap.current.delete(layerId);
           }
         }
-        for (const [layerId, data] of masks) {
+        for (const [layerId, snap] of masks) {
           let maskLayer = adjustmentMaskMap.current.get(layerId);
-          if (!maskLayer) {
+          let fresh = false;
+          if (
+            !maskLayer ||
+            maskLayer.layerWidth !== snap.width ||
+            maskLayer.layerHeight !== snap.height
+          ) {
+            if (maskLayer) renderer.destroyLayer(maskLayer);
             maskLayer = renderer.createLayer(
               `${layerId}:adjustment-mask`,
               "Adjustment Mask",
-              renderer.pixelWidth,
-              renderer.pixelHeight,
+              snap.width,
+              snap.height,
               0,
               0,
             );
             adjustmentMaskMap.current.set(layerId, maskLayer);
+            fresh = true;
           }
-          maskLayer.data.set(data);
-          renderer.flushLayer(maskLayer);
+          restoreGpuLayer(renderer, maskLayer, snap, fresh, undefined);
         }
         renderFromPlan();
       },

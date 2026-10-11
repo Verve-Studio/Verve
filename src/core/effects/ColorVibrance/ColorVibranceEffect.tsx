@@ -36,6 +36,7 @@ export const ColorVibranceEffect: IPipelineEffect<
   id: "color-vibrance",
   label: "Color Vibrance…",
   menu: { root: "adjustments", submenu: "adj-color" },
+  perPixel: true,
   defaultParams: { vibrance: 0, saturation: 0 },
   paramFields: [
     numberField("vibrance", "Vibrance", { min: -100, max: 100, int: true }),

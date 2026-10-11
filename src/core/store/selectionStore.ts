@@ -528,45 +528,85 @@ export class SelectionStore {
     this.notify();
   }
 
+  /**
+   * Border of the binarised mask (> 127) as axis-aligned runs, flat
+   * `[x1, y1, x2, y2, …]` in canvas pixels: horizontal runs (y1 === y2,
+   * x1 < x2) on the boundary rows between pixel rows, vertical runs
+   * (x1 === x2, y1 < y2) on the boundary columns. One row-major pass:
+   * horizontal edges compare each row with the row above, vertical edges
+   * compare each pixel with its left neighbour, with open vertical runs
+   * tracked per column.
+   */
   private computeBorderSegments(): Float32Array {
     const { mask, width: w, height: h } = this;
     if (!mask) return new Float32Array(0);
 
-    const segs: number[] = [];
+    let out = new Float32Array(4096);
+    let n = 0;
+    const push = (x1: number, y1: number, x2: number, y2: number): void => {
+      if (n + 4 > out.length) {
+        const grown = new Float32Array(out.length * 2);
+        grown.set(out);
+        out = grown;
+      }
+      out[n] = x1;
+      out[n + 1] = y1;
+      out[n + 2] = x2;
+      out[n + 3] = y2;
+      n += 4;
+    };
 
-    // Horizontal boundary runs: scan each boundary row y (between row y-1 and y)
+    // Binarised previous / current row (prev starts all-zero = outside).
+    let prev = new Uint8Array(w);
+    let cur = new Uint8Array(w);
+    // Start row of the open vertical run on boundary column x, or -1.
+    const colRun = new Int32Array(w + 1).fill(-1);
+
     for (let y = 0; y <= h; y++) {
+      if (y < h) {
+        const base = y * w;
+        for (let x = 0; x < w; x++) cur[x] = mask[base + x] > 127 ? 1 : 0;
+      } else {
+        cur.fill(0);
+      }
+
+      // Horizontal boundary runs on boundary row y (between rows y-1 and y).
       let runStart = -1;
-      for (let x = 0; x <= w; x++) {
-        const above =
-          y > 0 && x < w ? (mask[(y - 1) * w + x] > 127 ? 1 : 0) : 0;
-        const below = y < h && x < w ? (mask[y * w + x] > 127 ? 1 : 0) : 0;
-        const boundary = above !== below;
-        if (boundary && runStart < 0) {
-          runStart = x;
-        } else if (!boundary && runStart >= 0) {
-          segs.push(runStart, y, x, y);
+      for (let x = 0; x < w; x++) {
+        if (prev[x] !== cur[x]) {
+          if (runStart < 0) runStart = x;
+        } else if (runStart >= 0) {
+          push(runStart, y, x, y);
           runStart = -1;
         }
       }
-    }
+      if (runStart >= 0) push(runStart, y, w, y);
 
-    // Vertical boundary runs: scan each boundary column x (between col x-1 and x)
-    for (let x = 0; x <= w; x++) {
-      let runStart = -1;
-      for (let y = 0; y <= h; y++) {
-        const left = x > 0 && y < h ? (mask[y * w + x - 1] > 127 ? 1 : 0) : 0;
-        const right = x < w && y < h ? (mask[y * w + x] > 127 ? 1 : 0) : 0;
-        const boundary = left !== right;
-        if (boundary && runStart < 0) {
-          runStart = y;
-        } else if (!boundary && runStart >= 0) {
-          segs.push(x, runStart, x, y);
-          runStart = -1;
+      // Vertical boundary runs: pixel row y on boundary column x (between
+      // columns x-1 and x). Row h closes every open run.
+      if (y < h) {
+        let left = 0;
+        for (let x = 0; x <= w; x++) {
+          const right = x < w ? cur[x] : 0;
+          if (left !== right) {
+            if (colRun[x] < 0) colRun[x] = y;
+          } else if (colRun[x] >= 0) {
+            push(x, colRun[x], x, y);
+            colRun[x] = -1;
+          }
+          left = right;
+        }
+      } else {
+        for (let x = 0; x <= w; x++) {
+          if (colRun[x] >= 0) push(x, colRun[x], x, h);
         }
       }
+
+      const t = prev;
+      prev = cur;
+      cur = t;
     }
 
-    return new Float32Array(segs);
+    return n === out.length ? out : out.slice(0, n);
   }
 }

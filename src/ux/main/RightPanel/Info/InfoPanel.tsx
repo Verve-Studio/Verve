@@ -18,32 +18,55 @@ function toHex2(v: number): string {
     .padStart(2, "0");
 }
 
-function getSelectionBounds(): {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-} | null {
-  if (!activeScope().selection.hasSelection()) return null;
-  const mask = activeScope().selection.mask!;
-  const sw = activeScope().selection.width;
-  const sh = activeScope().selection.height;
+type SelBounds = { x: number; y: number; w: number; h: number };
+
+// Last computed bounds. Keyed on the mask *and* its border segments: the store
+// recomputes `borderSegments` on every mask change, including the in-place
+// ones (invert), so the pair identifies the mask contents. Selection notifies
+// that don't change the mask (tab switches back, pending previews, …) then
+// cost nothing instead of a full-canvas scan.
+let boundsKeyMask: Uint8Array | null = null;
+let boundsKeySegs: Float32Array | null = null;
+let boundsKeyW = 0;
+let cachedBounds: SelBounds | null = null;
+
+function getSelectionBounds(): SelBounds | null {
+  const selection = activeScope().selection;
+  if (!selection.hasSelection()) return null;
+  const mask = selection.mask!;
+  const sw = selection.width;
+  const sh = selection.height;
+  if (
+    mask === boundsKeyMask &&
+    selection.borderSegments === boundsKeySegs &&
+    sw === boundsKeyW
+  ) {
+    return cachedBounds;
+  }
   let minX = sw,
     minY = sh,
     maxX = -1,
     maxY = -1;
   for (let y = 0; y < sh; y++) {
-    for (let x = 0; x < sw; x++) {
-      if (mask[y * sw + x] !== 0) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
+    const base = y * sw;
+    // First / last set pixel of the row; rows only need scanning inward
+    // past the current bounds.
+    let x0 = 0;
+    while (x0 < sw && mask[base + x0] === 0) x0++;
+    if (x0 === sw) continue;
+    let x1 = sw - 1;
+    while (x1 > maxX && mask[base + x1] === 0) x1--;
+    if (x0 < minX) minX = x0;
+    if (x1 > maxX) maxX = x1;
+    if (y < minY) minY = y;
+    maxY = y;
   }
-  if (maxX < 0) return null;
-  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  boundsKeyMask = mask;
+  boundsKeySegs = selection.borderSegments;
+  boundsKeyW = sw;
+  cachedBounds =
+    maxX < 0 ? null : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  return cachedBounds;
 }
 
 // ─── InfoPanel ────────────────────────────────────────────────────────────────
@@ -109,10 +132,10 @@ export function InfoPanel(): React.JSX.Element {
     pixelIsFloat: cursorStore.pixelIsFloat,
   });
 
-  const [sel, setSel] = useState<SelectionState>({
+  const [sel, setSel] = useState<SelectionState>(() => ({
     hasSel: activeScope().selection.hasSelection(),
     bounds: getSelectionBounds(),
-  });
+  }));
 
   useEffect(() => {
     const onCursor = (): void =>
@@ -129,11 +152,15 @@ export function InfoPanel(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    const onSel = (): void =>
-      setSel({
-        hasSel: activeScope().selection.hasSelection(),
-        bounds: getSelectionBounds(),
-      });
+    const onSel = (): void => {
+      const hasSel = activeScope().selection.hasSelection();
+      const bounds = getSelectionBounds();
+      setSel((prev) =>
+        prev.hasSel === hasSel && prev.bounds === bounds
+          ? prev
+          : { hasSel, bounds },
+      );
+    };
     activeScope().selection.subscribe(onSel);
     return () => activeScope().selection.unsubscribe(onSel);
   }, []);

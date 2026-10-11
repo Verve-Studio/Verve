@@ -40,6 +40,43 @@ function reportRenderError(err: unknown): void {
   notificationStore.error(`Canvas rendering failed: ${extractErrorMessage(err)}`);
 }
 
+// ── Pre-render flush hooks ─────────────────────────────────────────────────
+// Tools that coalesce their GPU upload to once per frame (Brush) register a
+// one-shot hook here and then call `ctx.render()`. The render loop's own rAF
+// runs the hooks right before building the plan, so the upload and the
+// composite land in the SAME frame. (Brush used to run its own rAF that
+// flushed and then called render(), which scheduled a second rAF: one frame
+// of extra latency on every stroke.) Hooks run while the frame is still
+// marked scheduled, so a `render()` they call coalesces into this frame.
+const preRenderFlushes = new Set<() => void>();
+let preRenderScratch: Array<() => void> = [];
+
+/** Run `fn` once, just before the next canvas render (same frame). */
+export function requestPreRenderFlush(fn: () => void): void {
+  preRenderFlushes.add(fn);
+}
+
+/** Drop a hook registered with {@link requestPreRenderFlush}. */
+export function cancelPreRenderFlush(fn: () => void): void {
+  preRenderFlushes.delete(fn);
+}
+
+function runPreRenderFlushes(): void {
+  if (preRenderFlushes.size === 0) return;
+  const hooks = preRenderScratch;
+  for (const fn of preRenderFlushes) hooks.push(fn);
+  preRenderFlushes.clear();
+  for (let i = 0; i < hooks.length; i++) {
+    try {
+      hooks[i]();
+    } catch (err) {
+      reportRenderError(err);
+    }
+  }
+  hooks.length = 0;
+  preRenderScratch = hooks;
+}
+
 const MIRROR_MIN_INTERVAL_MS = 500; // 2 fps cap on the navigator/thumbnail repaint.
 
 export interface CanvasRenderLoopParams {
@@ -222,6 +259,9 @@ export function useCanvasRenderLoop(
   const doRender = (): void => {
     if (renderRafIdRef.current !== 0) return; // already scheduled for this frame
     renderRafIdRef.current = requestAnimationFrame(() => {
+      // Before clearing the scheduled id: render() calls from the hooks
+      // coalesce into this frame instead of scheduling another one.
+      runPreRenderFlushes();
       renderRafIdRef.current = 0;
       const renderer = rendererRef.current;
       if (!renderer) return;

@@ -103,6 +103,7 @@ export const TimeOfDayEffect: IPipelineEffect<TimeOfDayEffectLayer, TimeOfDayOp>
   id: "time-of-day",
   label: "Time of Day…",
   menu: { root: "adjustments", submenu: "adj-color" },
+  perPixel: true,
   defaultParams: timeOfDayModeParams("night"),
   paramFields: [
     // Switching mode loads that mode's lead preset, as the panel's mode

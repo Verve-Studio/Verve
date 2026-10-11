@@ -20,7 +20,7 @@ import {
   selectionWeight,
 } from "../_shared/localBrush";
 import { activeScope } from "@/core/store/scope";
-import type { GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import { CowLayerSnapshot } from "../_shared/cowLayerSnapshot";
 // ─── Module-level options ─────────────────────────────────────────────────────
 
 export const healingBrushOptions = {
@@ -47,17 +47,10 @@ export const healingBrushOptions = {
 
 // ─── Tone-match + heal stamp ──────────────────────────────────────────────────
 
-interface SourceBuffer {
-  data: Uint8Array | Float32Array;
-  /** When set, sample this (untouched) layer live instead of `data` — it is
-   *  re-read per stamp because WASM heap growth replaces `layer.data`. */
-  liveLayer?: GpuLayer;
-  W: number;
-  H: number;
-  offsetX: number;
-  offsetY: number;
-  format: "rgba8" | "rgba32f" | "indexed8";
-}
+/** Stroke-start view of the source layer: copy-on-write when it is the
+ *  painted layer, live otherwise (re-bound per stamp because WASM heap
+ *  growth replaces `layer.data`). */
+type SourceBuffer = CowLayerSnapshot;
 
 /**
  * Walk a circular footprint at canvas-space (dCx, dCy) on the destination
@@ -155,9 +148,17 @@ function healingStamp(
     if (a !== alpha) alpha.set(a);
   }
 
-  const srcData = src.liveLayer ? src.liveLayer.data : src.data;
+  src.refresh();
+  // Same-layer healing: copy the stroke-start pixels this stamp overwrites
+  // before the second pass writes them.
+  src.protect(
+    minLx + layer.offsetX,
+    minLy + layer.offsetY,
+    maxLx + layer.offsetX,
+    maxLy + layer.offsetY,
+  );
   // Sample the source pixel for a destination layer-local (lx, ly).
-  // Returns null if the corresponding source coord is out of bounds.
+  // Returns false if the corresponding source coord is out of bounds.
   const sampleSource = (
     lx: number,
     ly: number,
@@ -168,15 +169,11 @@ function healingStamp(
     const cY = ly + layer.offsetY;
     const dx = cX - dCx;
     const dy = cY - dCy;
-    const sxL = Math.round(sCxL + dx);
-    const syL = Math.round(sCyL + dy);
-    if (sxL < 0 || syL < 0 || sxL >= src.W || syL >= src.H) return false;
-    const i = (syL * src.W + sxL) * 4;
-    out[0] = srcData[i];
-    out[1] = srcData[i + 1];
-    out[2] = srcData[i + 2];
-    out[3] = srcData[i + 3];
-    return true;
+    return src.sampleLocal(
+      Math.round(sCxL + dx),
+      Math.round(sCyL + dy),
+      out,
+    );
   };
 
   // ── First pass: compute tone shift = dest_avg − source_avg (alpha-weighted)
@@ -361,23 +358,13 @@ function createHealingBrushHandler(): ToolHandler {
         isDown = false;
         return;
       }
-      // Healing within one layer must sample a stable snapshot (the stroke
-      // modifies it). A different source layer isn't modified, so it's read
-      // live — copying it per stroke was a full-layer copy every time.
-      const sameLayer = sourceLayer === ctx.layer;
-      sourceBuffer = {
-        data: sameLayer
-          ? (ctx.renderer.readLayerPixels(sourceLayer) as
-              | Uint8Array
-              | Float32Array)
-          : sourceLayer.data,
-        liveLayer: sameLayer ? undefined : sourceLayer,
-        W: sourceLayer.layerWidth,
-        H: sourceLayer.layerHeight,
-        offsetX: sourceLayer.offsetX,
-        offsetY: sourceLayer.offsetY,
-        format: sourceLayer.format,
-      };
+      // Healing within one layer samples its stroke-start pixels
+      // copy-on-write (the stroke modifies it; only the tiles it overwrites
+      // are copied). A different source layer isn't modified: read live.
+      sourceBuffer = new CowLayerSnapshot(
+        sourceLayer,
+        sourceLayer === ctx.layer,
+      );
 
       // Throttled stroke rendering (attached effects bypassed mid-stroke).
       ctx.renderer.strokeStart();

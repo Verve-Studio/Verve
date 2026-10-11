@@ -52,6 +52,7 @@ import {
   appendBrushStamp,
   flushBrushBatch,
   ensureBakedBitmap,
+  type BrushStampJob,
 } from "@/wasm";
 import type { DynamicCurve } from "@/types";
 
@@ -196,20 +197,29 @@ function wrapPi(d: number): number {
  * dynamic source halfway around the dial. `direction` is left as 0 — the
  * caller fills it from the Bézier tangent at each stamp position.
  */
-function lerpPose(
+function lerpPoseInto(
+  out: StrokePoseInputs,
   a: StrokePoseInputs,
   b: StrokePoseInputs,
   t: number,
 ): StrokePoseInputs {
-  return {
-    pressure: a.pressure + (b.pressure - a.pressure) * t,
-    velocity: a.velocity + (b.velocity - a.velocity) * t,
-    tilt: a.tilt + (b.tilt - a.tilt) * t,
-    tiltAzimuth: a.tiltAzimuth + wrapPi(b.tiltAzimuth - a.tiltAzimuth) * t,
-    rotation: a.rotation + wrapPi(b.rotation - a.rotation) * t,
-    direction: 0,
-  };
+  out.pressure = a.pressure + (b.pressure - a.pressure) * t;
+  out.velocity = a.velocity + (b.velocity - a.velocity) * t;
+  out.tilt = a.tilt + (b.tilt - a.tilt) * t;
+  out.tiltAzimuth = a.tiltAzimuth + wrapPi(b.tiltAzimuth - a.tiltAzimuth) * t;
+  out.rotation = a.rotation + wrapPi(b.rotation - a.rotation) * t;
+  out.direction = 0;
+  return out;
 }
+
+/** Per-stamp pose scratch (stampSegment → emitStampWithCount). Poses are
+ *  read synchronously and never retained, so one object each suffices;
+ *  they must stay distinct (the smoothed pose is derived from the step's). */
+function makePoseScratch(): StrokePoseInputs {
+  return { pressure: 0, velocity: 0, tilt: 0, tiltAzimuth: 0, rotation: 0, direction: 0 };
+}
+const stepPoseScratch = makePoseScratch();
+const smoothedPoseScratch = makePoseScratch();
 
 /**
  * Step the smoothed direction toward `next` with a light EMA softening for
@@ -244,32 +254,45 @@ function stepDirection(
  * for indexed layers (palette-based, no meaningful smudge), and a fully
  * transparent value for out-of-layer reads (so smudging off the edge fades).
  */
+/** Scratch written by sampleOneLayerFloat (read immediately by the caller). */
+const smudgeTap = { r: 0, g: 0, b: 0, a: 0 };
+/** Scratch returned by sampleSmudgeColor — callers copy or consume it
+ *  before the next call. */
+const smudgeSample = { r: 0, g: 0, b: 0, a: 0 };
+
+/** Sample one layer pixel into `smudgeTap`. False for indexed8. */
 function sampleOneLayerFloat(
   renderer: WebGPURenderer,
   layer: GpuLayer,
   px: number,
   py: number,
-): { r: number; g: number; b: number; a: number } | null {
-  if (layer.format === "indexed8") return null;
+): boolean {
+  if (layer.format === "indexed8") return false;
+  const out = smudgeTap;
   const lx = Math.floor(px) - layer.offsetX;
   const ly = Math.floor(py) - layer.offsetY;
   if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight) {
-    return { r: 0, g: 0, b: 0, a: 0 };
+    out.r = 0; out.g = 0; out.b = 0; out.a = 0;
+    return true;
   }
-  const [r, g, b, a] = renderer.samplePixel(layer, lx, ly);
+  const c = renderer.samplePixel(layer, lx, ly);
   if (layer.format === "rgba8") {
-    return { r: r / 255, g: g / 255, b: b / 255, a: a / 255 };
+    out.r = c[0] / 255; out.g = c[1] / 255; out.b = c[2] / 255; out.a = c[3] / 255;
+    return true;
   }
   // rgba32f is linear-light; the carry colour is mixed in OKLab as sRGB and
   // decoded back to linear when stamped, so encode here. (Returning linear
   // values decoded them twice, darkening the layer with every smudge.)
-  return {
-    r: linearToSrgbChannel(r),
-    g: linearToSrgbChannel(g),
-    b: linearToSrgbChannel(b),
-    a,
-  };
+  out.r = linearToSrgbChannel(c[0]);
+  out.g = linearToSrgbChannel(c[1]);
+  out.b = linearToSrgbChannel(c[2]);
+  out.a = c[3];
+  return true;
 }
+
+/** 5-tap cross offsets (multiplied by the quarter-radius offset). */
+const SMUDGE_TAP_DX = [0, 1, -1, 0, 0] as const;
+const SMUDGE_TAP_DY = [0, 0, 0, 1, -1] as const;
 
 /**
  * Smudge pickup samples a small cross of layer pixels around the stamp
@@ -289,25 +312,31 @@ function sampleSmudgeColor(
 ): { r: number; g: number; b: number; a: number } | null {
   if (layer.format === "indexed8") return null;
   const off = Math.max(1, size * 0.25);
-  const taps: Array<[number, number]> = [
-    [0, 0],
-    [off, 0],
-    [-off, 0],
-    [0, off],
-    [0, -off],
-  ];
+  const c = smudgeTap;
   let r = 0, g = 0, b = 0, a = 0, n = 0;
-  for (const [dx, dy] of taps) {
-    const c = sampleOneLayerFloat(renderer, layer, cx + dx, cy + dy);
-    if (!c) continue;
+  for (let i = 0; i < 5; i++) {
+    if (
+      !sampleOneLayerFloat(
+        renderer,
+        layer,
+        cx + SMUDGE_TAP_DX[i] * off,
+        cy + SMUDGE_TAP_DY[i] * off,
+      )
+    )
+      continue;
     // Premultiplied: transparent taps (RGB usually 0) must not pull the
     // carried colour toward black — they only lower the carried alpha.
     r += c.r * c.a; g += c.g * c.a; b += c.b * c.a; a += c.a;
     n++;
   }
   if (n === 0) return null;
-  if (a <= 0) return { r: 0, g: 0, b: 0, a: 0 };
-  return { r: r / a, g: g / a, b: b / a, a: a / n };
+  const out = smudgeSample;
+  if (a <= 0) {
+    out.r = 0; out.g = 0; out.b = 0; out.a = 0;
+    return out;
+  }
+  out.r = r / a; out.g = g / a; out.b = b / a; out.a = a / n;
+  return out;
 }
 
 /** Per-stamp resolved parameters — the engine computes one of these per stamp. */
@@ -419,20 +448,31 @@ export interface StampSegmentParams {
   forceFirst?: boolean;
 }
 
-/** Float color → 0..255 RGBA bytes for blendPixelOver's non-HDR path. */
-function floatToBytes(
-  fr: number,
-  fg: number,
-  fb: number,
-  fa: number,
-): { r: number; g: number; b: number; a: number } {
-  return {
-    r: Math.round(Math.min(fr, 1) * 255),
-    g: Math.round(Math.min(fg, 1) * 255),
-    b: Math.round(Math.min(fb, 1) * 255),
-    a: Math.round(Math.min(Math.max(fa, 0), 1) * 255),
-  };
-}
+// ─── Per-stamp scratch (applyStamp) ──────────────────────────────────────────
+// applyStamp runs once per dab (thousands per stroke). These module-level
+// objects replace the per-stamp allocations (selection wrapper, linear
+// colour tuple, ~50-field WASM job). Safe to reuse: every consumer
+// (blendPixelOver, appendBrushStamp / runBrushStamp) reads them
+// synchronously and keeps no reference. Every field is assigned per stamp.
+const stampSelScratch: SelMask = { mask: new Uint8Array(0), width: 0 };
+const stampSrcFloatScratch: [number, number, number, number] = [0, 0, 0, 0];
+const stampJobScratch: BrushStampJob = {
+  cx: 0, cy: 0, radius: 0, roundness: 1, angle: 0, shear: 0,
+  flipX: 1, flipY: 1, aaWidth: 0,
+  minX: 0, minY: 0, maxX: 0, maxY: 0,
+  tipKind: 0, sdfData: undefined, sdfW: undefined, sdfH: undefined,
+  r: 0, g: 0, b: 0, a: 0, fr: 0, fg: 0, fb: 0, fa: 0,
+  opacity: 0, capOpacity: -1, bypassCap: false,
+  layerData: new Uint8Array(0), layerOffsetX: 0, layerOffsetY: 0,
+  layerW: 0, layerH: 0, layerFormat: 0, layerWasmPtr: undefined,
+  touchedData: new Uint8Array(0), touchedW: 0, touchedH: 0,
+  touchedWasmPtr: undefined, selMask: undefined, canvasW: 0, canvasH: 0,
+  dualActive: false, dualTipKind: undefined, dualSizeRatio: undefined,
+  dualBaseAngle: undefined, dualMix: undefined, dualSdfData: undefined,
+  dualSdfW: undefined, dualSdfH: undefined,
+  grainAmount: 0, grainScale: 2, grainFollowBrush: false,
+  bmOffsetX: undefined, bmOffsetY: undefined,
+};
 
 /**
  * Correlation length for the smooth `random` source, in stamps. A new noise
@@ -777,10 +817,12 @@ function applyStamp(
 
   if (onStampBbox) onStampBbox(minX, minY, maxX, maxY);
 
-  const sel: SelMask | undefined =
-    selectionMask !== null
-      ? { mask: selectionMask, width: renderer.pixelWidth }
-      : undefined;
+  let sel: SelMask | undefined;
+  if (selectionMask !== null) {
+    stampSelScratch.mask = selectionMask;
+    stampSelScratch.width = renderer.pixelWidth;
+    sel = stampSelScratch;
+  }
   const tiledW = tiledMode ? renderer.pixelWidth : undefined;
   const tiledH = tiledMode ? renderer.pixelHeight : undefined;
 
@@ -798,19 +840,22 @@ function applyStamp(
   }
 
   // Pre-resolve byte color and float color for blendPixelOver.
-  const { r, g, b, a } = floatToBytes(s.fr, s.fg, s.fb, s.fa);
+  // Float colour → 0..255 bytes for blendPixelOver's non-HDR path.
+  const r = Math.round(Math.min(s.fr, 1) * 255);
+  const g = Math.round(Math.min(s.fg, 1) * 255);
+  const b = Math.round(Math.min(s.fb, 1) * 255);
+  const a = Math.round(Math.min(Math.max(s.fa, 0), 1) * 255);
   // Stamp colour `s.fr/fg/fb` is sRGB-encoded (it descends from primaryColor
   // with per-stamp jitter applied). For an rgba32f layer we must gamma-decode
   // before passing to blendPixelOver — the layer stores linear-light values.
-  const srcFloat: readonly [number, number, number, number] | undefined =
-    layer.format === "rgba32f"
-      ? [
-          srgbToLinearChannel(s.fr),
-          srgbToLinearChannel(s.fg),
-          srgbToLinearChannel(s.fb),
-          s.fa,
-        ]
-      : undefined;
+  let srcFloat: readonly [number, number, number, number] | undefined;
+  if (layer.format === "rgba32f") {
+    stampSrcFloatScratch[0] = srgbToLinearChannel(s.fr);
+    stampSrcFloatScratch[1] = srgbToLinearChannel(s.fg);
+    stampSrcFloatScratch[2] = srgbToLinearChannel(s.fb);
+    stampSrcFloatScratch[3] = s.fa;
+    srcFloat = stampSrcFloatScratch;
+  }
 
   // Paper grain — pre-cache enabled flag.
   const grainAmount = brush.texture.amount;
@@ -869,71 +914,75 @@ function applyStamp(
     // WASM call boundary — the things that pile up at high stamp rates.
     const dispatch =
       brushStampBatchOpen ? appendBrushStamp : runBrushStamp;
-    dispatch(wasmModule, {
-      cx,
-      cy,
-      radius,
-      roundness,
-      angle,
-      shear,
-      flipX,
-      flipY,
-      aaWidth,
-      minX,
-      minY,
-      maxX,
-      maxY,
-      tipKind: sampler.tipKind,
-      sdfData: sampler.bitmapSdf,
-      sdfW: sampler.bitmapSdfW,
-      sdfH: sampler.bitmapSdfH,
-      r,
-      g,
-      b,
-      a,
-      // Pre-linearise for rgba32f (the C++ kernel writes the floats
-      // straight into the layer, so they must already be linear-light
-      // — same convention as the JS srcFloat path).
-      fr: layer.format === "rgba32f" ? srgbToLinearChannel(s.fr) : s.fr,
-      fg: layer.format === "rgba32f" ? srgbToLinearChannel(s.fg) : s.fg,
-      fb: layer.format === "rgba32f" ? srgbToLinearChannel(s.fb) : s.fb,
-      fa: s.fa,
-      opacity: stampOpacity,
-      capOpacity,
-      bypassCap: false,
-      layerData: layer.data,
-      layerOffsetX: layer.offsetX,
-      layerOffsetY: layer.offsetY,
-      layerW: layer.layerWidth,
-      layerH: layer.layerHeight,
-      layerFormat: layer.format === "rgba32f" ? 1 : 0,
-      // Zero-copy fast path when both buffers live in the WASM heap —
-      // the kernel reads/writes them in place via these ptrs and we
-      // skip the per-stamp slice marshalling entirely.
-      layerWasmPtr: layer.wasmPtr,
-      touchedData: touched.data,
-      touchedW: touched.width,
-      touchedH: touched.height,
-      touchedWasmPtr: touched.wasmPtr,
-      selMask: selectionMask ?? undefined,
-      canvasW: renderer.pixelWidth,
-      canvasH: renderer.pixelHeight,
-      // Dual brush — pass the resolved sampler's tip kind + (for bitmap)
-      // its SDF data. baseAngle is already the rotated total
-      // (primary angle + dual.angle + direction follow).
-      dualActive: dual !== null,
-      dualTipKind: dual?.sampler.tipKind,
-      dualSizeRatio: dual?.sizeRatio,
-      dualBaseAngle: dual?.baseAngle,
-      dualMix: dual?.mix,
-      dualSdfData: dual?.sampler.bitmapSdf,
-      dualSdfW: dual?.sampler.bitmapSdfW,
-      dualSdfH: dual?.sampler.bitmapSdfH,
-      // Paper grain
-      grainAmount,
-      grainScale,
-      grainFollowBrush: grainFollowsBrush,
-    });
+    const isF32 = layer.format === "rgba32f";
+    const j = stampJobScratch;
+    j.cx = cx;
+    j.cy = cy;
+    j.radius = radius;
+    j.roundness = roundness;
+    j.angle = angle;
+    j.shear = shear;
+    j.flipX = flipX;
+    j.flipY = flipY;
+    j.aaWidth = aaWidth;
+    j.minX = minX;
+    j.minY = minY;
+    j.maxX = maxX;
+    j.maxY = maxY;
+    j.tipKind = sampler.tipKind;
+    j.sdfData = sampler.bitmapSdf;
+    j.sdfW = sampler.bitmapSdfW;
+    j.sdfH = sampler.bitmapSdfH;
+    j.r = r;
+    j.g = g;
+    j.b = b;
+    j.a = a;
+    // Pre-linearise for rgba32f (the C++ kernel writes the floats
+    // straight into the layer, so they must already be linear-light
+    // — same convention as the JS srcFloat path).
+    j.fr = isF32 ? stampSrcFloatScratch[0] : s.fr;
+    j.fg = isF32 ? stampSrcFloatScratch[1] : s.fg;
+    j.fb = isF32 ? stampSrcFloatScratch[2] : s.fb;
+    j.fa = s.fa;
+    j.opacity = stampOpacity;
+    j.capOpacity = capOpacity;
+    j.bypassCap = false;
+    j.layerData = layer.data;
+    j.layerOffsetX = layer.offsetX;
+    j.layerOffsetY = layer.offsetY;
+    j.layerW = layer.layerWidth;
+    j.layerH = layer.layerHeight;
+    j.layerFormat = isF32 ? 1 : 0;
+    // Zero-copy fast path when both buffers live in the WASM heap —
+    // the kernel reads/writes them in place via these ptrs and we
+    // skip the per-stamp slice marshalling entirely.
+    j.layerWasmPtr = layer.wasmPtr;
+    j.touchedData = touched.data;
+    j.touchedW = touched.width;
+    j.touchedH = touched.height;
+    j.touchedWasmPtr = touched.wasmPtr;
+    j.selMask = selectionMask ?? undefined;
+    j.canvasW = renderer.pixelWidth;
+    j.canvasH = renderer.pixelHeight;
+    // Dual brush — pass the resolved sampler's tip kind + (for bitmap)
+    // its SDF data. baseAngle is already the rotated total
+    // (primary angle + dual.angle + direction follow).
+    j.dualActive = dual !== null;
+    j.dualTipKind = dual?.sampler.tipKind;
+    j.dualSizeRatio = dual?.sizeRatio;
+    j.dualBaseAngle = dual?.baseAngle;
+    j.dualMix = dual?.mix;
+    j.dualSdfData = dual?.sampler.bitmapSdf;
+    j.dualSdfW = dual?.sampler.bitmapSdfW;
+    j.dualSdfH = dual?.sampler.bitmapSdfH;
+    // Paper grain
+    j.grainAmount = grainAmount;
+    j.grainScale = grainScale;
+    j.grainFollowBrush = grainFollowsBrush;
+    // Set by appendBrushStamp in bitmap mode; never carry a stale offset.
+    j.bmOffsetX = undefined;
+    j.bmOffsetY = undefined;
+    dispatch(wasmModule, j);
     return;
   }
 
@@ -1078,6 +1127,34 @@ function bezierDirection(
   return Math.atan2(dy, dx);
 }
 
+// Targets of captureStrokeBbox, set by emitStampWithCount for its stamps.
+let bboxCaptureState: StrokeStampState | null = null;
+let bboxCaptureForward:
+  | ((minX: number, minY: number, maxX: number, maxY: number) => void)
+  | undefined;
+
+/** Accumulate the stroke-level bbox in `state` — `applyStrokeWetEdges` uses
+ *  it to scope its scan to the stroke's actual footprint instead of the
+ *  entire canvas — and forward to the caller's bbox callback. */
+function captureStrokeBbox(minX: number, minY: number, maxX: number, maxY: number): void {
+  const state = bboxCaptureState;
+  if (state) {
+    if (state.strokeBboxValid) {
+      if (minX < state.strokeBboxLx) state.strokeBboxLx = minX;
+      if (minY < state.strokeBboxLy) state.strokeBboxLy = minY;
+      if (maxX > state.strokeBboxRx) state.strokeBboxRx = maxX;
+      if (maxY > state.strokeBboxRy) state.strokeBboxRy = maxY;
+    } else {
+      state.strokeBboxLx = minX;
+      state.strokeBboxLy = minY;
+      state.strokeBboxRx = maxX;
+      state.strokeBboxRy = maxY;
+      state.strokeBboxValid = true;
+    }
+  }
+  bboxCaptureForward?.(minX, minY, maxX, maxY);
+}
+
 function emitStampWithCount(
   p: StampSegmentParams,
   cx: number,
@@ -1091,21 +1168,9 @@ function emitStampWithCount(
   // Wrap the caller's bbox callback so we also accumulate the stroke-level
   // bbox in `state` — `applyStrokeWetEdges` uses it to scope its scan to
   // the stroke's actual footprint instead of the entire canvas.
-  const captureBbox = (minX: number, minY: number, maxX: number, maxY: number): void => {
-    if (state.strokeBboxValid) {
-      if (minX < state.strokeBboxLx) state.strokeBboxLx = minX;
-      if (minY < state.strokeBboxLy) state.strokeBboxLy = minY;
-      if (maxX > state.strokeBboxRx) state.strokeBboxRx = maxX;
-      if (maxY > state.strokeBboxRy) state.strokeBboxRy = maxY;
-    } else {
-      state.strokeBboxLx = minX;
-      state.strokeBboxLy = minY;
-      state.strokeBboxRx = maxX;
-      state.strokeBboxRy = maxY;
-      state.strokeBboxValid = true;
-    }
-    onStampBbox?.(minX, minY, maxX, maxY);
-  };
+  // (Module-level callback + targets instead of a closure per step.)
+  bboxCaptureState = state;
+  bboxCaptureForward = onStampBbox;
 
   // ─── Direction smoothing ─────────────────────────────────────────────────
   // Three failure modes to avoid:
@@ -1134,7 +1199,13 @@ function emitStampWithCount(
       ? pose.direction
       : stepDirection(state.smoothDirection, pose.direction, easing, maxStep);
   state.smoothDirection = smoothedDir;
-  const smoothedPose: StrokePoseInputs = { ...pose, direction: smoothedDir };
+  const smoothedPose = smoothedPoseScratch;
+  smoothedPose.pressure = pose.pressure;
+  smoothedPose.velocity = pose.velocity;
+  smoothedPose.tilt = pose.tilt;
+  smoothedPose.tiltAzimuth = pose.tiltAzimuth;
+  smoothedPose.rotation = pose.rotation;
+  smoothedPose.direction = smoothedDir;
 
   // Resolve count from the curve (jitterMul × base count, min 1).
   const inputs = makeStampInputs(smoothedPose, state, 0);
@@ -1225,12 +1296,11 @@ function emitStampWithCount(
       resolved.fa =
         state.prevStampColor.a * (1 - COLOR_EMA) + resolved.fa * COLOR_EMA;
     }
-    state.prevStampColor = {
-      r: resolved.fr,
-      g: resolved.fg,
-      b: resolved.fb,
-      a: resolved.fa,
-    };
+    const psc = state.prevStampColor ?? (state.prevStampColor = { r: 0, g: 0, b: 0, a: 0 });
+    psc.r = resolved.fr;
+    psc.g = resolved.fg;
+    psc.b = resolved.fb;
+    psc.a = resolved.fa;
     if (smudgeMix) {
       // Mix carried color with the (possibly jittered) brush colour by
       // colorRate through OKLab — perceptually-straight wet/paint mixing
@@ -1272,7 +1342,7 @@ function emitStampWithCount(
       tiledMode,
       state.touched,
       bypassCap,
-      captureBbox,
+      captureStrokeBbox,
       dual,
     );
   }
@@ -1449,7 +1519,7 @@ export function stampSegment(p: StampSegmentParams): void {
   try {
     if (forceFirst && state.isFirstStamp) {
       // Segment-start stamp uses pose0 with the Bézier-tangent direction at t=0.
-      const startPose = lerpPose(pose0, pose1, 0);
+      const startPose = lerpPoseInto(stepPoseScratch, pose0, pose1, 0);
       startPose.direction = bezierDirection(p0x, p0y, cpx, cpy, p1x, p1y, 0);
       emitStampWithCount(p, p0x, p0y, size0, opacity0, startPose, onStampBbox);
     }
@@ -1489,7 +1559,7 @@ export function stampSegment(p: StampSegmentParams): void {
         // Pose lerp: smoothly varies pressure/velocity/tilt/rotation along
         // the segment so dynamic curves driven by these sources don't step
         // at each pointer-event boundary.
-        const stampPose = lerpPose(pose0, pose1, ttClamped);
+        const stampPose = lerpPoseInto(stepPoseScratch, pose0, pose1, ttClamped);
         stampPose.direction = dirAtT;
         emitStampWithCount(p, cx, cy, sz, op, stampPose, onStampBbox);
         sx = cx;

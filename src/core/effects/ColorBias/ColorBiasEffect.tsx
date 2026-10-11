@@ -74,6 +74,7 @@ export const ColorBiasEffect: IPipelineEffect<
   id: "color-bias",
   label: "Color Bias…",
   menu: { root: "adjustments", submenu: "adj-style" },
+  perPixel: true,
   defaultParams: {
     targetColor: { r: 255, g: 255, b: 255 },
     useSeparateOutput: false,

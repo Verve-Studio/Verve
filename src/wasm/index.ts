@@ -276,8 +276,39 @@ function withInPlaceBuffer(
 }
 
 /**
- * Copies `data` into WASM memory, allocates a separate output buffer,
- * calls `fn(srcPtr, dstPtr)`, then returns the output bytes.
+ * Byte offset of `view` in the WASM heap when it already lives there (a
+ * pinned layer's `data`), else -1. Read it before any `_malloc` and with no
+ * `await` in between: heap growth detaches the view (its offset reads 0).
+ */
+function heapOffsetOf(
+  m: PixelOpsModule,
+  view: Uint8Array | Float32Array,
+): number {
+  return view.buffer === m.HEAPU8.buffer ? view.byteOffset : -1;
+}
+
+/**
+ * Runs `fn` on the module synchronously when it's already loaded. Wrappers
+ * that accept heap-resident inputs use it so the input view can't be detached by
+ * another task's `_malloc` between the call and reading its offset (layers
+ * are only heap-resident once the module is loaded).
+ */
+function withPixelOpsNow<T>(fn: (m: PixelOpsModule) => T): Promise<T> {
+  // No `await` when loaded: even an already-resolved await yields, and a
+  // concurrent call's `_malloc` could detach this call's input view.
+  const m = getPixelOpsSync();
+  if (!m) return getPixelOps().then(fn);
+  try {
+    return Promise.resolve(fn(m));
+  } catch (err) {
+    return Promise.reject(err);
+  }
+}
+
+/**
+ * Runs `fn(srcPtr, dstPtr)` on `data` (read-only) and a fresh output buffer,
+ * then returns the output bytes. A `data` that already lives in the WASM
+ * heap is read in place; anything else is copied in.
  */
 function withSrcDstBuffers(
   m: PixelOpsModule,
@@ -285,19 +316,49 @@ function withSrcDstBuffers(
   dstByteLength: number,
   fn: (srcPtr: number, dstPtr: number) => void,
 ): Uint8Array {
-  const srcPtr = m._malloc(data.byteLength);
-  const dstPtr = m._malloc(dstByteLength);
+  const heapSrc = heapOffsetOf(m, data);
+  const srcPtr = heapSrc >= 0 ? heapSrc : m._malloc(data.byteLength);
+  let dstPtr = 0;
   try {
-    m.HEAPU8.set(data, srcPtr);
+    if (heapSrc < 0) m.HEAPU8.set(data, srcPtr);
+    dstPtr = m._malloc(dstByteLength);
     fn(srcPtr, dstPtr);
     return m.HEAPU8.slice(dstPtr, dstPtr + dstByteLength);
   } finally {
-    m._free(srcPtr);
-    m._free(dstPtr);
+    if (heapSrc < 0) m._free(srcPtr);
+    if (dstPtr) m._free(dstPtr);
   }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Synchronous in-place flood fill of a buffer that already lives in the WASM
+ * heap (a pinned layer: `ptr` = `layer.wasmPtr`) — no copies. rgba8: colour
+ * 0–255, tolerance as {@link floodFill}; rgba32f: colour in linear floats,
+ * tolerance as {@link floodFillF32}. Returns false (nothing written) when the
+ * module isn't loaded; the caller then uses the copying async variant.
+ */
+export function floodFillInPlace(
+  ptr: number,
+  format: "rgba8" | "rgba32f",
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  tolerance = 0,
+): boolean {
+  const m = getPixelOpsSync();
+  if (!m) return false;
+  const fill =
+    format === "rgba32f" ? m._pixelops_flood_fill_f32 : m._pixelops_flood_fill;
+  fill(ptr, width, height, x, y, r, g, b, a, tolerance);
+  return true;
+}
 
 /** Flood-fill starting at (x, y) with the given RGBA colour.
  *  tolerance: max squared Euclidean distance in RGBA space (0 = exact match). */
@@ -362,7 +423,7 @@ export interface ResizeLayerInput {
  * `dst` is the output rect on the new canvas; see wasm/src/resize.h for
  * the sampling rules. Returns the `dst.width × dst.height` buffer.
  */
-export async function resizeLayer(
+export function resizeLayer(
   src: ResizeLayerInput,
   oldCanvasW: number,
   oldCanvasH: number,
@@ -371,42 +432,50 @@ export async function resizeLayer(
   dst: { x: number; y: number; width: number; height: number },
   filter: "bilinear" | "nearest",
 ): Promise<Uint8Array | Float32Array> {
-  const m = await getPixelOps();
-  const channels = src.format === "indexed8" ? 1 : 4;
-  const bpe = src.format === "rgba32f" ? 4 : 1;
-  const srcBytes = src.width * src.height * channels * bpe;
-  const dstBytes = dst.width * dst.height * channels * bpe;
-  const srcPtr = m._malloc(srcBytes);
-  let dstPtr = 0;
-  try {
-    dstPtr = m._malloc(dstBytes);
-    m.HEAPU8.set(new Uint8Array(src.data.buffer, src.data.byteOffset, srcBytes), srcPtr);
-    const status = m._pixelops_resize_layer(
-      srcPtr,
-      src.format === "rgba32f" ? 1 : src.format === "indexed8" ? 2 : 0,
-      src.width,
-      src.height,
-      src.offsetX,
-      src.offsetY,
-      oldCanvasW,
-      oldCanvasH,
-      scaleX,
-      scaleY,
-      dstPtr,
-      dst.x,
-      dst.y,
-      dst.width,
-      dst.height,
-      filter === "nearest" ? 1 : 0,
-    );
-    if (status !== 0) throw new WasmOutOfMemoryError(dstBytes);
-    // Re-read the heap: it may have grown during the call.
-    const bytes = m.HEAPU8.slice(dstPtr, dstPtr + dstBytes);
-    return src.format === "rgba32f" ? new Float32Array(bytes.buffer) : bytes;
-  } finally {
-    m._free(srcPtr);
-    if (dstPtr) m._free(dstPtr);
-  }
+  // No `await` once `src.data` is read: a pinned layer is read in place by
+  // heap offset, which another layer's `_malloc` growing memory would
+  // otherwise detach first.
+  return withPixelOpsNow((m) => {
+    const channels = src.format === "indexed8" ? 1 : 4;
+    const bpe = src.format === "rgba32f" ? 4 : 1;
+    const srcBytes = src.width * src.height * channels * bpe;
+    const dstBytes = dst.width * dst.height * channels * bpe;
+    const heapSrc = heapOffsetOf(m, src.data);
+    let srcPtr = heapSrc;
+    let dstPtr = 0;
+    try {
+      if (heapSrc < 0) {
+        srcPtr = m._malloc(srcBytes);
+        m.HEAPU8.set(new Uint8Array(src.data.buffer, src.data.byteOffset, srcBytes), srcPtr);
+      }
+      dstPtr = m._malloc(dstBytes);
+      const status = m._pixelops_resize_layer(
+        srcPtr,
+        src.format === "rgba32f" ? 1 : src.format === "indexed8" ? 2 : 0,
+        src.width,
+        src.height,
+        src.offsetX,
+        src.offsetY,
+        oldCanvasW,
+        oldCanvasH,
+        scaleX,
+        scaleY,
+        dstPtr,
+        dst.x,
+        dst.y,
+        dst.width,
+        dst.height,
+        filter === "nearest" ? 1 : 0,
+      );
+      if (status !== 0) throw new WasmOutOfMemoryError(dstBytes);
+      // Re-read the heap: it may have grown during the call.
+      const bytes = m.HEAPU8.slice(dstPtr, dstPtr + dstBytes);
+      return src.format === "rgba32f" ? new Float32Array(bytes.buffer) : bytes;
+    } finally {
+      if (heapSrc < 0 && srcPtr > 0) m._free(srcPtr);
+      if (dstPtr) m._free(dstPtr);
+    }
+  });
 }
 
 /** Median-cut palette quantisation.
@@ -502,7 +571,7 @@ type TransformKernel = (
 
 /** Run an inverse-mapped RGBA resampling kernel on bytes (rgba8) or
  *  scene-linear floats (rgba32f); the result has the input's type. */
-async function runTransform<T extends Uint8Array | Float32Array>(
+function runTransform<T extends Uint8Array | Float32Array>(
   src: T,
   srcW: number,
   srcH: number,
@@ -512,31 +581,36 @@ async function runTransform<T extends Uint8Array | Float32Array>(
   interp: number,
   kernel: (m: PixelOpsModule) => { u8: TransformKernel; f32: TransformKernel },
 ): Promise<T> {
-  const m = await getPixelOps();
-  const k = kernel(m);
-  const matPtr = m._malloc(matrix.byteLength);
-  try {
-    m.HEAPF32.set(matrix, matPtr / 4);
-    if (src instanceof Uint8Array) {
-      return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
-        k.u8(srcPtr, srcW, srcH, dstPtr, dstW, dstH, matPtr, interp),
-      ) as T;
-    }
+  return withPixelOpsNow((m) => {
+    const k = kernel(m);
+    // Before any `_malloc`: a heap-resident `src` is read in place.
+    const heapSrc = heapOffsetOf(m, src);
     const count = dstW * dstH * 4;
-    const srcPtr = m._malloc(src.byteLength);
-    const dstPtr = m._malloc(count * 4);
+    const bpe = src instanceof Uint8Array ? 1 : 4;
+    let srcPtr = heapSrc;
+    let matPtr = 0;
+    let dstPtr = 0;
     try {
-      m.HEAPF32.set(src, srcPtr / 4);
-      k.f32(srcPtr, srcW, srcH, dstPtr, dstW, dstH, matPtr, interp);
-      // Re-read HEAPF32: memory may have grown.
-      return m.HEAPF32.slice(dstPtr / 4, dstPtr / 4 + count) as T;
+      if (heapSrc < 0) {
+        srcPtr = m._malloc(src.byteLength);
+        m.HEAPU8.set(new Uint8Array(src.buffer, src.byteOffset, src.byteLength), srcPtr);
+      }
+      matPtr = m._malloc(matrix.byteLength);
+      m.HEAPF32.set(matrix, matPtr / 4);
+      dstPtr = m._malloc(count * bpe);
+      (bpe === 1 ? k.u8 : k.f32)(srcPtr, srcW, srcH, dstPtr, dstW, dstH, matPtr, interp);
+      // Re-read the heap: memory may have grown.
+      return (
+        bpe === 1
+          ? m.HEAPU8.slice(dstPtr, dstPtr + count)
+          : m.HEAPF32.slice(dstPtr / 4, dstPtr / 4 + count)
+      ) as T;
     } finally {
-      m._free(srcPtr);
-      m._free(dstPtr);
+      if (heapSrc < 0 && srcPtr > 0) m._free(srcPtr);
+      if (matPtr) m._free(matPtr);
+      if (dstPtr) m._free(dstPtr);
     }
-  } finally {
-    m._free(matPtr);
-  }
+  });
 }
 
 /**
@@ -589,67 +663,71 @@ export function applyPerspectiveTransform<T extends Uint8Array | Float32Array>(
  * amount: 0 = 90°CW, 1 = 180°, 2 = 270°CW
  * Returns a new Uint8Array with dimensions swapped for 90/270, same for 180.
  */
-export async function rotateRgba(
+export function rotateRgba(
   src: Uint8Array,
   srcW: number,
   srcH: number,
   amount: 0 | 1 | 2,
 ): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  const dstW = amount === 1 ? srcW : srcH;
-  const dstH = amount === 1 ? srcH : srcW;
-  return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
-    m._pixelops_rotate_rgba(srcPtr, srcW, srcH, dstPtr, amount),
-  );
+  return withPixelOpsNow((m) => {
+    const dstW = amount === 1 ? srcW : srcH;
+    const dstH = amount === 1 ? srcH : srcW;
+    return withSrcDstBuffers(m, src, dstW * dstH * 4, (srcPtr, dstPtr) =>
+      m._pixelops_rotate_rgba(srcPtr, srcW, srcH, dstPtr, amount),
+    );
+  });
 }
 
 /**
  * Flip an RGBA image (4 bytes/pixel).
  * axis: 0 = horizontal, 1 = vertical
  */
-export async function flipRgba(
+export function flipRgba(
   src: Uint8Array,
   w: number,
   h: number,
   axis: 0 | 1,
 ): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  return withSrcDstBuffers(m, src, w * h * 4, (srcPtr, dstPtr) =>
-    m._pixelops_flip_rgba(srcPtr, w, h, dstPtr, axis),
-  );
+  return withPixelOpsNow((m) => {
+    return withSrcDstBuffers(m, src, w * h * 4, (srcPtr, dstPtr) =>
+      m._pixelops_flip_rgba(srcPtr, w, h, dstPtr, axis),
+    );
+  });
 }
 
 /**
  * Rotate an indexed (1 byte/pixel) image.
  * amount: 0 = 90°CW, 1 = 180°, 2 = 270°CW
  */
-export async function rotateIndexed(
+export function rotateIndexed(
   src: Uint8Array,
   srcW: number,
   srcH: number,
   amount: 0 | 1 | 2,
 ): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  const dstLen = srcW * srcH; // same pixel count regardless of rotation
-  return withSrcDstBuffers(m, src, dstLen, (srcPtr, dstPtr) =>
-    m._pixelops_rotate_indexed(srcPtr, srcW, srcH, dstPtr, amount),
-  );
+  return withPixelOpsNow((m) => {
+    const dstLen = srcW * srcH; // same pixel count regardless of rotation
+    return withSrcDstBuffers(m, src, dstLen, (srcPtr, dstPtr) =>
+      m._pixelops_rotate_indexed(srcPtr, srcW, srcH, dstPtr, amount),
+    );
+  });
 }
 
 /**
  * Flip an indexed (1 byte/pixel) image.
  * axis: 0 = horizontal, 1 = vertical
  */
-export async function flipIndexed(
+export function flipIndexed(
   src: Uint8Array,
   w: number,
   h: number,
   axis: 0 | 1,
 ): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  return withSrcDstBuffers(m, src, w * h, (srcPtr, dstPtr) =>
-    m._pixelops_flip_indexed(srcPtr, w, h, dstPtr, axis),
-  );
+  return withPixelOpsNow((m) => {
+    return withSrcDstBuffers(m, src, w * h, (srcPtr, dstPtr) =>
+      m._pixelops_flip_indexed(srcPtr, w, h, dstPtr, axis),
+    );
+  });
 }
 
 /**
@@ -985,7 +1063,7 @@ export async function grabCutMincut(
 /** Maps each RGBA8 pixel to the nearest palette index (squared Euclidean distance in RGBA space).
  *  Transparent pixels (alpha == 0) are assigned transparentIdx.
  *  Returns a Uint8Array of length pixelCount containing one palette index per pixel. */
-export async function matchPaletteIndices(
+export function matchPaletteIndices(
   rgba: Uint8Array,
   palette: Array<{ r: number; g: number; b: number; a: number }>,
   transparentIdx = 255,
@@ -999,30 +1077,39 @@ export async function matchPaletteIndices(
     palFlat[i * 4 + 3] = c.a;
   });
 
-  const m = await getPixelOps();
-  const pixelCount = rgba.length / 4;
+  return withPixelOpsNow((m) => {
+    const pixelCount = rgba.length / 4;
 
-  const rgbaPtr = m._malloc(rgba.byteLength);
-  const palPtr = m._malloc(Math.max(palFlat.byteLength, 1));
-  const outPtr = m._malloc(pixelCount);
-  try {
-    m.HEAPU8.set(rgba, rgbaPtr);
-    if (palFlat.byteLength > 0) m.HEAPU8.set(palFlat, palPtr);
-    m._matchPaletteIndices(
-      rgbaPtr,
-      pixelCount,
-      palPtr,
-      palette.length,
-      outPtr,
-      transparentIdx,
-    );
-    // Re-read HEAPU8 in case WASM memory grew during the call
-    return m.HEAPU8.slice(outPtr, outPtr + pixelCount);
-  } finally {
-    m._free(rgbaPtr);
-    m._free(palPtr);
-    m._free(outPtr);
-  }
+    // Before any `_malloc`: a heap-resident `rgba` (a pinned layer) is read
+    // in place instead of being copied.
+    const heapRgba = heapOffsetOf(m, rgba);
+    let rgbaPtr = heapRgba;
+    let palPtr = 0;
+    let outPtr = 0;
+    try {
+      if (heapRgba < 0) {
+        rgbaPtr = m._malloc(rgba.byteLength);
+        m.HEAPU8.set(rgba, rgbaPtr);
+      }
+      palPtr = m._malloc(Math.max(palFlat.byteLength, 1));
+      outPtr = m._malloc(pixelCount);
+      if (palFlat.byteLength > 0) m.HEAPU8.set(palFlat, palPtr);
+      m._matchPaletteIndices(
+        rgbaPtr,
+        pixelCount,
+        palPtr,
+        palette.length,
+        outPtr,
+        transparentIdx,
+      );
+      // Re-read HEAPU8 in case WASM memory grew during the call
+      return m.HEAPU8.slice(outPtr, outPtr + pixelCount);
+    } finally {
+      if (heapRgba < 0 && rgbaPtr > 0) m._free(rgbaPtr);
+      if (palPtr) m._free(palPtr);
+      if (outPtr) m._free(outPtr);
+    }
+  });
 }
 
 // ─── EXR I/O ─────────────────────────────────────────────────────────────────

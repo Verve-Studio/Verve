@@ -93,6 +93,7 @@ export const ReduceColorsEffect: IPipelineEffect<
   id: "reduce-colors",
   label: "Reduce Colors…",
   menu: { root: "adjustments", submenu: "adj-indexed" },
+  perPixel: true,
   defaultParams: { mode: "reduce", colorCount: 16, derivedPalette: null },
 
   async prepareHeadless(layer, { canvasHandle }) {

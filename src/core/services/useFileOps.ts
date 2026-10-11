@@ -40,6 +40,7 @@ import {
   VerveBlobWriter,
   decodeVerveContainer,
   isVerveContainer,
+  type VerveByteSink,
 } from "@/core/io/verveContainer";
 import {
   VERVE_DOC_VERSION,
@@ -374,10 +375,12 @@ export function useFileOps({
       if (ext === ".psd") {
         const { loadPsdLayers } = await import("@/core/io/psdLoader");
         const buf = await window.api.readFile(path);
+        // The IPC result normally owns its whole buffer: hand it over
+        // without copying the file.
         const psd = loadPsdLayers(
-          buf.buffer.slice(
-            buf.byteOffset,
-            buf.byteOffset + buf.byteLength,
+          (buf.byteOffset === 0 && buf.buffer.byteLength === buf.byteLength
+            ? buf.buffer
+            : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
           ) as ArrayBuffer,
         );
         const hasAnyLeaf = (
@@ -1127,9 +1130,11 @@ export function useFileOps({
 
   /** Encode the active document as a `.verve` container. Every binary
    *  payload goes to a blob: layer pixels in their native format with
-   *  geometry, adjustment masks, frame content, pixel brushes, ICC profile. */
+   *  geometry, adjustment masks, frame content, pixel brushes, ICC profile.
+   *  Returns the writer that streams it; layer pixels are read from the
+   *  live layers while it runs, never copied whole. */
   const encodeDocument = useCallback(
-    (path: string): Promise<Uint8Array> => {
+    (path: string): ((sink: VerveByteSink) => Promise<void>) => {
       const handle = canvasHandleRef.current;
       if (!handle) throw new Error("The canvas isn't ready yet.");
       const blobs = new VerveBlobWriter();
@@ -1177,9 +1182,29 @@ export function useFileOps({
         spritesheet: state.spritesheet,
         iccProfile: state.iccProfile ? blobs.add(state.iccProfile) : null,
       };
-      return blobs.encode(doc);
+      return (sink) => blobs.write(doc, sink);
     },
     [state, canvasHandleRef],
+  );
+
+  /** Write the active document to `path`. The file is streamed to the main
+   *  process in bounded chunks and replaces `path` atomically on success;
+   *  on any failure (including the document changing mid-save) the temp
+   *  file is removed and the previous file is untouched. */
+  const writeDocument = useCallback(
+    async (path: string): Promise<void> => {
+      if (!canvasHandleRef.current) throw new Error("The canvas isn't ready yet.");
+      const writeId = await window.api.saveverveBegin(path);
+      try {
+        // Header and payloads are captured in one synchronous step here.
+        await encodeDocument(path)((chunk) => window.api.saveverveChunk(writeId, chunk));
+      } catch (err) {
+        await window.api.saveverveAbort(writeId).catch(() => undefined);
+        throw err;
+      }
+      await window.api.saveverveCommit(writeId);
+    },
+    [encodeDocument, canvasHandleRef],
   );
 
   const handleSaveNow = useCallback(
@@ -1195,7 +1220,7 @@ export function useFileOps({
         );
         if (!path) return;
       }
-      await window.api.saveverveFile(path, await encodeDocument(path));
+      await writeDocument(path);
       activeScope().history.markSaved();
       const savedPath = path;
       const title = fileTitle(savedPath);
@@ -1208,7 +1233,7 @@ export function useFileOps({
       onRecentFilesUpdated?.(updated);
       statusMessageStore.show(`Saved ${title}`);
     },
-    [tabs, activeTabId, encodeDocument, setTabs, onRecentFilesUpdated],
+    [tabs, activeTabId, writeDocument, setTabs, onRecentFilesUpdated],
   );
 
   const handleSave = useCallback(
@@ -1229,10 +1254,10 @@ export function useFileOps({
       targetPath ??
       (await window.api.saveverveDialog(activeTab?.filePath ?? undefined));
     if (!path) return;
-    await window.api.saveverveFile(path, await encodeDocument(path));
+    await writeDocument(path);
     // The current tab's filePath is NOT updated — this is a copy.
     statusMessageStore.show(`Saved a copy to ${fileTitle(path)}`);
-  }, [tabs, activeTabId, encodeDocument]);
+  }, [tabs, activeTabId, writeDocument]);
 
   const handleSaveACopy = useCallback(async (): Promise<void> => {
     try {

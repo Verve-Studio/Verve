@@ -94,6 +94,16 @@ export interface IPipelineEffect<
   readonly defaultParams: L["params"];
 
   /**
+   * Optional. True when every output pixel depends only on the input pixel at
+   * the same position (plus params / uv / selection mask), and `encode` only
+   * draws into `dstTex` through `runtime.encodeRenderPass` /
+   * `encodeStdAdjRenderPass`. Such effects are re-run under the dirty-rect
+   * scissor while painting instead of forcing a full-canvas recomposite.
+   * Never set it on an effect that reads neighbouring pixels.
+   */
+  readonly perPixel?: boolean;
+
+  /**
    * Declarative schema of the user-facing params (ranges, enum options,
    * colours), built with the helpers in `_shared/effectParams.ts`. Surfaces
    * that edit the effect without its panel — the automation graph's effect

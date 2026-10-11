@@ -60,6 +60,7 @@ export const LutAdjustmentEffect: IPipelineEffect<
   id: "lut",
   label: "LUT…",
   menu: { root: "adjustments", submenu: "adj-style" },
+  perPixel: true,
   defaultParams: {
     lutId: "",
     intensity: 100,

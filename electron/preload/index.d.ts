@@ -12,7 +12,10 @@ declare global {
       writeJsonFile: (path: string, data: string) => Promise<void>
       saveverveDialog: (defaultPath?: string) => Promise<string | null>
       openverveFile: (path: string) => Promise<Uint8Array>
-      saveverveFile: (path: string, data: Uint8Array) => Promise<void>
+      saveverveBegin: (path: string) => Promise<number>
+      saveverveChunk: (id: number, data: Uint8Array) => Promise<void>
+      saveverveCommit: (id: number) => Promise<void>
+      saveverveAbort: (id: number) => Promise<void>
       exportBrowse: (ext: string) => Promise<string | null>
       exportImage: (path: string, data: Uint8Array) => Promise<void>
       readFile: (path: string) => Promise<Uint8Array>

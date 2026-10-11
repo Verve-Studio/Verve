@@ -51,6 +51,15 @@ export function uploadTextureData(
 // across all uploadTexturePatch callers on the same thread. Avoids
 // allocating a fresh Uint8Array per stamp on a big-canvas brush stroke.
 let _packU8: Uint8Array = new Uint8Array(0);
+let _packU32: Uint32Array = new Uint32Array(0);
+
+/** Staging scratch above this size is released after the upload instead of
+ *  being kept for the rest of the session (it only ever grows otherwise). */
+const PACK_SCRATCH_KEEP_BYTES = 64 * 1024 * 1024;
+/** Rows of at most this many pixels are copied with a plain loop: per-row
+ *  `subarray()` allocates a view, which dominates a short copy. Longer rows
+ *  use `subarray()` + `set()` (memcpy), where the view is noise. */
+const SCALAR_COPY_MAX_PX = 64;
 
 export function uploadTexturePatch(
   device: GPUDevice,
@@ -89,12 +98,31 @@ export function uploadTexturePatch(
       let cap = _packU8.length || 65536;
       while (cap < needBytes) cap *= 2;
       _packU8 = new Uint8Array(cap);
+      _packU32 = new Uint32Array(_packU8.buffer);
     }
     const src = data as Uint8Array;
-    for (let row = 0; row < h; row++) {
-      const srcOff = ((y + row) * fullWidth + x) * 4;
-      const dstOff = row * padded;
-      _packU8.set(src.subarray(srcOff, srcOff + PACKED_ROW_BYTES), dstOff);
+    if (w <= SCALAR_COPY_MAX_PX && (src.byteOffset & 3) === 0) {
+      // Pixel-at-a-time copy through u32 views (offsets are pixel-aligned):
+      // no per-row view allocation. `padded` is a multiple of 256.
+      const src32 = new Uint32Array(
+        src.buffer as ArrayBuffer,
+        src.byteOffset,
+        src.byteLength >> 2,
+      );
+      const dst32 = _packU32;
+      const dstStride = padded >> 2;
+      for (let row = 0; row < h; row++) {
+        let si = (y + row) * fullWidth + x;
+        let di = row * dstStride;
+        const end = di + w;
+        while (di < end) dst32[di++] = src32[si++];
+      }
+    } else {
+      for (let row = 0; row < h; row++) {
+        const srcOff = ((y + row) * fullWidth + x) * 4;
+        const dstOff = row * padded;
+        _packU8.set(src.subarray(srcOff, srcOff + PACKED_ROW_BYTES), dstOff);
+      }
     }
     device.queue.writeTexture(
       { texture, origin: { x, y } },
@@ -102,6 +130,11 @@ export function uploadTexturePatch(
       { offset: 0, bytesPerRow: padded },
       { width: w, height: h },
     );
+    // writeTexture copies synchronously: a huge scratch can go right away.
+    if (_packU8.byteLength > PACK_SCRATCH_KEEP_BYTES) {
+      _packU8 = new Uint8Array(0);
+      _packU32 = new Uint32Array(0);
+    }
     return;
   }
   device.queue.writeTexture(
@@ -159,10 +192,21 @@ export function uploadF32TexturePatch(
     const floatsPerSrcRow = textureWidth * 4;
     const floatsPerPackedRow = padded / 4;
     const floatsPerCopyRow = w * 4;
-    for (let row = 0; row < h; row++) {
-      const srcOff = (y + row) * floatsPerSrcRow + x * 4;
-      const dstOff = row * floatsPerPackedRow;
-      _packF32.set(data.subarray(srcOff, srcOff + floatsPerCopyRow), dstOff);
+    const dst = _packF32;
+    if (w <= SCALAR_COPY_MAX_PX) {
+      // Plain loop: no per-row view allocation for short rows.
+      for (let row = 0; row < h; row++) {
+        let si = (y + row) * floatsPerSrcRow + x * 4;
+        let di = row * floatsPerPackedRow;
+        const end = di + floatsPerCopyRow;
+        while (di < end) dst[di++] = data[si++];
+      }
+    } else {
+      for (let row = 0; row < h; row++) {
+        const srcOff = (y + row) * floatsPerSrcRow + x * 4;
+        const dstOff = row * floatsPerPackedRow;
+        dst.set(data.subarray(srcOff, srcOff + floatsPerCopyRow), dstOff);
+      }
     }
     device.queue.writeTexture(
       { texture, origin: { x, y } },
@@ -170,6 +214,10 @@ export function uploadF32TexturePatch(
       { offset: 0, bytesPerRow: padded },
       { width: w, height: h },
     );
+    // writeTexture copies synchronously: a huge scratch can go right away.
+    if (_packF32.byteLength > PACK_SCRATCH_KEEP_BYTES) {
+      _packF32 = new Float32Array(0);
+    }
     return;
   }
   device.queue.writeTexture(

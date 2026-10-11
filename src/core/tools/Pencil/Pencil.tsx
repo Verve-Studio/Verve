@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { bresenham, blendPixelOver, srgbColorToLinearF32 } from "../_shared/primitives";
+import {
+  bresenham,
+  blendPixelOver,
+  srgbColorToLinearF32,
+  markCanvasRectDirty,
+  flushIfPending,
+} from "../_shared/primitives";
 import { walkQuadBezier, stampAirbrush } from "./brushStroke";
 import type { BrushShape } from "./brushStroke";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
@@ -421,7 +427,7 @@ function paintBrushPixel(
 /**
  * Mark a canvas-space box (inclusive) dirty on `layer`, so the next flush
  * uploads just that patch. A flush with no dirty rect uploads the WHOLE
- * layer. In tiled mode stamps wrap around the edges, so mark everything.
+ * layer. In tiled mode the box is split into its wrapped pieces.
  */
 function markCanvasBoxDirty(
   renderer: WebGPURenderer,
@@ -432,15 +438,15 @@ function markCanvasBoxDirty(
   maxY: number,
   tiled: boolean,
 ): void {
-  if (tiled) {
-    renderer.markFullDirty(layer);
-    return;
-  }
-  const lx = Math.max(0, Math.floor(minX) - layer.offsetX);
-  const ly = Math.max(0, Math.floor(minY) - layer.offsetY);
-  const rx = Math.min(layer.layerWidth, Math.ceil(maxX) + 1 - layer.offsetX);
-  const ry = Math.min(layer.layerHeight, Math.ceil(maxY) + 1 - layer.offsetY);
-  if (rx > lx && ry > ly) renderer.markDirtyRect(layer, lx, ly, rx, ry);
+  markCanvasRectDirty(
+    renderer,
+    layer,
+    Math.floor(minX),
+    Math.floor(minY),
+    Math.ceil(maxX) + 1,
+    Math.ceil(maxY) + 1,
+    tiled,
+  );
 }
 
 /** srgbColorToLinearF32 memoised on the colour object (it used to run for
@@ -793,29 +799,18 @@ function createPencilHandler(): ToolHandler {
       srcFloat,
     );
 
-    // In tiled mode, wrapped writes may land anywhere on the layer — skip dirty
-    // rect tracking and do a full upload, same as brush.tsx.
-    if (!ctx.tiledMode) {
-      const lx = Math.max(
-        0,
-        Math.floor(Math.min(p0x, cpx, p1x) - layer.offsetX) - padR,
-      );
-      const ly = Math.max(
-        0,
-        Math.floor(Math.min(p0y, cpy, p1y) - layer.offsetY) - padR,
-      );
-      const rx = Math.min(
-        layer.layerWidth,
-        Math.ceil(Math.max(p0x, cpx, p1x) - layer.offsetX) + padR + 1,
-      );
-      const ry = Math.min(
-        layer.layerHeight,
-        Math.ceil(Math.max(p0y, cpy, p1y) - layer.offsetY) + padR + 1,
-      );
-      renderer.markDirtyRect(layer, lx, ly, rx, ry);
-    }
+    // Tiled mode: the box is split into its wrapped pieces.
+    markCanvasBoxDirty(
+      renderer,
+      layer,
+      Math.min(p0x, cpx, p1x) - padR,
+      Math.min(p0y, cpy, p1y) - padR,
+      Math.max(p0x, cpx, p1x) + padR,
+      Math.max(p0y, cpy, p1y) + padR,
+      ctx.tiledMode,
+    );
 
-    renderer.flushLayer(layer);
+    flushIfPending(renderer, layer);
     render(layers);
   }
 
@@ -866,6 +861,8 @@ function createPencilHandler(): ToolHandler {
           : undefined;
         const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined;
         const tiledH = ctx.tiledMode ? renderer.pixelHeight : undefined;
+        const downPad =
+          pencilOptions.size <= 1 ? 0 : Math.ceil(pencilOptions.size / 2) + 1;
         if (pencilOptions.size <= 1) {
           growLayerToFit(px, py, 2);
           writeIndexToLayer(layer, px, py, strokeIndex, sel, tiledW, tiledH);
@@ -883,10 +880,20 @@ function createPencilHandler(): ToolHandler {
             tiledH,
           );
         }
+        // Mark after writing: growLayerToFit may have moved the layer.
+        markCanvasBoxDirty(
+          renderer,
+          layer,
+          px - downPad,
+          py - downPad,
+          px + downPad,
+          py + downPad,
+          ctx.tiledMode,
+        );
         lastPx = { x: px, y: py };
         ppPrev = { x: px, y: py };
         ppPending = null;
-        renderer.flushLayer(layer, ctx.swatches);
+        flushIfPending(renderer, layer, ctx.swatches);
         render(layers);
         return;
       }
@@ -942,6 +949,15 @@ function createPencilHandler(): ToolHandler {
               ? srgbColorToLinearF32(ctx.primaryColor)
               : undefined,
           );
+          markCanvasBoxDirty(
+            renderer,
+            layer,
+            px - pad,
+            py - pad,
+            px + pad,
+            py + pad,
+            ctx.tiledMode,
+          );
         } else {
           growLayerToFit(px, py, 2);
           const tiledW = ctx.tiledMode ? renderer.pixelWidth : undefined;
@@ -966,17 +982,13 @@ function createPencilHandler(): ToolHandler {
               ? srgbColorToLinearF32(primaryColor)
               : undefined,
           );
-          // Single-pixel dot: mark a 1×1 patch in layer-local coords dirty.
-          if (!ctx.tiledMode) {
-            const lx = Math.max(0, px - layer.offsetX);
-            const ly = Math.max(0, py - layer.offsetY);
-            ctx.renderer.markDirtyRect(layer, lx, ly, lx + 1, ly + 1);
-          }
+          // Single-pixel dot (wrapped in tiled mode).
+          markCanvasBoxDirty(renderer, layer, px, py, px, py, ctx.tiledMode);
         }
         lastPx = { x: px, y: py };
         ppPrev = { x: px, y: py };
         ppPending = null;
-        renderer.flushLayer(layer);
+        flushIfPending(renderer, layer);
         render(layers);
       } else {
         // Bezier/dab path
@@ -1036,7 +1048,7 @@ function createPencilHandler(): ToolHandler {
           srcFloat,
         );
         markCanvasBoxDirty(renderer, layer, x - padR, y - padR, x + padR, y + padR, ctx.tiledMode);
-        renderer.flushLayer(layer);
+        flushIfPending(renderer, layer);
         render(layers);
       }
     },
@@ -1070,6 +1082,11 @@ function createPencilHandler(): ToolHandler {
           // documents too (paintOnePixel writes the palette index).
           draw1pxSegment(x1, y1, ctx);
         } else {
+          const half = Math.ceil(pencilOptions.size / 2) + 1;
+          const segMinX = Math.min(lastPx.x, x1) - half;
+          const segMinY = Math.min(lastPx.y, y1) - half;
+          const segMaxX = Math.max(lastPx.x, x1) + half;
+          const segMaxY = Math.max(lastPx.y, y1) + half;
           bresenham(lastPx.x, lastPx.y, x1, y1, (px, py) => {
             growLayerToFit(px, py, pad);
             stampIndexedShape(
@@ -1084,9 +1101,11 @@ function createPencilHandler(): ToolHandler {
               tiledH,
             );
           });
+          // Mark after the loop: growLayerToFit may have moved the layer.
+          markCanvasBoxDirty(renderer, layer, segMinX, segMinY, segMaxX, segMaxY, ctx.tiledMode);
         }
         lastPx = { x: x1, y: y1 };
-        renderer.flushLayer(layer, ctx.swatches);
+        flushIfPending(renderer, layer, ctx.swatches);
         render(layers);
         return;
       }
@@ -1161,7 +1180,7 @@ function createPencilHandler(): ToolHandler {
         } else {
           draw1pxSegment(x, y, ctx);
         }
-        renderer.flushLayer(layer);
+        flushIfPending(renderer, layer);
         render(layers);
       } else {
         if (!lastRendered || !lastCtrl) return;
@@ -1197,7 +1216,9 @@ function createPencilHandler(): ToolHandler {
         // History is captured by the pointer-up auto-capture, like the
         // other formats (an explicit commit here added a second entry).
         const { renderer, layer, layers, render } = ctx;
-        renderer.flushLayer(layer, ctx.swatches);
+        // The last move already flushed; an unconditional flush here fell
+        // back to a full-layer upload + full history snapshot every stroke.
+        flushIfPending(renderer, layer, ctx.swatches);
         render(layers);
         strokeIndex = null;
         indexedStroke = false;
@@ -1210,7 +1231,7 @@ function createPencilHandler(): ToolHandler {
       if (pencilOptions.size === 1 || pencilOptions.pixelBrush) {
         if (!pencilOptions.pixelBrush) flushPPPending(ctx);
         const { renderer, layer, layers, render } = ctx;
-        renderer.flushLayer(layer);
+        flushIfPending(renderer, layer);
         render(layers);
       } else {
         if (lastRendered && lastCtrl) {

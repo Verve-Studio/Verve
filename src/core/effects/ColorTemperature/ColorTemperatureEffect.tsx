@@ -44,6 +44,7 @@ export const ColorTemperatureEffect: IPipelineEffect<
   id: "color-temperature",
   label: "Color Temperature…",
   menu: { root: "adjustments", submenu: "adj-color" },
+  perPixel: true,
   defaultParams: { temperature: 0, tint: 0 },
   paramFields: [
     numberField("temperature", "Temperature", { min: -100, max: 100, int: true }),

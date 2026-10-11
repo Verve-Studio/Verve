@@ -1,7 +1,7 @@
 import { ipcMain, dialog, BrowserWindow, app, clipboard, nativeImage } from 'electron'
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises'
 import { is } from '@electron-toolkit/utils'
-import { writeFileAtomic } from './atomicWrite'
+import { writeFileAtomic, openAtomicWriter, type AtomicFileWriter } from './atomicWrite'
 import {
   EXPORT_EXTENSIONS,
   IMAGE_EXTENSIONS,
@@ -138,8 +138,58 @@ export function registerIpcHandlers(): void {
     return readFile(assertReadable(path, ['verve']))
   })
 
-  ipcMain.handle('file:saveverve', async (_event, path: string, data: Uint8Array) => {
-    await writeFileAtomic(assertWritable(path, ['verve']), data)
+  // Saving streams: a document can be many GiB (float layers are stored
+  // raw), more than one IPC message or one renderer buffer should carry.
+  // `begin` opens a temp file next to the target, the renderer appends the
+  // container in bounded chunks, and `commit` fsyncs + renames it over the
+  // target (same semantics as writeFileAtomic). A window that closes
+  // mid-save has its temp files removed.
+  interface VerveWrite {
+    owner: number
+    writer: AtomicFileWriter
+    detach: () => void
+  }
+  const verveWrites = new Map<number, VerveWrite>()
+  let nextVerveWriteId = 1
+  const verveWrite = (senderId: number, id: number): VerveWrite => {
+    const entry = verveWrites.get(id)
+    if (!entry || entry.owner !== senderId) throw new Error('The save was cancelled.')
+    return entry
+  }
+  const endVerveWrite = (id: number, entry: VerveWrite): void => {
+    verveWrites.delete(id)
+    entry.detach()
+  }
+  ipcMain.handle('file:saveverveBegin', async (event, path: string) => {
+    const writer = await openAtomicWriter(assertWritable(path, ['verve']))
+    const id = nextVerveWriteId++
+    const sender = event.sender
+    const onDestroyed = (): void => {
+      verveWrites.delete(id)
+      void writer.abort()
+    }
+    sender.once('destroyed', onDestroyed)
+    verveWrites.set(id, {
+      owner: sender.id,
+      writer,
+      detach: () => sender.removeListener('destroyed', onDestroyed)
+    })
+    return id
+  })
+  ipcMain.handle('file:saveverveChunk', async (event, id: number, data: Uint8Array) => {
+    if (!(data instanceof Uint8Array)) throw new Error('Invalid save data.')
+    await verveWrite(event.sender.id, id).writer.write(data)
+  })
+  ipcMain.handle('file:saveverveCommit', async (event, id: number) => {
+    const entry = verveWrite(event.sender.id, id)
+    endVerveWrite(id, entry)
+    await entry.writer.commit()
+  })
+  ipcMain.handle('file:saveverveAbort', async (event, id: number) => {
+    const entry = verveWrites.get(id)
+    if (!entry || entry.owner !== event.sender.id) return
+    endVerveWrite(id, entry)
+    await entry.writer.abort()
   })
 
   ipcMain.handle('dialog:exportBrowse', async (_event, ext: string) => {
