@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { CutoutPanel } from "./CutoutPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export interface CutoutParams {
@@ -24,6 +25,11 @@ export const CutoutEffect: IPipelineEffect<CutoutEffectLayer, CutoutOp> = {
   label: "Cutout…",
   menu: { root: "filters", submenu: "artistic" },
   defaultParams: { levels: 4, edgeSimplicity: 4, edgeFidelity: 2 },
+  paramFields: [
+    numberField("levels", "Number of Levels", { min: 2, max: 8, int: true }),
+    numberField("edgeSimplicity", "Edge Simplicity", { min: 1, max: 10, int: true }),
+    numberField("edgeFidelity", "Edge Fidelity", { min: 1, max: 3, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

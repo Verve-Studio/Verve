@@ -1,7 +1,9 @@
 import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceColorsPanel } from "./ReduceColorsPanel";
+import { computeReducedPalette } from "./reduceColorsPalette";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, enumField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
@@ -92,6 +94,29 @@ export const ReduceColorsEffect: IPipelineEffect<
   label: "Reduce Colors…",
   menu: { root: "adjustments", submenu: "adj-indexed" },
   defaultParams: { mode: "reduce", colorCount: 16, derivedPalette: null },
+
+  async prepareHeadless(layer, { canvasHandle }) {
+    if (layer.params.mode !== "reduce") return null;
+    const native = await canvasHandle.readAdjustmentInputPixels(layer.id);
+    if (!native) return null;
+    const derivedPalette = await computeReducedPalette(native, layer.params.colorCount);
+    return { ...layer.params, derivedPalette };
+  },
+  paramFields: [
+    enumField("mode", "Mode", [["reduce", "Reduce to N"], ["palette", "Map to Palette"]]),
+    // The panel re-derives the palette for the new count; drop the stale one
+    // (as the panel's slider does) so it can't be used with the wrong count.
+    customField({
+      id: "colorCount",
+      label: "Colors",
+      spec: { kind: "int", min: 2, max: 256 },
+      get: (p) => p.colorCount,
+      set: (p, v) => {
+        const n = Math.min(256, Math.max(2, Math.round(typeof v === "number" && Number.isFinite(v) ? v : p.colorCount)));
+        return n === p.colorCount ? p : { ...p, colorCount: n, derivedPalette: null };
+      },
+    }),
+  ],
 
   buildPlanEntry(layer, { mask, swatches }) {
     const { mode, derivedPalette } = layer.params;

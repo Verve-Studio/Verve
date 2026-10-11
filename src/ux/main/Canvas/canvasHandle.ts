@@ -213,6 +213,18 @@ export interface CanvasHandle {
   /** Return the GpuLayer object for a given layer ID, or null if not found. */
   getGpuLayer: (layerId: string) => GpuLayer | null;
   /**
+   * Create GPU layer `newId` as a copy of `srcId`'s pixels, in the source's
+   * native format and geometry (any layer kind, masks included). Call BEFORE
+   * dispatching the new layer. Returns false when the source has no GPU data.
+   */
+  cloneLayerData: (srcId: string, newId: string, name: string) => boolean;
+  /**
+   * Grow a pixel layer's buffer so it covers the canvas rect [x0, x1] ×
+   * [y0, y1] (inclusive; clamped to the canvas), as painting does. Pixel
+   * layers start small and grow on demand — call before writing a region.
+   */
+  growLayerToCover: (layerId: string, x0: number, y0: number, x1: number, y1: number) => void;
+  /**
    * Pre-populate a mask layer's GPU data from a selection mask before dispatching ADD_MASK_LAYER.
    * selPixels is a canvas-sized Uint8Array (1 byte/pixel, 0–255) from activeScope().selection.mask.
    * Canvas.tsx's layer-init effect skips layers already in glLayersRef, so the mask
@@ -1049,6 +1061,40 @@ export function useCanvasHandle({
       },
 
       getGpuLayer: (layerId) => glLayersRef.current.get(layerId) ?? null,
+
+      growLayerToCover: (layerId, x0, y0, x1, y1) => {
+        const renderer = rendererRef.current;
+        const layer = glLayersRef.current.get(layerId);
+        if (!renderer || !layer) return;
+        const cx = (x: number): number => Math.max(0, Math.min(renderer.pixelWidth - 1, Math.round(x)));
+        const cy = (y: number): number => Math.max(0, Math.min(renderer.pixelHeight - 1, Math.round(y)));
+        renderer.growLayerToFit(layer, cx(x0), cy(y0));
+        renderer.growLayerToFit(layer, cx(x1), cy(y1));
+      },
+
+      cloneLayerData: (srcId, newId, name) => {
+        const renderer = rendererRef.current;
+        const src = glLayersRef.current.get(srcId);
+        if (!renderer || !src) return false;
+        const layer = renderer.createLayer(
+          newId,
+          name,
+          src.layerWidth,
+          src.layerHeight,
+          src.offsetX,
+          src.offsetY,
+          src.format,
+        );
+        (layer.data as Uint8Array | Float32Array).set(src.data as never);
+        renderer.flushLayer(
+          layer,
+          src.format === "indexed8"
+            ? (swatchesRef.current as import("@/types").RGBAColor[])
+            : undefined,
+        );
+        glLayersRef.current.set(newId, layer);
+        return true;
+      },
 
       prepareMaskLayer: (maskId, maskName, selPixels) => {
         const renderer = rendererRef.current;

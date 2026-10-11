@@ -5,6 +5,7 @@ import { useAppDispatch } from "@/core/store/AppContext";
 import { ParentConnectorIcon } from "@/ux/windows/ToolWindowIcons";
 import styles from "@/core/effects/_shared/filterPanel.module.scss";
 import type { IPipelineEffect, PanelProps } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 export interface PixelateParams {
   blockSize: number;
@@ -81,6 +82,7 @@ export const PixelateEffect: IPipelineEffect<PixelateEffectLayer, PixelateOp> =
     label: "Pixelate…",
     menu: { root: "filters", submenu: "artistic" },
     defaultParams: { blockSize: 10 },
+    paramFields: [numberField("blockSize", "Block Size", { min: 2, max: 500, int: true })],
 
     buildPlanEntry(layer, { mask }) {
       return {

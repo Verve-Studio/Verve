@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { VignetteOptions } from "./VignetteOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField, rgbField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const VignetteIcon = (
@@ -74,6 +75,14 @@ export const VignetteEffect: IPipelineEffect<
     color: { r: 0, g: 0, b: 0 },
     roundness: 0.6,
   },
+  paramFields: [
+    enumField("shape", "Shape", [["ellipse", "Ellipse"], ["rectangle", "Rectangle"]]),
+    rgbField("color", "Color"),
+    numberField("spread", "Spread", { min: 0, max: 1, step: 0.01 }),
+    numberField("softness", "Softness", { min: 0, max: 1, step: 0.01 }),
+    numberField("opacity", "Opacity", { min: 0, max: 1, step: 0.01 }),
+    numberField("roundness", "Roundness", { min: 0, max: 1, step: 0.01 }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

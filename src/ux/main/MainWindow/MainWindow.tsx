@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useSyncExternalStore } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { AppAction } from "@/core/store/AppContext";
 import type { TabRecord } from "@/core/store/tabTypes";
@@ -25,6 +25,8 @@ import { BrushSettingsPanelMount } from "@/ux/windows/brush/BrushSettingsPanel/B
 import { PaintBrushesModalMount } from "@/ux/modals/PaintBrushesModal/PaintBrushesModal";
 import { NewImageDialog } from "@/ux/modals/NewImageDialog/NewImageDialog";
 import { ExportDialog } from "@/ux/modals/ExportDialog/ExportDialog";
+import { canvasReadyStore } from "@/ux/main/Canvas/canvasReadyStore";
+import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
 import { ResizeImageDialog } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import { ResizeCanvasDialog } from "@/ux/modals/ResizeCanvasDialog/ResizeCanvasDialog";
 import { RescaleImageDialog } from "@/ux/modals/RescaleImageDialog/RescaleImageDialog";
@@ -58,6 +60,13 @@ import styles from "./MainWindow.module.scss";
 import { activeScope } from "@/core/store/scope";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
+
+
+const subscribeDock = (fn: () => void): (() => void) => dockStore.subscribe(fn);
+const isEditorFullWindow = (): boolean => {
+  const ne = dockStore.getSnapshot().nodeEditor;
+  return ne.open && ne.fullWindow;
+};
 
 export interface MainWindowProps {
   // Platform
@@ -400,12 +409,16 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
   // latest props are read through a ref so identities never change.
   const propsRef = React.useRef(props);
   propsRef.current = props;
+  // The full-window node editor hides the document chrome around it.
+  const editorFullWindow = useSyncExternalStore(subscribeDock, isEditorFullWindow);
   const handleCanvasReady = useCallback((): void => {
     const p = propsRef.current;
     p.setPendingLayerData(null);
     p.captureHistory(p.pendingLayerLabelRef.current ?? "Initial State");
     p.pendingLayerLabelRef.current = null;
     p.canvasHandleRef.current?.fitToWindow();
+    const tab = p.tabs.find((t) => t.id === p.activeTabId);
+    if (tab) canvasReadyStore.markReady(`${tab.id}-${tab.canvasKey}`);
   }, []);
   const handleOpenAdjustmentPanel = useCallback((id: string): void => {
     const p = propsRef.current;
@@ -432,13 +445,15 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
         tiledMode={tiledMode}
         onDebug={handleOpenDevTools}
       />
-      <ToolOptionsBar />
-      <TabBar
-        tabs={tabInfos}
-        activeTabId={activeTabId}
-        onSwitch={guardedSwitchTab}
-        onClose={guardedCloseTab}
-      />
+      {!editorFullWindow && <ToolOptionsBar />}
+      {!editorFullWindow && (
+        <TabBar
+          tabs={tabInfos}
+          activeTabId={activeTabId}
+          onSwitch={guardedSwitchTab}
+          onClose={guardedCloseTab}
+        />
+      )}
 
       <div className={styles.workspace}>
         <Toolbar activeTool={activeTool} onToolChange={handleToolChange} />
@@ -530,7 +545,7 @@ export function MainWindow(props: MainWindowProps): React.JSX.Element {
           paletteAnimationActive={paletteAnimationActive}
         />
       )}
-      <StatusBar />
+      {!editorFullWindow && <StatusBar />}
 
       {openAdjustmentLayerId !== null && (
         <AdjustmentPanel

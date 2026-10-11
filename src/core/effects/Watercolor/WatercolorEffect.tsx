@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { WatercolorPanel } from "./WatercolorPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export interface WatercolorParams {
@@ -25,6 +26,11 @@ export const WatercolorEffect: IPipelineEffect<
   label: "Watercolor…",
   menu: { root: "filters", submenu: "artistic" },
   defaultParams: { brushDetail: 9, shadowIntensity: 1, texture: 1 },
+  paramFields: [
+    numberField("brushDetail", "Brush Detail", { min: 1, max: 14, int: true }),
+    numberField("shadowIntensity", "Shadow Intensity", { min: 0, max: 10, int: true }),
+    numberField("texture", "Texture", { min: 1, max: 3, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

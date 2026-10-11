@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorKeyPanel } from "./ColorKeyPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField, rgbField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ColorKeyIcon = (
@@ -50,6 +51,12 @@ export const ColorKeyEffect: IPipelineEffect<
     softness: 0,
     dilation: 0,
   },
+  paramFields: [
+    rgbField("keyColor", "Key Color"),
+    numberField("tolerance", "Tolerance", { min: 0, max: 100, int: true }),
+    numberField("softness", "Edge Softness", { min: 0, max: 100, int: true }),
+    numberField("dilation", "Expand Edge", { min: 0, max: 20, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

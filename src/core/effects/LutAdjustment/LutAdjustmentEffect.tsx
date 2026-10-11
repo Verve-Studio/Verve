@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LutAdjustmentPanel } from "./LutAdjustmentPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, numberField } from "../_shared/effectParams";
 import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
 import { ensureLutOnGpu, lutStore } from "@/core/lut";
 
@@ -63,6 +64,23 @@ export const LutAdjustmentEffect: IPipelineEffect<
     lutId: "",
     intensity: 100,
   },
+  paramFields: [
+    // Accepts a LUT id or a (case-insensitive) LUT name; always stores the id.
+    customField<LutAdjustmentParams>({
+      id: "lutId",
+      label: "LUT",
+      spec: { kind: "string", placeholder: "LUT id or name" },
+      get: (p) => p.lutId,
+      set: (p, v) => {
+        const s = String(v ?? "").trim();
+        if (s === "" || lutStore.get(s)) return { ...p, lutId: s };
+        const lower = s.toLowerCase();
+        const byName = lutStore.all().find((l) => l.name.toLowerCase() === lower);
+        return { ...p, lutId: byName ? byName.id : s };
+      },
+    }),
+    numberField("intensity", "Intensity", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

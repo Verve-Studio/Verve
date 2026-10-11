@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AddNoisePanel } from "./AddNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, enumField, numberField } from "../_shared/effectParams";
 
 
 export interface AddNoiseParams {
@@ -28,6 +29,15 @@ export const AddNoiseEffect: IPipelineEffect<
     monochromatic: false,
     seed: 0,
   },
+  paramFields: [
+    numberField("amount", "Amount", { min: 1, max: 400, int: true }),
+    enumField("distribution", "Distribution", [
+      ["uniform", "Uniform"],
+      ["gaussian", "Gaussian"],
+    ]),
+    boolField("monochromatic", "Monochromatic"),
+    numberField("seed", "Seed", { min: 0, max: 0xffffffff, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

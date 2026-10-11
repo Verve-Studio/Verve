@@ -1,12 +1,15 @@
-import type { CurvesChannel, CurvesChannelCurve, CurvesPresetRef, CurvesVisualAids, EffectLayerOf } from "@/types";
+import type { CurvesChannel, CurvesChannelCurve, CurvesControlPoint, CurvesPresetRef, CurvesVisualAids, EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import {
   buildCurvesLuts,
   createDefaultCurvesParams,
+  nextPointId,
+  withDirtyPresetRef,
   type CurvesLuts,
 } from "./curves";
 import { CurvesPanel } from "./CurvesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, type EffectParamField } from "../_shared/effectParams";
 import type { AdjBinding } from "@/graphics/webgpu/EffectRuntime";
 
 const CurvesIcon = (
@@ -114,11 +117,99 @@ function ensureLutTextures(
   return next;
 }
 
+// ─── Param fields ───────────────────────────────────────────────────────────
+
+/** Curve points as text: "x,y x,y …" (0–255, rounded). */
+function formatCurvePoints(points: readonly CurvesControlPoint[]): string {
+  return points.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" ");
+}
+
+const clampCurveByte = (v: number): number =>
+  Math.max(0, Math.min(255, Math.round(v)));
+
+/**
+ * Parse "x,y x,y …" into a valid point list for `channel`, mirroring what the
+ * Curves panel allows: integer 0–255 coordinates, strictly increasing x, and
+ * endpoints pinned at x = 0 / x = 255 (their y is free). Missing endpoints
+ * keep the existing endpoint's output. Returns null when the text holds no
+ * parsable pair.
+ */
+function parseCurvePoints(
+  text: string,
+  channel: CurvesChannel,
+  existing: readonly CurvesControlPoint[],
+): CurvesControlPoint[] | null {
+  const byX = new Map<number, number>();
+  const pairRe = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/g;
+  for (const m of text.matchAll(pairRe)) {
+    const x = Number(m[1]);
+    const y = Number(m[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    byX.set(clampCurveByte(x), clampCurveByte(y));
+  }
+  if (byX.size === 0) return null;
+
+  const first = existing[0];
+  const last = existing[existing.length - 1];
+  if (!byX.has(0)) byX.set(0, first ? clampCurveByte(first.y) : 0);
+  if (!byX.has(255)) byX.set(255, last ? clampCurveByte(last.y) : 255);
+
+  const sorted = [...byX.entries()].sort((a, b) => a[0] - b[0]);
+  const out: CurvesControlPoint[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const [x, y] = sorted[i];
+    const isFirst = i === 0;
+    const isLast = i === sorted.length - 1;
+    const id =
+      isFirst && first
+        ? first.id
+        : isLast && last
+          ? last.id
+          : nextPointId(channel, out);
+    out.push({ id, x, y });
+  }
+  return out;
+}
+
+function curveField(
+  channel: CurvesChannel,
+  label: string,
+): EffectParamField<CurvesParams> {
+  return customField<CurvesParams>({
+    id: `${channel}Curve`,
+    label,
+    spec: { kind: "string", placeholder: "0,0 128,140 255,255" },
+    get: (p) => formatCurvePoints(p.channels[channel].points),
+    set: (p, v) => {
+      const points = parseCurvePoints(
+        String(v),
+        channel,
+        p.channels[channel].points,
+      );
+      if (!points) return p;
+      return {
+        ...p,
+        channels: { ...p.channels, [channel]: { points } },
+        ui: {
+          ...p.ui,
+          presetRef: withDirtyPresetRef(p.ui.presetRef, true),
+        },
+      };
+    },
+  });
+}
+
 export const CurvesEffect: IPipelineEffect<CurvesEffectLayer, CurvesOp> = {
   id: "curves",
   label: "Curves…",
   menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: createDefaultCurvesParams(),
+  paramFields: [
+    curveField("rgb", "RGB Curve"),
+    curveField("red", "Red Curve"),
+    curveField("green", "Green Curve"),
+    curveField("blue", "Blue Curve"),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HalftoneOptions } from "./HalftoneOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const HalftoneIcon = (
@@ -53,6 +54,17 @@ export const HalftoneEffect: IPipelineEffect<
     offsetY: 0,
     offsetK: 0,
   },
+  paramFields: [
+    enumField("mode", "Mode", [
+      ["color", "Color (CMYK)"],
+      ["bw", "B&W"],
+    ]),
+    numberField("frequency", "Frequency", { min: 2, max: 50, int: true }),
+    numberField("offsetC", "Channel Offset C", { min: -50, max: 50, int: true }),
+    numberField("offsetM", "Channel Offset M", { min: -50, max: 50, int: true }),
+    numberField("offsetY", "Channel Offset Y", { min: -50, max: 50, int: true }),
+    numberField("offsetK", "Channel Offset K", { min: -50, max: 50, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

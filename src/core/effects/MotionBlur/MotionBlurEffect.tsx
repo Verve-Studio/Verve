@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MotionBlurPanel } from "./MotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface MotionBlurParams {
@@ -23,6 +24,10 @@ export const MotionBlurEffect: IPipelineEffect<
   label: "Motion Blur…",
   menu: { root: "filters", submenu: "blur" },
   defaultParams: { angle: 0, distance: 10 },
+  paramFields: [
+    numberField("angle", "Angle", { min: 0, max: 360, int: true }),
+    numberField("distance", "Distance", { min: 1, max: 999, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

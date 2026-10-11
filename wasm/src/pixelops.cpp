@@ -51,24 +51,16 @@ void pixelops_flood_fill_f32(
                    fillR, fillG, fillB, fillA, tolerance);
 }
 
-// ─── Bilinear Resize ─────────────────────────────────────────────────────────
+// ─── Layer Resample (Resize Image) ───────────────────────────────────────────
 
 EMSCRIPTEN_KEEPALIVE
-void pixelops_resize_bilinear(
-    const uint8_t* src, int srcWidth, int srcHeight,
-    uint8_t* dst, int dstWidth, int dstHeight
+int pixelops_resize_layer(
+    const void* src, int format, int srcW, int srcH, int srcOx, int srcOy,
+    int oldCanvasW, int oldCanvasH, double scaleX, double scaleY,
+    void* dst, int dstX, int dstY, int dstW, int dstH, int filter
 ) {
-    resize_bilinear(src, srcWidth, srcHeight, dst, dstWidth, dstHeight);
-}
-
-// ─── Nearest-Neighbour Resize ────────────────────────────────────────────────
-
-EMSCRIPTEN_KEEPALIVE
-void pixelops_resize_nearest(
-    const uint8_t* src, int srcWidth, int srcHeight,
-    uint8_t* dst, int dstWidth, int dstHeight
-) {
-    resize_nearest(src, srcWidth, srcHeight, dst, dstWidth, dstHeight);
+    return resize_layer(src, format, srcW, srcH, srcOx, srcOy, oldCanvasW, oldCanvasH,
+                        scaleX, scaleY, dst, dstX, dstY, dstW, dstH, filter);
 }
 
 

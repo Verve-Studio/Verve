@@ -130,6 +130,14 @@ export function registerEffectHandlers(): void {
     return { path, text: await readFile(path, 'utf-8') }
   })
 
+  /** Read an `.effect` file by path (automation: apply an effect file). */
+  ipcMain.handle('effects:read', async (_event, path: unknown) => {
+    const full = assertReadable(path, [EXT])
+    const { size } = await stat(full)
+    if (size > MAX_BYTES) throw new Error('File is too large')
+    return readFile(full, 'utf-8')
+  })
+
   /** Overwrite an `.effect` file (Save on an effect opened from disk). */
   ipcMain.handle('effects:write', async (_event, path: unknown, text: unknown) => {
     if (typeof text !== 'string') throw new Error('Invalid effect data')

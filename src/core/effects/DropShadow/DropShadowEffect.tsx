@@ -3,6 +3,7 @@ import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DropShadowOptions } from "./DropShadowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, customField, enumField, numberField } from "../_shared/effectParams";
 import { createTrackedTexture } from "@/core/store/memoryStore";
 import type { EffectRuntime } from "@/graphics/webgpu/EffectRuntime";
 import { TextureSetCache } from "../_shared/textureSetCache";
@@ -289,6 +290,32 @@ export const DropShadowEffect: IPipelineEffect<
     blendMode: "multiply",
     knockout: true,
   },
+  paramFields: [
+    // The panel edits the colour's RGB only; color.a is preserved.
+    customField<DropShadowParams>({
+      id: "color",
+      label: "Color",
+      spec: { kind: "color" },
+      get: (p) => [p.color.r / 255, p.color.g / 255, p.color.b / 255, 1],
+      set: (p, v) => {
+        const c = Array.isArray(v) ? (v as readonly number[]) : [0, 0, 0];
+        const b = (x: number | undefined): number =>
+          Math.round(Math.min(1, Math.max(0, x ?? 0)) * 255);
+        return { ...p, color: { r: b(c[0]), g: b(c[1]), b: b(c[2]), a: p.color.a } };
+      },
+    }),
+    numberField("opacity", "Opacity", { min: 0, max: 100, int: true }),
+    numberField("offsetX", "X Offset", { min: -200, max: 200, int: true }),
+    numberField("offsetY", "Y Offset", { min: -200, max: 200, int: true }),
+    numberField("spread", "Spread", { min: 0, max: 100, int: true }),
+    numberField("softness", "Softness", { min: 0, max: 100, int: true }),
+    enumField("blendMode", "Blend Mode", [
+      ["normal", "Normal"],
+      ["multiply", "Multiply"],
+      ["screen", "Screen"],
+    ]),
+    boolField("knockout", "Knockout"),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

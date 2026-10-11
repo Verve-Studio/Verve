@@ -2,6 +2,7 @@ import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { NeonGlowPanel } from "./NeonGlowPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export interface NeonGlowParams {
@@ -29,6 +30,23 @@ export const NeonGlowEffect: IPipelineEffect<
     glowBrightness: 15,
     glowColor: { r: 76, g: 220, b: 230, a: 255 },
   },
+  paramFields: [
+    numberField("glowSize", "Glow Size", { min: -24, max: 24, int: true }),
+    numberField("glowBrightness", "Glow Brightness", { min: 0, max: 50, int: true }),
+    // The panel edits the colour's RGB only; glowColor.a is preserved.
+    customField<NeonGlowParams>({
+      id: "glowColor",
+      label: "Glow Color",
+      spec: { kind: "color" },
+      get: (p) => [p.glowColor.r / 255, p.glowColor.g / 255, p.glowColor.b / 255, 1],
+      set: (p, v) => {
+        const c = Array.isArray(v) ? (v as readonly number[]) : [0, 0, 0];
+        const b = (x: number | undefined): number =>
+          Math.round(Math.min(1, Math.max(0, x ?? 0)) * 255);
+        return { ...p, glowColor: { r: b(c[0]), g: b(c[1]), b: b(c[2]), a: p.glowColor.a } };
+      },
+    }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactElement } from "react";
-import type { RGBAColor } from "@/types";
+import type { LayerState, RGBAColor } from "@/types";
 import type { EffectLayerState } from "@/core/effects/effectTypes";
 import type {
   EffectRenderOp,
@@ -7,6 +7,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { EffectEncoder } from "@/graphics/webgpu/EffectEncoder";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
+import type { EffectParamField } from "./_shared/effectParams";
 
 export type MenuRoot = "adjustments" | "effects" | "filters";
 
@@ -48,6 +49,13 @@ export interface EncodeContext {
   engine: EffectEncoder;
 }
 
+/** What `prepareHeadless` gets to compute derived params. */
+export interface HeadlessEffectContext {
+  canvasHandle: CanvasHandle;
+  /** The document's layers, including the new effect layer. */
+  layers: readonly LayerState[];
+}
+
 export interface PanelProps<L extends EffectLayerState> {
   layer: L;
   parentLayerName: string;
@@ -85,11 +93,28 @@ export interface IPipelineEffect<
   /** Default params used when a fresh layer is created. */
   readonly defaultParams: L["params"];
 
+  /**
+   * Declarative schema of the user-facing params (ranges, enum options,
+   * colours), built with the helpers in `_shared/effectParams.ts`. Surfaces
+   * that edit the effect without its panel — the automation graph's effect
+   * nodes — are generated from it. Keep it in sync with the panel's
+   * controls. Derived / cached values (stats, palettes) are left out.
+   */
+  readonly paramFields?: readonly EffectParamField<L["params"]>[];
+
   /** Build a render-plan entry from a layer; called every frame. */
   buildPlanEntry(layer: L, ctx: PlanContext): Op;
 
   /** Record GPU work for this effect into the given command encoder. */
   encode(ctx: EncodeContext, entry: Op): void;
+
+  /**
+   * Optional. For effects whose panel computes derived params (a quantized
+   * palette, match statistics): compute them for a layer created without
+   * its panel (automation). Called once the layer is in the document;
+   * returns the completed params, or null to keep them as they are.
+   */
+  prepareHeadless?(layer: L, ctx: HeadlessEffectContext): Promise<L["params"] | null>;
 
   /** Floating panel shown when this layer is opened. Required unless
    *  `openEditor` always handles opening. */

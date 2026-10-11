@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensBlurPanel } from "./LensBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface LensBlurParams {
@@ -121,6 +122,12 @@ export const LensBlurEffect: IPipelineEffect<
     bladeCurvature: 0,
     rotation: 0,
   },
+  paramFields: [
+    numberField("radius", "Radius", { min: 1, max: 100, int: true }),
+    numberField("bladeCount", "Blades", { min: 3, max: 8, int: true }),
+    numberField("bladeCurvature", "Curvature", { min: 0, max: 100, int: true }),
+    numberField("rotation", "Rotation", { min: 0, max: 359, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PlasticWrapPanel } from "./PlasticWrapPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export interface PlasticWrapParams {
@@ -24,6 +25,11 @@ export const PlasticWrapEffect: IPipelineEffect<
   label: "Plastic Wrap…",
   menu: { root: "filters", submenu: "artistic" },
   defaultParams: { highlightStrength: 15, detail: 10, smoothness: 7 },
+  paramFields: [
+    numberField("highlightStrength", "Highlight Strength", { min: 0, max: 20, int: true }),
+    numberField("detail", "Detail", { min: 1, max: 15, int: true }),
+    numberField("smoothness", "Smoothness", { min: 1, max: 15, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -2,6 +2,7 @@ import type { ColorGradingWheelParams, EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorGradingPanel } from "./ColorGradingPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ColorGradingIcon = (
@@ -81,6 +82,33 @@ export const ColorGradingEffect: IPipelineEffect<
     lumMix: 0,
     hdrMode: false,
   },
+  paramFields: [
+    numberField("temp", "Temp", { min: 1000, max: 12000, int: true }),
+    numberField("tint", "Tint", { min: -100, max: 100, int: true }),
+    numberField("contrast", "Contrast", { min: 0, max: 2, step: 0.01 }),
+    numberField("pivot", "Pivot", { min: 0, max: 1, step: 0.001 }),
+    numberField("midDetail", "Mid/Detail", { min: -100, max: 100, int: true }),
+    ...(
+      [
+        ["lift", "Lift"],
+        ["gamma", "Gamma"],
+        ["gain", "Gain"],
+        ["offset", "Offset"],
+      ] as const
+    ).flatMap(([wheel, wheelLabel]) => [
+      numberField<ColorGradingParams>(`${wheel}.master`, `${wheelLabel} Master`, { min: -1, max: 1, step: 0.01 }),
+      numberField<ColorGradingParams>(`${wheel}.r`, `${wheelLabel} Red`, { min: -1, max: 1, step: 0.01 }),
+      numberField<ColorGradingParams>(`${wheel}.g`, `${wheelLabel} Green`, { min: -1, max: 1, step: 0.01 }),
+      numberField<ColorGradingParams>(`${wheel}.b`, `${wheelLabel} Blue`, { min: -1, max: 1, step: 0.01 }),
+    ]),
+    numberField("colorBoost", "Color Boost", { min: 0, max: 100, int: true }),
+    numberField("shadows", "Shadows", { min: -100, max: 100, int: true }),
+    numberField("highlights", "Highlights", { min: -100, max: 100, int: true }),
+    numberField("saturation", "Saturation", { min: 0, max: 100, int: true }),
+    numberField("hue", "Hue", { min: 0, max: 100, int: true }),
+    numberField("lumMix", "Lum Mix", { min: 0, max: 100, int: true }),
+    boolField("hdrMode", "HDR mode"),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

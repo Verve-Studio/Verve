@@ -12,6 +12,8 @@ export const PORT_COLORS: Record<PortType, string> = {
   string: "#70b2ff",
   image: "#d68cd6",
   layer: "#3fb68b",
+  document: "#e0904a",
+  list: "#4ac6c6",
   any: "#8a8a8a",
 };
 
@@ -31,6 +33,8 @@ export function canConnectTypes(from: PortType, to: PortType): boolean {
   if (from === "exec" || to === "exec") return from === to;
   if (from === "any" || to === "any") return true;
   if (from === to) return true;
+  // A single value feeds a list input as a one-item list.
+  if (to === "list") return true;
   return NUMERIC.has(from) && NUMERIC.has(to);
 }
 

@@ -10,6 +10,7 @@ import {
   objectRemovalStatus,
   notifyObjectRemovalStatusChange,
 } from "@/core/tools/ObjectRemoval/ObjectRemoval";
+import { newLayerId } from "@/utils/layerId";
 
 interface UseObjectRemovalOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
@@ -149,7 +150,7 @@ export function useObjectRemoval({
               patch[o + 3] = result.rgba[o + 3];
             }
           }
-          const newId = `layer-${Date.now()}`;
+          const newId = newLayerId("layer");
           const newName = `${activeLayer.name} retouch`;
           handle.prepareNewLayer(newId, newName, patch);
           pendingLayerLabelRef.current = "Object Removal";

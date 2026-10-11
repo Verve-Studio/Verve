@@ -1,13 +1,14 @@
+import type { ParamSpec } from "@/core/params/paramTypes";
 import type {
   GraphDomain,
   GraphNode,
-  KernelValue,
   NodeGraph,
   ParamValue,
   SocketDecl,
   SocketDirection,
 } from "./graphTypes";
-import type { AutomationHost, RuntimeValue } from "./values";
+import type { AutomationHost } from "./automationHost";
+import type { RuntimeValue } from "./values";
 
 /**
  * Value types carried by ports.
@@ -16,8 +17,10 @@ import type { AutomationHost, RuntimeValue } from "./values";
  *   carrying a value.
  * - `float` … `color` are per-pixel values in shader graphs and plain values
  *   in automation graphs. They convert into each other implicitly.
- * - `image` / `layer` are whole-buffer references; `any` accepts every
- *   non-exec type.
+ * - `image` / `layer` are whole-buffer references; `document` is an open
+ *   document (tab) in automation graphs.
+ * - `list` is a dynamic array of values of any type (automation only).
+ * - `any` accepts every non-exec type.
  */
 export type PortType =
   | "exec"
@@ -30,38 +33,11 @@ export type PortType =
   | "string"
   | "image"
   | "layer"
+  | "document"
+  | "list"
   | "any";
 
-/** Editor for a user-entered value, used both by parameters and by inline
- *  values on unconnected inputs. */
-export type ParamSpec =
-  | {
-      kind: "float";
-      default: number;
-      min?: number;
-      max?: number;
-      /** Value change per pixel of horizontal scrub. */
-      step?: number;
-    }
-  | { kind: "int"; default: number; min?: number; max?: number }
-  | { kind: "bool"; default: boolean }
-  | {
-      kind: "enum";
-      default: string;
-      options: readonly { value: string; label: string }[];
-    }
-  /** sRGB 0–1. */
-  | { kind: "color"; default: readonly [number, number, number, number] }
-  | { kind: "vec2"; default: readonly [number, number]; step?: number }
-  | { kind: "string"; default: string; placeholder?: string }
-  /** Square convolution kernel (odd size); weights edited in a grid. */
-  | {
-      kind: "kernel";
-      default: KernelValue;
-      sizes: readonly number[];
-      /** Offered in the editor; `build` returns size × size weights. */
-      presets?: readonly { label: string; build(size: number): number[] }[];
-    };
+export type { ParamSpec } from "@/core/params/paramTypes";
 
 export interface PortDef {
   readonly id: string;
@@ -188,10 +164,14 @@ export interface ExecContext {
   input(id: string): Promise<RuntimeValue | undefined>;
   /** Parameter value. */
   param(id: string): ParamValue;
+  /** Whether input `id` is linked to another node. */
+  isConnected(id: string): boolean;
   /** The application the workflow drives. */
   readonly host: AutomationHost;
   /** Aborted when the user cancels the run. */
   readonly signal: AbortSignal;
+  /** Workflow variables (Set / Get Variable), shared by the whole run. */
+  readonly variables: Map<string, RuntimeValue>;
   /** Publish data outputs before running a branch (e.g. loop variables). */
   setOutputs(values: Readonly<Record<string, RuntimeValue>>): void;
   /** Run the chain linked to exec output `id` to completion. */

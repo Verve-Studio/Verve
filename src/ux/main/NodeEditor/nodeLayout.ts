@@ -116,7 +116,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Output: "#6e3a64",
   Events: "#8a2f2f",
   Flow: "#5a5a5a",
-  Layers: "#2d7056",
+  Layer: "#2d7056",
   File: "#3a5a8a",
   Values: "#4b5b6b",
   Debug: "#6a5a3a",
@@ -126,6 +126,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   Vector: "#44509a",
   Filter: "#7a4a3a",
   Subgraph: "#3f4a5c",
+  Text: "#2f6f8f",
+  List: "#2a7a7a",
+  Variables: "#6a4a7a",
+  Path: "#3a6a8a",
+  Image: "#7a3a5a",
+  Select: "#4a6a3a",
+  Edit: "#6a6a3a",
+  Adjustments: "#7a5a2a",
+  Effects: "#5a3a7a",
+  Filters: "#3a5a7a",
 };
 
 export function categoryColor(category: string): string {

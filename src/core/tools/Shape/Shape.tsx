@@ -21,6 +21,7 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import shapeIconSvg from "./shape.svg?raw";
 import { resizeCursorForHandle } from "../_shared/resizeCursor";
+import { newLayerId } from "@/utils/layerId";
 
 // ─── Module-level defaults for new shapes ────────────────────────────────────
 
@@ -567,7 +568,7 @@ function createShapeHandler(): ToolHandler {
       }
 
       // Start drawing a new shape
-      const id: string = `shape-${Date.now()}`;
+      const id: string = newLayerId("shape");
       const isLine = shapeOptions.shapeType === "line";
       drawPreview = {
         id,

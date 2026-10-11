@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PosterEdgesPanel } from "./PosterEdgesPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export interface PosterEdgesParams {
@@ -24,6 +25,11 @@ export const PosterEdgesEffect: IPipelineEffect<
   label: "Poster Edges…",
   menu: { root: "filters", submenu: "artistic" },
   defaultParams: { edgeThickness: 2, edgeIntensity: 4, posterization: 2 },
+  paramFields: [
+    numberField("edgeThickness", "Edge Thickness", { min: 0, max: 10, int: true }),
+    numberField("edgeIntensity", "Edge Intensity", { min: 0, max: 10, int: true }),
+    numberField("posterization", "Posterization", { min: 0, max: 6, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

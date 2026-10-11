@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { GaussianBlurPanel } from "./GaussianBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface GaussianBlurParams {
@@ -20,6 +21,7 @@ export const GaussianBlurEffect: IPipelineEffect<
   label: "Gaussian Blur…",
   menu: { root: "filters", submenu: "blur" },
   defaultParams: { radius: 5 },
+  paramFields: [numberField("radius", "Radius", { min: 1, max: 250, int: true })],
 
   buildPlanEntry(layer, { mask }) {
     return {

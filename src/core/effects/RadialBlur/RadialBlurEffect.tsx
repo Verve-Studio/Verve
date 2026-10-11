@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RadialBlurPanel } from "./RadialBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField, vec2Field } from "../_shared/effectParams";
 
 
 export interface RadialBlurParams {
@@ -30,6 +31,12 @@ export const RadialBlurEffect: IPipelineEffect<
     centerY: 0.5,
     quality: 1,
   },
+  paramFields: [
+    vec2Field("center", "Centre", ["centerX", "centerY"]),
+    enumField("mode", "Mode", [["0", "Spin"], ["1", "Zoom"]], { numeric: true }),
+    numberField("amount", "Amount", { min: 1, max: 100, int: true }),
+    enumField("quality", "Quality", [["0", "Draft"], ["1", "Good"], ["2", "Best"]], { numeric: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

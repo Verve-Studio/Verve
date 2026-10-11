@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BlackAndWhitePanel } from "./BlackAndWhitePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const BlackAndWhiteIcon = (
@@ -47,6 +48,14 @@ export const BlackAndWhiteEffect: IPipelineEffect<
     blues: 20,
     magentas: 80,
   },
+  paramFields: [
+    numberField("reds", "Reds", { min: -200, max: 300, int: true }),
+    numberField("yellows", "Yellows", { min: -200, max: 300, int: true }),
+    numberField("greens", "Greens", { min: -200, max: 300, int: true }),
+    numberField("cyans", "Cyans", { min: -200, max: 300, int: true }),
+    numberField("blues", "Blues", { min: -200, max: 300, int: true }),
+    numberField("magentas", "Magentas", { min: -200, max: 300, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

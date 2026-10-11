@@ -43,23 +43,27 @@ export interface PixelOpsModule {
     tolerance: number,
   ): void;
 
-  _pixelops_resize_bilinear(
+  /** Resample a layer buffer for Resize Image (see wasm/src/resize.h).
+   *  format: 0 rgba8, 1 rgba32f, 2 indexed8; filter: 0 tent, 1 nearest.
+   *  Returns 0, or 1 when out of memory. */
+  _pixelops_resize_layer(
     srcPtr: number,
-    srcWidth: number,
-    srcHeight: number,
+    format: number,
+    srcW: number,
+    srcH: number,
+    srcOx: number,
+    srcOy: number,
+    oldCanvasW: number,
+    oldCanvasH: number,
+    scaleX: number,
+    scaleY: number,
     dstPtr: number,
-    dstWidth: number,
-    dstHeight: number,
-  ): void;
-
-  _pixelops_resize_nearest(
-    srcPtr: number,
-    srcWidth: number,
-    srcHeight: number,
-    dstPtr: number,
-    dstWidth: number,
-    dstHeight: number,
-  ): void;
+    dstX: number,
+    dstY: number,
+    dstW: number,
+    dstH: number,
+    filter: number,
+  ): number;
 
   /**
    * Returns the actual number of palette entries produced (≤ maxColors).

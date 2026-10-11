@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HalationOptions } from "./HalationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { BLOOM_COMPOSITE_BINDINGS } from "../Bloom/BloomEffect";
 import {
@@ -83,6 +84,12 @@ export const HalationEffect: IPipelineEffect<
   label: "Halation…",
   menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: { threshold: 0.5, spread: 30, blur: 2, strength: 0.6 },
+  paramFields: [
+    numberField("threshold", "Threshold", { min: 0, max: 1, step: 0.01 }),
+    numberField("spread", "Spread", { min: 0, max: 100, int: true }),
+    numberField("blur", "Blur", { min: 1, max: 5, int: true }),
+    numberField("strength", "Strength", { min: 0, max: 1, step: 0.01 }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

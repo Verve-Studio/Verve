@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BoxBlurPanel } from "./BoxBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface BoxBlurParams {
@@ -18,6 +19,7 @@ export const BoxBlurEffect: IPipelineEffect<BoxBlurEffectLayer, BoxBlurOp> =
     label: "Box Blur…",
     menu: { root: "filters", submenu: "blur" },
     defaultParams: { radius: 5 },
+    paramFields: [numberField("radius", "Radius", { min: 1, max: 150, int: true })],
 
     buildPlanEntry(layer, { mask }) {
       return {

@@ -52,11 +52,16 @@ export interface BottomPanelConfig {
   height: number;
 }
 
+export interface NodeEditorConfig extends BottomPanelConfig {
+  /** Fill the window instead of docking under the canvas (session-only). */
+  fullWindow: boolean;
+}
+
 export interface DockLayout {
   rows: DockRowConfig[];
   closedPanels: PanelId[];
   floatingWindows: FloatingWindow[];
-  nodeEditor: BottomPanelConfig;
+  nodeEditor: NodeEditorConfig;
 }
 
 export const DEFAULT_LAYOUT: DockLayout = {
@@ -76,5 +81,5 @@ export const DEFAULT_LAYOUT: DockLayout = {
   ],
   closedPanels: ["Display"],
   floatingWindows: [],
-  nodeEditor: { open: false, height: 320 },
+  nodeEditor: { open: false, height: 320, fullWindow: false },
 };

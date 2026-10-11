@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BilateralFilterPanel } from "./BilateralFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface BilateralFilterParams {
@@ -25,6 +26,11 @@ export const BilateralFilterEffect: IPipelineEffect<
   label: "Bilateral Filter…",
   menu: { root: "filters", submenu: "noise" },
   defaultParams: { radius: 5, sigmaSpatial: 10, sigmaColor: 30 },
+  paramFields: [
+    numberField("radius", "Spatial Radius", { min: 1, max: 20, int: true }),
+    numberField("sigmaSpatial", "Sigma Spatial", { min: 1, max: 50, int: true }),
+    numberField("sigmaColor", "Color Sigma", { min: 1, max: 150, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

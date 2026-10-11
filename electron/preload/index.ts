@@ -100,6 +100,8 @@ const api = {
   /** Open dialog for an .effect file; resolves to its path and text, or null. */
   openEffectFile: (): Promise<{ path: string; text: string } | null> =>
     ipcRenderer.invoke('effects:openFile'),
+  /** Read an .effect file by path. */
+  readEffectFile: (path: string): Promise<string> => ipcRenderer.invoke('effects:read', path),
   /** Overwrite an .effect file. */
   writeEffectFile: (path: string, text: string): Promise<void> =>
     ipcRenderer.invoke('effects:write', path, text),
@@ -110,6 +112,37 @@ const api = {
     ipcRenderer.on('effects:changed', handler)
     return () => ipcRenderer.removeListener('effects:changed', handler)
   },
+
+  // ── File system metadata (automation workflows) ─────────────────────────────
+  /** Entries of a folder (absolute path), sorted naturally by name. */
+  listDirectory: (
+    path: string,
+    options?: { recursive?: boolean; files?: boolean; folders?: boolean }
+  ): Promise<
+    Array<{ path: string; name: string; isDirectory: boolean; size: number; modified: number }>
+  > => ipcRenderer.invoke('fs:list', path, options),
+  statPath: (
+    path: string
+  ): Promise<{
+    exists: boolean
+    isDirectory: boolean
+    isFile: boolean
+    size: number
+    modified: number
+    created: number
+  }> => ipcRenderer.invoke('fs:stat', path),
+  /** Create a folder (and missing parents). */
+  makeDirectory: (path: string): Promise<void> => ipcRenderer.invoke('fs:mkdir', path),
+
+  // ── Automation workflows (.automation) ───────────────────────────────────────
+  /** Open dialog; resolves to the file's path and text, or null. */
+  openAutomationFile: (): Promise<{ path: string; text: string } | null> =>
+    ipcRenderer.invoke('automation:open'),
+  /** Save dialog + write; resolves to the chosen path, or null. */
+  saveAutomationFileAs: (text: string, suggestedPath?: string): Promise<string | null> =>
+    ipcRenderer.invoke('automation:saveAs', text, suggestedPath),
+  writeAutomationFile: (path: string, text: string): Promise<void> =>
+    ipcRenderer.invoke('automation:write', path, text),
 
   // ── Dock layout ──────────────────────────────────────────────────────────────
   loadDockLayout: (): Promise<unknown> => ipcRenderer.invoke('dockLayout:load'),

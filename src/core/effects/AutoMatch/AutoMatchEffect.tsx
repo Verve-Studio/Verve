@@ -1,7 +1,9 @@
 import type { AutoMatchStats, EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { AutoMatchPanel } from "./AutoMatchPanel";
+import { analyzeAutoMatch } from "./autoMatchAnalysis";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const AutoMatchIcon = (
@@ -65,6 +67,13 @@ export const AutoMatchEffect: IPipelineEffect<
   id: "auto-match",
   label: "Auto Match…",
   menu: { root: "adjustments", submenu: "adj-tone" },
+  async prepareHeadless(layer, { canvasHandle, layers }) {
+    const stats = await analyzeAutoMatch(canvasHandle, layer, layers);
+    return stats
+      ? { ...layer.params, cachedStats: stats, statsVersion: layer.params.statsVersion + 1 }
+      : null;
+  },
+
   defaultParams: {
     samplingDistance: 100,
     strength: 100,
@@ -78,6 +87,17 @@ export const AutoMatchEffect: IPipelineEffect<
     cachedStats: null,
     statsVersion: 0,
   },
+  paramFields: [
+    numberField("samplingDistance", "Sample Radius", { min: 0, max: 1000, int: true }),
+    numberField("strength", "Strength", { min: 0, max: 100, int: true }),
+    numberField("brightness", "Brightness", { min: 0, max: 200, int: true }),
+    numberField("contrast", "Contrast", { min: 0, max: 200, int: true }),
+    numberField("gamma", "Gamma", { min: 0, max: 200, int: true }),
+    numberField("color", "Color", { min: 0, max: 200, int: true }),
+    numberField("saturation", "Saturation", { min: 0, max: 200, int: true }),
+    boolField("clampHighlights", "Clamp highlights"),
+    boolField("clampShadows", "Clamp shadows"),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     const p = layer.params;

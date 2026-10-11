@@ -4,58 +4,60 @@
  */
 import type { PortType } from "./INode";
 
-/** A layer handle passed between automation nodes. */
+/** A layer handle passed between automation nodes. `docId` is the
+ *  document (tab) the layer lives in. */
 export interface LayerRef {
+  readonly kind: "layer";
+  readonly id: string;
+  readonly name: string;
+  readonly docId: string;
+}
+
+/** An open document (tab). */
+export interface DocumentRef {
+  readonly kind: "document";
   readonly id: string;
   readonly name: string;
 }
 
+/** A dynamic array. Lists are immutable values: list nodes return new ones. */
+export interface ListValue {
+  readonly kind: "list";
+  readonly items: readonly RuntimeValue[];
+}
+
 /** float/int → number, bool → boolean, vec2/vec3/color → number tuple
- *  (color is sRGB 0–1 RGBA), string → string, layer → LayerRef. */
-export type RuntimeValue = number | boolean | string | readonly number[] | LayerRef | null;
+ *  (color is sRGB 0–1 RGBA), string → string, layer → LayerRef,
+ *  document → DocumentRef, list → ListValue. */
+export type RuntimeValue =
+  | number
+  | boolean
+  | string
+  | readonly number[]
+  | LayerRef
+  | DocumentRef
+  | ListValue
+  | null;
 
-export type ExportFormat = "png" | "jpeg" | "webp" | "tiff";
+type Tagged = LayerRef | DocumentRef | ListValue;
 
-export interface DocumentInfo {
-  readonly name: string;
-  readonly width: number;
-  readonly height: number;
-  /** "rgba8" | "rgba32f" | "indexed8". */
-  readonly format: string;
-}
-
-export interface LayerProperties {
-  readonly name: string;
-  /** "pixel" | "text" | "shape" | "group" | "composite" | … */
-  readonly kind: string;
-  readonly visible: boolean;
-  readonly opacity: number;
-  /** Top-left on the canvas and size, in pixels. */
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-/**
- * The application operations automation nodes drive. Implemented by the
- * app; nodes only see this interface.
- */
-export interface AutomationHost {
-  document(): DocumentInfo;
-  layerProperties(layer: LayerRef): LayerProperties;
-  activeLayer(): LayerRef | null;
-  /** Top-to-bottom. */
-  layers(options: { visibleOnly: boolean }): LayerRef[];
-  newLayer(name: string): Promise<LayerRef>;
-  setLayerOpacity(layer: LayerRef, opacity: number): Promise<void>;
-  renameLayer(layer: LayerRef, name: string): Promise<void>;
-  exportImage(path: string, format: ExportFormat): Promise<void>;
-  log(message: string): void;
-}
+const tagOf = (v: RuntimeValue | undefined): Tagged["kind"] | null =>
+  typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Tagged).kind : null;
 
 export function isLayerRef(v: RuntimeValue | undefined): v is LayerRef {
-  return typeof v === "object" && v !== null && !Array.isArray(v) && "id" in v;
+  return tagOf(v) === "layer";
+}
+
+export function isDocumentRef(v: RuntimeValue | undefined): v is DocumentRef {
+  return tagOf(v) === "document";
+}
+
+export function isList(v: RuntimeValue | undefined): v is ListValue {
+  return tagOf(v) === "list";
+}
+
+export function makeList(items: readonly RuntimeValue[]): ListValue {
+  return { kind: "list", items };
 }
 
 const LUMA = [0.2126, 0.7152, 0.0722] as const;
@@ -65,6 +67,7 @@ function toScalar(v: RuntimeValue): number {
   if (typeof v === "number") return v;
   if (typeof v === "boolean") return v ? 1 : 0;
   if (typeof v === "string") return Number(v) || 0;
+  if (isList(v)) return v.items.length;
   if (Array.isArray(v)) {
     if (v.length === 4) return v[0] * LUMA[0] + v[1] * LUMA[1] + v[2] * LUMA[2];
     if (v.length === 3) return (v[0] + v[1] + v[2]) / 3;
@@ -83,9 +86,10 @@ function toVector(v: RuntimeValue, n: 2 | 3 | 4): number[] {
   return n === 4 ? [s, s, s, 1] : new Array(n).fill(s);
 }
 
-function format(v: RuntimeValue): string {
+export function formatValue(v: RuntimeValue): string {
   if (v === null) return "null";
-  if (isLayerRef(v)) return v.name;
+  if (isLayerRef(v) || isDocumentRef(v)) return v.name;
+  if (isList(v)) return `[${v.items.map(formatValue).join(", ")}]`;
   if (Array.isArray(v)) return `(${v.map((x) => +x.toFixed(4)).join(", ")})`;
   return String(v);
 }
@@ -106,8 +110,25 @@ export function convertValue(v: RuntimeValue, to: PortType): RuntimeValue {
     case "color":
       return toVector(v, 4);
     case "string":
-      return format(v);
+      return formatValue(v);
+    case "list":
+      // A single value becomes a one-item list.
+      return isList(v) ? v : makeList(v === null ? [] : [v]);
     default:
       return v;
   }
+}
+
+/** Structural equality (tuples and lists by item, refs by id). */
+export function valuesEqual(a: RuntimeValue, b: RuntimeValue): boolean {
+  if (a === b) return true;
+  if (isList(a) && isList(b)) {
+    return a.items.length === b.items.length && a.items.every((x, i) => valuesEqual(x, b.items[i]));
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((x, i) => x === b[i]);
+  }
+  const ta = tagOf(a);
+  if (ta && ta === tagOf(b)) return (a as LayerRef | DocumentRef).id === (b as LayerRef | DocumentRef).id;
+  return false;
 }

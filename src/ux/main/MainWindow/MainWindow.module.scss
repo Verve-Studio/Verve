@@ -9,6 +9,8 @@
 }
 
 .workspace {
+  // Positioning context for the full-window node editor.
+  position: relative;
   display: flex;
   flex: 1;
   overflow: hidden;

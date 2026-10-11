@@ -15,7 +15,7 @@ import { statusMessageStore } from "@/core/store/statusMessageStore";
 import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
 import { buildRootLayerIds, getDescendantIds } from "@/utils/layerTree";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
-import type { ExportSettings } from "@/ux/modals/ExportDialog/ExportDialog";
+import type { ExportSettings } from "@/core/io/exportSettings";
 import { useCallback, useState, type MutableRefObject } from "react";
 
 function exportFileName(path: string): string {
@@ -56,6 +56,9 @@ interface UseExportOpsOptions {
 }
 
 interface UseExportOpsReturn {
+  /** Encode and write the active document with `settings` (no HDR → LDR
+   *  confirmation; pass `toneMapping` to control it). Throws on failure. */
+  exportDocument: (settings: ExportSettings) => Promise<void>;
   handleExportConfirm: (settings: ExportSettings) => Promise<void>;
   pendingLdrExport: ExportSettings | null;
   clearPendingLdrExport: () => void;
@@ -76,6 +79,12 @@ export function useExportOps({
         throw new Error(
           "Canvas renderer is not ready yet. Please try export again.",
         );
+      // Float documents → 8-bit formats: explicit settings, else the
+      // document's display tone mapping (what the user sees).
+      const toneMapping = settings.toneMapping ?? {
+        operator: displayStore.toneMappingOperator,
+        exposureEV: displayStore.exposureEV,
+      };
 
       // Per-layer "separate file" export: rasterise each picked layer (with
       // its attached adjustment/effect/filter children + mask) on its own,
@@ -188,8 +197,8 @@ export function useExportOps({
                 ? isHdrDoc
                   ? toneMapToUint8(
                       flatLayer.data,
-                      displayStore.toneMappingOperator,
-                      displayStore.exposureEV,
+                      toneMapping.operator,
+                      toneMapping.exposureEV,
                     )
                   : clampF32ToUint8(flatLayer.data)
                 : flatLayer.data;
@@ -223,8 +232,8 @@ export function useExportOps({
               ? isHdrDoc
                 ? toneMapToUint8(
                     flatLayer.data,
-                    displayStore.toneMappingOperator,
-                    displayStore.exposureEV,
+                    toneMapping.operator,
+                    toneMapping.exposureEV,
                   )
                 : clampF32ToUint8(flatLayer.data)
               : flatLayer.data;
@@ -470,8 +479,8 @@ export function useExportOps({
               ? isHdrDocPdf
                 ? toneMapToUint8(
                     flatAll.data,
-                    displayStore.toneMappingOperator,
-                    displayStore.exposureEV,
+                    toneMapping.operator,
+                    toneMapping.exposureEV,
                   )
                 : clampF32ToUint8(flatAll.data)
               : flatAll.data;
@@ -521,8 +530,8 @@ export function useExportOps({
               ? isHdrDoc
                 ? toneMapToUint8(
                     flatAll.data,
-                    displayStore.toneMappingOperator,
-                    displayStore.exposureEV,
+                    toneMapping.operator,
+                    toneMapping.exposureEV,
                   )
                 : clampF32ToUint8(flatAll.data)
               : flatAll.data;
@@ -915,8 +924,8 @@ export function useExportOps({
           if (isHdrDoc && flat.data instanceof Float32Array) {
             ldrData = toneMapToUint8(
               flat.data,
-              displayStore.toneMappingOperator,
-              displayStore.exposureEV,
+              toneMapping.operator,
+              toneMapping.exposureEV,
             );
           } else {
             ldrData =
@@ -946,8 +955,8 @@ export function useExportOps({
       if (isHdrDoc && flat.data instanceof Float32Array) {
         data = toneMapToUint8(
           flat.data,
-          displayStore.toneMappingOperator,
-          displayStore.exposureEV,
+          toneMapping.operator,
+          toneMapping.exposureEV,
         );
       } else {
         data =
@@ -1030,6 +1039,7 @@ export function useExportOps({
   }, []);
 
   return {
+    exportDocument: doExport,
     handleExportConfirm,
     pendingLdrExport,
     clearPendingLdrExport,

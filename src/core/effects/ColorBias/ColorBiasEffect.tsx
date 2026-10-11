@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorBiasPanel } from "./ColorBiasPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, enumField, numberField, rgbField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ColorBiasIcon = (
@@ -81,6 +82,18 @@ export const ColorBiasEffect: IPipelineEffect<
     falloff: 50,
     metric: "rgb",
   },
+  paramFields: [
+    rgbField("targetColor", "Target Color"),
+    boolField("useSeparateOutput", "Separate Output"),
+    rgbField("outputColor", "Output Color"),
+    enumField("metric", "Metric", [
+      ["rgb", "RGB (Euclidean)"],
+      ["hsv", "HSV (hue-aware)"],
+      ["lab", "LAB (perceptual Î”E)"],
+    ]),
+    numberField("range", "Range", { min: 0, max: 100, int: true }),
+    numberField("falloff", "Falloff", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

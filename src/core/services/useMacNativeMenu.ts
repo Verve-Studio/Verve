@@ -33,6 +33,7 @@ import { displayStore } from "@/ux/main/Canvas/displayStore";
 import { customEffectStore } from "@/core/effects/CustomShader/customEffectStore";
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
 import { ALL_PANEL_IDS, type PanelId } from "@/ux/main/RightPanel/Dock/types";
+import { useNodeEditorMode } from "@/ux/main/NodeEditor/nodeEditorActions";
 
 export interface MacNativeMenuParams {
   isMac: boolean;
@@ -91,16 +92,7 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
     setCustomEffects(customEffectStore.all());
     return customEffectStore.subscribe(() => setCustomEffects(customEffectStore.all()));
   }, []);
-  const [nodeEditorOpen, setNodeEditorOpen] = useState(
-    () => dockStore.getSnapshot().nodeEditor.open,
-  );
-  useEffect(
-    () =>
-      dockStore.subscribe(() =>
-        setNodeEditorOpen(dockStore.getSnapshot().nodeEditor.open),
-      ),
-    [],
-  );
+  const nodeEditorMode = useNodeEditorMode();
 
   const tree = useMemo(() => {
     // Only macOS has a native application menu; elsewhere the in-app TopBar
@@ -111,7 +103,7 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
       luts,
       activeViewLut,
       openPanelIds,
-      nodeEditorOpen,
+      nodeEditorMode,
       customEffects,
       hasDisplayProfile,
       hasProofProfile,
@@ -126,7 +118,7 @@ export function useMacNativeMenu({ isMac, deps }: MacNativeMenuParams): void {
     luts,
     activeViewLut,
     openPanelIds,
-    nodeEditorOpen,
+    nodeEditorMode,
     customEffects,
     hasDisplayProfile,
     hasProofProfile,

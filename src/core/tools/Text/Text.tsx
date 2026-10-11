@@ -131,6 +131,7 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import textIconSvg from "./text.svg?raw";
 import { textFrame } from "./textLayout";
+import { newLayerId } from "@/utils/layerId";
 
 // ─── Module-level options ─────────────────────────────────────────────────────
 
@@ -340,7 +341,7 @@ function createTextHandler(): ToolHandler {
       dragStart = null;
       if (ctx.overlayCanvas) clearOverlay(ctx.overlayCanvas);
 
-      const id = `text-${Date.now()}`;
+      const id = newLayerId("text");
       const layer: TextLayerState = {
         id,
         name: "Text",

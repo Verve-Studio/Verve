@@ -10,6 +10,7 @@ import type {
 } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import { showOperationError } from "@/utils/userFeedback";
+import type { TransformCallOptions } from "./useCanvasTransforms";
 import { notificationStore } from "@/core/store/notificationStore";
 import {
   convertRgba8ToF32,
@@ -51,6 +52,7 @@ export interface UseColorModeReturn {
   executeConversion: (
     toFormat: PixelFormat,
     sourceColorSpace?: LayerColorSpace,
+    opts?: TransformCallOptions,
   ) => Promise<void>;
 }
 
@@ -136,15 +138,23 @@ export function useColorMode({
     async (
       toFormat: PixelFormat,
       sourceColorSpace?: LayerColorSpace,
+      opts?: TransformCallOptions,
     ): Promise<void> => {
+      /** Report to the user, or throw for programmatic callers. */
+      const fail = (title: string, detail: unknown): void => {
+        if (opts?.throwErrors) {
+          throw detail instanceof Error ? detail : new Error(`${title} ${String(detail)}`);
+        }
+        fail(title, detail);
+      };
       const fromFormat = state.pixelFormat;
       if (toFormat === fromFormat) return;
 
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) return fail("Color mode conversion failed.", "The canvas isn't ready yet.");
 
       if (toFormat === "indexed8" && state.swatches.length === 0) {
-        showOperationError(
+        fail(
           "Cannot convert to Indexed/8.",
           "The palette is empty. Add swatches first.",
         );
@@ -172,7 +182,7 @@ export function useColorMode({
           );
           conversions.set(ls.id, converted);
         } catch (err) {
-          showOperationError("Color mode conversion failed.", err);
+          fail("Color mode conversion failed.", err);
           return; // abort — no layers have been modified yet
         }
       }

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SeamlessTexturePanel } from "./SeamlessTexturePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, customField, numberField } from "../_shared/effectParams";
 
 
 export interface SeamlessTextureParams {
@@ -60,6 +61,28 @@ export const SeamlessTextureEffect: IPipelineEffect<
     borderStrength: 0.5,
     seed: 0,
   },
+  paramFields: [
+    boolField("breakRepetition", "Break Repeat"),
+    numberField("cellSize", "Cell Size", { min: 16, max: 512, int: true }),
+    numberField("blendRadius", "Blend Radius", { min: 0, max: 128, int: true }),
+    boolField("seamlessBorders", "Seamless"),
+    // Read through the legacy single `borderRadius` like the panel does, so
+    // older documents report the radius they actually render with.
+    ...(["borderRadiusX", "borderRadiusY"] as const).map((key) =>
+      customField<SeamlessTextureParams>({
+        id: key,
+        label: key === "borderRadiusX" ? "H Border" : "V Border",
+        spec: { kind: "int", min: 0, max: 256 },
+        get: (p) => p[key] ?? p.borderRadius ?? 32,
+        set: (p, v) => ({
+          ...p,
+          [key]: Math.min(256, Math.max(0, Math.round(typeof v === "number" && Number.isFinite(v) ? v : 0))),
+        }),
+      }),
+    ),
+    numberField("borderStrength", "Strength", { min: 0, max: 1, step: 0.01 }),
+    numberField("seed", "Seed", { min: 0, max: 0xffffffff, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

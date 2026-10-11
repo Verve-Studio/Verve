@@ -2,45 +2,23 @@ import React, { useState, useEffect, useCallback } from "react";
 import { DialogButton } from "../../widgets/DialogButton/DialogButton";
 import { ModalDialog } from "../ModalDialog/ModalDialog";
 import styles from "./ExportDialog.module.scss";
+import {
+  applyExportExtension,
+  maxDdsMipLevels as computeMaxDdsMipLevels,
+  type DdsCompression,
+  type ExportFormat,
+  type ExportSettings,
+  type LayerExportMode,
+} from "@/core/io/exportSettings";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ExportFormat =
-  | "png"
-  | "jpeg"
-  | "webp"
-  | "tga"
-  | "tiff"
-  | "exr"
-  | "hdr"
-  | "tiff32"
-  | "dds"
-  | "psd"
-  | "pdf";
-export type DdsCompression = "bc1" | "bc3" | "bc7" | "bc6h" | "rgba32f";
-
-/** How layers are encoded into the exported file(s).
- *  - "single"     : flatten everything into one image (single-layer file).
- *  - "multilayer" : write one file that preserves the layer structure.
- *                   Only meaningful for layer-capable formats (PSD, EXR).
- *  - "separate"   : write one file per selected layer, named
- *                   `<filePath-stem>_<sanitised-layer-name>.<ext>`. */
-export type LayerExportMode = "single" | "multilayer" | "separate";
-
-export interface ExportSettings {
-  filePath: string;
-  format: ExportFormat;
-  jpegQuality: number; // 0–100
-  jpegBackground: string; // CSS hex colour
-  webpQuality: number; // 0–100
-  exrCompression: 0 | 1 | 2 | 3; // 0=none,1=zip,2=zips,3=piz
-  exrHalfFloat: boolean;
-  ddsCompression: DdsCompression;
-  ddsMipLevels: number; // >= 1
-  layerMode: LayerExportMode;
-  /** IDs of the layers to export when `layerMode === "separate"`. */
-  perLayerIds?: string[];
-}
+export type {
+  DdsCompression,
+  ExportFormat,
+  ExportSettings,
+  LayerExportMode,
+} from "@/core/io/exportSettings";
 
 export interface ExportableLayerOption {
   id: string;
@@ -61,36 +39,6 @@ export interface ExportDialogProps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Replace or append the correct extension based on the chosen format. */
-function applyExtension(filePath: string, format: ExportFormat): string {
-  if (!filePath) return filePath;
-  const ext =
-    format === "png"
-      ? ".png"
-      : format === "webp"
-        ? ".webp"
-        : format === "tga"
-          ? ".tga"
-          : format === "tiff"
-            ? ".tiff"
-            : format === "exr"
-              ? ".exr"
-              : format === "hdr"
-                ? ".hdr"
-                : format === "tiff32"
-                  ? ".tiff"
-                  : format === "dds"
-                    ? ".dds"
-                    : format === "psd"
-                      ? ".psd"
-                      : format === "pdf"
-                        ? ".pdf"
-                        : ".jpg";
-  return (
-    filePath.replace(/\.(png|jpe?g|webp|tga|tiff?|exr|hdr|dds|psd|pdf)$/i, "") + ext
-  );
-}
 
 /** Convert a CSS hex colour (#rrggbb) to the format expected by <input type="color">. */
 function toColorInputValue(hex: string): string {
@@ -134,21 +82,7 @@ export function ExportDialog({
   const layerSelectorSupported = isFlatLdr || isLayerCapable;
   const [layerMode, setLayerMode] = useState<LayerExportMode>("single");
 
-  // Maximum mip levels such that the smallest dimension is >= 128 (each level halves both dims).
-  const maxDdsMipLevels = (() => {
-    const w = documentWidth ?? 0,
-      h = documentHeight ?? 0;
-    if (w <= 0 || h <= 0) return 1;
-    let levels = 1,
-      cw = w,
-      ch = h;
-    while (cw >> 1 >= 128 && ch >> 1 >= 128) {
-      cw >>= 1;
-      ch >>= 1;
-      levels++;
-    }
-    return levels;
-  })();
+  const maxDdsMipLevels = computeMaxDdsMipLevels(documentWidth ?? 0, documentHeight ?? 0);
 
   // Reset state on every open
   useEffect(() => {
@@ -180,7 +114,7 @@ export function ExportDialog({
   // When format changes, update the extension on the stored path.
   const handleFormatChange = useCallback((fmt: ExportFormat): void => {
     setFormat(fmt);
-    setFilePath((p) => applyExtension(p, fmt));
+    setFilePath((p) => applyExportExtension(p, fmt));
   }, []);
 
   // Native browse dialog

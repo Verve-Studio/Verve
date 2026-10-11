@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReduceNoisePanel } from "./ReduceNoisePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface ReduceNoiseParams {
@@ -28,6 +29,12 @@ export const ReduceNoiseEffect: IPipelineEffect<
     reduceColorNoise: 50,
     sharpenDetails: 0,
   },
+  paramFields: [
+    numberField("strength", "Strength", { min: 0, max: 10, int: true }),
+    numberField("preserveDetails", "Preserve Details", { min: 0, max: 100, int: true }),
+    numberField("reduceColorNoise", "Color Noise", { min: 0, max: 100, int: true }),
+    numberField("sharpenDetails", "Sharpen Details", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

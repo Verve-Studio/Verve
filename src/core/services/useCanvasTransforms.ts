@@ -11,13 +11,15 @@ import type { ResizeCanvasSettings } from "@/ux/modals/ResizeCanvasDialog/Resize
 import type { ResizeImageSettings } from "@/ux/modals/ResizeImageDialog/ResizeImageDialog";
 import type { RescaleImageSettings } from "@/ux/modals/RescaleImageDialog/RescaleImageDialog";
 import type { RestoreImageSettings } from "@/ux/modals/RestoreImageDialog/RestoreImageDialog";
-import { expandIndicesToRgba } from "@/utils/indexedColorUtils";
+import {
+  clipLayerToCanvas,
+  resampleLayer,
+  toCanvasSized,
+  type LayerBuffer,
+} from "@/utils/layerPixelTransforms";
 import {
   flipIndexed,
   flipRgba,
-  matchPaletteIndices,
-  resizeBilinear,
-  resizeNearest,
   rotateIndexed,
   rotateRgba,
 } from "@/wasm";
@@ -65,16 +67,36 @@ interface UseCanvasTransformsOptions {
 export type RotateAmount = "90cw" | "180" | "270cw";
 export type FlipAxis = "horizontal" | "vertical";
 
+/** How a transform is invoked. The menu / dialog path reports failures to
+ *  the user; programmatic callers (automation) pass `throwErrors` to get
+ *  them as exceptions instead. */
+export interface TransformCallOptions {
+  throwErrors?: boolean;
+}
+
+/** Layer transforms: explicit targets (default: selected + active layers). */
+export interface LayerTransformCallOptions extends TransformCallOptions {
+  layerIds?: readonly string[];
+}
+
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface UseCanvasTransformsReturn {
-  handleResizeImage: (settings: ResizeImageSettings) => Promise<void>;
-  handleRescaleImage: (settings: RescaleImageSettings) => Promise<void>;
-  handleRestoreImage: (settings: RestoreImageSettings) => Promise<void>;
-  handleResizeCanvas: (settings: ResizeCanvasSettings) => void;
-  handleCrop: () => void;
-  handleRotate: (amount: RotateAmount) => Promise<void>;
-  handleFlip: (axis: FlipAxis) => Promise<void>;
-  handleRotateSelectedLayers: (amount: RotateAmount) => Promise<void>;
-  handleFlipSelectedLayers: (axis: FlipAxis) => Promise<void>;
+  handleResizeImage: (settings: ResizeImageSettings, opts?: TransformCallOptions) => Promise<void>;
+  handleRescaleImage: (settings: RescaleImageSettings, opts?: TransformCallOptions) => Promise<void>;
+  handleRestoreImage: (settings: RestoreImageSettings, opts?: TransformCallOptions) => Promise<void>;
+  handleResizeCanvas: (settings: ResizeCanvasSettings, opts?: TransformCallOptions) => void;
+  /** Crop to `rect` (canvas pixels), or to the Crop tool's rectangle. */
+  handleCrop: (rect?: CropRect, opts?: TransformCallOptions) => void;
+  handleRotate: (amount: RotateAmount, opts?: TransformCallOptions) => Promise<void>;
+  handleFlip: (axis: FlipAxis, opts?: TransformCallOptions) => Promise<void>;
+  handleRotateSelectedLayers: (amount: RotateAmount, opts?: LayerTransformCallOptions) => Promise<void>;
+  handleFlipSelectedLayers: (axis: FlipAxis, opts?: LayerTransformCallOptions) => Promise<void>;
 }
 
 // ─── Layer-local helpers ──────────────────────────────────────────────────────
@@ -203,46 +225,109 @@ export function useCanvasTransforms({
     [activeTabIdRef],
   );
 
+  /**
+   * Every layer's pixel buffer in its own format and layer-local space
+   * (rgba32f floats, indexed8 palette indices, rgba8 bytes), plus baked
+   * effect-layer selection masks (canvas-sized rgba8), for a canvas
+   * dimension transform. Buffers are live views: transforms must copy.
+   */
+  const collectLayerBuffers = useCallback(
+    (handle: CanvasHandle): { id: string; mask: boolean; buf: LayerBuffer }[] => {
+      const out: { id: string; mask: boolean; buf: LayerBuffer }[] = [];
+      const oldW = canvasWidth;
+      const oldH = canvasHeight;
+      for (const layer of stateRef.current.layers) {
+        if ("type" in layer && layer.type === "adjustment") {
+          if (!layer.hasMask) continue;
+          const mask = handle.getAdjustmentMaskPixels(layer.id);
+          if (!(mask instanceof Uint8Array) || mask.length !== oldW * oldH * 4) continue;
+          out.push({
+            id: layer.id,
+            mask: true,
+            buf: { data: mask, format: "rgba8", width: oldW, height: oldH, offsetX: 0, offsetY: 0 },
+          });
+          continue;
+        }
+        const gpu = handle.getGpuLayer(layer.id);
+        if (!gpu) continue;
+        out.push({
+          id: layer.id,
+          mask: false,
+          buf: {
+            data: gpu.data,
+            format: gpu.format,
+            width: gpu.layerWidth,
+            height: gpu.layerHeight,
+            offsetX: gpu.offsetX,
+            offsetY: gpu.offsetY,
+          },
+        });
+      }
+      return out;
+    },
+    [canvasWidth, canvasHeight, stateRef],
+  );
+
+  /** Encode transformed buffers for the remounted canvas: transfer-store
+   *  refs in each layer's format plus its new geometry. */
+  const encodeLayerBuffers = useCallback(
+    (
+      results: readonly { id: string; mask: boolean; buf: LayerBuffer }[],
+      newW: number,
+      newH: number,
+    ): Map<string, string> => {
+      const encoded = new Map<string, string>();
+      for (const { id, mask, buf } of results) {
+        if (mask) {
+          const key = `${xformPrefix}${id}:adjustment-mask`;
+          u8TransferStore.set(key, toCanvasSized(buf, newW, newH));
+          encoded.set(`${id}:adjustment-mask`, `data:raw/rgba8-ref;id=${key}`);
+          continue;
+        }
+        const key = xformPrefix + id;
+        if (buf.format === "rgba32f") {
+          f32TransferStore.set(key, buf.data as Float32Array);
+          encoded.set(id, `data:raw/f32-ref;id=${key}`);
+        } else {
+          u8TransferStore.set(key, buf.data as Uint8Array);
+          encoded.set(id, `data:raw/${buf.format === "indexed8" ? "indexed8" : "rgba8"}-ref;id=${key}`);
+        }
+        encoded.set(
+          `${id}:geo`,
+          JSON.stringify({
+            layerWidth: buf.width,
+            layerHeight: buf.height,
+            offsetX: buf.offsetX,
+            offsetY: buf.offsetY,
+          }),
+        );
+      }
+      return encoded;
+    },
+    [xformPrefix],
+  );
+
   const handleResizeImage = useCallback(
-    async (settings: ResizeImageSettings): Promise<void> => {
+    async (settings: ResizeImageSettings, opts?: TransformCallOptions): Promise<void> => {
       const { width: newW, height: newH, filter } = settings;
       const oldW = canvasWidth;
       const oldH = canvasHeight;
       if (newW === oldW && newH === oldH) return;
-      const resizeFn = filter === "nearest" ? resizeNearest : resizeBilinear;
       const handle = canvasHandleRef.current;
-      if (!handle) return;
-      const { pixelFormat, swatches } = stateRef.current;
-      const isIndexed = pixelFormat === "indexed8";
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       try {
-        const encoded = new Map<string, string>();
-        for (const layer of stateRef.current.layers) {
-          if (isIndexed) {
-            const indexData = handle.getLayerIndexData(layer.id);
-            if (!indexData) continue;
-            const rgba = expandIndicesToRgba(indexData, swatches);
-            const resizedRgba = await resizeNearest(
-              rgba,
-              oldW,
-              oldH,
-              newW,
-              newH,
-            );
-            const resizedIndices = await matchPaletteIndices(
-              resizedRgba,
-              swatches,
-              255,
-            );
-            u8TransferStore.set(xformPrefix + layer.id, resizedIndices);
-            encoded.set(layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`);
-          } else {
-            const pixels = handle.getLayerPixels(layer.id);
-            if (!pixels) continue;
-            const resized = await resizeFn(pixels, oldW, oldH, newW, newH);
-            u8TransferStore.set(xformPrefix + layer.id, resized);
-            encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
-          }
-        }
+        // Each layer is resampled natively in its own format (see
+        // `resampleLayer`): floats stay scene-linear, indices stay indices.
+        const results = await Promise.all(
+          collectLayerBuffers(handle).map(async (e) => ({
+            ...e,
+            buf: await resampleLayer(e.buf, oldW, oldH, newW, newH, filter),
+          })),
+        );
+        const encoded = encodeLayerBuffers(results, newW, newH);
         if (abandonedAfterTabSwitch(activeTabId, "Resize Image")) return;
         captureHistory("Before Resize Image");
         const resizeTabId = activeTabId;
@@ -268,11 +353,14 @@ export function useCanvasTransforms({
           payload: { width: newW, height: newH },
         });
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[Resize] Failed to resize image:", err);
         showOperationError("Resize Image failed.", err);
       }
     },
     [
+      collectLayerBuffers,
+      encodeLayerBuffers,
       canvasWidth,
       canvasHeight,
       canvasHandleRef,
@@ -289,13 +377,16 @@ export function useCanvasTransforms({
   );
 
   const handleRescaleImage = useCallback(
-    async (settings: RescaleImageSettings): Promise<void> => {
+    async (settings: RescaleImageSettings, opts?: TransformCallOptions): Promise<void> => {
       const { width: newW, height: newH, modelId } = settings;
       const oldW = canvasWidth;
       const oldH = canvasHeight;
       if (newW === oldW && newH === oldH) return;
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       const { pixelFormat } = stateRef.current;
       if (pixelFormat !== "rgba8") {
         console.warn(
@@ -389,6 +480,7 @@ export function useCanvasTransforms({
           payload: { width: newW, height: newH },
         });
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[Rescale] Failed to rescale image:", err);
         showOperationError("AI Rescale failed.", err);
       } finally {
@@ -415,12 +507,15 @@ export function useCanvasTransforms({
   );
 
   const handleRestoreImage = useCallback(
-    async (settings: RestoreImageSettings): Promise<void> => {
+    async (settings: RestoreImageSettings, opts?: TransformCallOptions): Promise<void> => {
       const { modelId } = settings;
       const W = canvasWidth;
       const H = canvasHeight;
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       const { pixelFormat } = stateRef.current;
       if (pixelFormat !== "rgba8") {
         console.warn(
@@ -493,6 +588,7 @@ export function useCanvasTransforms({
         setPendingLayerData(encoded);
         pendingLayerLabelRef.current = "Restore Image";
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[Restore] Failed to restore image:", err);
         showOperationError("AI Restore failed.", err);
       } finally {
@@ -518,13 +614,16 @@ export function useCanvasTransforms({
   );
 
   const handleResizeCanvas = useCallback(
-    (settings: ResizeCanvasSettings): void => {
+    (settings: ResizeCanvasSettings, opts?: TransformCallOptions): void => {
       const { width: newW, height: newH, anchorCol, anchorRow } = settings;
       const oldW = canvasWidth;
       const oldH = canvasHeight;
       if (newW === oldW && newH === oldH) return;
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
 
       const offsetX =
         anchorCol === 0
@@ -539,56 +638,16 @@ export function useCanvasTransforms({
             ? Math.round((newH - oldH) / 2)
             : newH - oldH;
 
-      const { pixelFormat } = stateRef.current;
-      const isIndexed = pixelFormat === "indexed8";
-
-      const encoded = new Map<string, string>();
-      for (const layer of stateRef.current.layers) {
-        if (isIndexed) {
-          const indexData = handle.getLayerIndexData(layer.id);
-          if (!indexData) continue;
-          const newIndices = new Uint8Array(newW * newH).fill(255);
-          const copyX = Math.max(0, offsetX);
-          const copyY = Math.max(0, offsetY);
-          const copyW = Math.min(oldW, newW - offsetX) - copyX;
-          const copyH = Math.min(oldH, newH - offsetY) - copyY;
-          if (copyW > 0 && copyH > 0) {
-            for (let row = 0; row < copyH; row++) {
-              const srcOffset =
-                (copyY + row - offsetY) * oldW + (copyX - offsetX);
-              const dstOffset = (copyY + row) * newW + copyX;
-              newIndices.set(
-                indexData.subarray(srcOffset, srcOffset + copyW),
-                dstOffset,
-              );
-            }
-          }
-          u8TransferStore.set(xformPrefix + layer.id, newIndices);
-          encoded.set(layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`);
-        } else {
-          const oldPixels = handle.getLayerPixels(layer.id);
-          if (!oldPixels) continue;
-          const newPixels = new Uint8Array(newW * newH * 4);
-          const srcX0 = Math.max(0, -offsetX);
-          const srcY0 = Math.max(0, -offsetY);
-          const dstX0 = Math.max(0, offsetX);
-          const dstY0 = Math.max(0, offsetY);
-          const cpW = Math.min(oldW - srcX0, newW - dstX0);
-          const cpH = Math.min(oldH - srcY0, newH - dstY0);
-          if (cpW > 0 && cpH > 0) {
-            for (let row = 0; row < cpH; row++) {
-              const srcOff = ((srcY0 + row) * oldW + srcX0) * 4;
-              const dstOff = ((dstY0 + row) * newW + dstX0) * 4;
-              newPixels.set(
-                oldPixels.subarray(srcOff, srcOff + cpW * 4),
-                dstOff,
-              );
-            }
-          }
-          u8TransferStore.set(xformPrefix + layer.id, newPixels);
-          encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
-        }
-      }
+      // Each layer moves by the anchor offset and is clipped to the new
+      // canvas in its own format.
+      const encoded = encodeLayerBuffers(
+        collectLayerBuffers(handle).map((e) => ({
+          ...e,
+          buf: clipLayerToCanvas(e.buf, offsetX, offsetY, newW, newH),
+        })),
+        newW,
+        newH,
+      );
 
       captureHistory("Before Resize Canvas");
       const resizeCanvasTabId = activeTabId;
@@ -615,6 +674,8 @@ export function useCanvasTransforms({
       });
     },
     [
+      collectLayerBuffers,
+      encodeLayerBuffers,
       canvasWidth,
       canvasHeight,
       canvasHandleRef,
@@ -630,52 +691,38 @@ export function useCanvasTransforms({
     ],
   );
 
-  const handleCrop = useCallback((): void => {
-    const r = activeScope().crop.rect;
-    if (!r) return;
+  const handleCrop = useCallback((rect?: CropRect, opts?: TransformCallOptions): void => {
+    const r = rect ?? activeScope().crop.rect;
+    if (!r) {
+      if (opts?.throwErrors) throw new Error("No crop rectangle.");
+      return;
+    }
     const oldW = canvasWidth;
     const oldH = canvasHeight;
     const cropX = Math.max(0, r.x);
     const cropY = Math.max(0, r.y);
     const cropW = Math.min(r.w, oldW - cropX);
     const cropH = Math.min(r.h, oldH - cropY);
-    if (cropW <= 0 || cropH <= 0) return;
-    const handle = canvasHandleRef.current;
-    if (!handle) return;
-
-    const { pixelFormat } = stateRef.current;
-    const isIndexed = pixelFormat === "indexed8";
-
-    const encoded = new Map<string, string>();
-    for (const layer of stateRef.current.layers) {
-      if (isIndexed) {
-        const src = handle.getLayerIndexData(layer.id);
-        if (!src) continue;
-        const dst = new Uint8Array(cropW * cropH).fill(255);
-        for (let row = 0; row < cropH; row++) {
-          const srcRow = cropY + row;
-          if (srcRow < 0 || srcRow >= oldH) continue;
-          for (let col = 0; col < cropW; col++) {
-            const srcCol = cropX + col;
-            if (srcCol < 0 || srcCol >= oldW) continue;
-            dst[row * cropW + col] = src[srcRow * oldW + srcCol];
-          }
-        }
-        u8TransferStore.set(xformPrefix + layer.id, dst);
-        encoded.set(layer.id, `data:raw/indexed8-ref;id=${xformPrefix}${layer.id}`);
-      } else {
-        const pixels = handle.getLayerPixels(layer.id);
-        if (!pixels) continue;
-        const cropPixels = new Uint8Array(cropW * cropH * 4);
-        for (let row = 0; row < cropH; row++) {
-          const srcOff = ((cropY + row) * oldW + cropX) * 4;
-          const dstOff = row * cropW * 4;
-          cropPixels.set(pixels.subarray(srcOff, srcOff + cropW * 4), dstOff);
-        }
-        u8TransferStore.set(xformPrefix + layer.id, cropPixels);
-        encoded.set(layer.id, `data:raw/rgba8-ref;id=${xformPrefix}${layer.id}`);
-      }
+    if (cropW <= 0 || cropH <= 0) {
+      if (opts?.throwErrors) throw new Error("The crop rectangle is outside the canvas.");
+      return;
     }
+    const handle = canvasHandleRef.current;
+    if (!handle) {
+      if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+      return;
+    }
+
+    // Each layer moves by the crop origin and is clipped to the crop size
+    // in its own format.
+    const encoded = encodeLayerBuffers(
+      collectLayerBuffers(handle).map((e) => ({
+        ...e,
+        buf: clipLayerToCanvas(e.buf, -cropX, -cropY, cropW, cropH),
+      })),
+      cropW,
+      cropH,
+    );
 
     activeScope().crop.clear();
     captureHistory("Before Crop");
@@ -702,6 +749,8 @@ export function useCanvasTransforms({
       payload: { width: cropW, height: cropH },
     });
   }, [
+    collectLayerBuffers,
+    encodeLayerBuffers,
     canvasWidth,
     canvasHeight,
     canvasHandleRef,
@@ -716,16 +765,19 @@ export function useCanvasTransforms({
   ]);
 
   useEffect(() => {
-    activeScope().crop.onCrop = handleCrop;
+    activeScope().crop.onCrop = () => handleCrop();
     return () => {
       activeScope().crop.onCrop = null;
     };
   }, [handleCrop]);
 
   const handleRotate = useCallback(
-    async (amount: RotateAmount): Promise<void> => {
+    async (amount: RotateAmount, opts?: LayerTransformCallOptions): Promise<void> => {
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       const startTabId = activeTabIdRef.current;
       const oldW = canvasWidth;
       const oldH = canvasHeight;
@@ -817,6 +869,7 @@ export function useCanvasTransforms({
           });
         }
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[Rotate] Failed:", err);
         showOperationError("Rotate failed.", err);
       }
@@ -838,9 +891,12 @@ export function useCanvasTransforms({
   );
 
   const handleFlip = useCallback(
-    async (axis: FlipAxis): Promise<void> => {
+    async (axis: FlipAxis, opts?: LayerTransformCallOptions): Promise<void> => {
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       const startTabId = activeTabIdRef.current;
       const w = canvasWidth;
       const h = canvasHeight;
@@ -909,6 +965,7 @@ export function useCanvasTransforms({
         setPendingLayerData(encoded);
         pendingLayerLabelRef.current = label;
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[Flip] Failed:", err);
         showOperationError("Flip failed.", err);
       }
@@ -929,14 +986,17 @@ export function useCanvasTransforms({
   );
 
   const handleRotateSelectedLayers = useCallback(
-    async (amount: RotateAmount): Promise<void> => {
+    async (amount: RotateAmount, opts?: LayerTransformCallOptions): Promise<void> => {
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       const startTabId = activeTabIdRef.current;
       const { layers, selectedLayerIds, activeLayerId, swatches } =
         stateRef.current;
-      const effectiveIds = new Set(selectedLayerIds);
-      if (activeLayerId) effectiveIds.add(activeLayerId);
+      const effectiveIds = new Set(opts?.layerIds ?? selectedLayerIds);
+      if (activeLayerId && !opts?.layerIds) effectiveIds.add(activeLayerId);
       const wasmAmount: 0 | 1 | 2 =
         amount === "90cw" ? 0 : amount === "180" ? 1 : 2;
       try {
@@ -1028,6 +1088,7 @@ export function useCanvasTransforms({
           );
         }
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[RotateLayer] Failed:", err);
         showOperationError("Rotate Layer failed.", err);
       }
@@ -1036,14 +1097,17 @@ export function useCanvasTransforms({
   );
 
   const handleFlipSelectedLayers = useCallback(
-    async (axis: FlipAxis): Promise<void> => {
+    async (axis: FlipAxis, opts?: LayerTransformCallOptions): Promise<void> => {
       const handle = canvasHandleRef.current;
-      if (!handle) return;
+      if (!handle) {
+        if (opts?.throwErrors) throw new Error("The canvas isn't ready yet.");
+        return;
+      }
       const startTabId = activeTabIdRef.current;
       const { layers, selectedLayerIds, activeLayerId, swatches } =
         stateRef.current;
-      const effectiveIds = new Set(selectedLayerIds);
-      if (activeLayerId) effectiveIds.add(activeLayerId);
+      const effectiveIds = new Set(opts?.layerIds ?? selectedLayerIds);
+      if (activeLayerId && !opts?.layerIds) effectiveIds.add(activeLayerId);
       const wasmAxis: 0 | 1 = axis === "horizontal" ? 0 : 1;
       try {
         type Op = {
@@ -1106,6 +1170,7 @@ export function useCanvasTransforms({
           );
         }
       } catch (err) {
+        if (opts?.throwErrors) throw err;
         console.error("[FlipLayer] Failed:", err);
         showOperationError("Flip Layer failed.", err);
       }

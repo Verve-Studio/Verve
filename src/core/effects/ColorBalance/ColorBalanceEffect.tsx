@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorBalancePanel } from "./ColorBalancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ColorBalanceIcon = (
@@ -48,6 +49,20 @@ export const ColorBalanceEffect: IPipelineEffect<
     highlights: { cr: 0, mg: 0, yb: 0 },
     preserveLuminosity: true,
   },
+  paramFields: [
+    ...(
+      [
+        ["shadows", "Shadows"],
+        ["midtones", "Midtones"],
+        ["highlights", "Highlights"],
+      ] as const
+    ).flatMap(([range, rangeLabel]) => [
+      numberField<ColorBalanceParams>(`${range}.cr`, `${rangeLabel} Cyanâ€“Red`, { min: -100, max: 100, int: true }),
+      numberField<ColorBalanceParams>(`${range}.mg`, `${rangeLabel} Magentaâ€“Green`, { min: -100, max: 100, int: true }),
+      numberField<ColorBalanceParams>(`${range}.yb`, `${rangeLabel} Yellowâ€“Blue`, { min: -100, max: 100, int: true }),
+    ]),
+    boolField("preserveLuminosity", "Preserve Luminosity"),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

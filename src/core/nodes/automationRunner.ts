@@ -11,7 +11,8 @@ import type { GraphEdge, NodeGraph } from "./graphTypes";
 import type { ExecContext, ExecResult, INode } from "./INode";
 import { nodeRegistry } from "./nodeRegistry";
 import { nodePorts, paramValue } from "./graphOps";
-import { convertValue, type AutomationHost, type RuntimeValue } from "./values";
+import { convertValue, type RuntimeValue } from "./values";
+import type { AutomationHost } from "./automationHost";
 
 export interface RunOptions {
   signal?: AbortSignal;
@@ -56,6 +57,7 @@ export async function runAutomation(
   }
 
   const execOutputs = new Map<string, Outputs>();
+  const variables = new Map<string, RuntimeValue>();
   let pureCache = new Map<string, Promise<Outputs>>();
   let steps = 0;
 
@@ -113,8 +115,10 @@ export async function runAutomation(
         return convertValue(paramValue(def, node, id, graph) as RuntimeValue, port.type);
       },
       param: (id) => paramValue(def, node, id, graph),
+      isConnected: (id) => incoming.has(`${nodeId}:${id}`),
       host,
       signal,
+      variables,
       setOutputs: (values) => {
         execOutputs.set(nodeId, { ...execOutputs.get(nodeId), ...values });
         pureCache = new Map();

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { SmartSharpenPanel } from "./SmartSharpenPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 
 
 export interface SmartSharpenParams {
@@ -28,6 +29,12 @@ export const SmartSharpenEffect: IPipelineEffect<
     reduceNoise: 0,
     remove: "gaussian",
   },
+  paramFields: [
+    numberField("amount", "Amount", { min: 1, max: 500, int: true }),
+    numberField("radius", "Radius", { min: 1, max: 64, int: true }),
+    numberField("reduceNoise", "Reduce Noise", { min: 0, max: 100, int: true }),
+    enumField("remove", "Remove", [["gaussian", "Gaussian"], ["lens-blur", "Lens Blur"]]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

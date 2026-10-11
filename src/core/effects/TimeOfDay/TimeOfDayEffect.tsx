@@ -4,10 +4,12 @@ import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import {
   hueDirection,
   PURKINJE_FULL,
+  TIME_OF_DAY_MODES,
   TIME_OF_DAY_PROFILES,
 } from "@/utils/paletteGenerators";
 import type { TimeOfDay } from "@/utils/paletteGenerators";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, numberField } from "../_shared/effectParams";
 import { TimeOfDayPanel } from "./TimeOfDayPanel";
 
 const TimeOfDayIcon = (
@@ -102,6 +104,44 @@ export const TimeOfDayEffect: IPipelineEffect<TimeOfDayEffectLayer, TimeOfDayOp>
   label: "Time of Day…",
   menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: timeOfDayModeParams("night"),
+  paramFields: [
+    // Switching mode loads that mode's lead preset, as the panel's mode
+    // buttons do; the sliders below are applied after it and override it.
+    customField<TimeOfDayParams>({
+      id: "mode",
+      label: "Time of Day",
+      spec: {
+        kind: "enum",
+        options: TIME_OF_DAY_MODES.map((m) => ({ value: m, label: TIME_OF_DAY_PROFILES[m].label })),
+      },
+      get: (p) => p.mode,
+      set: (p, v) => {
+        const mode = TIME_OF_DAY_MODES.find((m) => m === v);
+        return mode === undefined || mode === p.mode ? p : timeOfDayModeParams(mode, p);
+      },
+    }),
+    numberField("tintHue", "Light Tint", { min: 0, max: 360, int: true }),
+    numberField("tintStrength", "Light Strength", { min: 0, max: 1, step: 0.01 }),
+    // Day shows this inverted as Exposure (−50..50 → darkness 0.5..−0.5);
+    // the other modes show Darkness 0..100. Clamp to the mode's range.
+    customField<TimeOfDayParams>({
+      id: "darkness",
+      label: "Darkness",
+      spec: { kind: "float", min: -0.5, max: 1, step: 0.01 },
+      get: (p) => p.darkness,
+      set: (p, v) => {
+        const [lo, hi] = TIME_OF_DAY_PROFILES[p.mode].exposureInverted ? [-0.5, 0.5] : [0, 1];
+        const n = typeof v === "number" && Number.isFinite(v) ? v : p.darkness;
+        return { ...p, darkness: Math.min(hi, Math.max(lo, n)) };
+      },
+    }),
+    numberField("colorRetention", "Keep Color", { min: 0, max: 1, step: 0.01 }),
+    numberField("shadowDepth", "Shadow Depth", { min: 0, max: 1, step: 0.01 }),
+    numberField("shadowHue", "Shadow Hue", { min: 0, max: 360, int: true }),
+    numberField("highlightStrength", "Highlight Strength", { min: 0, max: 1, step: 0.01 }),
+    numberField("lightHue", "Light Hue", { min: 0, max: 360, int: true }),
+    numberField("amount", "Amount", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

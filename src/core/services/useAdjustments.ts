@@ -6,6 +6,7 @@ import type { EffectLayerState, EffectParamsMap, EffectType } from "@/core/effec
 import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useMemo } from "react";
 import { activeScope } from "@/core/store/scope";
+import { newLayerId } from "@/utils/layerId";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,7 +20,25 @@ interface UseAdjustmentsOptions {
   registerAdjMask?: (layerId: string, pixels: Uint8Array) => void;
 }
 
+export interface AddEffectOptions<T extends EffectType = EffectType> {
+  /** Layer that owns the effect (must be effect-eligible). */
+  parentId: string;
+  effectType: T;
+  /** Full params (defaults are filled in for missing keys). */
+  params?: Partial<EffectParamsMap[T]>;
+  name?: string;
+  /** Bake the current selection as the effect's mask (default true, as
+   *  from the menu). */
+  useSelection?: boolean;
+  /** Open the effect's panel / editor afterwards (menu behaviour). When
+   *  false, the creation is recorded in history right away. */
+  openPanel?: boolean;
+}
+
 export interface UseAdjustmentsReturn {
+  /** Attach an effect to an explicit layer; returns the new effect layer's
+   *  id. Throws when the parent can't take effects. */
+  addEffect: <T extends EffectType>(options: AddEffectOptions<T>) => string;
   handleCreateAdjustmentLayer: <T extends EffectType>(
     effectType: T,
     paramOverrides?: Partial<EffectParamsMap[T]>,
@@ -35,7 +54,7 @@ export interface UseAdjustmentsReturn {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /** Returns true for layer types that can own adjustment/effect children. */
-function isEffectEligibleLayer(layer: LayerState): boolean {
+export function isEffectEligibleLayer(layer: LayerState): boolean {
   if ("locked" in layer && (layer as { locked?: boolean }).locked) return false;
   if (!("type" in layer)) return true; // PixelLayerState has no type discriminant
   return (
@@ -77,13 +96,28 @@ export function useAdjustments({
     dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
   }, [stateRef, captureHistory, dispatch]);
 
-  const handleCreateAdjustmentLayer = useCallback(
-    <T extends EffectType>(
-      effectType: T,
-      paramOverrides?: Partial<EffectParamsMap[T]>,
-      name?: string,
-    ): void => {
-      const { activeLayerId, layers, openAdjustmentLayerId } = stateRef.current;
+  const addEffect = useCallback(
+    <T extends EffectType>({
+      parentId,
+      effectType,
+      params,
+      name,
+      useSelection = true,
+      openPanel = false,
+    }: AddEffectOptions<T>): string => {
+      const { layers, openAdjustmentLayerId, pixelFormat } = stateRef.current;
+      if (pixelFormat === "indexed8") {
+        throw new Error("Effects aren't available in indexed-colour documents.");
+      }
+      const parent = layers.find((l) => l.id === parentId);
+      if (!parent) throw new Error("The layer no longer exists.");
+      if (!isEffectEligibleLayer(parent)) {
+        throw new Error(
+          `"${parent.name}" can't take effects (it's locked, or a group, path, mask or effect layer).`,
+        );
+      }
+      const effect = effectRegistry.get(effectType);
+      if (!effect) throw new Error(`Unknown effect "${effectType}".`);
 
       if (openAdjustmentLayerId !== null) {
         activeScope().adjustmentPreview.clear(openAdjustmentLayerId);
@@ -91,66 +125,64 @@ export function useAdjustments({
         dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: null });
       }
 
+      const newId = newLayerId("adj");
+      const selPixels = useSelection && getSelectionPixels ? getSelectionPixels() : null;
+      const label = name ?? effect.label.replace("…", "");
+      const newLayer = {
+        id: newId,
+        name: label,
+        visible: true,
+        type: "adjustment" as const,
+        parentId,
+        effectType,
+        params: {
+          ...(effect.defaultParams as Record<string, unknown>),
+          ...(params ?? {}),
+        },
+        hasMask: selPixels !== null,
+      } as EffectLayerState;
+
+      dispatch({ type: "ADD_ADJUSTMENT_LAYER", payload: newLayer });
+      if (selPixels && registerAdjMask) registerAdjMask(newId, selPixels);
+
+      if (!openPanel) {
+        captureHistory(label);
+      } else if (effect.openEditor?.(newLayer)) {
+        // No floating panel to close later, so record the creation now.
+        captureHistory(label);
+      } else {
+        dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
+      }
+      return newId;
+    },
+    [stateRef, captureHistory, dispatch, getSelectionPixels, registerAdjMask],
+  );
+
+  const handleCreateAdjustmentLayer = useCallback(
+    <T extends EffectType>(
+      effectType: T,
+      paramOverrides?: Partial<EffectParamsMap[T]>,
+      name?: string,
+    ): void => {
+      const { activeLayerId, layers } = stateRef.current;
       const activeLayer = layers.find((l) => l.id === activeLayerId);
       if (!activeLayer) return;
 
       // If the active layer is itself an adjustment child, use its parent pixel layer instead
-      let effectiveParentId: string;
+      let parentId: string;
       if (isEffectEligibleLayer(activeLayer)) {
-        effectiveParentId = activeLayerId!;
+        parentId = activeLayer.id;
       } else if ("type" in activeLayer && activeLayer.type === "adjustment") {
-        const parentId = (activeLayer as { parentId: string }).parentId;
-        const parentLayer = layers.find((l) => l.id === parentId);
+        const parentLayer = layers.find((l) => l.id === activeLayer.parentId);
         if (!parentLayer || !isEffectEligibleLayer(parentLayer)) return;
-        effectiveParentId = parentId;
+        parentId = parentLayer.id;
       } else {
         return;
       }
-
-      // Block adding adjustments/effects/filters to locked layers.
-      const effectiveParent = layers.find((l) => l.id === effectiveParentId);
-      if (
-        effectiveParent &&
-        "locked" in effectiveParent &&
-        (effectiveParent as { locked?: boolean }).locked
-      )
-        return;
-
-      const effect = effectRegistry.get(effectType);
-      if (!effect) return;
-
-      const newId = `adj-${Date.now()}`;
-      const selPixels = getSelectionPixels ? getSelectionPixels() : null;
-      const hasMask = selPixels !== null;
-
-      const newLayer = {
-        id: newId,
-        name: name ?? effect.label.replace("…", ""),
-        visible: true,
-        type: "adjustment" as const,
-        parentId: effectiveParentId,
-        effectType,
-        params: {
-          ...(effect.defaultParams as Record<string, unknown>),
-          ...(paramOverrides ?? {}),
-        },
-        hasMask,
-      } as EffectLayerState;
-
-      dispatch({ type: "ADD_ADJUSTMENT_LAYER", payload: newLayer });
-
-      if (selPixels && registerAdjMask) {
-        registerAdjMask(newId, selPixels);
-      }
-
-      if (effect.openEditor?.(newLayer)) {
-        // No floating panel to close later, so record the creation now.
-        captureHistory(name ?? effect.label.replace("…", ""));
-      } else {
-        dispatch({ type: "SET_OPEN_ADJUSTMENT", payload: newId });
-      }
+      if (!effectRegistry.get(effectType) || stateRef.current.pixelFormat === "indexed8") return;
+      addEffect({ parentId, effectType, params: paramOverrides, name, openPanel: true });
     },
-    [stateRef, captureHistory, dispatch, getSelectionPixels, registerAdjMask],
+    [stateRef, addEffect],
   );
 
   const handleCreateColorDitheringWithSetup = useCallback(
@@ -179,6 +211,7 @@ export function useAdjustments({
   );
 
   return {
+    addEffect,
     handleCreateAdjustmentLayer,
     handleCreateColorDitheringWithSetup,
     handleOpenAdjustmentPanel,

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OffsetPanel } from "./OffsetPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
   /** Wrap-around pixel offset (Photoshop's Filter > Other > Offset). */
@@ -23,6 +24,11 @@ export const OffsetEffect: IPipelineEffect<OffsetEffectLayer, OffsetOp> = {
   label: "Offset…",
   menu: { root: "filters", submenu: "texture" },
   defaultParams: { offsetX: 0, offsetY: 0 },
+  // Unbounded: the panel's sliders span ±2000 but its number inputs accept any integer.
+  paramFields: [
+    numberField("offsetX", "Offset X", { int: true }),
+    numberField("offsetY", "Offset Y", { int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

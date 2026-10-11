@@ -24,6 +24,7 @@ export const SharpenMoreEffect: IPipelineEffect<
   label: "Sharpen More",
   menu: { root: "filters", submenu: "sharpen", instant: true },
   defaultParams: {},
+  paramFields: [],
 
   buildPlanEntry(layer, { mask }) {
     return {

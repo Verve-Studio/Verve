@@ -59,6 +59,8 @@ import { ALL_PANEL_IDS, PANEL_LABELS } from "@/ux/main/RightPanel/Dock/types";
 import { lutCategory } from "@/core/lut";
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
 import type { CustomEffectEntry } from "@/core/effects/CustomShader/customEffectStore";
+import type { GraphDomain } from "@/core/nodes/graphTypes";
+import { toggleNodeEditor } from "@/ux/main/NodeEditor/nodeEditorActions";
 
 // ─── MenuNode ─────────────────────────────────────────────────────────────
 
@@ -203,6 +205,9 @@ export interface MenuDeps {
   onSave?: () => void;
   onSaveAs?: () => void;
   onSaveACopy?: () => void;
+  /** New / open an automation workflow in the full-window node editor. */
+  onNewAutomation?: () => void;
+  onOpenAutomation?: () => void;
   onExport?: () => void;
   onClose?: () => void;
   onCloseOthers?: () => void;
@@ -374,7 +379,8 @@ export interface MenuDeps {
    *  the View → <panel name> entries). */
   openPanelIds?: ReadonlyArray<PanelId>;
   /** True when the node editor is docked open under the canvas. */
-  nodeEditorOpen?: boolean;
+  /** Mode of the open node editor (null when closed), for the View menu. */
+  nodeEditorMode?: GraphDomain | null;
   // ── Soft proofing (Tier 3a/3b) ─────────────────────────────────────────
   /** Open the Proof Setup dialog. */
   onOpenProofSetup?: () => void;
@@ -661,6 +667,9 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           disabled: !deps.isOpenAsLayerEnabled,
         },
         { label: "Open Recent", submenu: recentSubmenu },
+        SEP,
+        { label: "New Automation", actionId: "newAutomation", action: deps.onNewAutomation },
+        { label: "Open Automation…", actionId: "openAutomation", action: deps.onOpenAutomation },
         SEP,
         { label: "Close", actionId: "close", action: deps.onClose },
         { label: "Close Others", actionId: "closeOthers", action: deps.onCloseOthers },
@@ -1253,10 +1262,16 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           checked: !!deps.openPanelIds?.includes(id),
         })),
         {
-          label: "Node Editor",
-          actionId: "toggleNodeEditor",
-          action: () => dockStore.toggleNodeEditor(),
-          checked: !!deps.nodeEditorOpen,
+          label: "Automation Editor",
+          actionId: "toggleAutomationEditor",
+          action: () => toggleNodeEditor("automation"),
+          checked: deps.nodeEditorMode === "automation",
+        },
+        {
+          label: "Shader Editor",
+          actionId: "toggleShaderEditor",
+          action: () => toggleNodeEditor("shader"),
+          checked: deps.nodeEditorMode === "shader",
         },
         SEP,
         {

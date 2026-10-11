@@ -1,0 +1,197 @@
+@use '@/styles/variables' as vars;
+
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  font-size: vars.$font-size-sm;
+  color: vars.$color-text-dim;
+  background: vars.$color-surface;
+  border-bottom: 1px solid vars.$color-border;
+}
+
+.button {
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 10px;
+  color: vars.$color-text-dim;
+  background: none;
+  border: 1px solid vars.$color-border-light;
+  border-radius: vars.$radius-md;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: vars.$color-text;
+  }
+}
+
+.run {
+  color: #5fb878;
+  border-color: rgb(95 184 120 / 0.5);
+
+  &:hover {
+    color: #7fd898;
+    background: rgb(95 184 120 / 0.12);
+  }
+}
+
+.stop {
+  color: #e08080;
+  border-color: rgb(224 128 128 / 0.5);
+
+  &:hover {
+    color: #f0a0a0;
+    background: rgb(224 128 128 / 0.12);
+  }
+}
+
+.fileGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fileName {
+  max-width: 260px;
+  margin-left: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: vars.$color-text;
+  font-weight: 600;
+}
+
+.dirty {
+  color: vars.$color-accent-blue;
+}
+
+.divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  background: vars.$color-border-light;
+}
+
+.toggleOn {
+  color: vars.$color-text;
+  background: vars.$color-surface-selected;
+}
+
+.status {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.statusBusy {
+  color: vars.$color-accent-blue;
+}
+
+.statusError {
+  color: #e08080;
+}
+
+.statusOk {
+  color: #5fb878;
+}
+
+.main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.logPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 300px;
+  min-width: 0;
+  background: vars.$color-surface;
+  border-left: 1px solid vars.$color-border;
+}
+
+.logHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  font-size: vars.$font-size-sm;
+  font-weight: 600;
+  color: vars.$color-text-dim;
+  border-bottom: 1px solid vars.$color-border;
+}
+
+.clear {
+  height: 18px;
+  padding: 0 6px;
+  color: vars.$color-text-dim;
+  background: none;
+  border: none;
+  border-radius: vars.$radius-sm;
+  font: inherit;
+  font-weight: normal;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: vars.$color-text;
+    background: vars.$color-surface-hover;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.log {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: vars.$font-size-sm;
+  user-select: text;
+}
+
+.line {
+  padding: 1px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.info {
+  color: vars.$color-text-dim;
+}
+
+.print {
+  color: vars.$color-text;
+}
+
+.ok {
+  color: #5fb878;
+}
+
+.error {
+  color: #e08080;
+}
+
+.empty {
+  margin: 8px;
+  color: vars.$color-text-muted;
+}

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BrightnessContrastPanel } from "./BrightnessContrastPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const BrightnessContrastIcon = (
@@ -40,6 +41,10 @@ export const BrightnessContrastEffect: IPipelineEffect<
   label: "Brightness/Contrast…",
   menu: { root: "adjustments", submenu: "adj-tone" },
   defaultParams: { brightness: 0, contrast: 0 },
+  paramFields: [
+    numberField("brightness", "Brightness", { min: -100, max: 100, int: true }),
+    numberField("contrast", "Contrast", { min: -100, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

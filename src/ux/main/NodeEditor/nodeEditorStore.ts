@@ -5,19 +5,18 @@
  * A shader graph belongs to its Custom Shader layer (`params.graph`); the
  * document here is only the editing session (graph-level undo, viewport)
  * and is kept in sync with the layer by `ShaderLayerEditor`. The automation
- * workflow is an in-memory scratch graph until workflows can be saved.
+ * workflow lives in `automationSession` (it can be opened from / saved to
+ * an `.automation` file).
  */
 import "@/core/nodes";
-import { nodeRegistry } from "@/core/nodes/nodeRegistry";
 import { NodeGraphDocument } from "@/core/nodes/NodeGraphDocument";
-import { createNode } from "@/core/nodes/graphOps";
-import { newGraphId, type GraphDomain, type NodeGraph } from "@/core/nodes/graphTypes";
+import { automationSession } from "@/core/nodes/automationSession";
+import type { GraphDomain, NodeGraph } from "@/core/nodes/graphTypes";
 
 class NodeEditorStore {
   private _domain: GraphDomain = "shader";
   private _shaderLayerId: string | null = null;
   private _propertiesOpen = true;
-  private _automation: NodeGraphDocument | null = null;
   private _layerDocs = new Map<string, NodeGraphDocument>();
   private _listeners = new Set<() => void>();
 
@@ -64,15 +63,9 @@ class NodeEditorStore {
     return doc;
   }
 
+  /** The open automation workflow's document (see `automationSession`). */
   automationDocument(): NodeGraphDocument {
-    this._automation ??= new NodeGraphDocument({
-      id: newGraphId(),
-      name: "Workflow",
-      domain: "automation",
-      nodes: [createNode(nodeRegistry.get("onRun")!, 0, 0)],
-      edges: [],
-    });
-    return this._automation;
+    return automationSession.getSnapshot().document;
   }
 
   private _emit(): void {

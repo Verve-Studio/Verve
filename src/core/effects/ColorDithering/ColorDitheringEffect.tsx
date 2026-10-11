@@ -2,6 +2,7 @@ import type { EffectLayerOf, RGBAColor } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorDitheringPanel } from "./ColorDitheringPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { createStorageBuffer } from "@/graphics/webgpu/utils";
 
@@ -80,6 +81,13 @@ export const ColorDitheringEffect: IPipelineEffect<
   label: "Color Dithering…",
   menu: { root: "adjustments", submenu: "adj-indexed" },
   defaultParams: { style: "bayer4", opacity: 100 },
+  paramFields: [
+    enumField("style", "Style", [
+      ["bayer4", "Bayer 4Ã—4"],
+      ["bayer8", "Bayer 8Ã—8"],
+    ]),
+    numberField("opacity", "Opacity", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask, swatches }) {
     const paletteCount = Math.min(swatches.length, 256);

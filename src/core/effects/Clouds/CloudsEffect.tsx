@@ -3,6 +3,7 @@ import { isLinearTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { CloudsPanel } from "./CloudsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField, rgbSplitField } from "../_shared/effectParams";
 
 
 export interface CloudsParams {
@@ -38,6 +39,17 @@ export const CloudsEffect: IPipelineEffect<CloudsEffectLayer, CloudsOp> = {
     bgB: 255,
     seed: 0,
   },
+  paramFields: [
+    numberField("scale", "Scale", { min: 1, max: 50000, int: true }),
+    numberField("opacity", "Opacity", { min: 0, max: 100, int: true }),
+    enumField("colorMode", "Color Mode", [
+      ["grayscale", "Grayscale"],
+      ["color", "Color"],
+    ]),
+    rgbSplitField("foreground", "Foreground", ["fgR", "fgG", "fgB"]),
+    rgbSplitField("background", "Background", ["bgR", "bgG", "bgB"]),
+    numberField("seed", "Seed", { min: 0, max: 0xffffffff, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

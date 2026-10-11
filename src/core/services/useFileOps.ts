@@ -1,6 +1,6 @@
 import { isValidPixelBrush } from "@/core/store/pixelBrushStore";
 import type { AppShellState } from "@/core/store/AppContext";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import {
@@ -130,14 +130,34 @@ interface UseFileOpsOptions {
   onRecentFilesUpdated?: (files: string[]) => void;
 }
 
+export interface NewDocumentSettings {
+  width: number;
+  height: number;
+  backgroundFill: BackgroundFill;
+  pixelFormat?: PixelFormat;
+}
+
+/**
+ * Document-level file operations with explicit arguments, shared by the
+ * menu handlers below and the automation host. They throw on failure.
+ */
+export interface DocumentFileCommands {
+  /** New document tab; returns its tab id. */
+  newDocument(settings: NewDocumentSettings): string;
+  /** Open any supported file (.verve, .psd, images) as a document tab and
+   *  make it active; returns the tab id. */
+  openDocument(path: string): Promise<string>;
+  /** Save the active document as .verve to `path` (and link the tab to
+   *  it), or to its current .verve path when omitted. */
+  saveDocument(path?: string): Promise<void>;
+  /** Write a .verve copy of the active document without relinking it. */
+  saveDocumentCopy(path: string): Promise<void>;
+}
+
 export interface UseFileOpsReturn {
+  commands: DocumentFileCommands;
   untitledCounter: number;
-  handleNewConfirm: (settings: {
-    width: number;
-    height: number;
-    backgroundFill: BackgroundFill;
-    pixelFormat?: PixelFormat;
-  }) => void;
+  handleNewConfirm: (settings: NewDocumentSettings) => string;
   handleOpen: () => Promise<void>;
   handleOpenPath: (path: string) => Promise<void>;
   handleSave: (saveAs?: boolean) => Promise<void>;
@@ -266,6 +286,16 @@ export function useFileOps({
   // paint, so the next open sees the new tab as active.
   const openQueueRef = useRef<Promise<void>>(Promise.resolve());
 
+  /** The tab the last open / new activated (returned to programmatic callers). */
+  const lastActivatedRef = useRef<string | null>(null);
+  const activateTab = useCallback(
+    (id: string): void => {
+      lastActivatedRef.current = id;
+      setActiveTabId(id);
+    },
+    [setActiveTabId],
+  );
+
   const handleNewConfirm = useCallback(
     ({
       width,
@@ -277,7 +307,7 @@ export function useFileOps({
       height: number;
       backgroundFill: BackgroundFill;
       pixelFormat?: PixelFormat;
-    }): void => {
+    }): string => {
       const n = untitledCounter;
       setUntitledCounter(n + 1);
       const newId: string = makeTabId();
@@ -321,20 +351,21 @@ export function useFileOps({
           animationMode: false,
         });
       setActiveScope(newScope);
-      setActiveTabId(newId);
+      activateTab(newId);
       activeScope().history.clear({ recaptureSnapshot: false });
       setPendingLayerData(null);
       dispatch({
         type: "NEW_CANVAS",
         payload: { width, height, backgroundFill, pixelFormat: fmt },
       });
+      return newId;
     },
     [
       untitledCounter,
       addTabBackgroundingActive,
       dispatch,
       setTabs,
-      setActiveTabId,
+      activateTab,
       setPendingLayerData,
     ],
   );
@@ -509,7 +540,7 @@ export function useFileOps({
             animationMode: false,
           });
         setActiveScope(newScope);
-        setActiveTabId(newId);
+        activateTab(newId);
         activeScope().history.clear({ recaptureSnapshot: false });
         setPendingLayerData(null);
         dispatch({
@@ -606,7 +637,7 @@ export function useFileOps({
               animationMode: false,
             });
           setActiveScope(newScope);
-          setActiveTabId(newId);
+          activateTab(newId);
           activeScope().history.clear({ recaptureSnapshot: false });
           setPendingLayerData(null);
           dispatch({
@@ -740,7 +771,7 @@ export function useFileOps({
               animationMode: false,
             });
           setActiveScope(newScope);
-          setActiveTabId(newId);
+          activateTab(newId);
           activeScope().history.clear({ recaptureSnapshot: false });
           setPendingLayerData(null);
           dispatch({
@@ -816,7 +847,7 @@ export function useFileOps({
             animationMode: false,
           });
         setActiveScope(newScope);
-        setActiveTabId(newId);
+        activateTab(newId);
         activeScope().history.clear({ recaptureSnapshot: false });
         setPendingLayerData(null);
         dispatch({
@@ -843,6 +874,7 @@ export function useFileOps({
       // Already open? Just switch.
       const existing = tabs.find((t) => t.filePath === path);
       if (existing) {
+        lastActivatedRef.current = existing.id;
         handleSwitchTab(existing.id);
         return;
       }
@@ -1062,7 +1094,7 @@ export function useFileOps({
           animationMode: false,
         });
       setActiveScope(newScope);
-      setActiveTabId(newId);
+      activateTab(newId);
       activeScope().history.clear({ recaptureSnapshot: false });
       setPendingLayerData(null);
       dispatch({
@@ -1098,29 +1130,47 @@ export function useFileOps({
       handleSwitchTab,
       dispatch,
       setTabs,
-      setActiveTabId,
+      activateTab,
       setPendingLayerData,
       onRecentFilesUpdated,
     ],
   );
 
-  const openFromPath = useCallback(
-    (path: string): Promise<void> => {
+  /** Queued open that resolves with the activated tab id, or rejects. */
+  const openPathQueued = useCallback(
+    (path: string): Promise<string> => {
       const run = openQueueRef.current.then(async () => {
+        lastActivatedRef.current = null;
         try {
           await openFromPathNow(path);
-        } catch (err) {
-          console.error("[Open] Failed:", path, err);
-          showOperationError(`Could not open ${fileTitle(path)}.`, err);
+        } finally {
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => setTimeout(resolve, 0)),
+          );
         }
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => setTimeout(resolve, 0)),
-        );
+        const id = lastActivatedRef.current;
+        if (!id) throw new Error(`${fileTitle(path)} didn't open.`);
+        return id;
       });
-      openQueueRef.current = run.catch(() => undefined);
+      openQueueRef.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
       return run;
     },
     [openFromPathNow],
+  );
+
+  const openFromPath = useCallback(
+    async (path: string): Promise<void> => {
+      try {
+        await openPathQueued(path);
+      } catch (err) {
+        console.error("[Open] Failed:", path, err);
+        showOperationError(`Could not open ${fileTitle(path)}.`, err);
+      }
+    },
+    [openPathQueued],
   );
 
   const handleOpen = useCallback(async (): Promise<void> => {
@@ -1137,12 +1187,12 @@ export function useFileOps({
   );
 
   const handleSaveNow = useCallback(
-    async (saveAs = false): Promise<void> => {
+    async (saveAs = false, targetPath?: string): Promise<void> => {
       const activeTab = tabs.find((t) => t.id === activeTabId);
       const existingPath = activeTab?.filePath ?? null;
       // Non-.verve files (imported images) must not be overwritten via Save — force Save As dialog.
       const isVerve = existingPath?.toLowerCase().endsWith(".verve") === true;
-      let path = saveAs || !isVerve ? null : existingPath;
+      let path = targetPath ?? (saveAs || !isVerve ? null : existingPath);
       if (!path) {
         path = await window.api.saveverveDialog(
           activeTab?.filePath ?? undefined,
@@ -1292,11 +1342,11 @@ export function useFileOps({
     [handleSaveNow],
   );
 
-  const handleSaveACopyNow = useCallback(async (): Promise<void> => {
+  const handleSaveACopyNow = useCallback(async (targetPath?: string): Promise<void> => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
-    const path = await window.api.saveverveDialog(
-      activeTab?.filePath ?? undefined,
-    );
+    const path =
+      targetPath ??
+      (await window.api.saveverveDialog(activeTab?.filePath ?? undefined));
     if (!path) return;
 
     const layerPngs2: Record<string, string> = {};
@@ -1419,7 +1469,31 @@ export function useFileOps({
     }
   }, [handleSaveACopyNow]);
 
+  const commands = useMemo((): DocumentFileCommands => {
+    const verve = (path: string): string => {
+      if (!path.toLowerCase().endsWith(".verve")) {
+        throw new Error(`Documents are saved as .verve files ("${path}").`);
+      }
+      return path;
+    };
+    return {
+      newDocument: (settings) => handleNewConfirm(settings),
+      openDocument: (path) => openPathQueued(path),
+      saveDocument: async (path) => {
+        if (!path) {
+          const tab = tabs.find((t) => t.id === activeTabId);
+          if (!tab?.filePath?.toLowerCase().endsWith(".verve")) {
+            throw new Error("The document hasn't been saved as a .verve file yet; give a path.");
+          }
+        }
+        await handleSaveNow(false, path ? verve(path) : undefined);
+      },
+      saveDocumentCopy: (path) => handleSaveACopyNow(verve(path)),
+    };
+  }, [handleNewConfirm, openPathQueued, handleSaveNow, handleSaveACopyNow, tabs, activeTabId]);
+
   return {
+    commands,
     untitledCounter,
     handleNewConfirm,
     handleOpen,

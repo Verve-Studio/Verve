@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { FilmGrainPanel } from "./FilmGrainPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface FilmGrainParams {
@@ -23,6 +24,12 @@ export const FilmGrainEffect: IPipelineEffect<
   label: "Film Grain…",
   menu: { root: "filters", submenu: "noise" },
   defaultParams: { grainSize: 1, intensity: 25, roughness: 50, seed: 0 },
+  paramFields: [
+    numberField("grainSize", "Grain Size", { min: 1, max: 100, int: true }),
+    numberField("intensity", "Intensity", { min: 1, max: 200, int: true }),
+    numberField("roughness", "Roughness", { min: 0, max: 100, int: true }),
+    numberField("seed", "Seed", { min: 0, max: 0xffffffff, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -3,6 +3,7 @@ import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { InnerGlowOptions } from "./InnerGlowOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, numberField } from "../_shared/effectParams";
 import { encodeInnerShadowPass } from "../InnerShadow/InnerShadowEffect";
 
 
@@ -34,6 +35,24 @@ export const InnerGlowEffect: IPipelineEffect<
     spread: 0,
     softness: 15,
   },
+  paramFields: [
+    // The panel edits the colour's RGB only; color.a is preserved.
+    customField<InnerGlowParams>({
+      id: "color",
+      label: "Color",
+      spec: { kind: "color" },
+      get: (p) => [p.color.r / 255, p.color.g / 255, p.color.b / 255, 1],
+      set: (p, v) => {
+        const c = Array.isArray(v) ? (v as readonly number[]) : [0, 0, 0];
+        const b = (x: number | undefined): number =>
+          Math.round(Math.min(1, Math.max(0, x ?? 0)) * 255);
+        return { ...p, color: { r: b(c[0]), g: b(c[1]), b: b(c[2]), a: p.color.a } };
+      },
+    }),
+    numberField("opacity", "Opacity", { min: 0, max: 100, int: true }),
+    numberField("spread", "Spread", { min: 0, max: 100, int: true }),
+    numberField("softness", "Softness", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

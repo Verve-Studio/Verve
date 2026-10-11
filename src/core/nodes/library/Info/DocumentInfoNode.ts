@@ -5,7 +5,8 @@ class DocumentInfoNode implements INode {
   readonly label = "Document Info";
   readonly category = "Info";
   readonly domains = ["shader", "automation"] as const;
-  readonly description = "Canvas size and pixel format of the document.";
+  readonly description =
+    "Canvas size and pixel format of the document (automation: the active document, plus its name, file and unsaved state).";
   readonly inputs = [];
   readonly outputs = [
     { id: "width", label: "Width", type: "float" },
@@ -15,11 +16,14 @@ class DocumentInfoNode implements INode {
     { id: "aspect", label: "Aspect", type: "float" },
     { id: "isFloat", label: "Is Float (HDR)", type: "bool" },
     { id: "format", label: "Format", type: "string" },
+    { id: "name", label: "Name", type: "string" },
+    { id: "path", label: "File", type: "string" },
+    { id: "dirty", label: "Unsaved Changes", type: "bool" },
   ] as const;
 
   generateShader(ctx: ShaderContext): ShaderOutputs {
     const r = ctx.resolution;
-    // `format` is text: automation only.
+    // Text outputs (format, name, file) are automation only.
     return {
       width: `${r}.x`,
       height: `${r}.y`,
@@ -27,6 +31,7 @@ class DocumentInfoNode implements INode {
       texelSize: ctx.texelSize,
       aspect: `${r}.x / ${r}.y`,
       isFloat: ctx.isFloat,
+      dirty: "0.0",
     };
   }
 
@@ -41,6 +46,9 @@ class DocumentInfoNode implements INode {
         aspect: d.width / d.height,
         isFloat: d.format === "rgba32f",
         format: d.format,
+        name: d.name,
+        path: d.path,
+        dirty: d.dirty,
       },
     };
   }

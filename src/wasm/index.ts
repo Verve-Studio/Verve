@@ -180,8 +180,7 @@ function installWasm64Wrappers(m: PixelOpsModule): void {
 
   m._pixelops_flood_fill = wrapPtrFn(m._pixelops_flood_fill, [0], false);
   m._pixelops_flood_fill_f32 = wrapPtrFn(m._pixelops_flood_fill_f32, [0], false);
-  m._pixelops_resize_bilinear = wrapPtrFn(m._pixelops_resize_bilinear, [0, 3], false);
-  m._pixelops_resize_nearest = wrapPtrFn(m._pixelops_resize_nearest, [0, 3], false);
+  m._pixelops_resize_layer = wrapPtrFn(m._pixelops_resize_layer, [0, 10], false);
   m._pixelops_quantize = wrapPtrFn(m._pixelops_quantize, [0, 2], false);
   m._pixelops_curves_histogram = wrapPtrFn(m._pixelops_curves_histogram, [0, 3], true);
   m._pixelops_affine_transform = wrapPtrFn(m._pixelops_affine_transform, [0, 3, 6], false);
@@ -345,46 +344,67 @@ export async function floodFillF32(
   }
 }
 
-/** Bilinear resize — produces smooth edges (use for photographs). */
-export async function resizeBilinear(
-  pixels: Uint8Array,
-  srcWidth: number,
-  srcHeight: number,
-  dstWidth: number,
-  dstHeight: number,
-): Promise<Uint8Array> {
-  const m = await getPixelOps();
-  return withSrcDstBuffers(m, pixels, dstWidth * dstHeight * 4, (src, dst) =>
-    m._pixelops_resize_bilinear(
-      src,
-      srcWidth,
-      srcHeight,
-      dst,
-      dstWidth,
-      dstHeight,
-    ),
-  );
+/** Layer buffer for `resizeLayer`, in layer-local space on its canvas. */
+export interface ResizeLayerInput {
+  data: Uint8Array | Float32Array;
+  format: "rgba8" | "rgba32f" | "indexed8";
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
 }
 
-/** Nearest-neighbour resize — preserves hard pixel-art edges. */
-export async function resizeNearest(
-  pixels: Uint8Array,
-  srcWidth: number,
-  srcHeight: number,
-  dstWidth: number,
-  dstHeight: number,
-): Promise<Uint8Array> {
+/**
+ * Resample one layer for Resize Image, natively in its format (rgba32f
+ * stays scene-linear and unclamped, indexed8 copies palette indices).
+ * `dst` is the output rect on the new canvas; see wasm/src/resize.h for
+ * the sampling rules. Returns the `dst.width × dst.height` buffer.
+ */
+export async function resizeLayer(
+  src: ResizeLayerInput,
+  oldCanvasW: number,
+  oldCanvasH: number,
+  scaleX: number,
+  scaleY: number,
+  dst: { x: number; y: number; width: number; height: number },
+  filter: "bilinear" | "nearest",
+): Promise<Uint8Array | Float32Array> {
   const m = await getPixelOps();
-  return withSrcDstBuffers(m, pixels, dstWidth * dstHeight * 4, (src, dst) =>
-    m._pixelops_resize_nearest(
-      src,
-      srcWidth,
-      srcHeight,
-      dst,
-      dstWidth,
-      dstHeight,
-    ),
-  );
+  const channels = src.format === "indexed8" ? 1 : 4;
+  const bpe = src.format === "rgba32f" ? 4 : 1;
+  const srcBytes = src.width * src.height * channels * bpe;
+  const dstBytes = dst.width * dst.height * channels * bpe;
+  const srcPtr = m._malloc(srcBytes);
+  let dstPtr = 0;
+  try {
+    dstPtr = m._malloc(dstBytes);
+    m.HEAPU8.set(new Uint8Array(src.data.buffer, src.data.byteOffset, srcBytes), srcPtr);
+    const status = m._pixelops_resize_layer(
+      srcPtr,
+      src.format === "rgba32f" ? 1 : src.format === "indexed8" ? 2 : 0,
+      src.width,
+      src.height,
+      src.offsetX,
+      src.offsetY,
+      oldCanvasW,
+      oldCanvasH,
+      scaleX,
+      scaleY,
+      dstPtr,
+      dst.x,
+      dst.y,
+      dst.width,
+      dst.height,
+      filter === "nearest" ? 1 : 0,
+    );
+    if (status !== 0) throw new WasmOutOfMemoryError(dstBytes);
+    // Re-read the heap: it may have grown during the call.
+    const bytes = m.HEAPU8.slice(dstPtr, dstPtr + dstBytes);
+    return src.format === "rgba32f" ? new Float32Array(bytes.buffer) : bytes;
+  } finally {
+    m._free(srcPtr);
+    if (dstPtr) m._free(dstPtr);
+  }
 }
 
 /** Median-cut palette quantisation.

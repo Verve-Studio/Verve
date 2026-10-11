@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { DisplaceOptions } from "./DisplaceOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { DistortionIcon } from "../_shared/icons";
 
@@ -41,6 +42,17 @@ export const DisplaceEffect: IPipelineEffect<
     seed: 0,
     edgeMode: "mirror",
   },
+  paramFields: [
+    numberField("horizontalScale", "H Scale", { min: -200, max: 200, int: true }),
+    numberField("verticalScale", "V Scale", { min: -200, max: 200, int: true }),
+    numberField("noiseFrequency", "Frequency", { min: 1, max: 200, int: true }),
+    numberField("seed", "Seed", { min: 0, max: 9999, int: true }),
+    enumField("edgeMode", "Edges", [
+      ["transparent", "Transparent"],
+      ["clamp", "Clamp"],
+      ["mirror", "Mirror"],
+    ]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

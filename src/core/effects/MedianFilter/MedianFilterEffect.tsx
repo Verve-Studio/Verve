@@ -3,6 +3,7 @@ import { isLinearTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { MedianFilterPanel } from "./MedianFilterPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface MedianFilterParams {
@@ -21,6 +22,7 @@ export const MedianFilterEffect: IPipelineEffect<
   label: "Median Filter…",
   menu: { root: "filters", submenu: "noise" },
   defaultParams: { radius: 1 },
+  paramFields: [numberField("radius", "Radius", { min: 1, max: 10, int: true })],
 
   buildPlanEntry(layer, { mask }) {
     return {

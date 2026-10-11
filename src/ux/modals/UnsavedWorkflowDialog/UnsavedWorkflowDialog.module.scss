@@ -1,0 +1,27 @@
+@use '../../../styles/variables' as vars;
+
+.body {
+  padding: 16px 20px;
+}
+
+.message {
+  margin: 0;
+  font-size: vars.$font-size-sm;
+  line-height: 1.5;
+  color: vars.$color-text;
+
+  strong {
+    font-weight: 600;
+  }
+}
+
+.footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid vars.$color-border;
+}
+
+.spacer {
+  flex: 1;
+}

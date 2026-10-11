@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ReplaceColorPanel } from "./ReplaceColorPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField, rgbField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ReplaceColorIcon = (
@@ -62,6 +63,12 @@ export const ReplaceColorEffect: IPipelineEffect<
     hueRange: 30,
     amount: 100,
   },
+  paramFields: [
+    rgbField("originalColor", "Original"),
+    rgbField("targetColor", "Target"),
+    numberField("hueRange", "Hue Range", { min: 0, max: 180, int: true }),
+    numberField("amount", "Amount", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

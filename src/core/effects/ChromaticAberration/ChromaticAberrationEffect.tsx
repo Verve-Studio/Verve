@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ChromaticAberrationOptions } from "./ChromaticAberrationOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ChromaticAberrationIcon = (
@@ -55,6 +56,14 @@ export const ChromaticAberrationEffect: IPipelineEffect<
   label: "Chromatic Aberration…",
   menu: { root: "effects", submenu: "fx-lenseffects" },
   defaultParams: { type: "radial", distance: 5, angle: 0 },
+  paramFields: [
+    enumField("type", "Type", [
+      ["radial", "Radial"],
+      ["directional", "Directional"],
+    ]),
+    numberField("distance", "Distance", { min: 0, max: 50, step: 0.5 }),
+    numberField("angle", "Angle", { min: 0, max: 360, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

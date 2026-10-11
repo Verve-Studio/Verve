@@ -10,6 +10,15 @@
   border-top: 1px solid vars.$color-border;
 }
 
+// Fills the workspace (toolbar, canvas, right panel) instead of docking;
+// the canvas stays mounted underneath.
+.fullWindow {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  border-top: none;
+}
+
 .resizeHandle {
   position: absolute;
   left: 0;
@@ -35,38 +44,6 @@
 
 .title {
   font-weight: 600;
-}
-
-.segmented {
-  display: flex;
-  border: 1px solid vars.$color-border;
-  border-radius: vars.$radius-md;
-  overflow: hidden;
-
-  button {
-    height: 20px;
-    padding: 0 10px;
-    color: vars.$color-text-dim;
-    background: vars.$color-surface;
-    border: none;
-    font: inherit;
-    font-size: vars.$font-size-sm;
-    cursor: pointer;
-
-    & + button {
-      border-left: 1px solid vars.$color-border;
-    }
-
-    &:hover {
-      background: vars.$color-surface-hover;
-    }
-  }
-
-  .segActive,
-  .segActive:hover {
-    color: vars.$color-text;
-    background: vars.$color-surface-selected;
-  }
 }
 
 .hint {

@@ -3,6 +3,7 @@ import { colorForTarget } from "@/core/effects/_shared/effectColor";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { OutlineOptions } from "./OutlineOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, enumField, numberField } from "../_shared/effectParams";
 import {
   createTrackedTexture,
 } from "@/core/store/memoryStore";
@@ -136,6 +137,29 @@ export const OutlineEffect: IPipelineEffect<
     position: "outside",
     softness: 0,
   },
+  paramFields: [
+    // The panel edits the colour's RGB only; color.a is preserved.
+    customField<OutlineParams>({
+      id: "color",
+      label: "Color",
+      spec: { kind: "color" },
+      get: (p) => [p.color.r / 255, p.color.g / 255, p.color.b / 255, 1],
+      set: (p, v) => {
+        const c = Array.isArray(v) ? (v as readonly number[]) : [0, 0, 0];
+        const b = (x: number | undefined): number =>
+          Math.round(Math.min(1, Math.max(0, x ?? 0)) * 255);
+        return { ...p, color: { r: b(c[0]), g: b(c[1]), b: b(c[2]), a: p.color.a } };
+      },
+    }),
+    numberField("opacity", "Opacity", { min: 0, max: 100, int: true }),
+    numberField("thickness", "Thickness", { min: 1, max: 100, int: true }),
+    enumField("position", "Position", [
+      ["outside", "Outside"],
+      ["inside", "Inside"],
+      ["center", "Center"],
+    ]),
+    numberField("softness", "Softness", { min: 0, max: 50, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

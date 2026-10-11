@@ -64,9 +64,30 @@ declare global {
       saveEffectFile: (text: string, suggestedName: string) => Promise<string | null>
       openEffectsFolder: () => Promise<void>
       openEffectFile: () => Promise<{ path: string; text: string } | null>
+      readEffectFile: (path: string) => Promise<string>
       writeEffectFile: (path: string, text: string) => Promise<void>
       getEffectsFolder: () => Promise<string>
       onEffectsChanged: (callback: () => void) => () => void
+      // File system metadata (automation workflows)
+      listDirectory: (
+        path: string,
+        options?: { recursive?: boolean; files?: boolean; folders?: boolean }
+      ) => Promise<
+        Array<{ path: string; name: string; isDirectory: boolean; size: number; modified: number }>
+      >
+      statPath: (path: string) => Promise<{
+        exists: boolean
+        isDirectory: boolean
+        isFile: boolean
+        size: number
+        modified: number
+        created: number
+      }>
+      makeDirectory: (path: string) => Promise<void>
+      // Automation workflows (.automation)
+      openAutomationFile: () => Promise<{ path: string; text: string } | null>
+      saveAutomationFileAs: (text: string, suggestedPath?: string) => Promise<string | null>
+      writeAutomationFile: (path: string, text: string) => Promise<void>
       loadDockLayout: () => Promise<unknown>
       saveDockLayout: (layout: unknown) => Promise<void>
       // App lifecycle

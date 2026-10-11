@@ -8,6 +8,7 @@
  * The graph's `info` carries the name, author, description and version.
  */
 import type { GraphArgument, GraphInfo, NodeGraph } from "@/core/nodes/graphTypes";
+import { graphStructureProblem as graphProblem, isObject } from "@/core/nodes/graphFile";
 
 export const EFFECT_FORMAT = "verve-effect";
 export const EFFECT_FORMAT_VERSION = 1;
@@ -32,31 +33,6 @@ export function serializeEffect(graph: NodeGraph): string {
     graph: { ...graph, info: { ...DEFAULT_INFO, ...graph.info } },
   };
   return JSON.stringify(file, null, 2);
-}
-
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-
-/** Structural check of a (possibly nested) graph read from disk. */
-function graphProblem(g: unknown, where: string): string | null {
-  if (!isObject(g)) return `${where} is missing`;
-  if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) return `${where} has no nodes / links`;
-  for (const n of g.nodes) {
-    if (!isObject(n) || typeof n.id !== "string" || typeof n.type !== "string") {
-      return `${where} has an invalid node`;
-    }
-    if (typeof n.x !== "number" || typeof n.y !== "number" || !isObject(n.params)) {
-      return `${where} has an invalid node`;
-    }
-    if (n.body !== undefined) {
-      const inner = graphProblem(n.body, `${where} › ${n.type}`);
-      if (inner) return inner;
-    }
-  }
-  for (const e of g.edges) {
-    if (!isObject(e) || !isObject(e.from) || !isObject(e.to)) return `${where} has an invalid link`;
-  }
-  return null;
 }
 
 export type ParsedEffect = { ok: true; graph: NodeGraph } | { ok: false; error: string };

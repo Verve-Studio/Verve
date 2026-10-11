@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { FrescoPanel } from "./FrescoPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export interface FrescoParams {
@@ -18,6 +19,11 @@ export const FrescoEffect: IPipelineEffect<FrescoEffectLayer, FrescoOp> = {
   label: "Fresco…",
   menu: { root: "filters", submenu: "artistic" },
   defaultParams: { brushSize: 2, brushDetail: 8, texture: 1 },
+  paramFields: [
+    numberField("brushSize", "Brush Size", { min: 0, max: 10, int: true }),
+    numberField("brushDetail", "Brush Detail", { min: 0, max: 10, int: true }),
+    numberField("texture", "Texture", { min: 1, max: 3, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

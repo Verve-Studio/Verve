@@ -19,9 +19,10 @@ export type DistributeAxis = "horizontal" | "vertical";
 export type OrderOp = "front" | "back" | "forward" | "backward" | "reverse";
 
 export interface UseLayerArrangeReturn {
-  handleAlign: (edge: AlignEdge) => void;
-  handleDistribute: (axis: DistributeAxis) => void;
-  handleOrder: (op: OrderOp) => void;
+  /** `ids` defaults to the selected + active layers (all when none). */
+  handleAlign: (edge: AlignEdge, ids?: readonly string[]) => void;
+  handleDistribute: (axis: DistributeAxis, ids?: readonly string[]) => void;
+  handleOrder: (op: OrderOp, ids?: readonly string[]) => void;
 }
 
 interface UseLayerArrangeOptions {
@@ -101,7 +102,8 @@ export function useLayerArrange({
   dispatch,
 }: UseLayerArrangeOptions): UseLayerArrangeReturn {
   /** Returns the set of layer IDs to operate on. Falls back to all layers when nothing is selected. */
-  const getEffectiveIds = useCallback((): Set<string> => {
+  const getEffectiveIds = useCallback((explicit?: readonly string[]): Set<string> => {
+    if (explicit) return new Set(explicit);
     const { layers, selectedLayerIds, activeLayerId } = stateRef.current;
     const ids = new Set(selectedLayerIds);
     if (activeLayerId) ids.add(activeLayerId);
@@ -114,11 +116,11 @@ export function useLayerArrange({
   // ── Align ────────────────────────────────────────────────────────────────────
 
   const handleAlign = useCallback(
-    (edge: AlignEdge): void => {
+    (edge: AlignEdge, explicitIds?: readonly string[]): void => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
       const { layers } = stateRef.current;
-      const ids = getEffectiveIds();
+      const ids = getEffectiveIds(explicitIds);
 
       type LayerInfo = {
         gpuLayer: GpuLayer;
@@ -197,11 +199,11 @@ export function useLayerArrange({
   // ── Distribute ───────────────────────────────────────────────────────────────
 
   const handleDistribute = useCallback(
-    (axis: DistributeAxis): void => {
+    (axis: DistributeAxis, explicitIds?: readonly string[]): void => {
       const handle = canvasHandleRef.current;
       if (!handle) return;
       const { layers } = stateRef.current;
-      const ids = getEffectiveIds();
+      const ids = getEffectiveIds(explicitIds);
 
       type LayerInfo = {
         gpuLayer: GpuLayer;
@@ -250,9 +252,9 @@ export function useLayerArrange({
   // ── Order ─────────────────────────────────────────────────────────────────────
 
   const handleOrder = useCallback(
-    (op: OrderOp): void => {
+    (op: OrderOp, explicitIds?: readonly string[]): void => {
       const { layers } = stateRef.current;
-      const ids = getEffectiveIds();
+      const ids = getEffectiveIds(explicitIds);
 
       // Filter effective IDs to root layers only — children/masks/adjustments travel with their parent cluster.
       const rootIds = new Set(buildRootLayerIds(layers));

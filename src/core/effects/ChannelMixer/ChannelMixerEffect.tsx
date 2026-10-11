@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ChannelMixerPanel } from "./ChannelMixerPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { boolField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ChannelMixerIcon = (
@@ -55,6 +56,18 @@ export const ChannelMixerEffect: IPipelineEffect<
     blue: { red: 0, green: 0, blue: 100, constant: 0 },
     gray: { red: 40, green: 40, blue: 20, constant: 0 },
   },
+  paramFields: [
+    boolField("monochrome", "Monochrome"),
+    ...(["red", "green", "blue", "gray"] as const).flatMap((out) => {
+      const outLabel = `${out.charAt(0).toUpperCase()}${out.slice(1)} Output`;
+      return [
+        numberField<ChannelMixerParams>(`${out}.red`, `${outLabel} Red`, { min: -200, max: 200, int: true }),
+        numberField<ChannelMixerParams>(`${out}.green`, `${outLabel} Green`, { min: -200, max: 200, int: true }),
+        numberField<ChannelMixerParams>(`${out}.blue`, `${outLabel} Blue`, { min: -200, max: 200, int: true }),
+        numberField<ChannelMixerParams>(`${out}.constant`, `${outLabel} Constant`, { min: -200, max: 200, int: true }),
+      ];
+    }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

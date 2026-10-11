@@ -26,6 +26,7 @@ import {
 } from "@/utils/layerTree";
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import styles from "./Layers.module.scss";
+import { newLayerId } from "@/utils/layerId";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -350,7 +351,7 @@ export function Layers({
     dispatch({ type: "SET_ACTIVE_LAYER", payload: id });
   };
   const onLayerAdd = (): void => {
-    const id = `layer-${Date.now()}`;
+    const id = newLayerId("layer");
     dispatch({
       type: "ADD_LAYER",
       payload: {
@@ -398,7 +399,7 @@ export function Layers({
     dispatch({
       type: "ADD_MASK_LAYER",
       payload: {
-        id: `mask-${Date.now()}`,
+        id: newLayerId("mask"),
         name: "Layer Mask",
         visible: true,
         type: "mask",
@@ -836,7 +837,7 @@ export function Layers({
     if (effective.length >= 2) {
       onGroupSelected(effective);
     } else {
-      const id = `group-${Date.now()}`;
+      const id = newLayerId("group");
       dispatch({
         type: "ADD_LAYER_GROUP",
         payload: {

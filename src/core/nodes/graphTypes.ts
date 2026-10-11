@@ -14,25 +14,9 @@ import type { PortType } from "./INode";
  *  definitions registered for the graph's domain. */
 export type GraphDomain = "shader" | "automation";
 
-/** A square convolution kernel, `size × size` weights in row order. */
-export interface KernelValue {
-  readonly size: number;
-  readonly weights: readonly number[];
-}
-
-/** A user-editable value stored on a node: an inline input value or a
- *  node parameter. Colours are `[r, g, b, a]` in sRGB 0–1. */
-export type ParamValue =
-  | number
-  | boolean
-  | string
-  | readonly [number, number]
-  | readonly [number, number, number, number]
-  | KernelValue;
-
-export function isKernelValue(v: unknown): v is KernelValue {
-  return typeof v === "object" && v !== null && !Array.isArray(v) && "weights" in v;
-}
+export type { KernelValue, ParamValue } from "@/core/params/paramTypes";
+export { isKernelValue } from "@/core/params/paramTypes";
+import type { ParamValue } from "@/core/params/paramTypes";
 
 export interface GraphNode {
   readonly id: string;

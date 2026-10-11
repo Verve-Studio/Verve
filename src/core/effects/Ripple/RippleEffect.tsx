@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RippleOptions } from "./RippleOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { DistortionIcon } from "../_shared/icons";
 
@@ -34,6 +35,12 @@ export const RippleEffect: IPipelineEffect<RippleEffectLayer, RippleOp> = {
     direction: "both",
     edgeMode: "mirror",
   },
+  paramFields: [
+    numberField("amount", "Amount", { min: -500, max: 500, int: true }),
+    numberField("size", "Size", { min: 1, max: 100, int: true }),
+    enumField("direction", "Direction", [["horizontal", "Horizontal"], ["vertical", "Vertical"], ["both", "Both"]]),
+    enumField("edgeMode", "Edges", [["transparent", "Transparent"], ["clamp", "Clamp"], ["mirror", "Mirror"]]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

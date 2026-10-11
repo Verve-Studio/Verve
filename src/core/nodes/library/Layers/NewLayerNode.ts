@@ -1,20 +1,26 @@
-import type { ExecContext, ExecResult, INode } from "../../INode";
-import { EXEC_IN, EXEC_OUT, stringInput } from "../_shared/nodeKit";
+import type { ExecContext, INode } from "../../INode";
+import {
+  ActionNode,
+  LAYER_OUT,
+  optionalLayerInput,
+  stringInput,
+  stringSpec,
+} from "../_shared/nodeKit";
 
-class NewLayerNode implements INode {
+class NewLayerNode extends ActionNode {
   readonly type = "newLayer";
   readonly label = "New Layer";
-  readonly category = "Layers";
-  readonly domains = ["automation"] as const;
-  readonly inputs = [
-    EXEC_IN,
-    { id: "name", label: "Name", type: "string", value: { kind: "string", default: "Layer" } },
-  ] as const;
-  readonly outputs = [EXEC_OUT, { id: "layer", label: "Layer", type: "layer" }] as const;
+  readonly category = "Layer";
+  readonly description = "Adds an empty pixel layer on top, or directly above Above (in the same group).";
+  protected readonly dataInputs = [{ id: "name", label: "Name", type: "string", value: stringSpec("") }, { id: "above", label: "Above", type: "layer" }] as const;
+  protected readonly dataOutputs = [LAYER_OUT] as const;
 
-  async execute(ctx: ExecContext): Promise<ExecResult> {
-    const layer = await ctx.host.newLayer((await stringInput(ctx, "name")) || "Layer");
-    return { outputs: { layer } };
+  protected async run(ctx: ExecContext) {
+    const layer = await ctx.host.newLayer({
+      name: await stringInput(ctx, "name"),
+      above: await optionalLayerInput(ctx, "above"),
+    });
+    return { layer };
   }
 }
 

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BevelOptions } from "./BevelOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import {
   createTrackedTexture,
 } from "@/core/store/memoryStore";
@@ -56,6 +57,12 @@ export const BevelEffect: IPipelineEffect<BevelEffectLayer, BevelOp> = {
   label: "Bevel…",
   menu: { root: "effects", submenu: "fx-shadow" },
   defaultParams: { width: 5, softness: 3, angle: 135, strength: 80 },
+  paramFields: [
+    numberField("width", "Width", { min: 1, max: 50, int: true }),
+    numberField("softness", "Softness", { min: 0, max: 50, int: true }),
+    numberField("angle", "Light Dir", { min: 0, max: 360, int: true }),
+    numberField("strength", "Strength", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -9,6 +9,7 @@ import {
   notifyAutoMaskStatusChange,
   type AutoMaskRoi,
 } from "@/core/tools/AutoMask/AutoMask";
+import { newLayerId } from "@/utils/layerId";
 
 interface UseAutoMaskOptions {
   canvasHandleRef: { readonly current: CanvasHandle | null };
@@ -185,7 +186,7 @@ export function useAutoMask({
         if (existingMask) {
           handle.writeLayerPixels(existingMask.id, maskRgba);
         } else {
-          const maskId = `mask-${Date.now()}`;
+          const maskId = newLayerId("mask");
           handle.prepareNewLayer(maskId, "Auto Mask", maskRgba);
           dispatch({
             type: "ADD_MASK_LAYER",

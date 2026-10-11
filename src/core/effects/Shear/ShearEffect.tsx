@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ShearOptions } from "./ShearOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { DistortionIcon } from "../_shared/icons";
 
@@ -36,6 +37,12 @@ export const ShearEffect: IPipelineEffect<ShearEffectLayer, ShearOp> = {
     waveFrequency: 1,
     edgeMode: "mirror",
   },
+  paramFields: [
+    numberField("amplitude", "Amplitude", { min: -500, max: 500, int: true }),
+    enumField("direction", "Direction", [["horizontal", "Horizontal"], ["vertical", "Vertical"]]),
+    numberField("waveFrequency", "Wave Freq", { min: 0, max: 10, int: true }),
+    enumField("edgeMode", "Edges", [["transparent", "Transparent"], ["clamp", "Clamp"], ["mirror", "Mirror"]]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

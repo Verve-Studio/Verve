@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RepeatPanel } from "./RepeatPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const RepeatIcon = (
@@ -73,6 +74,16 @@ export const RepeatEffect: IPipelineEffect<RepeatEffectLayer, RepeatOp> = {
     spacing: 0,
     background: "passthrough",
   },
+  paramFields: [
+    enumField("xMode", "X axis", [["none", "None"], ["negative", "Left"], ["positive", "Right"], ["both", "Both"]]),
+    enumField("yMode", "Y axis", [["none", "None"], ["negative", "Up"], ["positive", "Down"], ["both", "Both"]]),
+    numberField("rectX", "Rect X", { int: true }),
+    numberField("rectY", "Rect Y", { int: true }),
+    numberField("rectW", "Rect W", { min: 0, int: true }),
+    numberField("rectH", "Rect H", { min: 0, int: true }),
+    numberField("spacing", "Spacing", { min: 0, int: true }),
+    enumField("background", "Background", [["passthrough", "Pass-through"], ["transparent", "Transparent"]]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

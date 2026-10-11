@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { BloomOptions } from "./BloomOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import {
   STD_BINDINGS,
   type AdjBinding,
@@ -102,6 +103,16 @@ export const BloomEffect: IPipelineEffect<BloomEffectLayer, BloomOp> = {
     spread: 20,
     quality: "half",
   },
+  paramFields: [
+    numberField("threshold", "Threshold", { min: 0, max: 1, step: 0.01 }),
+    numberField("strength", "Strength", { min: 0, max: 2, step: 0.01 }),
+    numberField("spread", "Spread", { min: 1, max: 100, int: true }),
+    enumField("quality", "Quality", [
+      ["full", "Full"],
+      ["half", "Half"],
+      ["quarter", "Quarter"],
+    ]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

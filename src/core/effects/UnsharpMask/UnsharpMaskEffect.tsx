@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { UnsharpMaskPanel } from "./UnsharpMaskPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 
 
 export interface UnsharpMaskParams {
@@ -20,6 +21,11 @@ export const UnsharpMaskEffect: IPipelineEffect<
   label: "Unsharp Mask…",
   menu: { root: "filters", submenu: "sharpen" },
   defaultParams: { amount: 50, radius: 2, threshold: 0 },
+  paramFields: [
+    numberField("amount", "Amount", { min: 1, max: 500, int: true }),
+    numberField("radius", "Radius", { min: 1, max: 64, int: true }),
+    numberField("threshold", "Threshold", { min: 0, max: 255, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

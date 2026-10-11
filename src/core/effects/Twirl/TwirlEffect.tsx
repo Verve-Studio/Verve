@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { TwirlOptions } from "./TwirlOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { DistortionIcon } from "../_shared/icons";
 
@@ -34,6 +35,13 @@ export const TwirlEffect: IPipelineEffect<TwirlEffectLayer, TwirlOp> = {
     radius: 0.7,
     edgeMode: "clamp",
   },
+  paramFields: [
+    numberField("angle", "Angle", { min: -1080, max: 1080, int: true }),
+    numberField("radius", "Radius", { min: 0.05, max: 1, step: 0.01 }),
+    numberField("centerX", "Center X", { min: 0, max: 1, step: 0.01 }),
+    numberField("centerY", "Center Y", { min: 0, max: 1, step: 0.01 }),
+    enumField("edgeMode", "Edges", [["transparent", "Transparent"], ["clamp", "Clamp"], ["mirror", "Mirror"]]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

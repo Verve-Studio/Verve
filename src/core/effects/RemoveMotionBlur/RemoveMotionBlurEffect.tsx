@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { RemoveMotionBlurPanel } from "./RemoveMotionBlurPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { TextureSetCache } from "../_shared/textureSetCache";
 import { createTrackedTexture } from "@/core/store/memoryStore";
 
@@ -39,6 +40,11 @@ export const RemoveMotionBlurEffect: IPipelineEffect<
   label: "Remove Motion Blur…",
   menu: { root: "filters", submenu: "blur" },
   defaultParams: { angle: 0, distance: 10, noiseReduction: 10 },
+  paramFields: [
+    numberField("angle", "Angle", { min: 0, max: 360, int: true }),
+    numberField("distance", "Distance", { min: 1, max: 999, int: true }),
+    numberField("noiseReduction", "Noise Reduc.", { min: 0, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

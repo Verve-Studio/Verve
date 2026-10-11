@@ -24,6 +24,7 @@ import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
 import frameIconSvg from "./frame.svg?raw";
 import { resizeCursorForHandle } from "../_shared/resizeCursor";
+import { newLayerId } from "@/utils/layerId";
 
 // ─── Module-level defaults for new frames ─────────────────────────────────────
 
@@ -410,7 +411,7 @@ function createFrameHandler(): ToolHandler {
       }
 
       // Otherwise: start drawing a brand-new frame.
-      const id = `frame-${Date.now()}`;
+      const id = newLayerId("frame");
       drawPreview = {
         id,
         name: frameName(frameOptions.frameType),

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PaintDaubsPanel } from "./PaintDaubsPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 export type PaintDaubsBrushType =
@@ -41,6 +42,18 @@ export const PaintDaubsEffect: IPipelineEffect<
   label: "Paint Daubs…",
   menu: { root: "filters", submenu: "artistic" },
   defaultParams: { brushSize: 8, sharpness: 20, brushType: "simple" },
+  paramFields: [
+    numberField("brushSize", "Brush Size", { min: 1, max: 50, int: true }),
+    numberField("sharpness", "Sharpness", { min: 0, max: 40, int: true }),
+    enumField("brushType", "Brush Type", [
+      ["simple", "Simple"],
+      ["light-rough", "Light Rough"],
+      ["dark-rough", "Dark Rough"],
+      ["wide-sharp", "Wide Sharp"],
+      ["wide-blurry", "Wide Blurry"],
+      ["sparkle", "Sparkle"],
+    ]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensFlarePanel } from "./LensFlarePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 
@@ -46,6 +47,28 @@ export const LensFlareEffect: IPipelineEffect<
     streakWidth: 50,
     streakRotation: 0,
   },
+  paramFields: [
+    enumField(
+      "lensType",
+      "Lens Type",
+      [
+        ["0", "50–300mm Zoom"],
+        ["1", "35mm Prime"],
+        ["2", "105mm Prime"],
+        ["3", "Movie Prime"],
+        ["4", "Cinematic / Anamorphic"],
+      ],
+      { numeric: true },
+    ),
+    // Canvas-pixel coordinates; the panel caps them at the canvas size.
+    numberField("centerX", "Center X", { min: 0, int: true }),
+    numberField("centerY", "Center Y", { min: 0, int: true }),
+    numberField("brightness", "Brightness", { min: 10, max: 300, int: true }),
+    numberField("ringOpacity", "Rings", { min: 0, max: 100, int: true }),
+    numberField("streakStrength", "Streaks", { min: 0, max: 100, int: true }),
+    numberField("streakWidth", "Streak Width", { min: 1, max: 500, int: true }),
+    numberField("streakRotation", "Streak Rotation", { min: 0, max: 359, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

@@ -22,6 +22,8 @@ import { useFormatRemount } from "@/core/services/useFormatRemount";
 import { useHistory } from "@/core/services/useHistory";
 import { useKeyboardShortcuts } from "@/core/services/useKeyboardShortcuts";
 import { useLayerArrange } from "@/core/services/useLayerArrange";
+import { useLayerImport } from "@/core/services/useLayerImport";
+import { useAutomationHost } from "@/core/services/useAutomationHost";
 import { useLayerGroups } from "@/core/services/useLayerGroups";
 import { useLayers } from "@/core/services/useLayers";
 import { useMacNativeMenu } from "@/core/services/useMacNativeMenu";
@@ -49,21 +51,18 @@ import { paletteCyclePeriod } from "@/core/store/paletteCycleStore";
 import { viewportCommands } from "@/core/store/viewportCommands";
 import { DEFAULT_TOOL, toolRegistry } from "@/core/tools/toolRegistry";
 import { isGroupLayer, isLinkedLayer } from "@/types";
-import type { AppState, LayerState, LinkedLayerState, Tool } from "@/types";
-import { loadImageBytes, EXT_TO_MIME } from "@/core/io/imageLoader";
-import {
-  convertRgba8ToF32,
-  convertF32ToRgba8,
-} from "@/utils/pixelFormatConvert";
-import { matchPaletteIndices } from "@/wasm";
+import type { AppState, LayerState, Tool } from "@/types";
 import { notificationStore } from "@/core/store/notificationStore";
+import { convertF32ToRgba8 } from "@/utils/pixelFormatConvert";
 import { parseEffect } from "@/core/effects/CustomShader/effectFile";
-import { fileTitle } from "@/core/store/tabTypes";
 import { MainWindow } from "@/ux/main/MainWindow/MainWindow";
 import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
+import { UnsavedWorkflowDialog } from "@/ux/modals/UnsavedWorkflowDialog/UnsavedWorkflowDialog";
+import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
+import { startNewAutomation, startOpenAutomation } from "@/ux/main/NodeEditor/automationFiles";
 import { PrintPreviewDialog } from "@/ux/modals/PrintPreviewDialog/PrintPreviewDialog";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { MutableRefObject } from "react";
 import type { MenuDeps } from "@/ux/main/menu/menuTree";
 import {
@@ -243,6 +242,7 @@ function AppContent(): React.JSX.Element {
 
   // ── File operations ───────────────────────────────────────────────
   const {
+    commands: fileCommands,
     handleNewConfirm,
     handleOpen,
     handleOpenPath,
@@ -275,6 +275,7 @@ function AppContent(): React.JSX.Element {
 
   // ── Export operations ────────────────────────────────────────────
   const {
+    exportDocument,
     handleExportConfirm,
     pendingLdrExport,
     clearPendingLdrExport,
@@ -299,6 +300,7 @@ function AppContent(): React.JSX.Element {
 
   // ── Layer operations ──────────────────────────────────────────────
   const {
+    commands: layerStackCommands,
     handleMergeSelected,
     handleMergeDown,
     handleMergeVisible,
@@ -318,161 +320,21 @@ function AppContent(): React.JSX.Element {
 
   // ── Layer groups ──────────────────────────────────────────────────
   const {
+    commands: layerGroupCommands,
     handleMergeGroup,
     handleGroupLayers,
     handleUngroupLayers,
+    handleCreateGroup,
     handleCreateCompositeLayer,
   } = useLayerGroups({ canvasHandleRef, stateRef, captureHistory, dispatch });
 
-  // ── Linked Layer ──────────────────────────────────────────────────
-  // "Place Linked"-style raster layer: pixels are pulled from an external
-  // image file and refreshed on document open / manual refresh. The layer
-  // is treated as parametric by `useToolContext` so paint tools are blocked.
-  const handleNewLinkedLayer = useCallback(async (): Promise<void> => {
-    const path = await window.api.openFile();
-    if (!path) return;
-    try {
-      // Decode just enough to know the source dimensions for the state.
-      // The actual rasterise (via `linkedLayerRasterizer`) runs in the sync
-      // hook and decodes through its `path:refreshNonce` cache, so this
-      // initial decode is the only file read on creation.
-      const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
-      const mime = EXT_TO_MIME[ext] ?? "image/png";
-      const loaded = await loadImageBytes(await window.api.readFile(path), mime);
-      const { width, height } = loaded;
-      const cw = stateRef.current.canvas.width;
-      const ch = stateRef.current.canvas.height;
-
-      const ls: LinkedLayerState = {
-        id: `linked-${Date.now()}`,
-        name: fileTitle(path),
-        visible: true,
-        opacity: 1,
-        locked: false,
-        blendMode: "normal",
-        type: "linked",
-        source: {
-          absolutePath: path,
-          relativePath: null,
-          sourceWidth: width,
-          sourceHeight: height,
-        },
-        // Default centre = canvas centre, no scale/rotation.
-        centerX: cw / 2,
-        centerY: ch / 2,
-        scaleX: 1,
-        scaleY: 1,
-        rotation: 0,
-        refreshNonce: 0,
-      };
-      pendingLayerLabelRef.current = "New Linked Layer";
-      dispatch({ type: "ADD_LINKED_LAYER", payload: ls });
-      // Land in the Linked tool so transform handles appear immediately.
-      dispatch({ type: "SET_TOOL", payload: "linked" });
-    } catch (err) {
-      notificationStore.error(
-        `Failed to load linked source: ${(err as Error).message}`,
-      );
-    }
-  }, [dispatch, stateRef, pendingLayerLabelRef]);
-
-  const handleRefreshLinkedLayer = useCallback((): void => {
-    const id = stateRef.current.activeLayerId;
-    if (!id) return;
-    const layer = stateRef.current.layers.find((l) => l.id === id);
-    if (!layer || !isLinkedLayer(layer)) return;
-    dispatch({ type: "REFRESH_LINKED_LAYER", payload: id });
-  }, [dispatch, stateRef]);
-
-  // ── Open image as a new pixel layer in the current document ──────
-  // Reads an image from disk, converts to the doc's pixel format, and
-  // inserts it as a regular pixel layer above the active layer (centred
-  // on the canvas). Distinct from "New Linked Layer…" which keeps a live
-  // link to the source — this bakes the pixels in once.
-  const handleOpenAsLayer = useCallback(async (): Promise<void> => {
-    const handle = canvasHandleRef.current;
-    if (!handle) return;
-    const path = await window.api.openFile();
-    if (!path) return;
-    try {
-      const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
-      const mime = EXT_TO_MIME[ext] ?? "image/png";
-      const loaded = await loadImageBytes(await window.api.readFile(path), mime);
-      const { width, height } = loaded;
-      const fmt = stateRef.current.pixelFormat;
-
-      let pixels: Uint8Array | Float32Array;
-      if (fmt === "rgba32f") {
-        pixels = loaded.isHdr
-          ? (loaded.data as Float32Array)
-          : convertRgba8ToF32(loaded.data as Uint8Array);
-      } else if (fmt === "indexed8") {
-        const rgba = loaded.isHdr
-          ? convertF32ToRgba8(loaded.data as Float32Array)
-          : (loaded.data as Uint8Array);
-        pixels = await matchPaletteIndices(
-          rgba,
-          stateRef.current.swatches,
-          255,
-        );
-      } else {
-        pixels = loaded.isHdr
-          ? convertF32ToRgba8(loaded.data as Float32Array)
-          : (loaded.data as Uint8Array);
-      }
-
-      // Centre the layer on the canvas; allow the rect to extend off-edge
-      // when the source is larger than the document (matches Photoshop's
-      // Place / drag-drop behaviour).
-      const cw = stateRef.current.canvas.width;
-      const ch = stateRef.current.canvas.height;
-      const offsetX = Math.round((cw - width) / 2);
-      const offsetY = Math.round((ch - height) / 2);
-
-      const id = `layer-${Date.now()}`;
-      const name = fileTitle(path);
-      handle.prepareNewLayer(
-        id,
-        name,
-        pixels,
-        width,
-        height,
-        offsetX,
-        offsetY,
-        fmt,
-      );
-
-      pendingLayerLabelRef.current = "Open into Layer";
-      const newLayer: LayerState = {
-        id,
-        name,
-        visible: true,
-        opacity: 1,
-        locked: false,
-        blendMode: "normal",
-        // rgba8→rgba32f decoded path is scene-linear; tag accordingly so
-        // the renderer's IDT skips its sRGB decode (mirrors the linked-
-        // layer fix in `useGpuLayerSync`).
-        ...(fmt === "rgba32f"
-          ? { colorSpace: "linear-srgb" as const }
-          : {}),
-      };
-      const activeId = stateRef.current.activeLayerId;
-      if (activeId) {
-        dispatch({
-          type: "INSERT_LAYER_ABOVE",
-          payload: { layer: newLayer, aboveId: activeId },
-        });
-      } else {
-        dispatch({ type: "ADD_LAYER", payload: newLayer });
-      }
-      dispatch({ type: "SET_ACTIVE_LAYER", payload: id });
-    } catch (err) {
-      notificationStore.error(
-        `Failed to open image as layer: ${(err as Error).message}`,
-      );
-    }
-  }, [canvasHandleRef, dispatch, stateRef, pendingLayerLabelRef]);
+  // ── Linked layers / open image into layer ─────────────────────────
+  const {
+    commands: layerImportCommands,
+    handleOpenAsLayer,
+    handleNewLinkedLayer,
+    handleRefreshLinkedLayer,
+  } = useLayerImport({ canvasHandleRef, stateRef, dispatch, pendingLayerLabelRef });
 
   const isLinkedLayerActive =
     !!state.activeLayerId &&
@@ -497,6 +359,7 @@ function AppContent(): React.JSX.Element {
     handleRescaleImage,
     handleRestoreImage,
     handleResizeCanvas,
+    handleCrop,
     handleRotate,
     handleFlip,
     handleRotateSelectedLayers,
@@ -701,6 +564,47 @@ function AppContent(): React.JSX.Element {
     onRequestConversionDialog: setPendingConversion,
   });
 
+  // ── Automation host (node editor workflows) ───────────────────────
+  useAutomationHost({
+    stateRef,
+    dispatch,
+    canvasHandleRef,
+    captureHistory,
+    tabs,
+    setTabs,
+    activeTabIdRef,
+    switchTab: handleSwitchTab,
+    closeTabs,
+    layerStack: layerStackCommands,
+    layerGroups: layerGroupCommands,
+    layerImport: layerImportCommands,
+    files: fileCommands,
+    exportDocument,
+    addEffectLayer: adjustments.addEffect,
+    transforms: {
+      resizeImage: handleResizeImage,
+      resizeCanvas: handleResizeCanvas,
+      crop: handleCrop,
+      rotate: handleRotate,
+      flip: handleFlip,
+      rescale: handleRescaleImage,
+      restore: handleRestoreImage,
+      rotateLayers: handleRotateSelectedLayers,
+      flipLayers: handleFlipSelectedLayers,
+    },
+    convertColorMode: colorMode.executeConversion,
+    arrange: layerArrange,
+    clipboard: {
+      copy: handleCopy,
+      copyMerged: handleCopyMerged,
+      cut: handleCut,
+      paste: handlePaste,
+      pasteInto: handlePasteInto,
+    },
+    layerSelection: { selectAll: handleSelectAllLayers, deselect: handleDeselectLayers },
+    contentAware: { fill: runContentAwareFill, remove: runContentAwareDelete },
+  });
+
   const colorProfile = useColorProfile({
     canvasHandleRef,
     state,
@@ -854,6 +758,11 @@ function AppContent(): React.JSX.Element {
 
   // ── Computed render values ────────────────────────────────────────
   const hasActiveDocument = tabs.length > 0;
+  // The full-window node editor (automation) replaces the startup screen.
+  const automationFullWindow = useSyncExternalStore((fn) => dockStore.subscribe(fn), () => {
+    const ne = dockStore.getSnapshot().nodeEditor;
+    return ne.open && ne.fullWindow;
+  });
   const tabInfos: TabInfo[] = tabs.map((t) => ({
     id: t.id,
     title: t.title,
@@ -917,6 +826,8 @@ function AppContent(): React.JSX.Element {
       onSave: () => void handleSave(false),
       onSaveAs: () => void handleSave(true),
       onSaveACopy: () => void handleSaveACopy(),
+      onNewAutomation: () => void startNewAutomation(),
+      onOpenAutomation: () => void startOpenAutomation(),
       onExport: () => setShowExportDialog(true),
       onClose: handleClose,
       onCloseOthers: handleCloseOthers,
@@ -949,7 +860,7 @@ function AppContent(): React.JSX.Element {
       onInvertSelection: () => activeScope().selection.invert(),
       // ── Layer ───────────────────────────────────────────────────
       onNewLayer: handleNewLayer,
-      onNewLayerGroup: () => handleGroupLayers([]),
+      onNewLayerGroup: handleCreateGroup,
       onNewCompositeLayer: handleCreateCompositeLayer,
       onNewLinkedLayer: () => void handleNewLinkedLayer(),
       onRefreshLinkedLayer: handleRefreshLinkedLayer,
@@ -1193,12 +1104,15 @@ function AppContent(): React.JSX.Element {
   return (
     <>
       <SplashScreen
-        open={!hasActiveDocument}
+        open={!hasActiveDocument && !automationFullWindow}
         onNew={() => setShowNewImageDialog(true)}
         onOpen={() => {
           void handleOpen();
         }}
+        onNewAutomation={() => void startNewAutomation()}
+        onOpenAutomation={() => void startOpenAutomation()}
       />
+      <UnsavedWorkflowDialog />
       <PrintPreviewDialog
         open={showPrintPreviewDialog}
         documentWidth={state.canvas.width}

@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { LensDistortionOptions } from "./LensDistortionOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { customField, enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { DistortionIcon } from "../_shared/icons";
 
@@ -61,6 +62,47 @@ export const LensDistortionEffect: IPipelineEffect<
     tiltY: 0,
     edgeMode: "transparent",
   },
+  paramFields: [
+    enumField("type", "Type", [
+      ["radial", "Radial"],
+      ["fisheye", "Fisheye"],
+      ["mustache", "Mustache"],
+      ["perspective", "Perspective"],
+    ]),
+    // Shown as "FOV" (0..100) for fisheye; sign is ignored there.
+    numberField("strength", "Strength", { min: -100, max: 100, int: true }),
+    numberField("secondary", "Secondary", { min: -100, max: 100, int: true }),
+    numberField("tiltX", "Tilt X", { min: -100, max: 100, int: true }),
+    numberField("tiltY", "Tilt Y", { min: -100, max: 100, int: true }),
+    // The panel shows the normalised centre as an integer percentage.
+    customField<LensDistortionParams>({
+      id: "centerX",
+      label: "Framing Center X",
+      spec: { kind: "int", min: 0, max: 100 },
+      get: (p) => Math.round(p.centerX * 100),
+      set: (p, v) => {
+        const n = typeof v === "number" && Number.isFinite(v) ? v : 50;
+        return { ...p, centerX: Math.min(100, Math.max(0, Math.round(n))) / 100 };
+      },
+    }),
+    // The panel shows the normalised centre as an integer percentage.
+    customField<LensDistortionParams>({
+      id: "centerY",
+      label: "Framing Center Y",
+      spec: { kind: "int", min: 0, max: 100 },
+      get: (p) => Math.round(p.centerY * 100),
+      set: (p, v) => {
+        const n = typeof v === "number" && Number.isFinite(v) ? v : 50;
+        return { ...p, centerY: Math.min(100, Math.max(0, Math.round(n))) / 100 };
+      },
+    }),
+    numberField("zoom", "Framing Zoom", { min: 25, max: 200, int: true }),
+    enumField("edgeMode", "Edges", [
+      ["transparent", "Transparent"],
+      ["clamp", "Clamp"],
+      ["mirror", "Mirror"],
+    ]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

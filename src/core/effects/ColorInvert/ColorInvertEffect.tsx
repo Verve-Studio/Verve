@@ -41,6 +41,7 @@ export const ColorInvertEffect: IPipelineEffect<
   label: "Invert",
   menu: { root: "adjustments", submenu: "adj-style" },
   defaultParams: {},
+  paramFields: [],
 
   buildPlanEntry(layer, { mask }) {
     return {

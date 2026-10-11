@@ -7,12 +7,39 @@ export interface SplashScreenProps {
   open: boolean;
   onNew: () => void;
   onOpen: () => void;
+  /** Start a new automation workflow in the full-window node editor. */
+  onNewAutomation: () => void;
+  /** Open an `.automation` file in the full-window node editor. */
+  onOpenAutomation: () => void;
+}
+
+/** Node-graph glyph for the automation actions. */
+function AutomationIcon({ open }: { open?: boolean }): React.JSX.Element {
+  return (
+    <svg
+      className={styles.actionIcon}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      width="16"
+      height="16"
+      aria-hidden="true"
+    >
+      <rect x="1.5" y="2.5" width="5" height="4" rx="1" fill="currentColor" opacity="0.9" stroke="none" />
+      <rect x="9.5" y="9.5" width="5" height="4" rx="1" fill="currentColor" opacity={open ? 0.45 : 0.9} stroke="none" />
+      <path d="M6.5 4.5h2.5a1.5 1.5 0 0 1 1.5 1.5v3.5" strokeLinecap="round" />
+      {open && <path d="M10.5 12.2l1.3 1.3 2.4-2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  );
 }
 
 export function SplashScreen({
   open,
   onNew,
   onOpen,
+  onNewAutomation,
+  onOpenAutomation,
 }: SplashScreenProps): React.JSX.Element | null {
   if (!open) return null;
 
@@ -110,6 +137,16 @@ export function SplashScreen({
               </svg>
               <span className={styles.actionLabel}>Open File</span>
               <span className={styles.actionHint}>Ctrl+O</span>
+            </button>
+          </div>
+          <div className={styles.actionGroup}>
+            <button className={styles.actionBtn} onClick={onNewAutomation}>
+              <AutomationIcon />
+              <span className={styles.actionLabel}>New Automation</span>
+            </button>
+            <button className={styles.actionBtn} onClick={onOpenAutomation}>
+              <AutomationIcon open />
+              <span className={styles.actionLabel}>Open Automation</span>
             </button>
           </div>
         </div>

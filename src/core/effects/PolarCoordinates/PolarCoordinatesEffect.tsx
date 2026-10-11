@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { PolarCoordinatesOptions } from "./PolarCoordinatesOptions";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { enumField, numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 import { DistortionIcon } from "../_shared/icons";
 
@@ -36,6 +37,12 @@ export const PolarCoordinatesEffect: IPipelineEffect<
     centerY: 0.5,
     edgeMode: "transparent",
   },
+  paramFields: [
+    enumField("mode", "Mode", [["rect-to-polar", "Rect → Polar"], ["polar-to-rect", "Polar → Rect"]]),
+    numberField("centerX", "Center X", { min: 0, max: 1, step: 0.01 }),
+    numberField("centerY", "Center Y", { min: 0, max: 1, step: 0.01 }),
+    enumField("edgeMode", "Edges", [["transparent", "Transparent"], ["clamp", "Clamp"], ["mirror", "Mirror"]]),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

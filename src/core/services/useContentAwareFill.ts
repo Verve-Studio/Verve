@@ -13,6 +13,7 @@ import type { Dispatch, MutableRefObject } from "react";
 import { useCallback, useRef } from "react";
 import { activeScope } from "@/core/store/scope";
 import { inpaintRegionOffThread } from "@/wasm/pixelopsWorkerClient";
+import { newLayerId as makeLayerId } from "@/utils/layerId";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,7 +164,7 @@ export function useContentAwareFill({
         // The inpainting algorithm always returns sRGB RGBA8 bytes; in an f32
         // doc they're gamma-decoded with `convertRgba8ToF32` and the layer is
         // created in the doc format so the floats aren't clamped into bytes.
-        const newLayerId = `layer-${Date.now()}`;
+        const newLayerId = makeLayerId("layer");
         const docFormat = stateRef.current.pixelFormat;
         const layerData =
           docFormat === "rgba32f"

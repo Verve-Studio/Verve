@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { ColorVibrancePanel } from "./ColorVibrancePanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const ColorVibranceIcon = (
@@ -36,6 +37,10 @@ export const ColorVibranceEffect: IPipelineEffect<
   label: "Color Vibrance…",
   menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: { vibrance: 0, saturation: 0 },
+  paramFields: [
+    numberField("vibrance", "Vibrance", { min: -100, max: 100, int: true }),
+    numberField("saturation", "Saturation", { min: -100, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {

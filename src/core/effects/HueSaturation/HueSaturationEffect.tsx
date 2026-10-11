@@ -2,6 +2,7 @@ import type { EffectLayerOf } from "@/types";
 import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { HueSaturationPanel } from "./HueSaturationPanel";
 import type { IPipelineEffect } from "../IPipelineEffect";
+import { numberField } from "../_shared/effectParams";
 import { STD_BINDINGS } from "@/graphics/webgpu/EffectRuntime";
 
 const HueSaturationIcon = (
@@ -33,6 +34,11 @@ export const HueSaturationEffect: IPipelineEffect<
   label: "Hue/Saturation…",
   menu: { root: "adjustments", submenu: "adj-color" },
   defaultParams: { hue: 0, saturation: 0, lightness: 0 },
+  paramFields: [
+    numberField("hue", "Hue", { min: -180, max: 180, int: true }),
+    numberField("saturation", "Saturation", { min: -100, max: 100, int: true }),
+    numberField("lightness", "Lightness", { min: -100, max: 100, int: true }),
+  ],
 
   buildPlanEntry(layer, { mask }) {
     return {
