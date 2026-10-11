@@ -16,8 +16,12 @@ function pointerPressure(e: {
 }
 
 export interface CanvasPointerPosition {
+  /** Canvas pixel under the pointer (integer). */
   x: number;
   y: number;
+  /** Unrounded canvas position (pixel `x` spans [x, x + 1)). */
+  preciseX: number;
+  preciseY: number;
   pressure: number;
   shiftKey: boolean;
   altKey: boolean;
@@ -98,18 +102,23 @@ export function useCanvas({
       const docH = documentHeight ?? e.currentTarget.height;
       const scaleX = docW / rect.width;
       const scaleY = docH / rect.height;
-      let x = Math.floor((e.clientX - rect.left) * scaleX);
-      let y = Math.floor((e.clientY - rect.top) * scaleY);
+      let px = (e.clientX - rect.left) * scaleX;
+      let py = (e.clientY - rect.top) * scaleY;
       if (coordinateOffset) {
-        x -= coordinateOffset.x;
-        y -= coordinateOffset.y;
-        // Skip bounds check in tiled mode — tools need out-of-bounds coords for wrap-around
-      } else {
-        if (x < 0 || y < 0 || x >= docW || y >= docH) return null;
+        px -= coordinateOffset.x;
+        py -= coordinateOffset.y;
+      }
+      const x = Math.floor(px);
+      const y = Math.floor(py);
+      // Skip bounds check in tiled mode — tools need out-of-bounds coords for wrap-around
+      if (!coordinateOffset && (x < 0 || y < 0 || x >= docW || y >= docH)) {
+        return null;
       }
       return {
         x,
         y,
+        preciseX: px,
+        preciseY: py,
         pressure: pointerPressure(e),
         shiftKey: e.shiftKey,
         altKey: e.altKey,
@@ -132,9 +141,13 @@ export function useCanvas({
       const scaleY = docH / rect.height;
       const ox = coordinateOffset?.x ?? 0;
       const oy = coordinateOffset?.y ?? 0;
+      const px = (e.clientX - rect.left) * scaleX - ox;
+      const py = (e.clientY - rect.top) * scaleY - oy;
       return {
-        x: Math.floor((e.clientX - rect.left) * scaleX) - ox,
-        y: Math.floor((e.clientY - rect.top) * scaleY) - oy,
+        x: Math.floor(px),
+        y: Math.floor(py),
+        preciseX: px,
+        preciseY: py,
         pressure: pointerPressure(e),
         shiftKey: e.shiftKey,
         altKey: e.altKey,
@@ -195,9 +208,13 @@ export function useCanvas({
         const positions: CanvasPointerPosition[] = [];
         let lastPos: CanvasPointerPosition | null = null;
         for (const ce of coalesced) {
+          const px = (ce.clientX - rect.left) * sx - ox;
+          const py = (ce.clientY - rect.top) * sy - oy;
           const pos: CanvasPointerPosition = {
-            x: Math.floor((ce.clientX - rect.left) * sx) - ox,
-            y: Math.floor((ce.clientY - rect.top) * sy) - oy,
+            x: Math.floor(px),
+            y: Math.floor(py),
+            preciseX: px,
+            preciseY: py,
             // Use primary event pressure for all coalesced samples — per-coalesced pressure
             // fluctuates at the hardware polling rate and causes visible size/opacity jitter.
             pressure: pointerPressure(e),

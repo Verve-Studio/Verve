@@ -349,30 +349,29 @@ export interface PixelOpsModule {
 
   /**
    * Apply one brush stamp's inner pixel loop. All scalar parameters travel
-   * in `paramsPtr` — a 116-byte packed `BrushStampParams` struct laid out
-   * by the JS wrapper. Other pointers reference WASM-heap-resident slices
-   * the wrapper has copied in (layer + touched bbox slices, optional
-   * selection-mask, optional bitmap-tip SDF). Mutates layer + touched in
-   * place; the wrapper copies the results back to the JS-side buffers.
+   * in `paramsPtr` — a 192-byte packed `BrushStampParams` struct laid out
+   * by the JS wrapper. Other pointers reference WASM-heap-resident buffers
+   * (layer + touched, optional selection mask, optional bitmap-tip density
+   * level). Mutates layer + touched in place.
    */
   _pixelops_brush_stamp(
     paramsPtr: number,
     layerDataPtr: number,
     touchedDataPtr: number,
     selMaskPtr: number,        // 0 = no selection
-    sdfPtr: number,            // 0 if primary tip is procedural
-    sdfW: number,
-    sdfH: number,
-    dualSdfPtr: number,        // 0 if dual is off or procedural
-    dualSdfW: number,
-    dualSdfH: number,
+    tipPtr: number,            // 0 if primary tip is procedural
+    tipW: number,
+    tipH: number,
+    dualTipPtr: number,        // 0 if dual is off or procedural
+    dualTipW: number,
+    dualTipH: number,
   ): void;
 
   /**
    * Batched form of `_pixelops_brush_stamp`. `paramsArrayPtr` points to a
    * tightly packed array of `count` BrushStampParams structs (each
    * PARAM_BYTES bytes). All stamps in the array share the layer / touched
-   * / selection / SDF context passed in the trailing args. Used by the
+   * / selection / tip context passed in the trailing args. Used by the
    * brush engine to amortise JS↔WASM crossings + param packing across an
    * entire segment of stamps, eliminating per-stamp BrushStampJob
    * allocation and the GC pressure that came with it. */
@@ -382,18 +381,18 @@ export interface PixelOpsModule {
     layerDataPtr: number,
     touchedDataPtr: number,
     selMaskPtr: number,
-    sdfPtr: number,
-    sdfW: number,
-    sdfH: number,
-    dualSdfPtr: number,
-    dualSdfW: number,
-    dualSdfH: number,
+    tipPtr: number,
+    tipW: number,
+    tipH: number,
+    dualTipPtr: number,
+    dualTipW: number,
+    dualTipH: number,
   ): void;
 
   /**
    * Rasterize the brush coverage at the design shape into an 8-bit
    * bitmap. `paramsPtr` is a BrushStampParams struct (only the shape
-   * fields — radius, angle, roundness, shear, flip, aaWidth, tipKind,
+   * fields — radius, angle, roundness, shear, flip, aa, softness, tipKind,
    * dual params, grain params — are read). `outBitmapPtr` must point
    * to a pre-allocated `bmW * bmH` byte buffer. Returns nothing.
    */
@@ -402,12 +401,12 @@ export interface PixelOpsModule {
     outBitmapPtr: number,
     bmW: number,
     bmH: number,
-    sdfPtr: number,
-    sdfW: number,
-    sdfH: number,
-    dualSdfPtr: number,
-    dualSdfW: number,
-    dualSdfH: number,
+    tipPtr: number,
+    tipW: number,
+    tipH: number,
+    dualTipPtr: number,
+    dualTipW: number,
+    dualTipH: number,
   ): void;
 
   /**

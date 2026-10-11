@@ -102,11 +102,15 @@ export interface BrushCursorParams {
   crossHairClass: string;
 }
 
+/** Hover position; `preciseX/Y` (unrounded) centre the circle exactly on the
+ *  point the brush paints at. */
+type CursorPos = { x: number; y: number; preciseX?: number; preciseY?: number };
+
 export interface BrushCursorApi {
   /** Update the circle cursor's CSS position/size for a hover at `pos`.
    *  When `tiled` is true, `pos.x/y` are in [-W, 2W) and the function
    *  translates them into wrapper-space (which sits at +W, +H). */
-  updateCircleCursor(pos: { x: number; y: number }, tiled: boolean): void;
+  updateCircleCursor(pos: CursorPos, tiled: boolean): void;
   /** Update the pencil pixel-brush preview cursor. No-op when the active
    *  tool is not `pencil`. */
   updatePencilCursor(pos: { x: number; y: number }): void;
@@ -129,7 +133,7 @@ export function useBrushCursor(params: BrushCursorParams): BrushCursorApi {
   } = params;
 
   const updateCircleCursor = useCallback(
-    (pos: { x: number; y: number }, tiled: boolean): void => {
+    (pos: CursorPos, tiled: boolean): void => {
       const tool = activeTool;
       const el = brushCursorRef.current;
       if (!el) return;
@@ -137,12 +141,10 @@ export function useBrushCursor(params: BrushCursorParams): BrushCursorApi {
       const dpr = window.devicePixelRatio;
       const zoom = zoomRef.current;
       const r = Math.max(1, ((sizeForTool(tool) / 2) * zoom) / dpr);
-      const cx = tiled
-        ? ((pos.x + width) * zoom) / dpr
-        : (pos.x * zoom) / dpr;
-      const cy = tiled
-        ? ((pos.y + height) * zoom) / dpr
-        : (pos.y * zoom) / dpr;
+      const px = pos.preciseX ?? pos.x;
+      const py = pos.preciseY ?? pos.y;
+      const cx = tiled ? ((px + width) * zoom) / dpr : (px * zoom) / dpr;
+      const cy = tiled ? ((py + height) * zoom) / dpr : (py * zoom) / dpr;
       el.style.left = `${cx - r}px`;
       el.style.top = `${cy - r}px`;
       el.style.width = `${r * 2}px`;

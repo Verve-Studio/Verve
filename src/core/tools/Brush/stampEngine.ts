@@ -6,22 +6,32 @@
  * `brush.tsx`) and feeds each one to `stampSegment`. The engine walks the
  * segment by ~equal arc-length steps of `spacing × radius` and applies one
  * stamp per step (or `count` stamps if scatter count > 1). Each stamp
- * samples the tip's SDF in its bounding box and composites the resulting
- * alpha into the layer via `blendPixelOver`, which already handles all
- * three pixel formats, the selection mask, tiled-mode wrapping, the
- * per-stroke `touched` coverage map and HDR srcFloat.
+ * evaluates the tip's coverage (`tipSampler.ts`: a hardness-sized opaque
+ * core fading out inside the radius with a 1 px anti-aliased edge, or a
+ * sampled tip's density map) over its bounding box and composites it into
+ * the layer — in the WASM kernel (`wasm/src/brush_stamp.cpp`) when it can,
+ * otherwise via `blendPixelOver`, which handles all three pixel formats,
+ * the selection mask, tiled-mode wrapping, the per-stroke `touched`
+ * coverage map and HDR srcFloat.
  *
- * PR3 wires in:
+ * Painting model: positions are sub-pixel (pixel centres at integer
+ * coordinates). Opacity is a per-stroke ceiling and Flow the share of it
+ * each stamp deposits, both modulated per stamp by the Transfer curves.
+ * 8-bit writes use stochastic rounding so glazes converge and falloffs
+ * don't band. Dabs thinner than a pixel are drawn at 1 px with
+ * proportionally less opacity, so tapers fade out instead of breaking up.
+ *
+ * Also:
  *   • All `DynamicCurve` modulation per stamp (size/angle/roundness/scatter
  *     /count/fg-bg/hue/sat/bright/purity, with sources pressure/velocity/
  *     tilt/rotation/direction/random/fade)
  *   • Scatter (perpendicular and both-axis offsets) + multi-stamp `count`
  *   • Tip flip-X / flip-Y jitter
  *   • Pose dynamics — pen tilt skew, pen-rotation follow, pressure squash
- *   • Wet edges — interior coverage attenuation that biases paint toward the
- *     silhouette, mimicking watercolor edge pooling
- *   • Paper-grain texture — per-pixel multiplicative modulation of coverage
- *     using value noise sampled either in canvas or tip-local space
+ *   • Wet edges — a stroke-level darkened rim around the painted silhouette,
+ *     mimicking watercolor edge pooling
+ *   • Paper-grain texture — fBm paper height (`paperTexture.ts`) multiplied
+ *     into or subtracted from the coverage, in canvas or tip-local space
  *
  * Performance notes:
  *   - Inner pixel loop is monomorphic Number math.
@@ -73,7 +83,16 @@ import {
   linearToSrgbChannel,
   srgbToLinearChannel,
 } from "@/utils/pixelFormatConvert";
-import { getCachedTipSampler, type TipSampler } from "./tipSampler";
+import {
+  dualProceduralCoverage,
+  getCachedTipSampler,
+  proceduralCoverage,
+  sampleTipLevel,
+  sweptRoundCoverage,
+  tipLevelFor,
+  type TipLevel,
+  type TipSampler,
+} from "./tipSampler";
 import type { Brush, RGBAColor } from "@/types";
 import {
   resolveDynamic,
@@ -84,8 +103,13 @@ import {
   type StampInputs,
 } from "./dynamicsResolver";
 import { colorDynamicsInert, resolveStampColor } from "./colorJitter";
-import { sampleGrain } from "./paperTexture";
-import { mixSrgbInOklab } from "./oklch";
+import { applyGrain, grainNoise } from "./paperTexture";
+import {
+  pickUpSmudge,
+  smudgePixel,
+  type SmudgePatch,
+  type SmudgeStamp,
+} from "./smudgePatch";
 
 interface SelMask {
   mask: Uint8Array;
@@ -102,6 +126,8 @@ export interface StrokeStampState {
   /** Last emitted stamp position (canvas-space). */
   prevTipX: number;
   prevTipY: number;
+  /** Diameter of the last emitted stamp; 0 before the first. */
+  prevStampSize: number;
   /** Per-stroke "max coverage so far" buffer — prevents opacity accumulation
    *  within one stroke and is read by the wet-edges pass at stroke end. */
   touched: TouchedBuffer;
@@ -124,11 +150,10 @@ export interface StrokeStampState {
    */
   strokeColor: { r: number; g: number; b: number; a: number };
   /**
-   * Carried color for smudge mode — the layer color the brush is dragging
-   * forward. Updated each stamp as `strength × prev + (1 − strength) × under`.
-   * Null until the first stamp samples the layer.
+   * Smudge mode: the patch of pixels the brush is dragging along
+   * (`smudgePatch.ts`). Null until the first stamp picks up the layer.
    */
-  smudgeColor: { r: number; g: number; b: number; a: number } | null;
+  smudgePatch: SmudgePatch | null;
   /**
    * EMA-smoothed stroke direction in radians. The raw per-stamp Bézier
    * tangent jumps abruptly across segment boundaries and at sharp corners,
@@ -163,6 +188,7 @@ export function makeStrokeStampState(
     arcAccum: 0,
     prevTipX: 0,
     prevTipY: 0,
+    prevStampSize: 0,
     touched,
     isFirstStamp: true,
     strokeColor: {
@@ -171,7 +197,7 @@ export function makeStrokeStampState(
       b: primary.b,
       a: primary.a,
     },
-    smudgeColor: null,
+    smudgePatch: null,
     smoothDirection: null,
     prevStampColor: null,
     strokeColorResolved: false,
@@ -249,96 +275,6 @@ function stepDirection(
   return wrapPi(prev + stepped);
 }
 
-/**
- * Read a single layer pixel as sRGB-encoded floats in [0, 1+]. Returns null
- * for indexed layers (palette-based, no meaningful smudge), and a fully
- * transparent value for out-of-layer reads (so smudging off the edge fades).
- */
-/** Scratch written by sampleOneLayerFloat (read immediately by the caller). */
-const smudgeTap = { r: 0, g: 0, b: 0, a: 0 };
-/** Scratch returned by sampleSmudgeColor — callers copy or consume it
- *  before the next call. */
-const smudgeSample = { r: 0, g: 0, b: 0, a: 0 };
-
-/** Sample one layer pixel into `smudgeTap`. False for indexed8. */
-function sampleOneLayerFloat(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  px: number,
-  py: number,
-): boolean {
-  if (layer.format === "indexed8") return false;
-  const out = smudgeTap;
-  const lx = Math.floor(px) - layer.offsetX;
-  const ly = Math.floor(py) - layer.offsetY;
-  if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight) {
-    out.r = 0; out.g = 0; out.b = 0; out.a = 0;
-    return true;
-  }
-  const c = renderer.samplePixel(layer, lx, ly);
-  if (layer.format === "rgba8") {
-    out.r = c[0] / 255; out.g = c[1] / 255; out.b = c[2] / 255; out.a = c[3] / 255;
-    return true;
-  }
-  // rgba32f is linear-light; the carry colour is mixed in OKLab as sRGB and
-  // decoded back to linear when stamped, so encode here. (Returning linear
-  // values decoded them twice, darkening the layer with every smudge.)
-  out.r = linearToSrgbChannel(c[0]);
-  out.g = linearToSrgbChannel(c[1]);
-  out.b = linearToSrgbChannel(c[2]);
-  out.a = c[3];
-  return true;
-}
-
-/** 5-tap cross offsets (multiplied by the quarter-radius offset). */
-const SMUDGE_TAP_DX = [0, 1, -1, 0, 0] as const;
-const SMUDGE_TAP_DY = [0, 0, 0, 1, -1] as const;
-
-/**
- * Smudge pickup samples a small cross of layer pixels around the stamp
- * centre and averages them. Single-pixel sampling at the stamp centre is
- * unstable — even a 1-px shift across an anti-aliased boundary makes the
- * carried color (and therefore the painted alpha) jitter, producing visible
- * banding along the stroke. A 5-tap cross at quarter-radius offsets covers
- * the dominant area under the brush at ~5× the stability cost of one read,
- * which is dwarfed by the inner pixel loop.
- */
-function sampleSmudgeColor(
-  renderer: WebGPURenderer,
-  layer: GpuLayer,
-  cx: number,
-  cy: number,
-  size: number,
-): { r: number; g: number; b: number; a: number } | null {
-  if (layer.format === "indexed8") return null;
-  const off = Math.max(1, size * 0.25);
-  const c = smudgeTap;
-  let r = 0, g = 0, b = 0, a = 0, n = 0;
-  for (let i = 0; i < 5; i++) {
-    if (
-      !sampleOneLayerFloat(
-        renderer,
-        layer,
-        cx + SMUDGE_TAP_DX[i] * off,
-        cy + SMUDGE_TAP_DY[i] * off,
-      )
-    )
-      continue;
-    // Premultiplied: transparent taps (RGB usually 0) must not pull the
-    // carried colour toward black — they only lower the carried alpha.
-    r += c.r * c.a; g += c.g * c.a; b += c.b * c.a; a += c.a;
-    n++;
-  }
-  if (n === 0) return null;
-  const out = smudgeSample;
-  if (a <= 0) {
-    out.r = 0; out.g = 0; out.b = 0; out.a = 0;
-    return out;
-  }
-  out.r = r / a; out.g = g / a; out.b = b / a; out.a = a / n;
-  return out;
-}
-
 /** Per-stamp resolved parameters — the engine computes one of these per stamp. */
 interface ResolvedStamp {
   cx: number;
@@ -354,7 +290,18 @@ interface ResolvedStamp {
   motionElongation: number;
   /** Stroke direction in radians (used to orient the elongation). */
   motionDir: number;
-  opacity: number; // 0..100
+  opacity: number; // 0..100 — the stroke ceiling for this stamp
+  /** 0..1 — share of the ceiling this stamp deposits (Flow). */
+  flow: number;
+  /** 0..1 — paper-grain depth for this stamp (texture amount × dynamics). */
+  grainAmount: number;
+  /** Seeds the stochastic rounding of this stamp's 8-bit writes. */
+  ditherSeed: number;
+  /** Swept dab: the previous dab's centre relative to this one (canvas px)
+   *  and its diameter. 0, 0 = a plain dab (see `sweepsDabs`). */
+  sweepDx: number;
+  sweepDy: number;
+  sweepPrevSize: number;
   /** Resolved RGBA — float [0, 1+] for HDR. */
   fr: number;
   fg: number;
@@ -458,9 +405,9 @@ const stampSelScratch: SelMask = { mask: new Uint8Array(0), width: 0 };
 const stampSrcFloatScratch: [number, number, number, number] = [0, 0, 0, 0];
 const stampJobScratch: BrushStampJob = {
   cx: 0, cy: 0, radius: 0, roundness: 1, angle: 0, shear: 0,
-  flipX: 1, flipY: 1, aaWidth: 0,
+  flipX: 1, flipY: 1, aa: true, softness: 0,
   minX: 0, minY: 0, maxX: 0, maxY: 0,
-  tipKind: 0, sdfData: undefined, sdfW: undefined, sdfH: undefined,
+  tipKind: 0, tipData: undefined, tipW: undefined, tipH: undefined,
   r: 0, g: 0, b: 0, a: 0, fr: 0, fg: 0, fb: 0, fa: 0,
   opacity: 0, capOpacity: -1, bypassCap: false,
   layerData: new Uint8Array(0), layerOffsetX: 0, layerOffsetY: 0,
@@ -468,11 +415,35 @@ const stampJobScratch: BrushStampJob = {
   touchedData: new Uint8Array(0), touchedW: 0, touchedH: 0,
   touchedWasmPtr: undefined, selMask: undefined, canvasW: 0, canvasH: 0,
   dualActive: false, dualTipKind: undefined, dualSizeRatio: undefined,
-  dualBaseAngle: undefined, dualMix: undefined, dualSdfData: undefined,
-  dualSdfW: undefined, dualSdfH: undefined,
-  grainAmount: 0, grainScale: 2, grainFollowBrush: false,
+  dualBaseAngle: undefined, dualMix: undefined, dualTipData: undefined,
+  dualTipW: undefined, dualTipH: undefined,
+  grainAmount: 0, grainScale: 2, grainFollowBrush: false, grainMode: 0,
+  ditherSeed: 0, sweepDx: 0, sweepDy: 0, sweepR0: 1,
   bmOffsetX: undefined, bmOffsetY: undefined,
 };
+
+/** Per-stamp smudge context (read synchronously by `applyStamp`). */
+const smudgeStampScratch: SmudgeStamp = {
+  patch: { data: new Float32Array(0), size: 0 },
+  cx: 0,
+  cy: 0,
+  colorRate: 0,
+  brush: [0, 0, 0, 0],
+};
+
+// Tip density levels fixed for the segment being stamped (bitmap tips). A
+// segment batch shares one level per tip, so every stamp in the segment —
+// batched or not — samples the same one. Null outside `stampSegment`: the
+// stamp picks the level for its own size.
+let segmentTipLevel: TipLevel | null = null;
+let segmentDualLevel: TipLevel | null = null;
+
+/** Dabs thinner than this radius are drawn at it with proportionally less
+ *  opacity, so pressure tapers fade out instead of breaking into gaps and
+ *  then vanishing (a sub-pixel dab covers no pixel centre). Linear in the
+ *  radius: along a line the dabs don't accumulate, so a line of width w < 1
+ *  reads as a 1 px line at w × the opacity. */
+const MIN_DAB_RADIUS = 0.5;
 
 /**
  * Correlation length for the smooth `random` source, in stamps. A new noise
@@ -608,11 +579,25 @@ function resolveStamp(
     }
   }
 
-  // ─── Opacity ─────────────────────────────────────────────────────────────
-  // Base brush opacity from the panel + per-stamp velocity/pressure already
-  // baked into baseOpacity; no separate "opacity jitter" curve in the data
-  // model so we leave it as-is.
-  const opacity = Math.max(0, Math.min(100, baseOpacity));
+  // ─── Transfer: opacity ceiling + flow ────────────────────────────────────
+  // Opacity caps what the stroke can reach at any pixel; flow is the share
+  // of that ceiling each stamp deposits. Both follow their Transfer curves
+  // (pen pressure → lighter line / slower build-up). Older brushes have no
+  // `transfer` group or `flow`: off and 100.
+  let opacity = Math.max(0, Math.min(100, baseOpacity));
+  let flow = Math.max(0, Math.min(100, brush.tip.flow ?? 100)) / 100;
+  const transfer = brush.transfer;
+  if (transfer) {
+    opacity *= resolveDynamic(transfer.opacityJitter, inputs);
+    flow *= resolveDynamic(transfer.flowJitter, inputs);
+  }
+
+  // ─── Paper-grain depth ───────────────────────────────────────────────────
+  let grainAmount = Math.max(0, Math.min(1, brush.texture.amount));
+  const depthJitter = brush.texture.depthJitter;
+  if (grainAmount > 0 && depthJitter) {
+    grainAmount *= resolveDynamic(depthJitter, inputs);
+  }
 
   // ─── Color ───────────────────────────────────────────────────────────────
   let fr: number, fg: number, fb: number, fa: number;
@@ -679,6 +664,12 @@ function resolveStamp(
     motionElongation,
     motionDir: pose.direction,
     opacity,
+    flow,
+    grainAmount,
+    ditherSeed: inputs.hash | 0,
+    sweepDx: 0,
+    sweepDy: 0,
+    sweepPrevSize: 0,
     fr,
     fg,
     fb,
@@ -694,15 +685,13 @@ function effectiveMotionBlur(brush: Brush): number {
   return brush.motionBlur >= MOTION_BLUR_MIN ? brush.motionBlur : 0;
 }
 
-/** Below this stamp diameter the bitmap batch's whole-pixel stamp placement
- *  is visible (stair-stepping); smaller stamps use the SDF batch, which
- *  positions stamps at sub-pixel precision. */
+/** The bitmap batch places stamps on whole pixels. That half-pixel snap is
+ *  only invisible when the stamp is big and its edge fades over at least
+ *  this many pixels (soft brushes — exactly the ones the batch speeds up);
+ *  hard procedural tips use the per-stamp batch, which positions stamps at
+ *  sub-pixel precision so their edges stay smooth. */
 const BITMAP_BATCH_MIN_SIZE = 16;
-
-/** Cheap inline of `motionElongation > 1.0001` used by the WASM gate. */
-function motionActiveCheck(motionElongation: number): boolean {
-  return motionElongation > 1.0001;
-}
+const BITMAP_BATCH_MIN_FALLOFF_PX = 2;
 
 /** A `DynamicCurve` whose output is constant 1 for every stamp (so it
  *  doesn't vary the underlying value). */
@@ -742,14 +731,55 @@ function isShapeStaticSegment(
   if (dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0 && dt.directionFollow) {
     return false;
   }
+  // Tip-local grain is baked into the bitmap, which only works when it is
+  // the same for every stamp: multiply mode (subtract depends on each
+  // stamp's opacity) with a constant depth.
+  if (brush.texture.amount > 0 && brush.texture.followBrush) {
+    if ((brush.texture.mode ?? "multiply") === "subtract") return false;
+    if (brush.texture.depthJitter && !curveIsInert(brush.texture.depthJitter)) {
+      return false;
+    }
+  }
   return true;
 }
 
+/** Hardness → falloff depth as a fraction of the radius. */
+function brushSoftness(brush: Brush): number {
+  return 1 - Math.max(0, Math.min(100, brush.tip.hardness)) / 100;
+}
+
+/** Spacing (% of the diameter) up to which round dabs are swept. Wider
+ *  spacing is a deliberate beaded / dotted line. */
+const SWEEP_MAX_SPACING = 50;
+
 /**
- * Apply one fully-resolved stamp at (cx, cy). Iterates the stamp's
- * canvas-space bounding box, samples the tip SDF, applies wet-edge
- * attenuation and paper-grain modulation to the coverage, then forwards
- * each pixel to `blendPixelOver`.
+ * Round-tip strokes draw each dab as a capsule from the previous dab's
+ * centre instead of a disc: discrete discs leave a ripple between dab
+ * centres (visible as stripes along soft strokes, scallops along hard
+ * edges); the capsules join into the continuous stroke at any spacing.
+ * Only at full flow without smudge: accumulating stamps deposit per dab
+ * (see `applyStamp`). Not for scattered or multi-stamp dabs (no meaningful
+ * previous centre) or non-round tips (their swept shape isn't a distance
+ * to a segment).
+ */
+function sweepsDabs(brush: Brush, sampler: TipSampler): boolean {
+  return (
+    sampler.tipKind === 0 &&
+    brush.tip.spacing <= SWEEP_MAX_SPACING &&
+    (brush.tip.flow ?? 100) >= 100 &&
+    !(brush.transfer && !curveIsInert(brush.transfer.flowJitter)) &&
+    !brush.smudge.enabled &&
+    brush.scatter.amount <= 0 &&
+    brush.scatter.count <= 1 &&
+    curveIsInert(brush.scatter.countJitter)
+  );
+}
+
+/**
+ * Apply one fully-resolved stamp at (cx, cy) — canvas space, pixel centres
+ * at integer coordinates. Dispatches to the WASM kernel when it can; the JS
+ * loop below is the fallback (tiled mode, smudge, motion blur, WASM not yet
+ * loaded) and mirrors the kernel's coverage and blend math.
  */
 function applyStamp(
   renderer: WebGPURenderer,
@@ -767,9 +797,19 @@ function applyStamp(
   /** Optional dual-brush mask sampled per-pixel and multiplied into primary
    *  coverage. `null` when disabled — engine skips the entire dual path. */
   dual: DualResolved | null,
+  /** Smudge mode: the carried patch this stamp paints instead of a colour. */
+  smudge: SmudgeStamp | null = null,
 ): void {
-  const radius = s.size * 0.5;
-  if (radius < 0.5) return;
+  let radius = s.size * 0.5;
+  if (!(radius > 0)) return;
+  // Sub-pixel dabs: draw at the minimum radius with the opacity scaled down
+  // (see MIN_DAB_RADIUS), so the stroke thins into a fading hairline.
+  let ceiling = s.opacity;
+  if (radius < MIN_DAB_RADIUS) {
+    ceiling *= radius / MIN_DAB_RADIUS;
+    radius = MIN_DAB_RADIUS;
+  }
+  if (ceiling <= 0) return;
   const {
     angle,
     roundness,
@@ -781,41 +821,192 @@ function applyStamp(
     motionElongation,
     motionDir,
   } = s;
-  const hardness = Math.max(0, Math.min(100, brush.tip.hardness));
-  const aaWidth = brush.antiAlias
-    ? Math.max(0.5, (1 - hardness / 100) * radius * 0.5 + 0.5)
-    : 0;
+  // Flow vs Opacity: `ceiling` is the per-stroke cap at any pixel; each
+  // stamp deposits `flow` of it, building toward the cap across overlapping
+  // stamps. At full flow the deposit is the cap (first contact reaches it).
+  const flow = Math.max(0, Math.min(1, s.flow));
+  const fullFlow = flow >= 0.9999;
+  const stampOpacity = fullFlow ? ceiling : ceiling * flow;
+  // Swept dab: replaces the max-of-dabs coverage of a full-flow stroke with
+  // the continuous one. Not for accumulating stamps (flow, smudge), which
+  // deposit per dab — sweeping them adds the segment end caps at discrete
+  // spots — nor with motion blur (its elongation is about the centre).
+  const sweeping =
+    (s.sweepDx !== 0 || s.sweepDy !== 0) &&
+    sampler.tipKind === 0 &&
+    fullFlow &&
+    !bypassCap &&
+    motionElongation <= 1.0001;
+  const sweepDx = sweeping ? s.sweepDx : 0;
+  const sweepDy = sweeping ? s.sweepDy : 0;
+  const sweepR0 = sweeping
+    ? Math.max(MIN_DAB_RADIUS, s.sweepPrevSize * 0.5) / radius
+    : 1;
+  const aa = brush.antiAlias;
+  const softness = brushSoftness(brush);
   const cosT = Math.cos(angle);
   const sinT = Math.sin(angle);
-  // Motion blur stretches the stamp along the stroke direction. The bbox
-  // grows accordingly so we don't clip the smear; we use the conservative
-  // axis-aligned bbox that contains a rotated ellipse with semi-axes
-  // (radius × motionElongation, radius).
-  //
-  // The tip itself is bounded by its rotated tip-local box — x: radius plus
-  // shear, y: radius × roundness — which contains round, square, diamond
-  // and bitmap tips alike (an ellipse radius clipped the corners of rotated
-  // square tips and sheared stamps). Motion stretches that along the
-  // stroke direction by radius × (elongation − 1).
+  // Bounding box: the rotated tip-local box — x: radius plus shear, y:
+  // radius × roundness — which contains round, square, diamond and bitmap
+  // tips alike, stretched along the stroke by motion blur, plus the
+  // anti-aliased edge (half a pixel) and a pixel of margin. Soft tips fade
+  // out inside the radius, so hardness never widens it.
   const cosD = Math.cos(motionDir);
   const sinD = Math.sin(motionDir);
-  const tipHX = radius + Math.abs(shear) * radius * roundness;
-  const tipHY = radius * roundness;
+  const reachR = radius * Math.max(1, sweepR0);
+  const tipHX = reachR + Math.abs(shear) * reachR * roundness;
+  const tipHY = reachR * roundness;
   const absCosT = Math.abs(cosT);
   const absSinT = Math.abs(sinT);
   const stretch = radius * (motionElongation - 1);
   const halfX = Math.ceil(
-    absCosT * tipHX + absSinT * tipHY + Math.abs(cosD) * stretch + aaWidth + 1,
+    absCosT * tipHX + absSinT * tipHY + Math.abs(cosD) * stretch + 1.5,
   );
   const halfY = Math.ceil(
-    absSinT * tipHX + absCosT * tipHY + Math.abs(sinD) * stretch + aaWidth + 1,
+    absSinT * tipHX + absCosT * tipHY + Math.abs(sinD) * stretch + 1.5,
   );
-  const minX = Math.floor(cx - halfX);
-  const maxX = Math.ceil(cx + halfX);
-  const minY = Math.floor(cy - halfY);
-  const maxY = Math.ceil(cy + halfY);
+  // A swept dab spans its segment from the previous centre.
+  const minX = Math.floor(cx + Math.min(0, sweepDx) - halfX);
+  const maxX = Math.ceil(cx + Math.max(0, sweepDx) + halfX);
+  const minY = Math.floor(cy + Math.min(0, sweepDy) - halfY);
+  const maxY = Math.ceil(cy + Math.max(0, sweepDy) + halfY);
 
+  if (!tiledMode) {
+    if (
+      maxX < 0 ||
+      maxY < 0 ||
+      minX >= renderer.pixelWidth ||
+      minY >= renderer.pixelHeight
+    )
+      return;
+  }
   if (onStampBbox) onStampBbox(minX, minY, maxX, maxY);
+
+  // Float colour → 0..255 bytes for the rgba8 path.
+  const r = Math.round(Math.min(s.fr, 1) * 255);
+  const g = Math.round(Math.min(s.fg, 1) * 255);
+  const b = Math.round(Math.min(s.fb, 1) * 255);
+  const a = Math.round(Math.min(Math.max(s.fa, 0), 1) * 255);
+  // Stamp colour `s.fr/fg/fb` is sRGB-encoded (it descends from primaryColor
+  // with per-stamp jitter applied). An rgba32f layer stores linear light.
+  let srcFloat: readonly [number, number, number, number] | undefined;
+  if (layer.format === "rgba32f") {
+    stampSrcFloatScratch[0] = srgbToLinearChannel(s.fr);
+    stampSrcFloatScratch[1] = srgbToLinearChannel(s.fg);
+    stampSrcFloatScratch[2] = srgbToLinearChannel(s.fb);
+    stampSrcFloatScratch[3] = s.fa;
+    srcFloat = stampSrcFloatScratch;
+  }
+
+  // Bitmap tips: the density level for this dab size (fixed per segment).
+  const levels = sampler.levels;
+  const tipLevel =
+    levels !== undefined
+      ? segmentTipLevel ?? tipLevelFor(levels, radius * 2)
+      : null;
+  const dualRadius = dual !== null ? radius * dual.sizeRatio : 0;
+  const dualLevel =
+    dual !== null && dual.sampler.levels !== undefined
+      ? segmentDualLevel ?? tipLevelFor(dual.sampler.levels, dualRadius * 2)
+      : null;
+
+  const grainAmount = s.grainAmount;
+  const grainScale = Math.max(2, brush.texture.scale);
+  const grainSubtract = (brush.texture.mode ?? "multiply") === "subtract";
+  const grainFollowsBrush = brush.texture.followBrush;
+
+  // ─── WASM fast path ──────────────────────────────────────────────────────
+  // The C++ kernel (wasm/src/brush_stamp.cpp) handles everything except
+  // smudge (stateful pickup), motion-blur elongation (unless a bitmap batch
+  // is open — that path ignores motion blur by design), tiled mode and
+  // indexed8. The module loads async at startup; until then we use JS.
+  const motionBlocksWasm =
+    motionElongation > 1.0001 &&
+    !(brushStampBatchOpen && brushStampBatchIsBitmap);
+  const wasmEligible =
+    !bypassCap &&
+    !motionBlocksWasm &&
+    !tiledMode &&
+    layer.format !== "indexed8";
+  const wasmModule = wasmEligible ? getPixelOpsSync() : null;
+  if (wasmModule !== null) {
+    // Inside a segment batch the stamp is queued and applied when the
+    // segment flushes; outside one (stampDot, build-up tick) it runs now.
+    const dispatch = brushStampBatchOpen ? appendBrushStamp : runBrushStamp;
+    const isF32 = layer.format === "rgba32f";
+    const j = stampJobScratch;
+    j.cx = cx;
+    j.cy = cy;
+    j.radius = radius;
+    j.roundness = roundness;
+    j.angle = angle;
+    j.shear = shear;
+    j.flipX = flipX;
+    j.flipY = flipY;
+    j.aa = aa;
+    j.softness = softness;
+    j.minX = minX;
+    j.minY = minY;
+    j.maxX = maxX;
+    j.maxY = maxY;
+    j.tipKind = sampler.tipKind;
+    j.tipData = tipLevel?.data;
+    j.tipW = tipLevel?.w;
+    j.tipH = tipLevel?.h;
+    j.r = r;
+    j.g = g;
+    j.b = b;
+    j.a = a;
+    // rgba32f: the kernel writes the floats straight into the layer, so
+    // they must already be linear-light (same as the JS srcFloat path).
+    j.fr = isF32 ? stampSrcFloatScratch[0] : s.fr;
+    j.fg = isF32 ? stampSrcFloatScratch[1] : s.fg;
+    j.fb = isF32 ? stampSrcFloatScratch[2] : s.fb;
+    j.fa = s.fa;
+    j.opacity = stampOpacity;
+    // Full flow: the deposit is the cap, so the kernel takes its
+    // "stamp == cap" branch (capOpacity = -1).
+    j.capOpacity = fullFlow ? -1 : ceiling;
+    j.bypassCap = false;
+    j.layerData = layer.data;
+    j.layerOffsetX = layer.offsetX;
+    j.layerOffsetY = layer.offsetY;
+    j.layerW = layer.layerWidth;
+    j.layerH = layer.layerHeight;
+    j.layerFormat = isF32 ? 1 : 0;
+    // Zero-copy when both buffers live in the WASM heap.
+    j.layerWasmPtr = layer.wasmPtr;
+    j.touchedData = touched.data;
+    j.touchedW = touched.width;
+    j.touchedH = touched.height;
+    j.touchedWasmPtr = touched.wasmPtr;
+    j.selMask = selectionMask ?? undefined;
+    j.canvasW = renderer.pixelWidth;
+    j.canvasH = renderer.pixelHeight;
+    // Dual brush — baseAngle is already the rotated total
+    // (primary angle + dual.angle + direction follow).
+    j.dualActive = dual !== null;
+    j.dualTipKind = dual?.sampler.tipKind;
+    j.dualSizeRatio = dual?.sizeRatio;
+    j.dualBaseAngle = dual?.baseAngle;
+    j.dualMix = dual?.mix;
+    j.dualTipData = dualLevel?.data;
+    j.dualTipW = dualLevel?.w;
+    j.dualTipH = dualLevel?.h;
+    j.grainAmount = grainAmount;
+    j.grainScale = grainScale;
+    j.grainFollowBrush = grainFollowsBrush;
+    j.grainMode = grainSubtract ? 1 : 0;
+    j.ditherSeed = s.ditherSeed;
+    j.sweepDx = sweepDx;
+    j.sweepDy = sweepDy;
+    j.sweepR0 = sweepR0;
+    // Set by appendBrushStamp in bitmap mode; never carry a stale offset.
+    j.bmOffsetX = undefined;
+    j.bmOffsetY = undefined;
+    dispatch(wasmModule, j);
+    return;
+  }
 
   let sel: SelMask | undefined;
   if (selectionMask !== null) {
@@ -828,192 +1019,51 @@ function applyStamp(
 
   const invRadius = 1 / radius;
   const invRadiusY = 1 / (radius * roundness);
-
-  if (!tiledMode) {
-    if (
-      maxX < 0 ||
-      maxY < 0 ||
-      minX >= renderer.pixelWidth ||
-      minY >= renderer.pixelHeight
-    )
-      return;
+  const tipKind = sampler.tipKind;
+  // Segment start in tip-local unit coords (same transform as the pixels).
+  let sweepU = 0;
+  let sweepV = 0;
+  if (sweeping) {
+    let lx = sweepDx * cosT + sweepDy * sinT;
+    const ly = -sweepDx * sinT + sweepDy * cosT;
+    lx -= shear * ly;
+    sweepU = lx * flipX * invRadius;
+    sweepV = ly * flipY * invRadiusY;
   }
-
-  // Pre-resolve byte color and float color for blendPixelOver.
-  // Float colour → 0..255 bytes for blendPixelOver's non-HDR path.
-  const r = Math.round(Math.min(s.fr, 1) * 255);
-  const g = Math.round(Math.min(s.fg, 1) * 255);
-  const b = Math.round(Math.min(s.fb, 1) * 255);
-  const a = Math.round(Math.min(Math.max(s.fa, 0), 1) * 255);
-  // Stamp colour `s.fr/fg/fb` is sRGB-encoded (it descends from primaryColor
-  // with per-stamp jitter applied). For an rgba32f layer we must gamma-decode
-  // before passing to blendPixelOver — the layer stores linear-light values.
-  let srcFloat: readonly [number, number, number, number] | undefined;
-  if (layer.format === "rgba32f") {
-    stampSrcFloatScratch[0] = srgbToLinearChannel(s.fr);
-    stampSrcFloatScratch[1] = srgbToLinearChannel(s.fg);
-    stampSrcFloatScratch[2] = srgbToLinearChannel(s.fb);
-    stampSrcFloatScratch[3] = s.fa;
-    srcFloat = stampSrcFloatScratch;
-  }
-
-  // Paper grain — pre-cache enabled flag.
-  const grainAmount = brush.texture.amount;
-  const grainScale = Math.max(2, brush.texture.scale);
-
-  // Flow vs Opacity: `s.opacity` is the per-stroke ceiling (Photoshop's
-  // Opacity slider) baked with pressure/velocity tracking. `flow` (Photoshop's
-  // Flow) scales the per-stamp deposit independently. With flow=100 the per-
-  // stamp deposit equals the ceiling, so the first stamp at any pixel reaches
-  // it (legacy behaviour). With flow<100 deposit is smaller than the ceiling
-  // and overlapping stamps build up via Porter-Duff `over` toward the
-  // ceiling — the soft, paintable feel of a real brush.
-  // Older saved brushes lack `flow`; treat as 100.
-  const flow = Math.max(0, Math.min(100, brush.tip.flow ?? 100));
-  const flowFraction = flow / 100;
+  // Subtract grain removes a fixed depth from the paint alpha (1/ceiling).
+  const invAlpha = 1 / Math.max(1e-3, Math.max(0, s.fa) * (ceiling / 100));
   const grainEnabled = grainAmount > 0;
-  const grainFollowsBrush = brush.texture.followBrush;
 
-  // ─── WASM fast path ──────────────────────────────────────────────────────
-  // The C++ kernel (see wasm/src/brush_stamp.cpp) handles the inner pixel
-  // loop ~3× faster than even the optimised JS path AND now natively
-  // handles dual brush + paper grain. We still fall back for: smudge
-  // (stateful per-stamp pickup), motion-blur elongation (rare; awkward
-  // inverse transform), tiled mode (kernel sees a slice, can't wrap),
-  // indexed8 (palette write). Bitmap tips work too — the SDF data is
-  // exposed on the TipSampler interface.
-  // The WASM module is loaded async at app startup; until it's ready we
-  // fall back to JS.
-  // The motion-elongation gate (WASM SDF kernel can't elongate per-stamp)
-  // is bypassed when a bitmap batch is open — the bitmap path is happy to
-  // dispatch any stamp, ignoring motion blur. Without this exemption,
-  // default-brush strokes (motionBlur=5 → motionElongation>1 at normal
-  // velocity) would skip the open bitmap batch and fall through to the
-  // slow JS path, defeating the entire bake.
-  const motionBlocksWasm =
-    motionActiveCheck(motionElongation) &&
-    !(brushStampBatchOpen && brushStampBatchIsBitmap);
-  const wasmEligible =
-    !bypassCap &&
-    !motionBlocksWasm &&
-    !tiledMode &&
-    layer.format !== "indexed8";
-  const wasmModule = wasmEligible ? getPixelOpsSync() : null;
-  if (wasmModule !== null) {
-    // Per-stamp deposit and per-stroke cap mirror the JS code below: with
-    // flow=100 the deposit equals the cap so the WASM kernel can take its
-    // legacy "stamp == cap" branch (capOpacity = -1). With flow<100 we
-    // pass the cap explicitly.
-    const stampOpacity = flow >= 100 ? s.opacity : s.opacity * flowFraction;
-    const capOpacity = flow >= 100 ? -1 : s.opacity;
-    // When a segment batch is open (the common case during stampSegment),
-    // the stamp is appended to the WASM-heap batch buffer and applied
-    // when the segment flushes. Outside a batch (e.g. stampDot, build-up
-    // tick) we fall back to the single-stamp call. The batch path
-    // eliminates per-stamp BrushStampJob allocation + DataView pack +
-    // WASM call boundary — the things that pile up at high stamp rates.
-    const dispatch =
-      brushStampBatchOpen ? appendBrushStamp : runBrushStamp;
-    const isF32 = layer.format === "rgba32f";
-    const j = stampJobScratch;
-    j.cx = cx;
-    j.cy = cy;
-    j.radius = radius;
-    j.roundness = roundness;
-    j.angle = angle;
-    j.shear = shear;
-    j.flipX = flipX;
-    j.flipY = flipY;
-    j.aaWidth = aaWidth;
-    j.minX = minX;
-    j.minY = minY;
-    j.maxX = maxX;
-    j.maxY = maxY;
-    j.tipKind = sampler.tipKind;
-    j.sdfData = sampler.bitmapSdf;
-    j.sdfW = sampler.bitmapSdfW;
-    j.sdfH = sampler.bitmapSdfH;
-    j.r = r;
-    j.g = g;
-    j.b = b;
-    j.a = a;
-    // Pre-linearise for rgba32f (the C++ kernel writes the floats
-    // straight into the layer, so they must already be linear-light
-    // — same convention as the JS srcFloat path).
-    j.fr = isF32 ? stampSrcFloatScratch[0] : s.fr;
-    j.fg = isF32 ? stampSrcFloatScratch[1] : s.fg;
-    j.fb = isF32 ? stampSrcFloatScratch[2] : s.fb;
-    j.fa = s.fa;
-    j.opacity = stampOpacity;
-    j.capOpacity = capOpacity;
-    j.bypassCap = false;
-    j.layerData = layer.data;
-    j.layerOffsetX = layer.offsetX;
-    j.layerOffsetY = layer.offsetY;
-    j.layerW = layer.layerWidth;
-    j.layerH = layer.layerHeight;
-    j.layerFormat = isF32 ? 1 : 0;
-    // Zero-copy fast path when both buffers live in the WASM heap —
-    // the kernel reads/writes them in place via these ptrs and we
-    // skip the per-stamp slice marshalling entirely.
-    j.layerWasmPtr = layer.wasmPtr;
-    j.touchedData = touched.data;
-    j.touchedW = touched.width;
-    j.touchedH = touched.height;
-    j.touchedWasmPtr = touched.wasmPtr;
-    j.selMask = selectionMask ?? undefined;
-    j.canvasW = renderer.pixelWidth;
-    j.canvasH = renderer.pixelHeight;
-    // Dual brush — pass the resolved sampler's tip kind + (for bitmap)
-    // its SDF data. baseAngle is already the rotated total
-    // (primary angle + dual.angle + direction follow).
-    j.dualActive = dual !== null;
-    j.dualTipKind = dual?.sampler.tipKind;
-    j.dualSizeRatio = dual?.sizeRatio;
-    j.dualBaseAngle = dual?.baseAngle;
-    j.dualMix = dual?.mix;
-    j.dualSdfData = dual?.sampler.bitmapSdf;
-    j.dualSdfW = dual?.sampler.bitmapSdfW;
-    j.dualSdfH = dual?.sampler.bitmapSdfH;
-    // Paper grain
-    j.grainAmount = grainAmount;
-    j.grainScale = grainScale;
-    j.grainFollowBrush = grainFollowsBrush;
-    // Set by appendBrushStamp in bitmap mode; never carry a stale offset.
-    j.bmOffsetX = undefined;
-    j.bmOffsetY = undefined;
-    dispatch(wasmModule, j);
-    return;
-  }
-
-  // Pre-compute the inverse motion-blur transform: rotate into the
-  // stroke-aligned frame, compress along-stroke by 1/elongation, rotate back.
-  // When motionElongation === 1 this collapses to the identity and we skip it.
+  // Inverse motion-blur transform: rotate into the stroke-aligned frame,
+  // compress along-stroke by 1/elongation, rotate back.
   const motionActive = motionElongation > 1.0001;
   const invElong = motionActive ? 1 / motionElongation : 1;
 
-  // Pre-compute dual-brush transform once per stamp. The dual tip lives in
-  // canvas-space but oriented to its own (rotated, scaled) frame, so each
-  // pixel's offset from the stamp centre maps to dual-tip-local coords via
-  // a rotation by `dual.baseAngle` and a scale by `1 / dualRadius`. Skipped
-  // entirely when the dual radius would be sub-pixel — the mask wouldn't
-  // resolve and the multiplication would be a no-op anyway.
-  const dualRadius = dual !== null ? radius * dual.sizeRatio : 0;
+  // Dual-brush transform: rotate by `dual.baseAngle`, scale by 1/dualRadius.
+  // Skipped when the dual radius is sub-pixel (no visible effect).
   const dualActive = dual !== null && dualRadius >= 0.5;
   const dualInvR = dualActive ? 1 / dualRadius : 0;
   const dualCosT = dualActive ? Math.cos(dual!.baseAngle) : 1;
   const dualSinT = dualActive ? Math.sin(dual!.baseAngle) : 0;
   const dualMix = dualActive ? dual!.mix : 0;
-  const dualSampler = dualActive ? dual!.sampler : null;
+  const dualKind = dualActive ? dual!.sampler.tipKind : 0;
+
+  if (smudge !== null) {
+    // Brush colour, premultiplied, in the layer's value space.
+    const lin = layer.format === "rgba32f";
+    const fa = Math.max(0, Math.min(1, s.fa));
+    smudge.brush[0] = (lin ? srgbToLinearChannel(s.fr) : Math.min(1, s.fr)) * fa;
+    smudge.brush[1] = (lin ? srgbToLinearChannel(s.fg) : Math.min(1, s.fg)) * fa;
+    smudge.brush[2] = (lin ? srgbToLinearChannel(s.fb) : Math.min(1, s.fb)) * fa;
+    smudge.brush[3] = fa;
+  }
+  const canvasW = renderer.pixelWidth;
+  const canvasH = renderer.pixelHeight;
 
   for (let py = minY; py <= maxY; py++) {
     const dyBase0 = py - cy;
     for (let px = minX; px <= maxX; px++) {
       const dxBase0 = px - cx;
-      // Motion-blur inverse transform — converts canvas-space delta into the
-      // "unsmeared" reference frame the SDF expects. Outside the smeared
-      // ellipse, the resulting (dx, dy) is far from the tip centre and the
-      // SDF returns positive (out of range), causing an early continue.
       let dxBase = dxBase0;
       let dyBase = dyBase0;
       if (motionActive) {
@@ -1023,67 +1073,51 @@ function applyStamp(
         dxBase = alongShrunk * cosD - cross * sinD;
         dyBase = alongShrunk * sinD + cross * cosD;
       }
-      // Inverse rotation into tip-local axes
+      // Inverse rotation into tip-local axes, tilt shear, flip.
       let lx = dxBase * cosT + dyBase * sinT;
       let ly = -dxBase * sinT + dyBase * cosT;
-      // Tilt-driven shear in tip-local x along y
       lx -= shear * ly;
-      // Apply flip in tip-local space (flip is ±1 — multiplying preserves dist)
       lx *= flipX;
       ly *= flipY;
-      // Map to unit space
       const u = lx * invRadius;
       const v = ly * invRadiusY;
-      // SDF in unit space → multiply by radius for pixel-scale distance
-      const dist = sampler.sample(u, v) * radius;
-      // Convert distance → coverage (0..1)
-      let coverage: number;
-      if (aaWidth > 0) {
-        const t = (aaWidth - dist) / (2 * aaWidth);
-        if (t <= 0) continue;
-        if (t >= 1) coverage = 1;
-        else coverage = t * t * (3 - 2 * t);
-      } else {
-        if (dist > 0) continue;
-        coverage = 1;
-      }
-      // Wet edges are NOT applied per-stamp — that produces concentric halos
-      // at every dab, not a watercolor rim around the whole stroke. The
-      // stroke-level pass `applyStrokeWetEdges` runs once on pointer-up and
-      // darkens only the outer silhouette of the accumulated `touched` mask.
-      // Paper grain — sampled either in canvas or tip-local coords.
-      if (grainEnabled) {
-        const gx = grainFollowsBrush ? lx : px;
-        const gy = grainFollowsBrush ? ly : py;
-        coverage *= sampleGrain(gx, gy, grainAmount, grainScale);
-      }
-      // Dual brush — multiply the dual tip's alpha into the primary's
-      // coverage. The dual tip rotates with `baseAngle` (independent of
-      // the primary's rotation), so the texture warps with the brush
-      // instead of being canvas-locked like paper grain. With `mix < 1`
-      // the dual mask is lerped against identity, so a low mix only
-      // gently breaks up the silhouette.
-      if (dualSampler !== null) {
+      let coverage =
+        tipKind === 3
+          ? tipLevel !== null
+            ? sampleTipLevel(tipLevel, u, v)
+            : 0
+          : sweeping
+            ? sweptRoundCoverage(u, v, sweepU, sweepV, sweepR0, invRadius, invRadiusY, softness, aa)
+            : proceduralCoverage(tipKind, u, v, invRadius, invRadiusY, softness, aa);
+      if (coverage <= 0) continue;
+      // Wet edges are a stroke-level pass (`applyStrokeWetEdges`), not
+      // per stamp — per-stamp rims make concentric halos at every dab.
+      if (dualActive) {
         const dlx = dxBase0 * dualCosT + dyBase0 * dualSinT;
         const dly = -dxBase0 * dualSinT + dyBase0 * dualCosT;
-        const ddist = dualSampler.sample(dlx * dualInvR, dly * dualInvR) * dualRadius;
-        // Half-pixel AA across the dual silhouette — a fixed soft edge keeps
-        // the mask crisp without strobing on subpixel motion.
-        let dCov: number;
-        if (ddist <= -0.5) dCov = 1;
-        else if (ddist >= 0.5) dCov = 0;
-        else dCov = 0.5 - ddist;
+        const du = dlx * dualInvR;
+        const dv = dly * dualInvR;
+        const dCov =
+          dualKind === 3
+            ? dualLevel !== null
+              ? sampleTipLevel(dualLevel, du, dv)
+              : 0
+            : dualProceduralCoverage(dualKind, du, dv, dualRadius);
         coverage *= 1 - dualMix + dualMix * dCov;
+        if (coverage <= 0) continue;
       }
-      if (coverage <= 0) continue;
-      // Per-stamp deposit = flow × ceiling × coverage; ceiling = opacity × coverage.
-      // For flow=100 the two collapse to the same value, so we can save the
-      // function call argument (and skip the cap branch entirely) — preserves
-      // the legacy fast path bit-for-bit. For flow<100 the engine accumulates
-      // toward the ceiling via blendPixelOver's Flow path.
-      const stampOpacity =
-        flow >= 100 ? s.opacity * coverage : s.opacity * coverage * flowFraction;
-      const cap = flow >= 100 ? undefined : s.opacity * coverage;
+      if (grainEnabled) {
+        const n = grainFollowsBrush
+          ? grainNoise(lx, ly, grainScale)
+          : grainNoise(px, py, grainScale);
+        coverage = applyGrain(coverage, n, grainAmount, grainSubtract, invAlpha);
+        if (coverage <= 0) continue;
+      }
+      if (smudge !== null) {
+        const k = (stampOpacity / 100) * coverage;
+        smudgePixel(layer, canvasW, canvasH, px, py, k, k, smudge, touched, sel, tiledMode, s.ditherSeed);
+        continue;
+      }
       blendPixelOver(
         renderer,
         layer,
@@ -1093,14 +1127,17 @@ function applyStamp(
         g,
         b,
         a,
-        stampOpacity,
+        stampOpacity * coverage,
         touched,
         sel,
         tiledW,
         tiledH,
         srcFloat,
         bypassCap,
-        cap,
+        // Flat ceiling: flow builds up to the Opacity setting (see
+        // `accumulate` in brush_stamp.cpp).
+        fullFlow ? undefined : ceiling,
+        s.ditherSeed,
       );
     }
   }
@@ -1215,52 +1252,33 @@ function emitStampWithCount(
     Math.min(16, Math.round(brush.scatter.count * countMul)),
   );
 
-  // ─── Smudge: sample the layer once per spacing step ──────────────────────
-  // The carried color is the brush's "wet pickup". We update it before any
-  // sub-stamps fire so all of them in a scatter group share the same colour
-  // (otherwise a high-count smudge would smear different colours into each
-  // other within a single dab, which doesn't read as smudge).
-  let smudgeMix: { r: number; g: number; b: number; a: number } | null = null;
+  // ─── Smudge: pick up the pixels under the dab once per spacing step ─────
+  // All sub-stamps of a scatter group paint the same patch (re-picking per
+  // sub-stamp would smear the group into itself).
+  let smudge: SmudgeStamp | null = null;
   if (brush.smudge.enabled && layer.format !== "indexed8") {
-    const under = sampleSmudgeColor(renderer, layer, cx, cy, size);
-    if (under) {
-      const k = Math.max(0, Math.min(1, brush.smudge.strength));
-      const prev = state.smudgeColor;
-      // Pickup carry mixing in OKLab so dragged paint blends like wet
-      // pigment instead of sliding through linear-RGB intermediate
-      // greys. Alpha stays in linear space — opacity isn't perceptual.
-      const next = prev
-        ? (() => {
-            // Colour mix weighted by each side's alpha (premultiplied
-            // semantics): picking up transparency lowers alpha but must not
-            // shift the carried colour toward the transparent pixels' RGB.
-            const wa = k * prev.a;
-            const wb = (1 - k) * under.a;
-            const t = wa + wb > 1e-6 ? wb / (wa + wb) : 0;
-            const mixed = mixSrgbInOklab(
-              prev.r, prev.g, prev.b,
-              under.r, under.g, under.b,
-              t,
-            );
-            return {
-              r: mixed.r,
-              g: mixed.g,
-              b: mixed.b,
-              a: wa + wb,
-            };
-          })()
-        : { ...under };
-      state.smudgeColor = next;
-      smudgeMix = next;
-    }
+    const pcx = Math.round(cx);
+    const pcy = Math.round(cy);
+    state.smudgePatch = pickUpSmudge(
+      state.smudgePatch,
+      layer,
+      pcx,
+      pcy,
+      size * 0.5,
+      brush.smudge.strength,
+      tiledMode ? renderer.pixelWidth : undefined,
+      tiledMode ? renderer.pixelHeight : undefined,
+    );
+    smudge = smudgeStampScratch;
+    smudge.patch = state.smudgePatch;
+    smudge.cx = pcx;
+    smudge.cy = pcy;
+    smudge.colorRate = Math.max(0, Math.min(1, brush.smudge.colorRate));
   }
 
-  // In smudge mode the per-stroke alpha cap is bypassed so consecutive
-  // stamps can re-blend over each other. The `touched` map is still
-  // updated though — wet edges read it as the stroke silhouette and need
-  // to see every painted pixel regardless of mode.
-  const bypassCap = brush.smudge.enabled;
-  const colorRate = Math.max(0, Math.min(1, brush.smudge.colorRate));
+  // Smudge stamps re-blend over each other (no per-stroke cap); the
+  // `touched` map still records the silhouette for wet edges.
+  const bypassCap = smudge !== null;
 
   // EMA weight for inter-stamp colour smoothing. Lower values produce
   // smoother gradients (more lag); higher values track jitter swings more
@@ -1270,6 +1288,8 @@ function emitStampWithCount(
   // discrete pills.
   const COLOR_EMA = 0.18;
 
+  const sweep = count === 1 && sweepsDabs(brush, sampler);
+  let lastSize = 0;
   for (let k = 0; k < count; k++) {
     const resolved = resolveStamp(
       brush,
@@ -1283,9 +1303,22 @@ function emitStampWithCount(
       state,
       k,
     );
+    // Swept dab: join this dab to the previous one (round tips, one dab
+    // per step). A jump much longer than the spacing (a build-up tick
+    // elsewhere) starts fresh instead of drawing a bridge.
+    if (sweep && state.prevStampSize > 0) {
+      const dx = state.prevTipX - resolved.cx;
+      const dy = state.prevTipY - resolved.cy;
+      const reach = Math.max(resolved.size, state.prevStampSize) * 0.6 + 1;
+      if (dx * dx + dy * dy <= reach * reach) {
+        resolved.sweepDx = dx;
+        resolved.sweepDy = dy;
+        resolved.sweepPrevSize = state.prevStampSize;
+      }
+    }
+    lastSize = resolved.size;
     // Inter-stamp colour smoothing — applied to the jitter-resolved base
-    // colour. Smudge has its own carry-color path (state.smudgeColor) so
-    // we deliberately smooth before the smudge override, not after.
+    // colour (smudge mixes this colour into its patch by colorRate).
     if (state.prevStampColor) {
       resolved.fr =
         state.prevStampColor.r * (1 - COLOR_EMA) + resolved.fr * COLOR_EMA;
@@ -1301,22 +1334,6 @@ function emitStampWithCount(
     psc.g = resolved.fg;
     psc.b = resolved.fb;
     psc.a = resolved.fa;
-    if (smudgeMix) {
-      // Mix carried color with the (possibly jittered) brush colour by
-      // colorRate through OKLab — perceptually-straight wet/paint mixing
-      // instead of muddy linear-RGB averaging. 0 → pure smudge, 1 → pure
-      // paint, in-between is "finger painting" — drag existing pixels
-      // while leaking some fresh pigment.
-      const mixed = mixSrgbInOklab(
-        smudgeMix.r, smudgeMix.g, smudgeMix.b,
-        resolved.fr, resolved.fg, resolved.fb,
-        colorRate,
-      );
-      resolved.fr = mixed.r;
-      resolved.fg = mixed.g;
-      resolved.fb = mixed.b;
-      resolved.fa = (1 - colorRate) * smudgeMix.a + colorRate * resolved.fa;
-    }
     // Resolve dual-brush parameters once per stamp. Skipped when disabled
     // or zero-mix so the inner loop's pre-cached `dualSampler === null`
     // gate short-circuits cleanly.
@@ -1344,10 +1361,12 @@ function emitStampWithCount(
       bypassCap,
       captureStrokeBbox,
       dual,
+      smudge,
     );
   }
   state.prevTipX = cx;
   state.prevTipY = cy;
+  state.prevStampSize = lastSize;
   state.arcAccum = 0;
   state.stampIndex++;
   state.isFirstStamp = false;
@@ -1397,87 +1416,80 @@ export function stampSegment(p: StampSegmentParams): void {
   // to per-stamp dispatch when smudge / motion-blur / tiled / indexed8 /
   // unpinned-layer are in play (any of which the kernel path skips).
   const wasmModule = getPixelOpsSync();
-  // Common WASM-batch prerequisites — both the SDF and the bitmap batch
-  // need these. The SDF batch additionally requires `motionBlur === 0`
-  // (existing fidelity guarantee). The bitmap batch tolerates motion
-  // blur by ignoring it: a static-shape brush at moderate motionBlur
-  // loses the per-stamp velocity-driven elongation in exchange for a
-  // huge speedup. Default brush has motionBlur=5, so without this
-  // exemption every default-brush stroke would skip both batch paths.
+  // Common WASM-batch prerequisites. Both batches also need motion blur
+  // effectively off (the kernels can't elongate), so a stroke never mixes
+  // elongated and round stamps.
   const wasmBatchReady =
     wasmModule !== null &&
     !brush.smudge.enabled &&
     !tiledMode &&
     layer.format !== "indexed8" &&
     layer.wasmPtr !== undefined &&
-    state.touched.wasmPtr !== undefined;
-  // Both batches need motion blur effectively off (the kernels can't
-  // elongate), so a stroke never mixes elongated and round stamps. The
-  // bitmap batch places stamps on whole pixels, so it is only used where
-  // that half-pixel snap is invisible.
-  const motionOff = effectiveMotionBlur(brush) === 0;
-  const sdfBatchable = wasmBatchReady && motionOff;
+    state.touched.wasmPtr !== undefined &&
+    effectiveMotionBlur(brush) === 0;
+  // The bitmap batch snaps stamps to whole pixels: only for big stamps
+  // whose edge is soft enough (or irregular enough — sampled tips) to hide
+  // it.
+  const minSegSize = Math.min(size0, size1);
+  const softEnough =
+    sampler.tipKind === 3 ||
+    brushSoftness(brush) * minSegSize * 0.5 >= BITMAP_BATCH_MIN_FALLOFF_PX;
   const bitmapBatchable =
     wasmBatchReady &&
-    motionOff &&
-    Math.min(size0, size1) >= BITMAP_BATCH_MIN_SIZE &&
+    minSegSize >= BITMAP_BATCH_MIN_SIZE &&
+    softEnough &&
+    !sweepsDabs(brush, sampler) &&
     isShapeStaticSegment(brush, size0, size1);
-  const segmentBatchable = sdfBatchable || bitmapBatchable;
-  if (segmentBatchable) {
-    // Resolve invariant SDF context once per segment. Per-stamp dual
-    // *transform* (size, angle, mix) still varies and goes into each
-    // packed entry; only the bitmap SDF *data* is invariant.
-    const dt = brush.dualTip;
-    let dualSdfData: Float32Array | undefined;
-    let dualSdfW = 0;
-    let dualSdfH = 0;
-    if (dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0) {
-      const dualSampler = getCachedTipSampler(dt.shape);
-      dualSdfData = dualSampler.bitmapSdf;
-      dualSdfW = dualSampler.bitmapSdfW ?? 0;
-      dualSdfH = dualSampler.bitmapSdfH ?? 0;
-    }
 
+  // Bitmap tips: one density level per segment (a batch shares it), chosen
+  // for the segment's mean dab size.
+  const dt = brush.dualTip;
+  const dualOn = !!(dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0);
+  const dualSampler = dualOn ? getCachedTipSampler(dt!.shape) : null;
+  const meanSize = (size0 + size1) * 0.5;
+  segmentTipLevel =
+    sampler.levels !== undefined ? tipLevelFor(sampler.levels, meanSize) : null;
+  segmentDualLevel =
+    dualSampler?.levels !== undefined
+      ? tipLevelFor(dualSampler.levels, meanSize * dt!.sizeRatio)
+      : null;
+
+  if (wasmBatchReady) {
     // ── Pre-rasterized bitmap fast path ──────────────────────────────
     // When the brush shape is identical for every stamp in the segment,
     // bake the full coverage map once and per-stamp blit it. Eliminates
-    // the per-pixel SDF + AA + dual + grain compute — the bulk of the
-    // cost for soft brushes (where the AA falloff band is huge and the
-    // touched-saturation prechecks in the SDF kernel never fire).
+    // the per-pixel tip + dual + grain compute — the bulk of the cost for
+    // soft brushes, whose falloff never saturates the coverage buffer.
     let usedBitmapBatch = false;
     if (bitmapBatchable) {
-      // Resolve the shape params once (same for every stamp in the segment).
-      const radius = size0 * 0.5;
-      const hardness = Math.max(0, Math.min(100, brush.tip.hardness));
-      const aaWidth = brush.antiAlias
-        ? Math.max(0.5, (1 - hardness / 100) * radius * 0.5 + 0.5)
-        : 0;
-      const dualOn = !!(dt && dt.enabled && dt.mix > 0 && dt.sizeRatio > 0);
+      // Shape params are the same for every stamp in the segment.
       const baked = ensureBakedBitmap(wasmModule!, {
-        radius,
+        radius: size0 * 0.5,
         roundness: Math.max(0.05, Math.min(1, brush.tip.roundness)),
         angle: brush.tip.angle,
         shear: 0,
-        aaWidth,
+        aa: brush.antiAlias,
+        softness: brushSoftness(brush),
         flipX: 1,
         flipY: 1,
         tipKind: sampler.tipKind,
-        sdfData: sampler.bitmapSdf,
-        sdfW: sampler.bitmapSdfW,
-        sdfH: sampler.bitmapSdfH,
+        tipData: segmentTipLevel?.data,
+        tipW: segmentTipLevel?.w,
+        tipH: segmentTipLevel?.h,
         dualActive: dualOn,
-        dualTipKind: dualOn ? getCachedTipSampler(dt!.shape).tipKind : undefined,
+        dualTipKind: dualSampler?.tipKind,
         dualSizeRatio: dualOn ? dt!.sizeRatio : undefined,
         // directionFollow is required to be false for static; dual base
         // angle = primary angle + dt.angle, no per-stamp variation.
         dualBaseAngle: dualOn ? brush.tip.angle + dt!.angle : undefined,
         dualMix: dualOn ? Math.max(0, Math.min(1, dt!.mix)) : undefined,
-        dualSdfData,
-        dualSdfW,
-        dualSdfH,
+        dualTipData: segmentDualLevel?.data,
+        dualTipW: segmentDualLevel?.w,
+        dualTipH: segmentDualLevel?.h,
         grainAmount: brush.texture.amount,
         grainScale: Math.max(2, brush.texture.scale),
         grainFollowBrush: brush.texture.followBrush,
+        grainMode: (brush.texture.mode ?? "multiply") === "subtract" ? 1 : 0,
       });
       if (baked !== null) {
         beginBrushBatchBitmap(
@@ -1496,18 +1508,18 @@ export function stampSegment(p: StampSegmentParams): void {
         usedBitmapBatch = true;
       }
     }
-    if (!usedBitmapBatch && sdfBatchable) {
+    if (!usedBitmapBatch) {
       beginBrushBatch(
         wasmModule!,
         layer.wasmPtr!,
         state.touched.wasmPtr!,
         selectionMask ?? undefined,
-        sampler.bitmapSdf,
-        sampler.bitmapSdfW ?? 0,
-        sampler.bitmapSdfH ?? 0,
-        dualSdfData,
-        dualSdfW,
-        dualSdfH,
+        segmentTipLevel?.data,
+        segmentTipLevel?.w ?? 0,
+        segmentTipLevel?.h ?? 0,
+        segmentDualLevel?.data,
+        segmentDualLevel?.w ?? 0,
+        segmentDualLevel?.h ?? 0,
       );
       brushStampBatchOpen = true;
     }
@@ -1571,10 +1583,12 @@ export function stampSegment(p: StampSegmentParams): void {
       prevY = y;
     }
   } finally {
+    segmentTipLevel = null;
+    segmentDualLevel = null;
     // Fire all queued stamps for the segment in one WASM call.
     if (brushStampBatchOpen) {
       try {
-        if (segmentBatchable) flushBrushBatch(wasmModule!);
+        flushBrushBatch(wasmModule!);
       } finally {
         brushStampBatchOpen = false;
         brushStampBatchIsBitmap = false;

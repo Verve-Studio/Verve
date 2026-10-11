@@ -52,18 +52,50 @@ function syncFromActiveBrush(b: Brush): void {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-function smoothingToAlpha(s: number): number {
-  return Math.max(0.05, 1 - (s / 100) * 0.92);
+/**
+ * Stabiliser time constant (ms) for the panel's 0..100 setting. Time-based
+ * so a 60 Hz mouse and a 240 Hz pen lag the same: a per-event EMA smoothed
+ * the pen 4× less. 50 → ~26 ms, 100 → 150 ms.
+ */
+function stabiliserTauMs(s: number): number {
+  return 150 * Math.pow(Math.max(0, Math.min(100, s)) / 100, 2.5);
+}
+
+/** Weight of a new sample in a one-pole filter after `dtMs`. */
+function filterAlpha(dtMs: number, tauMs: number): number {
+  if (tauMs <= 0) return 1;
+  if (!(dtMs > 0)) return 0;
+  return 1 - Math.exp(-Math.min(dtMs, 1000) / tauMs);
 }
 
 const MAX_TRACKING_SPEED = 5;
 const SPEED_SMOOTHING = 0.25;
 const MIN_PRESSURE_FACTOR = 0.05;
-const PRESSURE_SMOOTHING = 0.15;
+/**
+ * Pen pressure / tilt filter time constant (ms). Coalesced samples carry the
+ * frame's pressure (per-sample values jitter), so pressure steps once per
+ * frame; filtering over the samples' timestamps turns each step into a ramp
+ * across the frame without the ~75 ms lag of the old per-event EMA, which
+ * blunted every taper.
+ */
+const PRESSURE_TAU_MS = 8;
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 type Point = { x: number; y: number };
+
+/**
+ * Brush-space position of a pointer sample: the unrounded pointer position,
+ * shifted so pixel centres sit at integer coordinates (the stamp engine's
+ * convention). Strokes follow the pen at sub-pixel precision instead of
+ * stair-stepping across whole pixels.
+ */
+function brushPoint(pos: ToolPointerPos): Point {
+  return {
+    x: (pos.preciseX ?? pos.x + 0.5) - 0.5,
+    y: (pos.preciseY ?? pos.y + 0.5) - 0.5,
+  };
+}
 
 function createBrushHandler(): ToolHandler {
   // Smoothed input + position state
@@ -74,6 +106,9 @@ function createBrushHandler(): ToolHandler {
   let smoothSpeed = 0;
   let stabX = 0,
     stabY = 0;
+  // Latest unsmoothed pointer position — the catch-up target at pointer-up.
+  let rawX = 0,
+    rawY = 0;
   let prevTime = 0;
   let smoothPressure = 1;
   let smoothTilt = 0;
@@ -164,19 +199,16 @@ function createBrushHandler(): ToolHandler {
   }
 
   /**
-   * Default pressure response curve — a gentle smoothstep S-curve that
-   * gives Wacom/Apple Pencil hardware a more "paintable" feel than the
-   * raw linear input. Hardware pressure is too touchy at the low end and
-   * too easy to peg at the top; the cubic Hermite below softens both
-   * extremes while keeping the midrange responsive. Applied centrally in
-   * `makePose` so every consumer of `pose.pressure` (dynamic curves +
-   * `pressureSize`) sees the same shaped value. The user's per-curve
-   * Catmull–Rom editor still applies on top, so brushes that want a
-   * different response just edit their curve.
+   * Default pressure response — half linear, half smoothstep: a gentle
+   * S-curve that keeps hardware pressure from pegging at the top while
+   * still answering light touches (a full smoothstep has zero slope at 0,
+   * so faint strokes barely registered). Applied centrally in `makePose`
+   * so every consumer of `pose.pressure` (dynamic curves + `pressureSize`)
+   * sees the same shaped value. The per-curve editor still applies on top.
    */
   function shapePressure(p: number): number {
     const x = Math.max(0, Math.min(1, p));
-    return x * x * (3 - 2 * x);
+    return 0.5 * x + 0.5 * x * x * (3 - 2 * x);
   }
 
   /** Snapshot the pen pose for the current sample. */
@@ -498,10 +530,9 @@ function createBrushHandler(): ToolHandler {
   }
 
   return {
-    onPointerDown(
-      { x, y, pressure, tiltX, tiltY, twist, timeStamp }: ToolPointerPos,
-      ctx: ToolContext,
-    ) {
+    onPointerDown(pos: ToolPointerPos, ctx: ToolContext) {
+      const { pressure, tiltX, tiltY, twist, timeStamp } = pos;
+      const { x, y } = brushPoint(pos);
       ctx.renderer.strokeStart();
       // Renderer owns the per-stroke max-coverage buffer (single shared
       // Uint8Array, reused across strokes via memcpy-zero at this call).
@@ -520,6 +551,8 @@ function createBrushHandler(): ToolHandler {
       smoothTwist = (twist * Math.PI) / 180;
       stabX = x;
       stabY = y;
+      rawX = x;
+      rawY = y;
       prevTime = timeStamp;
       lastRendered = { x, y };
       lastCtrl = { x, y };
@@ -533,14 +566,16 @@ function createBrushHandler(): ToolHandler {
       startBuildUp(ctx, x, y);
     },
 
-    onPointerMove(
-      { x, y, pressure, tiltX, tiltY, twist, timeStamp }: ToolPointerPos,
-      ctx: ToolContext,
-    ) {
+    onPointerMove(pos: ToolPointerPos, ctx: ToolContext) {
       if (!lastRendered || !lastCtrl) return;
+      const { pressure, tiltX, tiltY, twist, timeStamp } = pos;
+      const { x, y } = brushPoint(pos);
       const brush = activeBrushRef.current;
       const now = timeStamp;
-      const alpha = smoothingToAlpha(brush.smoothing.ema);
+      const dt = now - prevTime;
+      rawX = x;
+      rawY = y;
+      const alpha = filterAlpha(dt, stabiliserTauMs(brush.smoothing.ema));
       stabX = stabX * (1 - alpha) + x * alpha;
       stabY = stabY * (1 - alpha) + y * alpha;
 
@@ -550,24 +585,21 @@ function createBrushHandler(): ToolHandler {
       const drawX = drawn.x;
       const drawY = drawn.y;
 
-      const dt = now - prevTime;
       const d = Math.hypot(drawX - lastCtrl.x, drawY - lastCtrl.y);
       smoothSpeed =
         smoothSpeed * (1 - SPEED_SMOOTHING) +
         (dt > 0 ? d / dt : 0) * SPEED_SMOOTHING;
-      smoothPressure =
-        smoothPressure * (1 - PRESSURE_SMOOTHING) +
-        pressure * PRESSURE_SMOOTHING;
+      const pAlpha = filterAlpha(dt, PRESSURE_TAU_MS);
+      smoothPressure = smoothPressure * (1 - pAlpha) + pressure * pAlpha;
       smoothTilt =
-        smoothTilt * (1 - PRESSURE_SMOOTHING) +
-        (Math.hypot(tiltX, tiltY) / 90) * PRESSURE_SMOOTHING;
+        smoothTilt * (1 - pAlpha) + (Math.hypot(tiltX, tiltY) / 90) * pAlpha;
       const az = Math.atan2(tiltY, tiltX);
       // Interpolate along the shortest arc: a linear EMA from 179° to -179°
       // swept through 0° and briefly reversed the tilt shear.
       {
         let d = az - smoothTiltAz;
         d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
-        smoothTiltAz += d * PRESSURE_SMOOTHING;
+        smoothTiltAz += d * pAlpha;
         smoothTiltAz -= Math.round(smoothTiltAz / (2 * Math.PI)) * 2 * Math.PI;
       }
       smoothTwist = (twist * Math.PI) / 180;
@@ -659,21 +691,21 @@ function createBrushHandler(): ToolHandler {
           );
           prevPose = upPose;
         }
-        // Catch-up: if pull-string left us behind the actual pointer, draw the
-        // remaining gap so the stroke ends at the user's intended position.
+        // Catch-up: the stabiliser and pull-string trail the pen; draw the
+        // remaining gap so the stroke ends where the pen actually lifted.
         if (
           brush.smoothing.catchUp &&
           renderedCursor &&
-          (Math.abs(stabX - renderedCursor.x) > 0.5 ||
-            Math.abs(stabY - renderedCursor.y) > 0.5)
+          (Math.abs(rawX - renderedCursor.x) > 0.5 ||
+            Math.abs(rawY - renderedCursor.y) > 0.5)
         ) {
           paint(
             renderedCursor.x,
             renderedCursor.y,
-            stabX,
-            stabY,
-            stabX,
-            stabY,
+            rawX,
+            rawY,
+            rawX,
+            rawY,
             prevSize,
             prevOpacity,
             size,

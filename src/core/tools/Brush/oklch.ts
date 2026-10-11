@@ -130,23 +130,3 @@ export function oklchToOklab(L: number, C: number, h: number): Oklab {
     b: C * Math.sin(h),
   };
 }
-
-/**
- * Linearly mix two sRGB colours through OKLab. `t` is the mix weight: 0 =
- * pure A, 1 = pure B. Result is sRGB. This is the perceptually-correct
- * way to blend two paint colours — no muddy mid-greys, no acidic hue
- * trajectories.
- */
-export function mixSrgbInOklab(
-  ar: number, ag: number, ab: number,
-  br: number, bg: number, bb: number,
-  t: number,
-): { r: number; g: number; b: number } {
-  const A = srgbToOklab(ar, ag, ab);
-  const B = srgbToOklab(br, bg, bb);
-  return oklabToSrgb(
-    A.L + (B.L - A.L) * t,
-    A.a + (B.a - A.a) * t,
-    A.b + (B.b - A.b) * t,
-  );
-}

@@ -1,11 +1,10 @@
 /**
  * Capture a brush tip from the current selection on the active layer.
  *
- * The captured tip stores the cropped RGBA bitmap. The stamp engine samples
- * an 8SSEDT-derived signed distance field of its alpha (computed and cached
- * by `getCachedTipSampler`) — it gives clean scaling to any brush size and
- * naturally feathered edges via the hardness smoothstep, regardless of the
- * source bitmap's resolution.
+ * The captured tip stores the cropped RGBA bitmap. The stamp engine derives
+ * a mip-mapped paint-density map from it (alpha, or darkness for an opaque
+ * capture — built and cached by `getCachedTipSampler`), so the tip keeps its
+ * internal texture and scales cleanly to any brush size.
  */
 import type { BrushTipShape } from "@/types";
 

@@ -809,6 +809,7 @@ export type {
   TipSettings,
   ScatterDynamics,
   ShapeDynamics,
+  TransferDynamics,
   ColorDynamics,
   PoseDynamics,
   NoiseSettings,
@@ -817,6 +818,7 @@ export type {
   SmudgeSettings,
   SmoothingSettings,
   PaperTexture,
+  PaperTextureMode,
   DynamicCurve,
   DynamicSource,
 } from "@/core/tools/Brush/brushPreset";

@@ -191,14 +191,17 @@ export function useGpuLayerInit(params: GpuLayerInitParams): void {
               (layer.data as Uint8Array).fill(255);
             }
           } else {
+            // Opaque = 255 in rgba8 but 1.0 in rgba32f (255 there is
+            // 255× display white, which every blend then multiplied in).
+            const one = fmt === "rgba32f" ? 1 : 255;
             if (bg === "white") {
-              layer.data.fill(255);
+              layer.data.fill(one);
             } else if (bg === "black") {
               for (let j = 0; j < layer.data.length; j += 4) {
                 layer.data[j] = 0;
                 layer.data[j + 1] = 0;
                 layer.data[j + 2] = 0;
-                layer.data[j + 3] = 255;
+                layer.data[j + 3] = one;
               }
             }
           }

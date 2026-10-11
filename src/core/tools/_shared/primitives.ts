@@ -268,6 +268,30 @@ export function bresenham(
 }
 
 /**
+ * Stochastic-rounding offset for 8-bit writes at canvas (x, y): a hash in
+ * [1e-4, 1 − 1e-4) so `floor(v + bias)` rounds up with probability equal to
+ * the fraction (an exact level stays put). Mirrors `dither_u` /
+ * `dither_bias` in wasm/src/brush_stamp.cpp.
+ */
+export function ditherBias(x: number, y: number, seed: number): number {
+  let h =
+    Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841) ^ Math.imul(seed, 0xcb1ab31f);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return 0.0001 + ((h >>> 8) / 16777216) * 0.9998;
+}
+
+/** Smallest 8-bit level ≥ x (0..1, with a little float slack). */
+function ceilByte(x: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 255;
+  return Math.min(255, Math.max(0, Math.ceil(x * 255 - 0.001)));
+}
+
+/**
  * Porter-Duff "over" composite with incremental coverage tracking.
  * canvasX/canvasY are CANVAS-SPACE coordinates. Translates to layer-local
  * internally. Silently ignores pixels outside the layer buffer.
@@ -316,13 +340,20 @@ export function blendPixelOver(
    *  map is still updated with `max(existing, srcA)`, preserving its role
    *  as the stroke silhouette for downstream effects (wet edges). */
   bypassTouchedCap?: boolean,
-  /** Per-stroke ceiling for this pixel, in 0..100, already including
-   *  geometric coverage. When undefined, `opacity` is reused as the
-   *  ceiling (legacy behaviour). When supplied, the brush deposits
-   *  `min(srcA, upgrade-to-cap)` per stamp, so overlapping stamps build
-   *  toward the ceiling instead of reaching it on first contact — this
-   *  is what makes Flow-vs-Opacity work for the stamp engine. */
+  /** Per-stroke ceiling for this pixel, in 0..100 (the selection is applied
+   *  here). When undefined, `opacity` is reused as the ceiling (legacy
+   *  behaviour). When supplied, the brush deposits `min(srcA,
+   *  upgrade-to-cap)` per stamp, so overlapping stamps build toward the
+   *  ceiling instead of reaching it on first contact — this is what makes
+   *  Flow-vs-Opacity work for the stamp engine, which passes its flat
+   *  Opacity (paint builds up to the opacity setting). */
   capOpacity?: number,
+  /** When set, 8-bit writes (rgba8 channels, the flow-path coverage byte)
+   *  use stochastic rounding seeded by this value instead of
+   *  round-to-nearest, so low-flow / soft deposits keep their sub-level
+   *  contribution on average (see `ditherBias`). The brush engine passes
+   *  it; pixel-exact tools leave it undefined. */
+  ditherSeed?: number,
 ): void {
   // Apply modular wrap BEFORE bounds check and touched-map key computation.
   // This ensures a pixel at (-1, 0) and (W-1, 0) share the same touched-map
@@ -360,6 +391,8 @@ export function blendPixelOver(
       ? srcFloat[3] * (opacity / 100)
       : (a / 255) * (opacity / 100)) * selW;
   if (srcA <= 0) return;
+  const bias =
+    ditherSeed !== undefined ? ditherBias(canvasX, canvasY, ditherSeed) : 0.5;
 
   let blendA = srcA;
   if (touched !== undefined) {
@@ -395,13 +428,21 @@ export function blendPixelOver(
       blendA = srcA < upgrade ? srcA : upgrade;
       if (blendA <= 0) return;
       const newA = existingA + blendA * (1 - existingA);
-      tdata[key] = (newA * 255 + 0.5) | 0;
+      // Dithered: at the ceiling round up, below it stochastically (see
+      // `accumulate` in brush_stamp.cpp — a rounded-down ceiling leaves a
+      // sliver every later stamp re-blends).
+      tdata[key] =
+        ditherSeed === undefined
+          ? (newA * 255 + 0.5) | 0
+          : srcA >= upgrade
+            ? ceilByte(capA)
+            : Math.min(255, (newA * 255 + bias) | 0);
       noteTouchedWrite(touched, canvasX, canvasY);
     } else {
       if (srcA <= existingA) return;
       blendA = existingA < 1 ? (srcA - existingA) / (1 - existingA) : 0;
       if (blendA <= 0) return;
-      tdata[key] = (srcA * 255 + 0.5) | 0;
+      tdata[key] = ditherSeed === undefined ? (srcA * 255 + 0.5) | 0 : ceilByte(srcA);
       noteTouchedWrite(touched, canvasX, canvasY);
     }
   }
@@ -465,10 +506,11 @@ export function blendPixelOver(
       d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
     } else {
       const dstBlend = dstA * (1 - blendA);
-      d[i] = Math.round((r * blendA + er * dstBlend) / outA);
-      d[i + 1] = Math.round((g * blendA + eg * dstBlend) / outA);
-      d[i + 2] = Math.round((b * blendA + eb * dstBlend) / outA);
-      d[i + 3] = Math.round(outA * 255);
+      const inv = 1 / outA;
+      d[i] = Math.min(255, ((r * blendA + er * dstBlend) * inv + bias) | 0);
+      d[i + 1] = Math.min(255, ((g * blendA + eg * dstBlend) * inv + bias) | 0);
+      d[i + 2] = Math.min(255, ((b * blendA + eb * dstBlend) * inv + bias) | 0);
+      d[i + 3] = Math.min(255, (outA * 255 + bias) | 0);
     }
   }
 }

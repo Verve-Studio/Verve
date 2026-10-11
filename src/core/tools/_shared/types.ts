@@ -203,8 +203,14 @@ export interface ToolContext {
 // ─── Pointer position passed to tool handlers ─────────────────────────────────
 
 export interface ToolPointerPos {
+  /** Canvas pixel under the pointer (integer). */
   x: number;
   y: number;
+  /** Unrounded canvas position: pixel `x` spans [x, x + 1), so its centre
+   *  is x + 0.5. Set for real pointer input; tools that place sub-pixel
+   *  geometry (the brush) use it, pixel tools use `x` / `y`. */
+  preciseX?: number;
+  preciseY?: number;
   pressure: number;
   shiftKey: boolean;
   altKey: boolean;

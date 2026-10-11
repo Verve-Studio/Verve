@@ -9,17 +9,17 @@
  * slice back. The slice is also pre-clipped to the layer's actual
  * extent so the kernel never has to bounds-check inside the loop.
  *
- * Tiled-mode stamps and bitmap-tip SDF caching are handled here.
+ * Tiled-mode stamps and bitmap-tip density caching are handled here.
  */
 import { selectionRevision } from "@/core/store/selectionStore";
 import type { PixelOpsModule } from "./types";
 
 /** Field offsets in the packed `BrushStampParams` struct. MUST match the
  *  C++ layout in `wasm/src/brush_stamp.h` byte-for-byte — float and int
- *  are both 4 bytes, no internal padding. 180 bytes of fields; the C++
- *  struct is `alignas(16)` so its `sizeof` is 192 — `PARAM_BYTES` below
- *  must match that stride exactly or batched dispatch reads from the
- *  wrong offset past the first entry. */
+ *  are both 4 bytes, no internal padding. 208 bytes of fields, which is
+ *  also the C++ `alignas(16)` stride — `PARAM_BYTES` below must match it
+ *  exactly or batched dispatch reads from the wrong offset past the first
+ *  entry. */
 const PARAM_F = {
   cx: 0,
   cy: 4,
@@ -27,7 +27,7 @@ const PARAM_F = {
   roundness: 12,
   angle: 16,
   shear: 20,
-  aaWidth: 24,
+  aa: 24,
   fr: 28,
   fg: 32,
   fb: 36,
@@ -40,6 +40,10 @@ const PARAM_F = {
   dualMix: 156,
   grainAmount: 160,
   grainScale: 164,
+  softness: 180,
+  sweepDx: 192,
+  sweepDy: 196,
+  sweepR0: 200,
 } as const;
 const PARAM_I = {
   r: 44,
@@ -70,12 +74,13 @@ const PARAM_I = {
   grainFollowBrush: 168,
   bmOffsetX: 172,
   bmOffsetY: 176,
+  ditherSeed: 184,
+  grainMode: 188,
 } as const;
-// 180 bytes of fields; struct padded to 192 (16-byte aligned) on the C++
-// side so this stride matches `sizeof(BrushStampParams)` exactly. Critical
+// Must equal `sizeof(BrushStampParams)` (208, 16-byte aligned). Critical
 // for the batched dispatch — otherwise C++ would read entries at a
 // different offset than JS wrote them.
-const PARAM_BYTES = 192;
+const PARAM_BYTES = 208;
 
 /** Shape signature for the bake cache. Two stamps with equal signatures
  *  share the same baked coverage bitmap. */
@@ -84,26 +89,31 @@ export interface BrushBakeShape {
   roundness: number;
   angle: number;
   shear: number;
-  aaWidth: number;
+  /** Anti-aliased edge. */
+  aa: boolean;
+  /** 0..1 falloff depth (1 − hardness). */
+  softness: number;
   flipX: 1 | -1;
   flipY: 1 | -1;
   tipKind: 0 | 1 | 2 | 3;
-  sdfData?: Float32Array; // bitmap tip
-  sdfW?: number;
-  sdfH?: number;
+  tipData?: Float32Array; // bitmap tip density level
+  tipW?: number;
+  tipH?: number;
   dualActive: boolean;
   dualTipKind?: 0 | 1 | 2 | 3;
   dualSizeRatio?: number;
   dualBaseAngle?: number;
   dualMix?: number;
-  dualSdfData?: Float32Array;
-  dualSdfW?: number;
-  dualSdfH?: number;
+  dualTipData?: Float32Array;
+  dualTipW?: number;
+  dualTipH?: number;
   grainAmount?: number;
   grainScale?: number;
-  /** When true (and grainAmount > 0), grain is baked into the bitmap.
-   *  When false, grain is canvas-locked and applied per-stamp. */
+  /** When true (and grainAmount > 0, multiply mode), grain is baked into
+   *  the bitmap. When false, grain is canvas-locked and applied per-stamp. */
   grainFollowBrush: boolean;
+  /** 0 = multiply, 1 = subtract. Subtract grain is never baked. */
+  grainMode: 0 | 1;
 }
 
 export interface BrushStampJob {
@@ -116,7 +126,10 @@ export interface BrushStampJob {
   shear: number;
   flipX: 1 | -1;
   flipY: 1 | -1;
-  aaWidth: number;
+  /** Anti-aliased edge. */
+  aa: boolean;
+  /** 0..1 falloff depth as a fraction of the radius (1 − hardness). */
+  softness: number;
   // Bbox (canvas-pixel space, inclusive — wrapper clips internally)
   minX: number;
   minY: number;
@@ -124,12 +137,12 @@ export interface BrushStampJob {
   maxY: number;
   // Tip
   tipKind: 0 | 1 | 2 | 3;
-  /** For tipKind=3 only — bilinear SDF in pixel-distance units. Cached
+  /** For tipKind=3 only — the density mip level (0..1) to sample. Cached
    *  in WASM heap by reference identity, so reusing the same
    *  `Float32Array` across stamps avoids re-uploading. */
-  sdfData?: Float32Array;
-  sdfW?: number;
-  sdfH?: number;
+  tipData?: Float32Array;
+  tipW?: number;
+  tipH?: number;
   // Color (rgba8 path uses bytes; rgba32f uses pre-linearised floats)
   r: number;
   g: number;
@@ -175,11 +188,11 @@ export interface BrushStampJob {
   dualBaseAngle?: number;
   /** 0..1 mix between identity and full multiply. */
   dualMix?: number;
-  /** For dualTipKind=3 only — bitmap SDF data. Cached in WASM heap by
-   *  reference identity (same WeakMap as the primary tip's SDF). */
-  dualSdfData?: Float32Array;
-  dualSdfW?: number;
-  dualSdfH?: number;
+  /** For dualTipKind=3 only — the dual tip's density level. Cached in WASM
+   *  heap by reference identity (same WeakMap as the primary tip's). */
+  dualTipData?: Float32Array;
+  dualTipW?: number;
+  dualTipH?: number;
   // ── Optional paper grain ──────────────────────────────────────────
   /** 0 disables grain entirely. */
   grainAmount?: number;
@@ -187,6 +200,15 @@ export interface BrushStampJob {
   grainScale?: number;
   /** True = sample in tip-local; false = canvas-locked. */
   grainFollowBrush?: boolean;
+  /** 0 = multiply, 1 = subtract. */
+  grainMode?: 0 | 1;
+  /** Seeds the per-pixel stochastic rounding of 8-bit writes. */
+  ditherSeed: number;
+  /** Swept dab (round tips): the previous dab's centre relative to this
+   *  one (canvas px) and its radius ÷ this radius. 0, 0 = a plain dab. */
+  sweepDx: number;
+  sweepDy: number;
+  sweepR0: number;
   // ── Bitmap-path offsets ───────────────────────────────────────────
   // When the bitmap fast path is active, the kernel reads the pre-baked
   // coverage at `bitmap[(py - bmOffsetY) * bmW + (px - bmOffsetX)]`.
@@ -198,8 +220,8 @@ export interface BrushStampJob {
 interface BrushStampScratch {
   paramsPtr: number;
   paramsView: DataView;
-  /** Bitmap-tip SDFs cached in WASM heap by Float32Array identity. */
-  sdfPtrByData: WeakMap<Float32Array, number>;
+  /** Bitmap-tip density levels cached in WASM heap by Float32Array identity. */
+  tipPtrByData: WeakMap<Float32Array, number>;
   /** Selection mask cache for the zero-copy path: keyed by Uint8Array
    *  reference identity (selection store gives the same buffer until the
    *  mask actually changes), so we upload once per mask change. */
@@ -216,20 +238,20 @@ interface BrushStampScratch {
    *  batch — appendStamp writes into the array at `batchCount`, and the
    *  invariant context is captured below. `flushBatch` empties it. */
   batchCount: number;
-  /** Selects which WASM kernel `flushBrushBatch` dispatches to. 'sdf' is
+  /** Selects which WASM kernel `flushBrushBatch` dispatches to. 'tip' is
    *  the existing path; 'bitmap' uses the pre-rasterized coverage map. */
-  batchMode: "sdf" | "bitmap";
+  batchMode: "tip" | "bitmap";
   /** Invariant context for the current batch — captured on `beginBatch`,
    *  asserted to be consistent on each `appendStamp` (in debug).  */
   batchLayerPtr: number;
   batchTouchedPtr: number;
   batchSelPtr: number;
-  batchSdfPtr: number;
-  batchSdfW: number;
-  batchSdfH: number;
-  batchDualSdfPtr: number;
-  batchDualSdfW: number;
-  batchDualSdfH: number;
+  batchTipPtr: number;
+  batchTipW: number;
+  batchTipH: number;
+  batchDualTipPtr: number;
+  batchDualTipW: number;
+  batchDualTipH: number;
   // ── Bitmap-batch context ──────────────────────────────────────────
   /** Pinned WASM-heap base of the pre-baked coverage bitmap. */
   batchBmPtr: number;
@@ -263,23 +285,23 @@ function getScratch(m: PixelOpsModule): BrushStampScratch {
   s = {
     paramsPtr,
     paramsView: new DataView(m.HEAPU8.buffer, paramsPtr, PARAM_BYTES),
-    sdfPtrByData: new WeakMap(),
+    tipPtrByData: new WeakMap(),
     selMaskPtr: 0,
     selMaskFor: null,
     selMaskRevision: -1,
     batchArrayPtr,
     batchArrayCapacity: INITIAL_BATCH_CAPACITY,
     batchCount: 0,
-    batchMode: "sdf",
+    batchMode: "tip",
     batchLayerPtr: 0,
     batchTouchedPtr: 0,
     batchSelPtr: 0,
-    batchSdfPtr: 0,
-    batchSdfW: 0,
-    batchSdfH: 0,
-    batchDualSdfPtr: 0,
-    batchDualSdfW: 0,
-    batchDualSdfH: 0,
+    batchTipPtr: 0,
+    batchTipW: 0,
+    batchTipH: 0,
+    batchDualTipPtr: 0,
+    batchDualTipW: 0,
+    batchDualTipH: 0,
     batchBmPtr: 0,
     batchBmW: 0,
     batchBmH: 0,
@@ -326,16 +348,16 @@ function refreshParamsView(m: PixelOpsModule, s: BrushStampScratch): void {
   }
 }
 
-// Heap copies of SDFs are freed when their JS array is garbage-collected (the
-// WeakMap entry alone disappeared, leaking the heap block on every brush /
-// document reload).
-const sdfHeapFree = new FinalizationRegistry<{
+// Heap copies of tip levels are freed when their JS array is garbage-collected
+// (the WeakMap entry alone disappeared, leaking the heap block on every brush
+// / document reload).
+const tipHeapFree = new FinalizationRegistry<{
   m: PixelOpsModule;
   s: BrushStampScratch;
   ptr: number;
 }>(({ m, s, ptr }) => {
-  // The baked-bitmap cache key embeds SDF pointers; once this block is
-  // freed the address can be reused by a different SDF, so drop the key.
+  // The baked-bitmap cache key embeds tip pointers; once this block is
+  // freed the address can be reused by a different tip, so drop the key.
   s.bakedBitmapKey = "";
   try {
     m._free(ptr);
@@ -344,17 +366,17 @@ const sdfHeapFree = new FinalizationRegistry<{
   }
 });
 
-function uploadSdf(
+function uploadTip(
   m: PixelOpsModule,
   s: BrushStampScratch,
-  sdf: Float32Array,
+  data: Float32Array,
 ): number {
-  const cached = s.sdfPtrByData.get(sdf);
+  const cached = s.tipPtrByData.get(data);
   if (cached !== undefined) return cached;
-  const ptr = m._malloc(sdf.byteLength);
-  new Float32Array(m.HEAPU8.buffer, ptr, sdf.length).set(sdf);
-  s.sdfPtrByData.set(sdf, ptr);
-  sdfHeapFree.register(sdf, { m, s, ptr });
+  const ptr = m._malloc(data.byteLength);
+  new Float32Array(m.HEAPU8.buffer, ptr, data.length).set(data);
+  s.tipPtrByData.set(data, ptr);
+  tipHeapFree.register(data, { m, s, ptr });
   return ptr;
 }
 
@@ -364,7 +386,7 @@ function uploadSdf(
 // size/angle/roundness/flip dynamics), `ensureBakedBitmap` rasterizes
 // the full coverage map once and the per-stamp dispatch via
 // `pixelops_brush_stamp_bitmap_batch` reads each pixel's coverage from
-// the bitmap. Eliminates the per-pixel SDF + AA + dual + grain compute
+// the bitmap. Eliminates the per-pixel tip + dual + grain compute
 // that dominates soft-brush cost.
 
 export interface BakedBitmap {
@@ -376,12 +398,11 @@ export interface BakedBitmap {
 }
 
 /** Compute half-dimensions for the bake bitmap. Mirrors stampEngine's
- *  bbox formula with a conservative worst-case rotation: a `(|cos|+|sin|)`
- *  factor of √2 covers any orientation, plus shear-driven x growth. */
+ *  bbox formula: the rotated tip-local box (with shear-driven x growth)
+ *  plus the half-pixel anti-aliased edge and a pixel of margin. */
 function computeBitmapHalfDims(shape: BrushBakeShape): { halfX: number; halfY: number } {
   const radius = shape.radius;
   const roundness = shape.roundness > 0 ? shape.roundness : 1;
-  const aaWidth = shape.aaWidth;
   // Tip-local axes: x extent = radius, y extent = radius * roundness.
   // After rotation by `angle`, project both axes onto canvas X/Y:
   //   canvasHalfX = |cosθ| * radius   + |sinθ| * radius * roundness
@@ -392,28 +413,29 @@ function computeBitmapHalfDims(shape: BrushBakeShape): { halfX: number; halfY: n
   const s = Math.abs(Math.sin(shape.angle));
   const tipLocalHalfX = radius + Math.abs(shape.shear) * radius * roundness;
   const tipLocalHalfY = radius * roundness;
-  const halfX = Math.ceil(c * tipLocalHalfX + s * tipLocalHalfY + aaWidth + 1);
-  const halfY = Math.ceil(s * tipLocalHalfX + c * tipLocalHalfY + aaWidth + 1);
+  const halfX = Math.ceil(c * tipLocalHalfX + s * tipLocalHalfY + 1.5);
+  const halfY = Math.ceil(s * tipLocalHalfX + c * tipLocalHalfY + 1.5);
   return { halfX, halfY };
 }
 
 /** Compose a cache key for the bake. Two shapes with identical keys
  *  produce identical bitmaps; we re-use the cached one across strokes. */
-function bakeShapeKey(shape: BrushBakeShape, sdfPtr: number, dualSdfPtr: number): string {
+function bakeShapeKey(shape: BrushBakeShape, tipPtr: number, dualTipPtr: number): string {
   // Quantize floats to a stable precision so micro-variation in computed
   // shape params (e.g. floating-point angle drift) still hits the cache.
   const q = (x: number) => x.toFixed(4);
   let key =
     `r=${q(shape.radius)};rn=${q(shape.roundness)};` +
-    `a=${q(shape.angle)};sh=${q(shape.shear)};aa=${q(shape.aaWidth)};` +
+    `a=${q(shape.angle)};sh=${q(shape.shear)};aa=${shape.aa ? 1 : 0};` +
+    `soft=${q(shape.softness)};` +
     `fx=${shape.flipX};fy=${shape.flipY};tk=${shape.tipKind}`;
-  if (shape.tipKind === 3) key += `;sdf=${sdfPtr}`;
+  if (shape.tipKind === 3) key += `;tip=${tipPtr}`;
   if (shape.dualActive) {
     key += `;d=${shape.dualTipKind}/${q(shape.dualSizeRatio ?? 1)}/` +
            `${q(shape.dualBaseAngle ?? 0)}/${q(shape.dualMix ?? 0)}`;
-    if (shape.dualTipKind === 3) key += `/sdf=${dualSdfPtr}`;
+    if (shape.dualTipKind === 3) key += `/tip=${dualTipPtr}`;
   }
-  if ((shape.grainAmount ?? 0) > 0 && shape.grainFollowBrush) {
+  if ((shape.grainAmount ?? 0) > 0 && shape.grainFollowBrush && shape.grainMode === 0) {
     key += `;g=${q(shape.grainAmount ?? 0)}/${q(shape.grainScale ?? 64)}`;
   }
   return key;
@@ -421,17 +443,17 @@ function bakeShapeKey(shape: BrushBakeShape, sdfPtr: number, dualSdfPtr: number)
 
 /** Bake the coverage bitmap for `shape` if not already cached. Returns
  *  null when the WASM allocation fails (the caller falls back to the
- *  SDF path). The bitmap is kept pinned in the WASM heap across strokes
+ *  per-stamp path). The bitmap is kept pinned in the WASM heap across strokes
  *  and re-baked only when the shape signature changes. */
 export function ensureBakedBitmap(
   m: PixelOpsModule,
   shape: BrushBakeShape,
 ): BakedBitmap | null {
   const s = getScratch(m);
-  // Upload SDFs first — their ptrs are part of the cache key.
-  const sdfPtr = shape.sdfData ? uploadSdf(m, s, shape.sdfData) : 0;
-  const dualSdfPtr = shape.dualSdfData ? uploadSdf(m, s, shape.dualSdfData) : 0;
-  const key = bakeShapeKey(shape, sdfPtr, dualSdfPtr);
+  // Upload tip levels first — their ptrs are part of the cache key.
+  const tipPtr = shape.tipData ? uploadTip(m, s, shape.tipData) : 0;
+  const dualTipPtr = shape.dualTipData ? uploadTip(m, s, shape.dualTipData) : 0;
+  const key = bakeShapeKey(shape, tipPtr, dualTipPtr);
   if (s.bakedBitmapKey === key && s.bakedBitmapPtr !== 0) {
     return {
       ptr: s.bakedBitmapPtr,
@@ -470,7 +492,8 @@ export function ensureBakedBitmap(
   view.setFloat32(PARAM_F.roundness, shape.roundness, true);
   view.setFloat32(PARAM_F.angle, shape.angle, true);
   view.setFloat32(PARAM_F.shear, shape.shear, true);
-  view.setFloat32(PARAM_F.aaWidth, shape.aaWidth, true);
+  view.setFloat32(PARAM_F.aa, shape.aa ? 1 : 0, true);
+  view.setFloat32(PARAM_F.softness, shape.softness, true);
   view.setInt32(PARAM_I.flipX, shape.flipX, true);
   view.setInt32(PARAM_I.flipY, shape.flipY, true);
   view.setInt32(PARAM_I.tipKind, shape.tipKind, true);
@@ -482,6 +505,11 @@ export function ensureBakedBitmap(
   view.setFloat32(PARAM_F.grainAmount, shape.grainAmount ?? 0, true);
   view.setFloat32(PARAM_F.grainScale, shape.grainScale ?? 64, true);
   view.setInt32(PARAM_I.grainFollowBrush, shape.grainFollowBrush ? 1 : 0, true);
+  view.setInt32(PARAM_I.grainMode, shape.grainMode, true);
+  // The params scratch is shared with single-stamp dispatch: no sweep.
+  view.setFloat32(PARAM_F.sweepDx, 0, true);
+  view.setFloat32(PARAM_F.sweepDy, 0, true);
+  view.setFloat32(PARAM_F.sweepR0, 1, true);
 
   // The malloc above may have grown the heap; re-bind the view.
   if (s.paramsView.buffer !== m.HEAPU8.buffer) {
@@ -492,12 +520,12 @@ export function ensureBakedBitmap(
     bmPtr,
     bmW,
     bmH,
-    sdfPtr,
-    shape.sdfW ?? 0,
-    shape.sdfH ?? 0,
-    dualSdfPtr,
-    shape.dualSdfW ?? 0,
-    shape.dualSdfH ?? 0,
+    tipPtr,
+    shape.tipW ?? 0,
+    shape.tipH ?? 0,
+    dualTipPtr,
+    shape.dualTipW ?? 0,
+    shape.dualTipH ?? 0,
   );
 
   s.bakedBitmapPtr = bmPtr;
@@ -537,7 +565,8 @@ function packStampParamsAt(
   view.setFloat32(off + PARAM_F.roundness, j.roundness, true);
   view.setFloat32(off + PARAM_F.angle, j.angle, true);
   view.setFloat32(off + PARAM_F.shear, j.shear, true);
-  view.setFloat32(off + PARAM_F.aaWidth, j.aaWidth, true);
+  view.setFloat32(off + PARAM_F.aa, j.aa ? 1 : 0, true);
+  view.setFloat32(off + PARAM_F.softness, j.softness, true);
   view.setFloat32(off + PARAM_F.fr, j.fr, true);
   view.setFloat32(off + PARAM_F.fg, j.fg, true);
   view.setFloat32(off + PARAM_F.fb, j.fb, true);
@@ -574,7 +603,12 @@ function packStampParamsAt(
   view.setFloat32(off + PARAM_F.grainAmount, j.grainAmount ?? 0, true);
   view.setFloat32(off + PARAM_F.grainScale, j.grainScale ?? 64, true);
   view.setInt32(off + PARAM_I.grainFollowBrush, j.grainFollowBrush ? 1 : 0, true);
-  // Bitmap-path per-stamp offsets. Harmless for the SDF path (kernel
+  view.setInt32(off + PARAM_I.grainMode, j.grainMode ?? 0, true);
+  view.setInt32(off + PARAM_I.ditherSeed, j.ditherSeed | 0, true);
+  view.setFloat32(off + PARAM_F.sweepDx, j.sweepDx, true);
+  view.setFloat32(off + PARAM_F.sweepDy, j.sweepDy, true);
+  view.setFloat32(off + PARAM_F.sweepR0, j.sweepR0, true);
+  // Bitmap-path per-stamp offsets. Harmless for the per-stamp path (kernel
   // never reads these fields). For the bitmap path these locate the
   // pre-rasterized coverage bitmap in canvas coords: bitmap pixel (0,0)
   // corresponds to canvas pixel (bmOffsetX, bmOffsetY).
@@ -595,9 +629,9 @@ function runBrushStampZeroCopy(
   if (s.paramsView.buffer !== m.HEAPU8.buffer) {
     s.paramsView = new DataView(m.HEAPU8.buffer, s.paramsPtr, PARAM_BYTES);
   }
-  // Upload bitmap SDFs if needed (cached by Float32Array identity).
-  const sdfPtr = j.sdfData ? uploadSdf(m, s, j.sdfData) : 0;
-  const dualSdfPtr = j.dualSdfData ? uploadSdf(m, s, j.dualSdfData) : 0;
+  // Upload bitmap tip levels if needed (cached by Float32Array identity).
+  const tipPtr = j.tipData ? uploadTip(m, s, j.tipData) : 0;
+  const dualTipPtr = j.dualTipData ? uploadTip(m, s, j.dualTipData) : 0;
   const selPtr = j.selMask ? uploadSelMaskCanvas(m, s, j.selMask) : 0;
 
   // Pack params in **canvas space** — no slice rebase needed; the kernel
@@ -610,12 +644,12 @@ function runBrushStampZeroCopy(
     j.layerWasmPtr!,
     j.touchedWasmPtr!,
     selPtr,
-    sdfPtr,
-    j.sdfW ?? 0,
-    j.sdfH ?? 0,
-    dualSdfPtr,
-    j.dualSdfW ?? 0,
-    j.dualSdfH ?? 0,
+    tipPtr,
+    j.tipW ?? 0,
+    j.tipH ?? 0,
+    dualTipPtr,
+    j.dualTipW ?? 0,
+    j.dualTipH ?? 0,
   );
   return true;
 }
@@ -655,32 +689,32 @@ function ensureBatchView(m: PixelOpsModule, s: BrushStampScratch): DataView {
 }
 
 /** Open a batch for one segment. Captures the invariant context (layer,
- *  touched, sel, SDFs) — all subsequent `appendBrushStamp` calls share
+ *  touched, sel, tip levels) — all subsequent `appendBrushStamp` calls share
  *  it. Caller must end with `flushBrushBatch`. */
 export function beginBrushBatch(
   m: PixelOpsModule,
   layerWasmPtr: number,
   touchedWasmPtr: number,
   selMask: Uint8Array | undefined,
-  sdfData: Float32Array | undefined,
-  sdfW: number,
-  sdfH: number,
-  dualSdfData: Float32Array | undefined,
-  dualSdfW: number,
-  dualSdfH: number,
+  tipData: Float32Array | undefined,
+  tipW: number,
+  tipH: number,
+  dualTipData: Float32Array | undefined,
+  dualTipW: number,
+  dualTipH: number,
 ): void {
   const s = getScratch(m);
   s.batchCount = 0;
-  s.batchMode = "sdf";
+  s.batchMode = "tip";
   s.batchLayerPtr = layerWasmPtr;
   s.batchTouchedPtr = touchedWasmPtr;
   s.batchSelPtr = selMask ? uploadSelMaskCanvas(m, s, selMask) : 0;
-  s.batchSdfPtr = sdfData ? uploadSdf(m, s, sdfData) : 0;
-  s.batchSdfW = sdfW;
-  s.batchSdfH = sdfH;
-  s.batchDualSdfPtr = dualSdfData ? uploadSdf(m, s, dualSdfData) : 0;
-  s.batchDualSdfW = dualSdfW;
-  s.batchDualSdfH = dualSdfH;
+  s.batchTipPtr = tipData ? uploadTip(m, s, tipData) : 0;
+  s.batchTipW = tipW;
+  s.batchTipH = tipH;
+  s.batchDualTipPtr = dualTipData ? uploadTip(m, s, dualTipData) : 0;
+  s.batchDualTipW = dualTipW;
+  s.batchDualTipH = dualTipH;
 }
 
 /** Open a batch using a pre-rasterized coverage bitmap. The bitmap
@@ -734,7 +768,7 @@ export function appendBrushStamp(
   // bitmap's centre with the stamp's canvas centre, and clip the bbox to
   // the bitmap extent. (The C++ kernel also clips defensively, but
   // tightening here lets us skip the entry entirely if the stamp is
-  // fully outside the bitmap — same fast-reject as the SDF path.)
+  // fully outside the bitmap — same fast-reject as the per-stamp path.)
   if (s.batchMode === "bitmap") {
     const bmOffX = Math.round(j.cx) - s.batchBmHalfX;
     const bmOffY = Math.round(j.cy) - s.batchBmHalfY;
@@ -795,12 +829,12 @@ export function flushBrushBatch(m: PixelOpsModule): void {
       s.batchLayerPtr,
       s.batchTouchedPtr,
       s.batchSelPtr,
-      s.batchSdfPtr,
-      s.batchSdfW,
-      s.batchSdfH,
-      s.batchDualSdfPtr,
-      s.batchDualSdfW,
-      s.batchDualSdfH,
+      s.batchTipPtr,
+      s.batchTipW,
+      s.batchTipH,
+      s.batchDualTipPtr,
+      s.batchDualTipW,
+      s.batchDualTipH,
     );
   }
   s.batchCount = 0;
@@ -911,7 +945,13 @@ export function runBrushStamp(m: PixelOpsModule, j: BrushStampJob): boolean {
     view.setFloat32(PARAM_F.roundness, j.roundness, true);
     view.setFloat32(PARAM_F.angle, j.angle, true);
     view.setFloat32(PARAM_F.shear, j.shear, true);
-    view.setFloat32(PARAM_F.aaWidth, j.aaWidth, true);
+    view.setFloat32(PARAM_F.aa, j.aa ? 1 : 0, true);
+    view.setFloat32(PARAM_F.softness, j.softness, true);
+    view.setInt32(PARAM_I.ditherSeed, j.ditherSeed | 0, true);
+    view.setInt32(PARAM_I.grainMode, j.grainMode ?? 0, true);
+    view.setFloat32(PARAM_F.sweepDx, j.sweepDx, true);
+    view.setFloat32(PARAM_F.sweepDy, j.sweepDy, true);
+    view.setFloat32(PARAM_F.sweepR0, j.sweepR0, true);
     view.setFloat32(PARAM_F.fr, j.fr, true);
     view.setFloat32(PARAM_F.fg, j.fg, true);
     view.setFloat32(PARAM_F.fb, j.fb, true);
@@ -979,8 +1019,8 @@ export function runBrushStamp(m: PixelOpsModule, j: BrushStampJob): boolean {
     view.setInt32(PARAM_I.layerOffsetX, 0, true);
     view.setInt32(PARAM_I.layerOffsetY, 0, true);
 
-    const sdfPtr = j.sdfData ? uploadSdf(m, s, j.sdfData) : 0;
-    const dualSdfPtr = j.dualSdfData ? uploadSdf(m, s, j.dualSdfData) : 0;
+    const tipPtr = j.tipData ? uploadTip(m, s, j.tipData) : 0;
+    const dualTipPtr = j.dualTipData ? uploadTip(m, s, j.dualTipData) : 0;
 
     // ── Run kernel ─────────────────────────────────────────────────────
     refreshParamsView(m, s);
@@ -989,12 +1029,12 @@ export function runBrushStamp(m: PixelOpsModule, j: BrushStampJob): boolean {
       layerSlicePtr,
       touchedSlicePtr,
       selSlicePtr,
-      sdfPtr,
-      j.sdfW ?? 0,
-      j.sdfH ?? 0,
-      dualSdfPtr,
-      j.dualSdfW ?? 0,
-      j.dualSdfH ?? 0,
+      tipPtr,
+      j.tipW ?? 0,
+      j.tipH ?? 0,
+      dualTipPtr,
+      j.dualTipW ?? 0,
+      j.dualTipH ?? 0,
     );
 
     // ── Copy slice back to caller's buffers ───────────────────────────

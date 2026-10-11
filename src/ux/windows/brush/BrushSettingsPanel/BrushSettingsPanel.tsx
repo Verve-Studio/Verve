@@ -5,7 +5,12 @@ import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import { useBrushes } from "@/core/services/useBrushes";
 import { brushPanelStore } from "@/core/tools/Brush/brushPanelStore";
 import { brushManagerStore } from "@/core/tools/Brush/brushManagerStore";
-import type { Brush, DynamicCurve, DynamicSource } from "@/types";
+import type {
+  Brush,
+  DynamicCurve,
+  DynamicSource,
+  PaperTextureMode,
+} from "@/types";
 import { identityCurve } from "@/types";
 import styles from "./BrushSettingsPanel.module.scss";
 
@@ -239,6 +244,12 @@ export function BrushSettingsPanel({
     update({ scatter: { ...activeBrush.scatter, ...patch } });
   const setShapeDyn = (patch: Partial<Brush["shapeDyn"]>): void =>
     update({ shapeDyn: { ...activeBrush.shapeDyn, ...patch } });
+  const transfer = activeBrush.transfer ?? {
+    opacityJitter: identityCurve(),
+    flowJitter: identityCurve(),
+  };
+  const setTransfer = (patch: Partial<NonNullable<Brush["transfer"]>>): void =>
+    update({ transfer: { ...transfer, ...patch } });
   const setColorDyn = (patch: Partial<Brush["colorDyn"]>): void =>
     update({ colorDyn: { ...activeBrush.colorDyn, ...patch } });
   const setPose = (patch: Partial<Brush["pose"]>): void =>
@@ -480,6 +491,22 @@ export function BrushSettingsPanel({
           </div>
         </Section>
 
+        {/* ── Transfer ────────────────────────────────────────── */}
+        <Section title="Transfer">
+          <DynamicEditor
+            label="Opacity Jitter"
+            hint="Varies the stroke's opacity ceiling per stamp — set Control to Pen Pressure for lighter strokes under a lighter touch."
+            value={transfer.opacityJitter}
+            onChange={(v) => setTransfer({ opacityJitter: v })}
+          />
+          <DynamicEditor
+            label="Flow Jitter"
+            hint="Varies how much paint each stamp deposits — with Pen Pressure, paint builds up faster when you press harder."
+            value={transfer.flowJitter}
+            onChange={(v) => setTransfer({ flowJitter: v })}
+          />
+        </Section>
+
         {/* ── Scattering ──────────────────────────────────────── */}
         <Section title="Scattering">
           <div className={styles.row}>
@@ -632,6 +659,24 @@ export function BrushSettingsPanel({
               onChange={(v) => setTexture({ scale: v })}
             />
           </div>
+          <div className={styles.row}>
+            <label
+              className={styles.smallLabel}
+              title="Multiply darkens the paint in the paper's valleys. Subtract lifts faint paint off the valleys entirely, so light strokes only catch the peaks (pencil, charcoal)."
+            >
+              Mode
+            </label>
+            <select
+              className={styles.select}
+              value={activeBrush.texture.mode ?? "multiply"}
+              onChange={(e) =>
+                setTexture({ mode: e.target.value as PaperTextureMode })
+              }
+            >
+              <option value="multiply">Multiply</option>
+              <option value="subtract">Subtract</option>
+            </select>
+          </div>
           <label className={styles.checkRow}>
             <input
               type="checkbox"
@@ -642,6 +687,12 @@ export function BrushSettingsPanel({
             />
             Follow brush
           </label>
+          <DynamicEditor
+            label="Depth Jitter"
+            hint="Varies the grain depth per stamp — e.g. Pen Pressure with a falling curve: heavier pressure fills the paper's tooth."
+            value={activeBrush.texture.depthJitter ?? identityCurve()}
+            onChange={(v) => setTexture({ depthJitter: v })}
+          />
         </Section>
 
         {/* ── Dual Brush ──────────────────────────────────────── */}
@@ -870,6 +921,14 @@ export function BrushSettingsPanel({
                   sizeJitter: identityCurve(),
                   angleJitter: identityCurve(),
                   roundnessJitter: identityCurve(),
+                },
+                transfer: {
+                  opacityJitter: identityCurve(),
+                  flowJitter: identityCurve(),
+                },
+                texture: {
+                  ...activeBrush.texture,
+                  depthJitter: identityCurve(),
                 },
                 colorDyn: {
                   ...activeBrush.colorDyn,

@@ -20,15 +20,16 @@ import { base64ToBytes, bytesToBase64 } from "@/utils/base64";
 
 /**
  * Procedural primitive — analytical SDF, scales to any size with no artifacts.
- * `bitmap` is filled in by PR2 (SDF computed from a captured pixel selection).
+ * `bitmap` is a sampled tip captured from pixels (Photoshop's "sampled brush").
  */
 export type BrushTipKind = "round" | "square" | "diamond" | "bitmap";
 
 export interface BrushTipShape {
   kind: BrushTipKind;
   /** For `bitmap` tips: source RGBA bytes, width × height × 4. The stamp
-   *  engine samples an SDF of its alpha, derived on first use and cached per
-   *  shape (`getCachedTipSampler`). */
+   *  engine samples a mip-mapped paint-density map derived from it (alpha,
+   *  or darkness for an opaque capture) on first use and cached per shape
+   *  (`getCachedTipSampler`), so the tip keeps its internal texture. */
   bitmapRgba?: Uint8Array;
   bitmapWidth?: number;
   bitmapHeight?: number;
@@ -79,7 +80,9 @@ export interface TipSettings {
   size: number;
   /** 0..100 — % of tip diameter between consecutive stamps. */
   spacing: number;
-  /** 0..100 — edge softness; 100 = hard. */
+  /** 0..100 — size of the fully opaque core as % of the radius; the rest of
+   *  the radius fades out. 100 = hard (1 px anti-aliased edge). Ignored by
+   *  bitmap tips, whose density map defines their edge. */
   hardness: number;
   /** 0..1 — non-circular tip flattening (1 = circle, 0.1 = near-line). */
   roundness: number;
@@ -119,6 +122,18 @@ export interface ShapeDynamics {
   sizeJitter: DynamicCurve;
   angleJitter: DynamicCurve;
   roundnessJitter: DynamicCurve;
+}
+
+/**
+ * Photoshop's "Transfer": per-stamp modulation of how much paint goes down.
+ * `opacityJitter` scales the stroke's opacity ceiling (pen pressure → a
+ * lighter or darker line); `flowJitter` scales the per-stamp deposit (pen
+ * pressure → how fast paint builds up). Older brushes lack the group; the
+ * engine treats `undefined` as both off.
+ */
+export interface TransferDynamics {
+  opacityJitter: DynamicCurve;
+  flowJitter: DynamicCurve;
 }
 
 export interface ColorDynamics {
@@ -200,13 +215,27 @@ export interface SmoothingSettings {
   catchUp: boolean;
 }
 
+/**
+ * How paper grain meets the paint:
+ *  - `multiply` darkens the coverage in the paper's valleys (soft, even grain).
+ *  - `subtract` lifts the paint off the valleys by a fixed tooth depth, so
+ *    faint paint (low opacity / pressure, soft tip edges) only catches the
+ *    peaks while heavy paint fills the paper — the pencil / charcoal look.
+ */
+export type PaperTextureMode = "multiply" | "subtract";
+
 export interface PaperTexture {
-  /** 0..1 — grain contribution. */
+  /** 0..1 — grain contribution (tooth depth). */
   amount: number;
   /** Pixels per tile repeat. */
   scale: number;
   /** When true, grain follows the brush; when false, it's locked to the canvas. */
   followBrush: boolean;
+  /** Older brushes lack it: `multiply`. */
+  mode?: PaperTextureMode;
+  /** Modulates `amount` per stamp (e.g. pen pressure → shallower tooth).
+   *  Older brushes lack it: off. */
+  depthJitter?: DynamicCurve;
 }
 
 /**
@@ -257,6 +286,8 @@ export interface Brush {
   tip: TipSettings;
   scatter: ScatterDynamics;
   shapeDyn: ShapeDynamics;
+  /** Older brushes lack this group; the engine treats `undefined` as off. */
+  transfer?: TransferDynamics;
   colorDyn: ColorDynamics;
   pose: PoseDynamics;
   noise: NoiseSettings;
@@ -324,6 +355,10 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
       angleJitter: identityCurve(),
       roundnessJitter: identityCurve(),
     },
+    transfer: {
+      opacityJitter: identityCurve(),
+      flowJitter: identityCurve(),
+    },
     colorDyn: {
       fgBgJitter: identityCurve(),
       hueJitter: identityCurve(),
@@ -339,7 +374,13 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
       pressureSquash: 0,
     },
     noise: { amount: 0, scale: 4 },
-    texture: { amount: 0, scale: 64, followBrush: false },
+    texture: {
+      amount: 0,
+      scale: 64,
+      followBrush: false,
+      mode: "multiply",
+      depthJitter: identityCurve(),
+    },
     dualTip: {
       enabled: false,
       shape: { kind: "round" },
@@ -355,7 +396,8 @@ export function makeDefaultBrush(id: string, name = "Default"): Brush {
     opacity: 100,
     antiAlias: true,
     motionBlur: 5,
-    pressureSize: false,
+    // A mouse reports pressure 1, so this only shapes pen strokes.
+    pressureSize: true,
   };
 }
 
