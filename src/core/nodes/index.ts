@@ -53,6 +53,7 @@ import { posterizeNode } from "./library/Color/PosterizeNode";
 import { separateHsvNode } from "./library/Color/SeparateHsvNode";
 import { combineHsvNode } from "./library/Color/CombineHsvNode";
 import { blurNode } from "./library/Filter/BlurNode";
+import { blurColorNode } from "./library/Filter/BlurColorNode";
 import { layerOutputNode } from "./library/Output/LayerOutputNode";
 import { onRunNode } from "./library/Events/OnRunNode";
 import { branchNode } from "./library/Flow/BranchNode";
@@ -228,6 +229,7 @@ for (const node of [
   separateHsvNode,
   combineHsvNode,
   blurNode,
+  blurColorNode,
   layerOutputNode,
   onRunNode,
   branchNode,

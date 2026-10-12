@@ -30,7 +30,7 @@ import {
 
 // ─── Re-export all public types from the types module ─────────────────────────
 // All existing import sites use '@/webgpu/WebGPURenderer' — this keeps them working.
-export type { GpuLayer, EffectRenderOp, RenderPlanEntry } from "../types";
+export type { GpuLayer, EffectRenderOp, RenderPlanEntry, SourceLayer } from "../types";
 export type { RenderPlanResult } from "../frame/RenderPlanExecutor";
 export type { TouchedBuffer } from "@/core/tools/_shared/primitives";
 export { BLEND_MODE_INDEX, WebGPUUnavailableError } from "../types";

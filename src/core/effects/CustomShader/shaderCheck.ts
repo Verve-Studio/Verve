@@ -70,7 +70,9 @@ export async function checkShaderGraph(graph: NodeGraph): Promise<ShaderIssue[]>
       if (!linear) issues.push(...r.errors.map((e) => ({ severity: "error" as const, ...e })));
       return issues;
     }
-    sources.add(assembleShaderSource(r.code, r.uniforms.length / 4, r.layerSources.length));
+    sources.add(
+      assembleShaderSource(r.code, r.uniforms.length / 4, r.layerSources.length, r.passes),
+    );
     if (!linear) issues.push(...unusedNodes(graph, r.used));
   }
 

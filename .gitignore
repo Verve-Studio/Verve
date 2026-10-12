@@ -145,3 +145,7 @@ vite.config.ts.timestamp-*
 docs/.DS_Store
 release/
  
+
+# Test output
+test-results/
+playwright-report/

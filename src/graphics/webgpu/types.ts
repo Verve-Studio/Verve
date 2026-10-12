@@ -102,10 +102,21 @@ export type EffectRenderOp = {
     /** Other layers the effect reads (Custom Shader's Sample Layer by
      *  name); null where no layer matched. Its output may change anywhere
      *  when one of them changes, so render caches key on their content. */
-    sourceLayers?: readonly (GpuLayer | null)[];
+    sourceLayers?: readonly (SourceLayer | null)[];
     params: EffectParamsMap[K];
   } & (K extends keyof PlanExtrasMap ? PlanExtrasMap[K] : object);
 }[keyof EffectParamsMap];
+
+/** Another layer an effect reads, as it renders: its pixels, layer mask and
+ *  attached effects (its opacity and blend mode are left out). A layer
+ *  whose effects are still being planned when it is referenced (a layer
+ *  sampling itself, two layers sampling each other) comes without
+ *  `adjustments`, which breaks the cycle. */
+export interface SourceLayer {
+  layer: GpuLayer;
+  mask?: GpuLayer;
+  adjustments: readonly EffectRenderOp[];
+}
 
 // ─── RenderPlanEntry ──────────────────────────────────────────────────────────
 

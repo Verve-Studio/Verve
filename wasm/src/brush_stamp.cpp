@@ -284,6 +284,9 @@ struct Stamp {
     float r8, g8, b8;  // 0..255
     float fr, fg, fb;  // linear (rgba32f)
     uint32_t seed;
+    // Canvas position of buffer coordinate (0, 0) (BrushStampParams::origin_*):
+    // added to px / py wherever a value must be canvas-locked (grain, dither).
+    int originX, originY;
     bool tiled;
     int tiledW, tiledH;
     // Stroke paint layer (brush_set_stroke_layer).
@@ -387,6 +390,8 @@ BS_INLINE void init_stamp(
     s.fg = p->fg;
     s.fb = p->fb;
     s.seed = (uint32_t)p->dither_seed;
+    s.originX = p->origin_x;
+    s.originY = p->origin_y;
 
     const float aFraction = (float)p->a * (1.0f / 255.0f);
     const float alpha = s.isF32 ? p->fa : aFraction;
@@ -481,7 +486,7 @@ BS_INLINE float modulate(const Stamp& s, float coverage, int px, int py, bool wi
             to_tip_local(s, dx, dy, lx, ly);
             coverage = apply_grain(s, coverage, lx, ly);
         } else {
-            coverage = apply_grain(s, coverage, (float)px, (float)py);
+            coverage = apply_grain(s, coverage, (float)(px + s.originX), (float)(py + s.originY));
         }
     }
     return coverage;
@@ -802,7 +807,7 @@ BS_INLINE void blend_pixel(const Stamp& s, int px, int py, float coverage) {
     const int ly = py - s.layerOY;
     if (lx < 0 || lx >= s.layerW || ly < 0 || ly >= s.layerH) return;
     const float bias = (s.fullAlpha && coverage >= 1.0f && !s.strokeOn)
-        ? 0.5f : dither_bias(dither_u(px, py, s.seed));
+        ? 0.5f : dither_bias(dither_u(px + s.originX, py + s.originY, s.seed));
     if (s.strokeOn) {
         stroke_pixel(s, px, py, lx, ly, coverage, selF, bias);
         return;
@@ -835,7 +840,7 @@ BS_INLINE void blend_group_rgba8(
         const ptrdiff_t key = rowKey + px + lane;
         if ((int)s.touched[key] >= s.maxTouchedByte) continue;
         const float bias = (s.fullAlpha && laneCov[lane] >= 1.0f)
-            ? 0.5f : dither_bias(dither_u(px + lane, py, s.seed));
+            ? 0.5f : dither_bias(dither_u(px + s.originX + lane, py + s.originY, s.seed));
         const float blendA = accumulate(s, key, laneCov[lane], 1.0f, bias);
         if (blendA <= 0.0f) continue;
         laneMask[lane] = 0xFFFFFFFFu;

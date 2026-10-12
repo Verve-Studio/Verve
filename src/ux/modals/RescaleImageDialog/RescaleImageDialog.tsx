@@ -139,17 +139,6 @@ export function RescaleImageDialog({
     onConfirm({ width: finalW, height: finalH, modelId });
   }, [canConfirm, finalW, finalH, modelId, onConfirm]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        handleConfirm();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, handleConfirm]);
 
   const selectedScale = models.find((m) => m.id === modelId)?.scale ?? 1;
   const nativeW = currentWidth * selectedScale;
@@ -161,6 +150,7 @@ export function RescaleImageDialog({
       title="Rescale Image"
       width={400}
       onClose={onCancel}
+      onSubmit={handleConfirm}
     >
       <div className={styles.body}>
         <p className={styles.currentSize}>

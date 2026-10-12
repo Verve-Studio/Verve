@@ -6,6 +6,7 @@ import type {
   SwatchGroup,
 } from "@/types";
 import type { TiledLayerSnapshot } from "./tiledSnapshot";
+import { DEFAULT_HISTORY_BYTES, validMemoryCapBytes } from "@/utils/memoryLimits";
 
 // ─── History entry ────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ const listeners = new Set<() => void>();
  * received the user's preference (they kept the 4 GB default).
  */
 const liveStores = new Set<HistoryStore>();
-let globalCapBytes = 4 * 1024 * 1024 * 1024;
+let globalCapBytes = DEFAULT_HISTORY_BYTES;
 
 /** Unique pixel buffers referenced by `entry` (with their sizes). */
 function entryBuffers(entry: HistoryEntry): Map<ArrayBufferLike, number> {
@@ -196,7 +197,8 @@ export class HistoryStore {
    * `useHistory` whenever the preference changes.
    */
   setMemoryCapBytes(bytes: number): void {
-    globalCapBytes = Math.max(0, bytes);
+    // A corrupt cap (0, negative, NaN) would evict every document's history.
+    globalCapBytes = validMemoryCapBytes(bytes, DEFAULT_HISTORY_BYTES);
     HistoryStore.enforceMemoryCap();
     this.notify();
   }

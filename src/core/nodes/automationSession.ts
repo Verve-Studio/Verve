@@ -32,7 +32,7 @@ function newGraph(): NodeGraph {
 }
 
 const nameOf = (path: string | null): string =>
-  path ? (path.split(/[\/]/).pop() ?? path).replace(/\.automation$/i, "") : "Untitled Workflow";
+  path ? (path.split(/[\\/]/).pop() ?? path).replace(/\.automation$/i, "") : "Untitled Workflow";
 
 let document: NodeGraphDocument | null = null;
 let path: string | null = null;

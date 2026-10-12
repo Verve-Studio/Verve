@@ -10,6 +10,56 @@ import type { RGBAColor } from "@/types";
 export type SelMask = { mask: Uint8Array; width: number };
 
 /**
+ * Indexed8 pixels have no partial alpha, so a soft (feathered) selection
+ * value is thresholded: selected from 50% up — the same edge the marching
+ * ants draw. Every indexed8 write that honours a selection uses this.
+ */
+export function indexedSelected(maskValue: number): boolean {
+  return maskValue >= 128;
+}
+
+/**
+ * Soft-selection blend for whole-layer operations that compute a result and
+ * then apply it through the selection (Fill, Gradient, …): moves pixel `i`
+ * (RGBA, 4 elements per pixel) of `data` back towards `before` so that only
+ * `w` (= mask / 255, 0–1) of the change remains. Interpolates in
+ * premultiplied space so a transparent side contributes no colour. rgba8
+ * results are rounded; rgba32f stays unrounded (scene-linear, HDR > 1 kept).
+ */
+export function mixTowardsOriginal(
+  data: Uint8Array | Float32Array,
+  before: ArrayLike<number>,
+  i: number,
+  w: number,
+): void {
+  if (w >= 1) return;
+  const float = data instanceof Float32Array;
+  if (w <= 0) {
+    data[i] = before[i];
+    data[i + 1] = before[i + 1];
+    data[i + 2] = before[i + 2];
+    data[i + 3] = before[i + 3];
+    return;
+  }
+  const aMax = float ? 1 : 255;
+  const a0 = before[i + 3] / aMax;
+  const a1 = data[i + 3] / aMax;
+  const k0 = a0 * (1 - w);
+  const k1 = a1 * w;
+  const outA = k0 + k1;
+  if (outA <= 0) {
+    data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0;
+    return;
+  }
+  const inv = 1 / outA;
+  for (let c = 0; c < 3; c++) {
+    const v = (before[i + c] * k0 + data[i + c] * k1) * inv;
+    data[i + c] = float ? v : Math.round(v);
+  }
+  data[i + 3] = float ? outA : Math.round(outA * 255);
+}
+
+/**
  * Per-stroke "max-coverage-so-far" buffer keyed by canvas pixel index.
  *
  * Replaces the prior `Map<number, number>` representation. The Map became

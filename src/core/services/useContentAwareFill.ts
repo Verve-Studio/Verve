@@ -34,6 +34,29 @@ export interface UseContentAwareFillReturn {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+/**
+ * The Content-Aware Fill layer: the inpainted sRGB RGBA8 pixels inside the
+ * selection, transparent elsewhere. A soft (feathered) selection scales the
+ * fill's alpha by mask / 255 so it blends into the surroundings.
+ */
+export function buildFillLayerPixels(
+  inpainted: Uint8Array,
+  mask: Uint8Array,
+  pixelCount: number,
+): Uint8Array {
+  const out = new Uint8Array(pixelCount * 4);
+  for (let i = 0; i < pixelCount; i++) {
+    const m = mask[i];
+    if (!m) continue;
+    const p = i * 4;
+    out[p] = inpainted[p];
+    out[p + 1] = inpainted[p + 1];
+    out[p + 2] = inpainted[p + 2];
+    out[p + 3] = m === 255 ? inpainted[p + 3] : Math.round((inpainted[p + 3] * m) / 255);
+  }
+  return out;
+}
+
 export function useContentAwareFill({
   canvasHandleRef,
   stateRef,
@@ -141,16 +164,7 @@ export function useContentAwareFill({
           sourceMask ?? undefined,
         );
 
-        // Build fill layer: inpainted pixels only where mask is set; transparent elsewhere
-        const fillLayerData = new Uint8Array(width * height * 4);
-        for (let i = 0; i < width * height; i++) {
-          if (mask[i]) {
-            fillLayerData[i * 4] = inpainted[i * 4];
-            fillLayerData[i * 4 + 1] = inpainted[i * 4 + 1];
-            fillLayerData[i * 4 + 2] = inpainted[i * 4 + 2];
-            fillLayerData[i * 4 + 3] = inpainted[i * 4 + 3];
-          }
-        }
+        const fillLayerData = buildFillLayerPixels(inpainted, mask, width * height);
 
         if (activeScope() !== scope || canvasHandleRef.current !== handle) {
           throw new Error("the document changed while it was running");

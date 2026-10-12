@@ -372,8 +372,10 @@ function walkLayers(
   if (!layers) return [];
   const out: PsdImportedNode[] = [];
   for (const layer of layers) {
-    // Group (has children) — recurse, preserving folder structure.
-    if (layer.children && layer.children.length > 0) {
+    // Group — recurse, preserving folder structure. ag-psd reads every
+    // folder (including an empty one) with a `children` array; plain layers
+    // have none.
+    if (Array.isArray(layer.children)) {
       const children = walkLayers(layer.children, state);
       out.push({
         kind: "group",

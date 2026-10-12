@@ -13,6 +13,7 @@ import type {
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
+import { indexedSelected, mixTowardsOriginal } from "../_shared/primitives";
 import paintBucketIconSvg from "./paint-bucket.svg?raw";
 import { resolveNearestPaletteIndex } from "@/utils/indexedColorUtils";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
@@ -155,22 +156,20 @@ function createFillHandler(): ToolHandler {
       // (We snapshot only when a selection mask is active to avoid the copy cost.)
       const snapshot = selectionMask ? layer.data.slice() : null;
 
-      /** Restore pixels that fall outside the active selection mask. */
+      /** Apply the fill through the selection: pixels outside it are
+       *  restored, soft (feathered) ones keep mask / 255 of the change. */
       const applySelectionMask = (): void => {
         if (!snapshot || !selectionMask) return;
         const lw = layer.layerWidth;
         for (let ly2 = 0; ly2 < layer.layerHeight; ly2++) {
+          const cy2 = ly2 + layer.offsetY;
           for (let lx2 = 0; lx2 < lw; lx2++) {
             const cx2 = lx2 + layer.offsetX;
-            const cy2 = ly2 + layer.offsetY;
-            const mi = cy2 * cw + cx2;
-            if (mi < 0 || mi >= selectionMask.length || selectionMask[mi] !== 0)
-              continue;
-            const pi = (ly2 * lw + lx2) * 4;
-            layer.data[pi] = snapshot[pi];
-            layer.data[pi + 1] = snapshot[pi + 1];
-            layer.data[pi + 2] = snapshot[pi + 2];
-            layer.data[pi + 3] = snapshot[pi + 3];
+            // Outside the canvas there is no selection: keep the old pixel.
+            const inCanvas = cx2 >= 0 && cx2 < cw && cy2 >= 0 && cy2 < ch;
+            const m = inCanvas ? selectionMask[cy2 * cw + cx2] : 0;
+            if (m === 255) continue;
+            mixTowardsOriginal(layer.data, snapshot, (ly2 * lw + lx2) * 4, m / 255);
           }
         }
       };
@@ -196,12 +195,9 @@ function createFillHandler(): ToolHandler {
             for (let lx2 = 0; lx2 < lw; lx2++) {
               const cx2 = lx2 + layer.offsetX;
               const cy2 = ly2 + layer.offsetY;
-              const mi = cy2 * cw + cx2;
-              if (
-                mi < 0 ||
-                mi >= selectionMask.length ||
-                selectionMask[mi] !== 0
-              )
+              // No partial alpha in indexed8: soft selections threshold.
+              const inCanvas = cx2 >= 0 && cx2 < cw && cy2 >= 0 && cy2 < ch;
+              if (inCanvas && indexedSelected(selectionMask[cy2 * cw + cx2]))
                 continue;
               (layer.data as Uint8Array)[ly2 * lw + lx2] =
                 snapshotI[ly2 * lw + lx2];

@@ -232,6 +232,41 @@ static void buildLevelBuffers(
         }
     }
 
+    // With a source mask, the boundary pixels next to the hole may be
+    // excluded: they must never seed the NNF (the seed is copied into the
+    // hole and its cost beats every eligible candidate, so it would stick).
+    // Re-derive `nearestSource` from a BFS over the whole level that starts
+    // at the eligible source pixels only. `dist` (the hole-boundary distance
+    // that orders the fill) is unchanged.
+    if (sourceMask != nullptr) {
+        buffers.nearestSource.assign(n, -1);
+        std::queue<size_t> sq;
+        for (const auto& p : buffers.sourcePixels) {
+            const size_t idx = static_cast<size_t>(p.second) * width + p.first;
+            buffers.nearestSource[idx] = static_cast<int>(idx);
+            sq.push(idx);
+        }
+        while (!sq.empty()) {
+            const size_t cur = sq.front();
+            sq.pop();
+            const int cx = static_cast<int>(cur % static_cast<size_t>(width));
+            const int cy = static_cast<int>(cur / static_cast<size_t>(width));
+            for (int d = 0; d < 4; ++d) {
+                const int nx = cx + dx4[d];
+                const int ny = cy + dy4[d];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+                    continue;
+                }
+                const size_t ni = static_cast<size_t>(ny) * width + nx;
+                if (buffers.nearestSource[ni] >= 0) {
+                    continue;
+                }
+                buffers.nearestSource[ni] = buffers.nearestSource[cur];
+                sq.push(ni);
+            }
+        }
+    }
+
     std::sort(
         buffers.fillPixels.begin(),
         buffers.fillPixels.end(),

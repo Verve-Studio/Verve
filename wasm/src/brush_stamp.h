@@ -104,7 +104,14 @@ struct alignas(16) BrushStampParams {
     int   blend_mode;        // BrushBlendMode id (stroke-layer path only)
     int   stroke_flags;      // bit 0: composite from the stroke layer;
                              // bit 1: keep a per-pixel stroke colour
-    int   pad0, pad1, pad2;
+    // ── Slice origin ───────────────────────────────────────────────────
+    // Canvas position of the coordinate space the bbox / cx / buffers are
+    // given in. (0, 0) when the kernel works on canvas-sized buffers; the
+    // slice-copy fallback (brushStamp.ts) rebases everything to its slice
+    // and passes the slice's canvas origin here, so canvas-locked paper
+    // grain and the stochastic-rounding hash still key on canvas pixels.
+    int   origin_x, origin_y;
+    int   pad2;
 };
 
 // Stroke paint layer: canvas tiles of 64×64 holding the layer's pixels at

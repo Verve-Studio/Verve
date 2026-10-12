@@ -1,4 +1,5 @@
 import { mlPaths } from './ml/paths'
+import { MAX_ML_IMAGE_DIM, assertImageSize, assertPixelBuffer } from './ml/imageParams'
 import { join, dirname } from 'node:path'
 import { access, mkdir, rename, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
@@ -346,11 +347,19 @@ export async function downloadMattingModel(
 
 export async function refineMatting(params: RefineParams): Promise<RefineResult> {
   const { width, height, bandRadius } = params
-  if (params.imageRgba.length !== width * height * 4) {
-    throw new Error(`imageRgba length ${params.imageRgba.length} ≠ ${width}×${height}×4`)
+  assertImageSize(width, height)
+  assertPixelBuffer('imageRgba', params.imageRgba, width, height, 4)
+  assertPixelBuffer('selectionMask', params.selectionMask, width, height, 1)
+  if (
+    typeof bandRadius !== 'number' ||
+    !Number.isFinite(bandRadius) ||
+    bandRadius < 0 ||
+    bandRadius > MAX_ML_IMAGE_DIM
+  ) {
+    throw new Error(`Invalid band radius ${String(bandRadius)}`)
   }
-  if (params.selectionMask.length !== width * height) {
-    throw new Error(`selectionMask length ${params.selectionMask.length} ≠ ${width}×${height}`)
+  if (params.mode !== 'hair' && params.mode !== 'object') {
+    throw new Error(`Invalid matting mode ${String(params.mode)}`)
   }
 
   // Build trimap from selection mask:

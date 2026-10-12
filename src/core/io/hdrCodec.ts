@@ -18,25 +18,34 @@ function rgbeToFloat(
   return [r * scale, g * scale, b * scale];
 }
 
+/** True when an RGBE scanline of this width may use the new run-length
+ *  format. Narrower or wider scanlines are always flat RGBE pixels. */
+function rleWidth(width: number): boolean {
+  return width >= 8 && width <= 0x7fff;
+}
+
+const truncated = (): Error => new Error("HDR: unexpected end of file (truncated pixel data)");
+
 function decodeScanline(
   data: Uint8Array,
   offset: number,
   width: number,
   scanline: Uint8Array,
 ): number {
-  // Check for new RLE (scanline width >= 8 and <= 0x7fff)
+  const end = data.length;
+  // New-format RLE scanlines start with [2, 2, hi, lo] (width 8..0x7fff).
   if (
-    width < 8 ||
-    width > 0x7fff ||
+    !rleWidth(width) ||
+    offset + 4 > end ||
     data[offset] !== 2 ||
     data[offset + 1] !== 2 ||
     (data[offset + 2] & 0x80) !== 0
   ) {
-    // Old format: read raw RGBE pixels
-    for (let i = 0; i < width * 4; i++) {
-      scanline[i] = data[offset++];
-    }
-    return offset;
+    // Flat format: raw RGBE pixels.
+    const n = width * 4;
+    if (offset + n > end) throw truncated();
+    scanline.set(data.subarray(offset, offset + n));
+    return offset + n;
   }
 
   const scanlineWidth = (data[offset + 2] << 8) | data[offset + 3];
@@ -47,14 +56,19 @@ function decodeScanline(
   for (let ch = 0; ch < 4; ch++) {
     let idx = 0;
     while (idx < width) {
-      let code = data[offset++];
+      if (offset >= end) throw truncated();
+      const code = data[offset++];
       if (code > 128) {
         // Run
         const count = code - 128;
+        if (idx + count > width) throw new Error("HDR: bad scanline data (run overflows the scanline)");
+        if (offset >= end) throw truncated();
         const val = data[offset++];
         for (let i = 0; i < count; i++) scanline[ch + idx++ * 4] = val;
       } else {
         // Non-run
+        if (code === 0 || idx + code > width) throw new Error("HDR: bad scanline data");
+        if (offset + code > end) throw truncated();
         for (let i = 0; i < code; i++)
           scanline[ch + idx++ * 4] = data[offset++];
       }
@@ -96,6 +110,8 @@ export function decodeRgbe(bytes: Uint8Array): {
   if (!resMatch) throw new Error("HDR: bad resolution string");
   const height = parseInt(resMatch[1], 10);
   const width = parseInt(resMatch[2], 10);
+  if (!(width > 0 && height > 0)) throw new Error("HDR: bad resolution string");
+  if (offset > bytes.length) throw truncated();
 
   const pixels = new Float32Array(width * height * 4);
   const scanline = new Uint8Array(width * 4);
@@ -121,20 +137,34 @@ export function decodeRgbe(bytes: Uint8Array): {
 
 // ─── Encode ───────────────────────────────────────────────────────────────────
 
+/** Largest value RGBE can hold (mantissa 255, exponent byte 255). */
+const RGBE_MAX = 255 * Math.pow(2, 255 - 128 - 8);
+
+/** RGBE can't represent negative values: negatives and NaN become 0, +∞
+ *  becomes the largest representable value. */
+function rgbeChannel(v: number): number {
+  return v > 0 ? Math.min(v, RGBE_MAX) : 0;
+}
+
 function floatToRgbe(
   r: number,
   g: number,
   b: number,
 ): [number, number, number, number] {
+  r = rgbeChannel(r);
+  g = rgbeChannel(g);
+  b = rgbeChannel(b);
   const max = Math.max(r, g, b);
   if (max < 1e-32) return [0, 0, 0, 0];
-  let exp = Math.ceil(Math.log2(max));
-  const scale = Math.pow(2, -exp + 8);
+  // frexp: max = m · 2^exp with m ∈ [0.5, 1), so max · 2^(8-exp) ∈ [128, 256).
+  const exp = Math.floor(Math.log2(max)) + 1;
+  if (exp + 128 < 1) return [0, 0, 0, 0];
+  const scale = Math.pow(2, 8 - exp);
   return [
     Math.min(255, Math.round(r * scale)),
     Math.min(255, Math.round(g * scale)),
     Math.min(255, Math.round(b * scale)),
-    exp + 128,
+    Math.min(255, exp + 128),
   ];
 }
 
@@ -185,7 +215,21 @@ export function encodeRgbe(
 
   const parts: Uint8Array[] = [header];
 
+  // Run-length encoding is only defined for widths 8..0x7fff; other widths
+  // are written as flat RGBE scanlines (which is how readers decode them).
+  const useRle = rleWidth(width);
+
   for (let y = 0; y < height; y++) {
+    if (!useRle) {
+      const flat = new Uint8Array(width * 4);
+      for (let x = 0; x < width; x++) {
+        const pi = (y * width + x) * 4;
+        flat.set(floatToRgbe(pixels[pi], pixels[pi + 1], pixels[pi + 2]), x * 4);
+      }
+      parts.push(flat);
+      continue;
+    }
+
     // Scanline header: [2, 2, widthHigh, widthLow]
     const scanHeader = new Uint8Array([
       2,

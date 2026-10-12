@@ -36,7 +36,10 @@ export function baseName(path: string): string {
 
 /** The cell file type a file name has, or null when it isn't a cell. */
 export function cellTypeOf(file: string): CellFileType | null {
-  const ext = file.slice(file.lastIndexOf(".") + 1).toLowerCase();
+  // A real extension: a "." after a non-empty base name.
+  const dot = file.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const ext = file.slice(dot + 1).toLowerCase();
   return (CELL_EXTENSIONS as readonly string[]).includes(ext)
     ? (ext as CellFileType)
     : null;

@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  /** "1" in end-to-end test builds (`npm run build:e2e`): enables `window.__verveTest`. */
+  readonly VITE_VERVE_E2E?: string;
+}
+
 declare module "*.module.scss" {
   const classes: Record<string, string>;
   export default classes;

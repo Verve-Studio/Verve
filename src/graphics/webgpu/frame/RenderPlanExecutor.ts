@@ -24,7 +24,7 @@ import {
   encodeClearTexture,
   copyOutsideRect,
 } from "../rendering/copyEncoders";
-import type { GpuLayer, EffectRenderOp } from "../types";
+import type { GpuLayer, EffectRenderOp, SourceLayer } from "../types";
 import { BLEND_MODE_INDEX } from "../types";
 import { writeUniformBuffer } from "../utils";
 
@@ -264,6 +264,8 @@ export class RenderPlanExecutor {
     this.pixelHeight = args.pixelHeight;
     this.pixelFormat = args.pixelFormat;
     this.internalFormat = args.internalFormat;
+    this.adjEncoder.sourceRenderer = (encoder, source) =>
+      this.encodeSourceLayer(encoder, source);
 
     this.device = args.gpu.device;
     this.sampler = args.resources.nearestSampler;
@@ -973,6 +975,40 @@ export class RenderPlanExecutor {
     }
 
     return srcTex;
+  }
+
+  /** Render a layer another effect reads (Sample Layer) as it appears:
+   *  pixels and layer mask at full opacity, then its effect chain. Runs in
+   *  the middle of the reader's encode, so it uses its own pooled textures
+   *  and the whole canvas (the reader may sample anywhere). */
+  encodeSourceLayer(encoder: GPUCommandEncoder, source: SourceLayer): GPUTexture {
+    const runtime = this.adjEncoder.runtime;
+    const scissor = this.incrementalScissor;
+    const runtimeScissor = runtime.scissor;
+    this.incrementalScissor = null;
+    runtime.scissor = null;
+    try {
+      let srcTex = this.allocateTempGroupTex(encoder);
+      let dstTex = this.allocateTempGroupTex(encoder);
+      this.encodeCompositeLayer(
+        encoder,
+        { ...source.layer, opacity: 1, blendMode: "normal" },
+        srcTex,
+        dstTex,
+        source.mask,
+        true,
+      );
+      [srcTex, dstTex] = [dstTex, srcTex];
+      for (const op of source.adjustments) {
+        if (!op.visible) continue;
+        this.adjEncoder.encode(encoder, op, srcTex, dstTex, this.internalFormat);
+        [srcTex, dstTex] = [dstTex, srcTex];
+      }
+      return srcTex;
+    } finally {
+      this.incrementalScissor = scissor;
+      runtime.scissor = runtimeScissor;
+    }
   }
 
   /**

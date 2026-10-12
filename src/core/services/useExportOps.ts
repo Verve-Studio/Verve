@@ -12,7 +12,7 @@ import { displayStore } from "@/ux/main/Canvas/displayStore";
 import type { AppState, ToneMappingOperator } from "@/types";
 import { showOperationError } from "@/utils/userFeedback";
 import { statusMessageStore } from "@/core/store/statusMessageStore";
-import { clampF32ToUint8 } from "@/utils/pixelFormatConvert";
+import { clampF32ToUint8, linearToSrgbChannel } from "@/utils/pixelFormatConvert";
 import { buildRootLayerIds, getDescendantIds } from "@/utils/layerTree";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { ExportSettings } from "@/core/io/exportSettings";
@@ -25,6 +25,9 @@ function exportFileName(path: string): string {
 
 // ─── Tone-mapping helper ──────────────────────────────────────────────────────
 
+/** Scene-linear float pixels → 8-bit sRGB bytes for an LDR file, matching the
+ *  display path (hdr-blit.wgsl): exposure, then the tone-mapping operator,
+ *  then the linear → sRGB transfer function. Alpha is linear (×255 only). */
 function toneMapToUint8(
   f32: Float32Array,
   operator: ToneMappingOperator,
@@ -32,6 +35,8 @@ function toneMapToUint8(
 ): Uint8Array {
   const out = new Uint8Array(f32.length);
   const gain = Math.pow(2, exposureEV);
+  const toByte = (v: number): number =>
+    Math.round(Math.min(1, Math.max(0, linearToSrgbChannel(v))) * 255);
   for (let i = 0; i < f32.length; i += 4) {
     let r = f32[i] * gain;
     let g = f32[i + 1] * gain;
@@ -42,9 +47,9 @@ function toneMapToUint8(
       g = g / (1 + g);
       b = b / (1 + b);
     }
-    out[i] = Math.round(Math.min(1, Math.max(0, r)) * 255);
-    out[i + 1] = Math.round(Math.min(1, Math.max(0, g)) * 255);
-    out[i + 2] = Math.round(Math.min(1, Math.max(0, b)) * 255);
+    out[i] = toByte(r);
+    out[i + 1] = toByte(g);
+    out[i + 2] = toByte(b);
     out[i + 3] = Math.round(Math.min(1, Math.max(0, a)) * 255);
   }
   return out;

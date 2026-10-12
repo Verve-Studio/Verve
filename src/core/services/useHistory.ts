@@ -15,6 +15,7 @@ import {
   type LayerDataBundle,
 } from "@/core/store/layerPayload";
 import { preferencesStore } from "@/core/store/preferencesStore";
+import { sanitizeHistoryMemoryBytes } from "@/utils/memoryLimits";
 import { selectionRevision } from "@/core/store/selectionStore";
 import type { TabRecord } from "@/core/store/tabTypes";
 import { toolRegistry } from "@/core/tools/toolRegistry";
@@ -611,11 +612,15 @@ export function useHistory({
   // Sync history memory cap from preferences. Pushes the current value on
   // mount and re-pushes whenever the user changes it in Preferences →
   // Memory; the store immediately evicts oldest entries to fit.
+  // Clamped: a corrupt persisted value (0, negative, NaN) must not evict
+  // every document's history.
   useEffect(() => {
-    activeScope().history.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes);
-    return preferencesStore.subscribe(() => {
-      activeScope().history.setMemoryCapBytes(preferencesStore.get().historyMemoryBytes);
-    });
+    const push = (): void =>
+      activeScope().history.setMemoryCapBytes(
+        sanitizeHistoryMemoryBytes(preferencesStore.get().historyMemoryBytes),
+      );
+    push();
+    return preferencesStore.subscribe(push);
   }, []);
 
   // Capture after a committed layer change: layers added, removed or

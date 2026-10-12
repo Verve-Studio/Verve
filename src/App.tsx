@@ -63,6 +63,7 @@ import type { TabInfo } from "@/ux/main/TabBar/TabBar";
 import { SplashScreen } from "@/ux/modals/SplashScreen/SplashScreen";
 import { UnsavedWorkflowDialog } from "@/ux/modals/UnsavedWorkflowDialog/UnsavedWorkflowDialog";
 import { dockStore } from "@/ux/main/RightPanel/Dock/dockStore";
+import { displayStore } from "@/ux/main/Canvas/displayStore";
 import { startNewAutomation, startOpenAutomation } from "@/ux/main/NodeEditor/automationFiles";
 import { PrintPreviewDialog } from "@/ux/modals/PrintPreviewDialog/PrintPreviewDialog";
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -653,6 +654,28 @@ function AppContent(): React.JSX.Element {
     dispatch,
     captureHistory,
   });
+  const { toggleProofColors, toggleGamutWarning } = colorProfile;
+
+  // Pixel-bearing leaves for the Export dialog's per-layer selector. Group
+  // containers and parametric helpers (mask, adjustment) aren't directly
+  // exportable. Memoised so the prop is stable across unrelated re-renders.
+  const exportableLayers = useMemo(
+    () =>
+      state.layers
+        .filter((l) => {
+          if (!("type" in l)) return true; // pixel
+          const t = (l as { type: string }).type;
+          return (
+            t === "text" ||
+            t === "shape" ||
+            t === "path" ||
+            t === "frame" ||
+            t === "composite"
+          );
+        })
+        .map((l) => ({ id: l.id, name: l.name })),
+    [state.layers],
+  );
 
   // ── Polygonal selection keyboard handling ───────────────────────
   usePolygonalSelection();
@@ -772,6 +795,13 @@ function AppContent(): React.JSX.Element {
       );
       if (next) handleToolChange(next);
     }, [handleToolChange]),
+    // Same gating as the View menu items (disabled without a proof profile).
+    handleToggleProofColors: useCallback(() => {
+      if (displayStore.proofProfile !== null) toggleProofColors();
+    }, [toggleProofColors]),
+    handleToggleGamutWarning: useCallback(() => {
+      if (displayStore.proofProfile !== null) void toggleGamutWarning();
+    }, [toggleGamutWarning]),
     handleNew: useCallback(() => setShowNewImageDialog(true), []),
     handleOpen: useCallback(() => {
       void handleOpen();
@@ -1218,21 +1248,7 @@ function AppContent(): React.JSX.Element {
         setShowNewImageDialog={setShowNewImageDialog}
         showExportDialog={showExportDialog}
         setShowExportDialog={setShowExportDialog}
-        exportableLayers={state.layers
-          .filter((l) => {
-            if (!("type" in l)) return true; // pixel
-            const t = (l as { type: string }).type;
-            // Only pixel-bearing leaves; group containers and parametric
-            // helpers (mask, adjustment) aren't directly exportable.
-            return (
-              t === "text" ||
-              t === "shape" ||
-              t === "path" ||
-              t === "frame" ||
-              t === "composite"
-            );
-          })
-          .map((l) => ({ id: l.id, name: l.name }))}
+        exportableLayers={exportableLayers}
         showResizeDialog={showResizeDialog}
         setShowResizeDialog={setShowResizeDialog}
         showResizeCanvasDialog={showResizeCanvasDialog}

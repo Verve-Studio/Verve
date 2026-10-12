@@ -5,6 +5,7 @@ import {
   footprintStart,
   inPencilFootprint,
 } from "@/core/tools/Pencil/pencilFootprint";
+import { indexedSelected } from "@/core/tools/_shared/primitives";
 
 // ─── Palette resolution ───────────────────────────────────────────────────────
 
@@ -64,7 +65,8 @@ export function writeIndexToLayer(
     // index read the next row (or undefined → bypassing the selection).
     if (canvasX >= sel.width) return false;
     const si = canvasY * sel.width + canvasX;
-    if (si >= sel.mask.length || sel.mask[si] === 0) return false;
+    // No partial alpha: soft selections are thresholded at 50%.
+    if (si >= sel.mask.length || !indexedSelected(sel.mask[si])) return false;
   }
   const lx = canvasX - layer.offsetX;
   const ly = canvasY - layer.offsetY;

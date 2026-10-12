@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { DialogButton } from "../../widgets/DialogButton/DialogButton";
 import { ModalDialog } from "../ModalDialog/ModalDialog";
 import styles from "./ExportDialog.module.scss";
@@ -84,7 +84,11 @@ export function ExportDialog({
 
   const maxDdsMipLevels = computeMaxDdsMipLevels(documentWidth ?? 0, documentHeight ?? 0);
 
-  // Reset state on every open
+  // Reset state on every open (closed → open only: the parent may pass a
+  // fresh `exportableLayers` array on any re-render, which must not wipe
+  // what the user has entered).
+  const exportableLayersRef = useRef(exportableLayers);
+  exportableLayersRef.current = exportableLayers;
   useEffect(() => {
     if (open) {
       setFilePath("");
@@ -99,9 +103,9 @@ export function ExportDialog({
       setLayerMode("single");
       // Default to "all layers selected" so switching to "separate"
       // exports everything; the user can trim down from there.
-      setPerLayerIds((exportableLayers ?? []).map((l) => l.id));
+      setPerLayerIds((exportableLayersRef.current ?? []).map((l) => l.id));
     }
-  }, [open, exportableLayers]);
+  }, [open]);
 
   // When the format changes the available layer modes change too.  Reset to
   // each format's natural default so the user never lands on an invalid
@@ -163,23 +167,17 @@ export function ExportDialog({
     onConfirm,
   ]);
 
-  // Keyboard: Enter = confirm (Escape handled by ModalDialog)
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        handleConfirm();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, handleConfirm]);
 
   const canExport = filePath.trim().length > 0;
 
   return (
-    <ModalDialog open={open} title="Export As" width={440} onClose={onCancel}>
+    <ModalDialog
+      open={open}
+      title="Export As"
+      width={440}
+      onClose={onCancel}
+      onSubmit={handleConfirm}
+    >
       {/* ── Body ──────────────────────────────────────────────── */}
       <div className={styles.body}>
         <p className={styles.sectionTitle}>EXPORT SETTINGS</p>

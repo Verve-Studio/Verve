@@ -52,18 +52,6 @@ export function ResizeImageDialog({
     onConfirm({ width: w, height: h, filter });
   }, [width, height, filter, onConfirm]);
 
-  // Enter = confirm
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        handleConfirm();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, handleConfirm]);
 
   return (
     <ModalDialog
@@ -71,6 +59,7 @@ export function ResizeImageDialog({
       title="Resize Image"
       width={360}
       onClose={onCancel}
+      onSubmit={handleConfirm}
     >
       <div className={styles.body}>
         {/* ── Current size info ─────────────────────────────────────── */}

@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - run: npm ci
+      - run: npm run build:wasm
+      - run: npm run typecheck
+      - run: npm run test:coverage
+
+      # Electron needs a display; WebGPU runs on SwiftShader (no GPU on the
+      # runner), see VERVE_SOFTWARE_WEBGPU in electron/main/index.ts.
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgbm1 libnss3 libasound2t64
+      - run: xvfb-run --auto-servernum npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-report
+          path: |
+            playwright-report/
+            test-results/

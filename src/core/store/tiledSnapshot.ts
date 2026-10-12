@@ -108,12 +108,15 @@ function tileEquals(
   if (tile.length !== rowLen * th) return false;
   const bpe = src.BYTES_PER_ELEMENT;
   const rowBytes = rowLen * bpe;
-  // Word-wise compare when every row starts on a 4-byte boundary (always
-  // true for rgba8 / rgba32f); bytes otherwise (odd-width indexed8).
+  // Word-wise compare for rows whose source start and length are both
+  // 4-byte aligned (always true for rgba8 / rgba32f). Odd-width indexed8
+  // layers have rows starting at y * width, so alignment is decided per row
+  // (a row-length check alone would compare shifted words); unaligned rows
+  // fall back to bytes.
   const tile32 = src32 && rowBytes % 4 === 0 ? u32View(tile) : null;
   for (let y = 0; y < th; y++) {
     const s = ((y0 + y) * width + x0) * channels;
-    if (tile32 && src32) {
+    if (tile32 && src32 && (s * bpe) % 4 === 0) {
       const sw = (s * bpe) >>> 2;
       const tw32 = (y * rowBytes) >>> 2;
       const n = rowBytes >>> 2;

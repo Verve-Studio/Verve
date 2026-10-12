@@ -74,8 +74,49 @@ function prefsPath(): string {
   return join(app.getPath('userData'), 'preferences.json')
 }
 
-function mergeWithDefaults(partial: Partial<AppPreferences>): AppPreferences {
-  return { ...DEFAULT_PREFERENCES, ...partial }
+const RENDERING_INTENTS = [
+  'perceptual',
+  'relative-colorimetric',
+  'saturation',
+  'absolute-colorimetric',
+] as const
+
+const oneOf =
+  <T extends string>(values: readonly T[]) =>
+  (v: unknown): v is T =>
+    typeof v === 'string' && (values as readonly string[]).includes(v)
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
+const isPositiveNumber = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0
+
+/** Validator per known field. The interface above is the whole schema:
+ *  fields not listed here are dropped. */
+const FIELD_VALIDATORS: { [K in keyof AppPreferences]-?: (v: unknown) => boolean } = {
+  theme: oneOf(['light', 'dark', 'auto'] as const),
+  historyMemoryBytes: isPositiveNumber,
+  bufferMemoryBytes: isPositiveNumber,
+  bufferMemoryMaxOut: isBool,
+  unifiedMemory: isBool,
+  colorImportIntent: oneOf(RENDERING_INTENTS),
+  colorConvertIntent: oneOf(RENDERING_INTENTS),
+  colorUseBpc: isBool,
+  colorMissingProfilePolicy: oneOf(['assume-working-space', 'ask'] as const),
+}
+
+/** The defaults overlaid with every known field of `input` that has a valid
+ *  value. Wrong-typed or out-of-range fields fall back to the default (or
+ *  stay unset when there is none, e.g. `unifiedMemory`); unknown fields and
+ *  non-object input are ignored. */
+function sanitizePreferences(input: unknown): AppPreferences {
+  const out: AppPreferences = { ...DEFAULT_PREFERENCES }
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return out
+  const src = input as Record<string, unknown>
+  for (const key of Object.keys(FIELD_VALIDATORS) as Array<keyof AppPreferences>) {
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue
+    const value = src[key]
+    if (FIELD_VALIDATORS[key](value)) (out as unknown as Record<string, unknown>)[key] = value
+  }
+  return out
 }
 
 // ─── IPC ──────────────────────────────────────────────────────────────────────
@@ -90,8 +131,7 @@ export function registerPreferencesHandlers(): void {
       return { ...DEFAULT_PREFERENCES }
     }
     try {
-      const parsed = JSON.parse(raw) as Partial<AppPreferences>
-      return mergeWithDefaults(parsed)
+      return sanitizePreferences(JSON.parse(raw))
     } catch (err) {
       // Unreadable file: keep a copy instead of silently overwriting the
       // user's settings with defaults on the next save.
@@ -102,9 +142,9 @@ export function registerPreferencesHandlers(): void {
     }
   })
 
-  ipcMain.handle('prefs:save', async (_event, prefs: AppPreferences): Promise<void> => {
-    const merged = mergeWithDefaults(prefs)
-    await writeFileAtomic(prefsPath(), JSON.stringify(merged, null, 2), 'utf-8')
+  ipcMain.handle('prefs:save', async (_event, prefs: unknown): Promise<void> => {
+    const sanitized = sanitizePreferences(prefs)
+    await writeFileAtomic(prefsPath(), JSON.stringify(sanitized, null, 2), 'utf-8')
   })
 
   // Lets the renderer cap the buffer-memory slider at the actual system RAM

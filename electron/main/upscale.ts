@@ -1,4 +1,5 @@
 import { mlPaths } from './ml/paths'
+import { assertPixelBuffer, isImageDim } from './ml/imageParams'
 import { join } from 'node:path'
 import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -355,16 +356,14 @@ interface ProgressEmit {
 async function runUpscale(p: UpscaleParams, onProgress: ProgressEmit): Promise<Uint8Array> {
   const model = findModel(p.modelId)
   if (!model) throw new Error(`Unknown upscale model: ${p.modelId}`)
-  const isDim = (v: number): boolean => Number.isInteger(v) && v > 0 && v <= MAX_UPSCALE_DIM
+  const isDim = (v: number): boolean => isImageDim(v, MAX_UPSCALE_DIM)
   if (!isDim(p.width) || !isDim(p.height) || !isDim(p.targetWidth) || !isDim(p.targetHeight)) {
     throw new Error(
       `Invalid upscale size ${p.width}×${p.height} → ${p.targetWidth}×${p.targetHeight} ` +
       `(each side must be a whole number between 1 and ${MAX_UPSCALE_DIM})`,
     )
   }
-  if (p.rgba.length !== p.width * p.height * 4) {
-    throw new Error(`rgba length ${p.rgba.length} ≠ ${p.width}×${p.height}×4`)
-  }
+  assertPixelBuffer('rgba', p.rgba, p.width, p.height, 4)
 
   const { session } = await loadSession(model)
   const ort = getOrt()

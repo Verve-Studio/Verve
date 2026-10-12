@@ -10,8 +10,35 @@ Verve is a desktop image editor built with Electron, React 19, TypeScript, WebGP
 npm run dev          # Start Electron + Vite in development mode
 npm run build        # Production build
 npm run build:wasm   # Compile C++ → WASM (run once after C++ changes)
-npm run typecheck    # Type-check both main (Node) and renderer (web) processes
+npm run typecheck    # Type-check main (Node), renderer (web) and test code
+npm test             # Unit + component tests (Vitest)
+npm run test:e2e     # End-to-end tests: builds the app with the test hook, drives it with Playwright
+npm run test:all     # typecheck + unit + e2e (what CI runs)
 ```
+
+## Testing
+
+Every change should keep the app testable without a human: `npm run test:all` must pass. CI (`.github/workflows/test.yml`) runs it on every push and PR.
+
+All tests live under `tests/`, never next to the source:
+
+```
+tests/
+  unit/            ← Vitest. Mirrors the repo: tests for src/core/store/historyStore.ts
+    src/…            are in tests/unit/src/core/store/historyStore.test.ts,
+    electron/…       for electron/main/ipc.ts in tests/unit/electron/main/ipc.test.ts
+    fakes/         ← shared fakes (AutomationHost, CanvasHandle, GPU device recorder,
+                     Electron main mocks, WGSL evaluator, …)
+    paths.ts       ← REPO_ROOT / SRC_DIR / ELECTRON_DIR for tests that read files
+    setup.ts, setup.dom.ts, stubs/
+  e2e/             ← Playwright specs, fixtures.ts, verve.ts (helpers), globalSetup.ts
+```
+
+- **Unit and component tests** (Vitest, `vitest.config.ts`): `*.test.ts` run in node, `*.test.tsx` in jsdom (+ Testing Library, auto-cleanup in `setup.dom.ts`). Import the code under test through `@/…` and shared helpers through `@tests/…` (e.g. `@tests/fakes/uxAppStore`) — no deep relative paths. `setup.ts` provides the WebGPU flag constants. The real WASM module loads in tests (`await getPixelOps()`), so C++ ops are tested through `src/wasm/index.ts`; run `npm run build:wasm` first on a fresh clone.
+- **End-to-end tests** (Playwright, `tests/e2e/`) launch the built Electron app. `npm run build:e2e` builds with `VITE_VERVE_E2E=1`, which keeps `window.__verveTest` (`useDevTestHook`: store, canvas handle, menu handlers, active scope, `AutomationHost`, effect list, workflow runner) — release builds strip it. Drive the app through `inApp(page, fn)` and the `AutomationHost` (`tests/e2e/verve.ts`); read pixels back with `compositePixel` / the canvas handle. Each run gets a throwaway profile (`VERVE_USER_DATA_DIR`). Without a GPU (CI), `VERVE_SOFTWARE_WEBGPU=1` runs WebGPU on SwiftShader; the fixture sets it when `CI` is set.
+- Code must stay importable outside a browser: no DOM / canvas / `window.api` access at module load (create lazily on first use). A test that needs a browser API stubs just that API.
+- New logic comes with tests: pure functions get unit tests (cover `rgba8`, `rgba32f` and `indexed8` where the format matters), new effects are covered by the registry-wide effect tests and the e2e effect sweep automatically, and user-visible operations get an e2e test with an undo/redo round trip.
+- A test that documents a known bug is written for the correct behaviour and marked `it.fails` / `test.fail()` with a `// BUG:` comment; it starts failing (as a reminder to drop the marker) once the bug is fixed.
 
 ## Architecture
 
@@ -394,7 +421,7 @@ Main → Renderer communication goes through `electron/main/ipc.ts` and the type
 
 ### Top Menu
 
-Menu order: **File → Edit → Select → Layer → Adjustments → Effects → Filters → View → Help**
+Menu order: **File → Edit → Select → Layer → Image → Adjustments → Effects → Filters → (Animation) → View → Help** (Animation only in animation mode; `menuTree.test.tsx` enforces this)
 
 - **Select** menu: Invert Selection (`Ctrl+Shift+I`)
 - **Adjustments / Effects / Filters** menus: built dynamically from `effectRegistry.byMenuRoot(...)` — every entry under the matching `menu.root` shows up automatically.

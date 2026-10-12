@@ -10,6 +10,7 @@ import type {
 import type { ITool } from "../_shared/ITool";
 import { ToolGroup } from "../_shared/ITool";
 import { SvgIcon } from "../_shared/SvgIcon";
+import { indexedSelected } from "../_shared/primitives";
 import gradientIconSvg from "./gradient.svg?raw";
 import type { RGBAColor, Gradient } from "@/types";
 import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
@@ -201,7 +202,9 @@ function renderIndexedGradient(
   for (let cy = 0; cy < ch; cy++) {
     const rowStart = cy * cw;
     for (let cx = 0; cx < cw; cx++) {
-      if (selectionMask && selectionMask[rowStart + cx] === 0) continue;
+      // No partial alpha in indexed8: soft selections threshold.
+      if (selectionMask && !indexedSelected(selectionMask[rowStart + cx]))
+        continue;
 
       // Project canvas pixel onto the drag axis, clamped to [0, 1].
       let t = ((cx - x0) * dx + (cy - y0) * dy) / lenSq;
@@ -304,8 +307,15 @@ function renderGradient(
       const cx = lx + layer.offsetX;
       const cy = ly + layer.offsetY;
 
-      // Skip pixels outside the active selection
-      if (selectionMask && selectionMask[cy * cw + cx] === 0) continue;
+      // Soft (feathered) selections scale the deposit; 0 = outside. A layer
+      // can extend past the canvas, where there is no selection.
+      let selW = 1;
+      if (selectionMask) {
+        if (cx < 0 || cx >= cw || cy < 0 || cy >= ch) continue;
+        const m = selectionMask[cy * cw + cx];
+        if (m === 0) continue;
+        selW = m / 255;
+      }
 
       let t: number;
       if (type === "linear") {
@@ -321,7 +331,7 @@ function renderGradient(
       t = applyRepeat(t, repeat);
 
       const li = Math.round(t * lutMax) * 4;
-      const srcA = lut[li + 3] * alpha;
+      const srcA = lut[li + 3] * alpha * selW;
 
       if (srcA <= 0) continue;
 

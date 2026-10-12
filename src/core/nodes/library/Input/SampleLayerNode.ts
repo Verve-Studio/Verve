@@ -11,8 +11,9 @@ class SampleLayerNode implements INode {
   readonly domains = ["shader"] as const;
   readonly description =
     "Read the layer at a UV position (unconnected: the current pixel), shifted by Offset pixels. " +
-    "Set Layer to read another layer of the document by name (its own pixels, without opacity, " +
-    "mask or effects; transparent when no layer has that name).";
+    "Set Layer to read another layer of the document by name, as it renders: with its mask and " +
+    "effects, without its opacity or blend mode (transparent when no layer has that name). " +
+    "A layer that reads back the layer reading it sees its pixels without effects.";
   readonly width = 180;
   readonly inputs = [
     { id: "uv", label: "UV", type: "vec2" },

@@ -1,6 +1,6 @@
 import "@/core/nodes";
 import type { EffectLayerOf } from "@/types";
-import type { EffectRenderOp } from "@/graphics/webgpu/rendering/WebGPURenderer";
+import type { EffectRenderOp, GpuLayer } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { IPipelineEffect } from "../IPipelineEffect";
 import type { NodeGraph, ParamValue } from "@/core/nodes/graphTypes";
 import { resolveArgumentValue } from "@/core/nodes/graphArguments";
@@ -15,12 +15,14 @@ import {
   writeShaderContext,
   type LayerSource,
   type ShaderCompileResult,
+  type ShaderPass,
 } from "@/core/nodes/shaderCompiler";
 import { STD_BINDINGS, type AdjBinding } from "@/graphics/webgpu/EffectRuntime";
 import {
   LAYER_SOURCE_BINDING,
   PASSTHROUGH_SOURCE,
   assembleShaderSource,
+  passEntryPoint,
 } from "./customShaderSource";
 import { DEFAULT_INFO } from "./effectFile";
 import { EffectFallbackIcon } from "../_shared/icons";
@@ -75,7 +77,9 @@ interface Program {
   argumentSlots: ReadonlyMap<string, number>;
   /** Other layers the shader samples (Sample Layer by name). */
   layerSources: readonly LayerSource[];
-  /** STD_BINDINGS + one texture per layer source. */
+  /** Intermediate passes (Blur Color), rendered before the main pass. */
+  passes: readonly ShaderPass[];
+  /** STD_BINDINGS + one texture per layer source, then one per pass. */
   bindings: AdjBinding[];
 }
 
@@ -85,6 +89,7 @@ const PASSTHROUGH: Program = {
   uniforms: new Float32Array(CONTEXT_SLOTS * 4),
   argumentSlots: new Map(),
   layerSources: [],
+  passes: [],
   bindings: STD_BINDINGS,
 };
 
@@ -105,11 +110,21 @@ function programFor(graph: NodeGraph, linear: boolean): Program | null {
     const r: ShaderCompileResult = compileShaderGraph(graph, { linear });
     entry[i] = r.ok
       ? {
-          source: assembleShaderSource(r.code, r.uniforms.length / 4, r.layerSources.length),
+          source: assembleShaderSource(
+            r.code,
+            r.uniforms.length / 4,
+            r.layerSources.length,
+            r.passes,
+          ),
           uniforms: r.uniforms,
           argumentSlots: r.argumentSlots,
           layerSources: r.layerSources,
-          bindings: [...STD_BINDINGS, ...r.layerSources.map((): AdjBinding => "tex")],
+          passes: r.passes,
+          bindings: [
+            ...STD_BINDINGS,
+            ...r.layerSources.map((): AdjBinding => "tex"),
+            ...r.passes.map((): AdjBinding => "tex"),
+          ],
         }
       : PASSTHROUGH;
   }
@@ -149,16 +164,13 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
 
     const source = program.source;
     const runtime = engine.runtime;
-    const pair = runtime.getRenderPipelinePairForSource(
-      source,
-      "fs_custom_shader",
-      program.bindings,
-      (message) => {
+    const pipelines = (fsEntry: string) =>
+      runtime.getRenderPipelinePairForSource(source, fsEntry, program.bindings, (message) => {
         console.error(`[custom-shader] WGSL compile error:\n${message}\n${source}`);
         gpuRejected.add(source);
         customShaderStatus.setGpuError(entry.layerId, message);
-      },
-    );
+      });
+    const pair = pipelines("fs_custom_shader");
     // Per-frame context (canvas size, parent layer rect) in the reserved
     // leading uniform slots.
     const uniforms = program.uniforms.slice();
@@ -180,7 +192,8 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
       const packed = packValue(resolveArgumentValue(arg, entry.params.args?.[id]), linear);
       if (packed) uniforms.set(packed.data, slot * 4);
     }
-    if (program.layerSources.length === 0) {
+    // Graphs that read nothing but their own layer: one pass.
+    if (program.layerSources.length === 0 && program.passes.length === 0) {
       runtime.encodeStdAdjRenderPass(
         encoder,
         pair,
@@ -192,26 +205,68 @@ export const CustomShaderEffect: IPipelineEffect<CustomShaderEffectLayer, Custom
       );
       return;
     }
-    // Other layers: texture + (offset, present) per source. A missing layer
-    // binds the source texture as a placeholder and reads as transparent.
+    // Other layers, as they render (mask and effects included): texture +
+    // (offset, present) per source. A missing layer binds the source texture
+    // as a placeholder and reads as transparent.
     const layerEntries: GPUBindGroupEntry[] = program.layerSources.map((s, i) => {
-      const gl = entry.sourceLayers?.[i] ?? null;
-      uniforms.set(gl ? [gl.offsetX, gl.offsetY, 1, 0] : [0, 0, 0, 0], s.slot * 4);
-      return { binding: LAYER_SOURCE_BINDING + i, resource: (gl?.texture ?? srcTex).createView() };
+      const source = entry.sourceLayers?.[i] ?? null;
+      const rendered = source && engine.renderSource(encoder, source);
+      uniforms.set(
+        rendered ? [rendered.offsetX, rendered.offsetY, 1, 0] : [0, 0, 0, 0],
+        s.slot * 4,
+      );
+      return {
+        binding: LAYER_SOURCE_BINDING + i,
+        resource: (rendered?.texture ?? srcTex).createView(),
+      };
     });
-    const mask = entry.selMaskLayer;
+    const paramsBuf = runtime.makeParamsBuf(uniforms.buffer as ArrayBuffer);
+    const firstPassBinding = LAYER_SOURCE_BINDING + program.layerSources.length;
+    const passTextures: GPUTexture[] = [];
+    const entries = (mask: GpuLayer | undefined): GPUBindGroupEntry[] => [
+      { binding: 0, resource: srcTex.createView() },
+      { binding: 1, resource: runtime.adjSampler },
+      { binding: 2, resource: { buffer: paramsBuf } },
+      { binding: 3, resource: (mask?.texture ?? srcTex).createView() },
+      { binding: 4, resource: { buffer: runtime.makeMaskFlagsBuf(!!mask, linear) } },
+      ...layerEntries,
+      // Passes not rendered yet (only later passes read them) get the
+      // source texture as a placeholder.
+      ...program.passes.map((_, k) => ({
+        binding: firstPassBinding + k,
+        resource: (passTextures[k] ?? srcTex).createView(),
+      })),
+    ];
+    // Intermediate passes: render the input's upstream nodes over the
+    // canvas, then blur them with the Gaussian / Box Blur filters.
+    program.passes.forEach((pass, k) => {
+      const passPair = pipelines(passEntryPoint(k));
+      const rendered = runtime.makeScratchTex(srcTex.width, srcTex.height, dstTex);
+      runtime.encodeRenderPass(
+        encoder,
+        runtime.selectPipeline(passPair, rendered),
+        rendered,
+        entries(undefined),
+        passPair.bgl,
+      );
+      let result = rendered;
+      if (pass.filter.radius > 0) {
+        result = runtime.makeScratchTex(srcTex.width, srcTex.height, dstTex);
+        const blur = {
+          kind: pass.filter.kind === "box" ? "box-blur" : "gaussian-blur",
+          layerId: entry.layerId,
+          visible: true,
+          params: { radius: pass.filter.radius },
+        } as EffectRenderOp;
+        engine.encode(encoder, blur, rendered, result, result.format);
+      }
+      passTextures.push(result);
+    });
     runtime.encodeRenderPass(
       encoder,
       runtime.selectPipeline(pair, format),
       dstTex,
-      [
-        { binding: 0, resource: srcTex.createView() },
-        { binding: 1, resource: runtime.adjSampler },
-        { binding: 2, resource: { buffer: runtime.makeParamsBuf(uniforms.buffer as ArrayBuffer) } },
-        { binding: 3, resource: (mask?.texture ?? srcTex).createView() },
-        { binding: 4, resource: { buffer: runtime.makeMaskFlagsBuf(!!mask, linear) } },
-        ...layerEntries,
-      ],
+      entries(entry.selMaskLayer),
       pair.bgl,
     );
   },

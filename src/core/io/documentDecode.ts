@@ -257,14 +257,22 @@ export async function decodeExrDocument(
   const exr = await decodeExrLayers(bytes);
   const layerData = createLayerDataBundle();
   const layers: LayerState[] = [];
-  // Track names already used so we can disambiguate duplicates.
-  const seenNames = new Map<string, number>();
+  // Names already used, so duplicates get a unique " (n)" suffix. The counter
+  // is keyed by the base name; the set catches a suffixed name that collides
+  // with a layer literally named e.g. "Paint (2)".
+  const usedNames = new Set<string>();
+  const nextSuffix = new Map<string, number>();
   exr.layers.forEach((L, i) => {
     const layerId = `layer-${i}`;
-    let name = L.name.trim() || (exr.layers.length === 1 ? "Background" : `Layer ${i + 1}`);
-    const n = seenNames.get(name) ?? 0;
-    if (n > 0) name = `${name} (${n + 1})`;
-    seenNames.set(name, n + 1);
+    const base = L.name.trim() || (exr.layers.length === 1 ? "Background" : `Layer ${i + 1}`);
+    let name = base;
+    if (usedNames.has(name)) {
+      let n = nextSuffix.get(base) ?? 2;
+      while (usedNames.has(`${base} (${n})`)) n++;
+      name = `${base} (${n})`;
+      nextSuffix.set(base, n + 1);
+    }
+    usedNames.add(name);
     layerData.layers.set(layerId, {
       format: "rgba32f",
       data: L.pixels,

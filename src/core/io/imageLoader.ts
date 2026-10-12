@@ -9,10 +9,11 @@ import {
   DdsFormat,
 } from "@/wasm";
 import {
-  extractIccFromPng,
   extractIccFromJpeg,
   extractIccFromTiff,
 } from "@/core/cms/iccProfile";
+import { srgbToLinearChannel } from "@/utils/pixelFormatConvert";
+import { decodePng } from "./pngCodec";
 
 // ─── Supported image extensions + MIME types ─────────────────────────────────
 
@@ -361,10 +362,20 @@ export async function loadImageBytes(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer;
+      const magic = bytes.length >= 4 ? (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3] : 0;
+      if (magic !== 0x49492a00 && magic !== 0x4d4d002a) {
+        throw new Error("not a TIFF file (bad header)");
+      }
       const ifds = UTIF.decode(tiffBuf);
       if (ifds.length === 0) throw new Error("No images found in TIFF file");
       UTIF.decodeImage(tiffBuf, ifds[0]);
       const ifd = ifds[0] as Record<string, number[]>;
+      // UTIF returns an IFD without dimensions (rather than throwing) for
+      // malformed input.
+      const { width: tw, height: th } = ifds[0];
+      if (!Number.isInteger(tw) || !Number.isInteger(th) || tw <= 0 || th <= 0) {
+        throw new Error("the image has no valid dimensions");
+      }
       // Detect 32-bit float TIFF (SampleFormat=3, BitsPerSample=32)
       if (ifd["t339"]?.[0] === 3 && ifd["t258"]?.[0] === 32) {
         const w = ifds[0].width;
@@ -376,6 +387,7 @@ export async function loadImageBytes(
           rawData.byteLength / 4,
         );
         const samplesPerPixel = ifd["t277"]?.[0] ?? 3;
+        if (floatView.length < w * h * samplesPerPixel) throw new Error("the image data is truncated");
         const pixels = new Float32Array(w * h * 4);
         for (let i = 0; i < w * h; i++) {
           pixels[i * 4] = floatView[i * samplesPerPixel];
@@ -399,6 +411,7 @@ export async function loadImageBytes(
         });
       }
       const rgba = UTIF.toRGBA8(ifds[0]);
+      if (rgba.length < tw * th * 4) throw new Error("the image data is truncated");
       return Promise.resolve({
         data: rgba,
         width: ifds[0].width,
@@ -412,17 +425,49 @@ export async function loadImageBytes(
     }
   }
 
-  // PNG / JPEG decode through the browser's <img> element, which strips
-  // any embedded ICC profile. Extract the profile from the raw bytes
-  // first, then hand off pixel decoding to the browser.
-  let extractedProfile: Uint8Array | undefined;
+  // PNG — decoded directly (pngCodec.ts). The browser's <img> + canvas path
+  // premultiplies alpha, so semi-transparent pixels wouldn't come back exact.
   if (mime === "image/png") {
     try {
-      extractedProfile = (await extractIccFromPng(bytes)) ?? undefined;
-    } catch {
-      extractedProfile = undefined;
+      const png = await decodePng(bytes);
+      if (png.bitDepth === 16 && !png.iccProfile) {
+        // Keep 16-bit precision: open as a float document. Untagged PNG
+        // samples are sRGB-encoded; float documents are scene-linear.
+        const src = png.data as Uint16Array;
+        const lut = new Float32Array(65536);
+        for (let v = 0; v < 65536; v++) lut[v] = srgbToLinearChannel(v / 65535);
+        const data = new Float32Array(src.length);
+        for (let i = 0; i < src.length; i += 4) {
+          data[i] = lut[src[i]];
+          data[i + 1] = lut[src[i + 1]];
+          data[i + 2] = lut[src[i + 2]];
+          data[i + 3] = src[i + 3] / 65535;
+        }
+        return { data, width: png.width, height: png.height, isHdr: true };
+      }
+      // 8-bit, or 16-bit with an ICC profile: the profile describes encoded
+      // samples, which the 8-bit import path converts correctly, so round.
+      let data: Uint8Array;
+      if (png.data instanceof Uint16Array) {
+        const src = png.data;
+        data = new Uint8Array(src.length);
+        for (let i = 0; i < src.length; i++) data[i] = Math.round(src[i] / 257);
+      } else {
+        data = png.data;
+      }
+      return { data, width: png.width, height: png.height, iccProfile: png.iccProfile };
+    } catch (err) {
+      return Promise.reject(
+        new Error(`Failed to decode PNG: ${(err as Error).message}`),
+      );
     }
-  } else if (mime === "image/jpeg") {
+  }
+
+  // JPEG and the other browser formats decode through the <img> element,
+  // which strips any embedded ICC profile. Extract the profile from the raw
+  // bytes first, then hand off pixel decoding to the browser.
+  let extractedProfile: Uint8Array | undefined;
+  if (mime === "image/jpeg") {
     try {
       extractedProfile = extractIccFromJpeg(bytes) ?? undefined;
     } catch {

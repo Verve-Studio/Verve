@@ -4,6 +4,7 @@ import type { EffectLayerState } from "@/core/effects/effectTypes";
 import type {
   EffectRenderOp,
   GpuLayer,
+  SourceLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { EffectEncoder } from "@/graphics/webgpu/EffectEncoder";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
@@ -30,8 +31,8 @@ export interface PlanContext {
    *  attachments. Absent for composite / group parents (whole canvas). */
   parentRect?: { x: number; y: number; width: number; height: number };
   /** The document's pixel-bearing layer with this name (the first one in
-   *  the layer list), for effects that read other layers. */
-  resolveLayer(name: string): GpuLayer | undefined;
+   *  the layer list) as it renders, for effects that read other layers. */
+  resolveLayer(name: string): SourceLayer | undefined;
 }
 
 export interface EncodeContext {

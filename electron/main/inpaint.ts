@@ -1,4 +1,5 @@
 import { mlPaths } from './ml/paths'
+import { assertImageSize, assertPixelBuffer } from './ml/imageParams'
 import { join } from 'node:path'
 import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -321,12 +322,9 @@ export async function runInpaint(params: {
   height: number
 }): Promise<{ rgba: Uint8Array; width: number; height: number; provider: string }> {
   const { width: w, height: h } = params
-  if (params.rgba.length !== w * h * 4) {
-    throw new Error(`rgba length ${params.rgba.length} ≠ ${w}×${h}×4`)
-  }
-  if (params.mask.length !== w * h) {
-    throw new Error(`mask length ${params.mask.length} ≠ ${w}×${h}`)
-  }
+  assertImageSize(w, h)
+  assertPixelBuffer('rgba', params.rgba, w, h, 4)
+  assertPixelBuffer('mask', params.mask, w, h, 1)
 
   const sess = await loadSession()
   const ort = getOrt()

@@ -143,13 +143,16 @@ export function applyTextStyle(ctx: Ctx2D, ls: TextLayerState): void {
   }
 }
 
-const measureCtx: Ctx2D = (() => {
+/** Created on first use, so importing the module needs no canvas. */
+let _measureCtx: Ctx2D | null = null;
+function measureCtx(): Ctx2D {
+  if (_measureCtx) return _measureCtx;
   if (typeof OffscreenCanvas !== "undefined") {
     const c = new OffscreenCanvas(1, 1).getContext("2d");
-    if (c) return c;
+    if (c) return (_measureCtx = c);
   }
-  return document.createElement("canvas").getContext("2d")!;
-})();
+  return (_measureCtx = document.createElement("canvas").getContext("2d")!);
+}
 
 /** Upper-case without changing the UTF-16 length, so caret offsets into the
  *  source string stay valid (e.g. `ß` stays `ß` rather than becoming `SS`). */
@@ -184,7 +187,7 @@ function breakParagraph(
 ): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   const measure = (a: number, b: number): number =>
-    measureCtx.measureText(para.slice(a, b)).width;
+    measureCtx().measureText(para.slice(a, b)).width;
   const n = para.length;
   let lineStart = 0;
   let i = 0;
@@ -366,7 +369,7 @@ function bidiSegments(
       text,
       rtl: r.level % 2 === 1,
       space: r.space,
-      width: r.space ? spaceWidth! : measureCtx.measureText(text).width,
+      width: r.space ? spaceWidth! : measureCtx().measureText(text).width,
     };
   });
 }
@@ -389,7 +392,7 @@ export function layoutText(ls: TextLayerState): TextLayout {
 }
 
 function computeLayout(ls: TextLayerState): TextLayout {
-  applyTextStyle(measureCtx, ls);
+  applyTextStyle(measureCtx(), ls);
   const fs = ls.fontSize;
   const effFs = effectiveFontSize(ls);
   const hScale = (ls.horizontalScale ?? 100) / 100 || 1;
@@ -411,7 +414,7 @@ function computeLayout(ls: TextLayerState): TextLayout {
   const wrapW = isArea ? Math.max(1, boxW - leftIndent - rightIndent) : 0;
   const wrap = isArea && !ls.noBreak;
 
-  const m0 = measureCtx.measureText("Hg");
+  const m0 = measureCtx().measureText("Hg");
   const ascent = Number.isFinite(m0.fontBoundingBoxAscent) ? m0.fontBoundingBoxAscent : 0;
   const descent = Number.isFinite(m0.fontBoundingBoxDescent) ? m0.fontBoundingBoxDescent : effFs * 1.2;
 
@@ -448,7 +451,7 @@ function computeLayout(ls: TextLayerState): TextLayout {
         end: paraStart + b,
         full,
         draw,
-        width: draw ? measureCtx.measureText(draw).width : 0,
+        width: draw ? measureCtx().measureText(draw).width : 0,
         firstOfPara: k === 0,
         lastOfPara: isLast,
         paraIdx,
@@ -501,7 +504,7 @@ function computeLayout(ls: TextLayerState): TextLayout {
       else if (lineAlign === "justify") {
         const spaces = countSpaces(p.draw);
         if (spaces > 0) {
-          const inkW = measureCtx.measureText(p.draw.replace(/ /g, "")).width;
+          const inkW = measureCtx().measureText(p.draw.replace(/ /g, "")).width;
           spaceWidth = (inner - inkW) / spaces;
         }
       }
@@ -657,7 +660,7 @@ function segmentEdge(seg: BidiSegment, k: number): number {
       ? 0
       : k >= seg.text.length
         ? seg.width
-        : measureCtx.measureText(seg.text.slice(0, k)).width;
+        : measureCtx().measureText(seg.text.slice(0, k)).width;
   return seg.rtl ? seg.x + seg.width - w : seg.x + w;
 }
 
@@ -668,7 +671,7 @@ function segmentAt(segs: readonly BidiSegment[], i: number): BidiSegment {
 
 function lineOffsets(layout: TextLayout, line: TextLine): Float64Array {
   if (line.offsets) return line.offsets;
-  applyTextStyle(measureCtx, layout.ls);
+  applyTextStyle(measureCtx(), layout.ls);
   const s = line.full;
   const n = s.length;
   const out = new Float64Array(n + 1);
@@ -687,19 +690,19 @@ function lineOffsets(layout: TextLayout, line: TextLine): Float64Array {
       const ch = s[i - 1];
       if (ch === " ") spaces++;
       else noSpace += ch;
-      out[i] = measureCtx.measureText(noSpace).width + spaces * sw;
+      out[i] = measureCtx().measureText(noSpace).width + spaces * sw;
     }
   } else if (n <= EXACT_LIMIT) {
-    for (let i = 1; i <= n; i++) out[i] = measureCtx.measureText(s.slice(0, i)).width;
+    for (let i = 1; i <= n; i++) out[i] = measureCtx().measureText(s.slice(0, i)).width;
   } else {
     let base = 0;
     for (let i = 1; i <= n; i++) {
       if (i % CHUNK === 0) {
-        base = measureCtx.measureText(s.slice(0, i)).width;
+        base = measureCtx().measureText(s.slice(0, i)).width;
         out[i] = base;
       } else {
         const from = i - (i % CHUNK);
-        out[i] = (from === 0 ? 0 : base) + measureCtx.measureText(s.slice(from, i)).width;
+        out[i] = (from === 0 ? 0 : base) + measureCtx().measureText(s.slice(from, i)).width;
       }
     }
   }
@@ -807,7 +810,7 @@ export function selectionRects(layout: TextLayout, from: number, to: number): Te
     const h = layout.ascent + layout.descent;
     if (line.segments) {
       // Bidi: a logical range is one piece per direction run it touches.
-      applyTextStyle(measureCtx, layout.ls);
+      applyTextStyle(measureCtx(), layout.ls);
       let minX = Infinity;
       let maxX = -Infinity;
       for (const seg of line.segments) {

@@ -171,23 +171,21 @@ function baseFontName(
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
-function rgbForPdf(c: RGBAColor): [number, number, number] {
-  // Verve stores text/shape colours in either 0–255 (LDR docs) or 0–∞ float
-  // (HDR / >1 valid). Detect by magnitude: anything > 1 is treated as 0–255.
-  const max = Math.max(c.r, c.g, c.b);
-  if (max > 1.0001) {
-    return [
-      clamp01(c.r / 255),
-      clamp01(c.g / 255),
-      clamp01(c.b / 255),
-    ];
-  }
-  return [clamp01(c.r), clamp01(c.g), clamp01(c.b)];
+/** How a colour's channels are encoded. The range is a property of where
+ *  the colour comes from, never guessed from its magnitude:
+ *  - `"byte"`: shape / path / gradient-stop colours, RGBA 0–255 (what the
+ *    shape and path rasterisers draw with).
+ *  - `"float"`: text colours (`TextLayerState.color`, from `primaryColor`),
+ *    r/g/b in [0, ∞) where > 1 is HDR, a in [0, 1]. HDR channels clamp to 1. */
+type ColorRange = "byte" | "float";
+
+function rgbForPdf(c: RGBAColor, range: ColorRange): [number, number, number] {
+  const k = range === "byte" ? 1 / 255 : 1;
+  return [clamp01(c.r * k), clamp01(c.g * k), clamp01(c.b * k)];
 }
 
-function alphaForPdf(c: RGBAColor): number {
-  // Same heuristic — alpha is 0–255 in LDR documents but 0–1 for HDR floats.
-  return c.a > 1.0001 ? clamp01(c.a / 255) : clamp01(c.a);
+function alphaForPdf(c: RGBAColor, range: ColorRange): number {
+  return clamp01(range === "byte" ? c.a / 255 : c.a);
 }
 
 function clamp01(v: number): number {
@@ -466,14 +464,14 @@ function emitTextNode(ctx: BuildContext, node: PdfTextNode): string {
   const fontName = baseFontName(family, t.bold, t.italic);
   const fontId = ensureFont(ctx, fontName);
 
-  const fillA = alphaForPdf(t.color) * node.layerOpacity;
+  const fillA = alphaForPdf(t.color, "float") * node.layerOpacity;
   const strokeA =
     t.strokeColor && t.strokeWidth && t.strokeWidth > 0
-      ? alphaForPdf(t.strokeColor) * node.layerOpacity
+      ? alphaForPdf(t.strokeColor, "float") * node.layerOpacity
       : 0;
   const gState = ensureGState(ctx, fillA, strokeA, node.blendMode);
 
-  const [fr, fg, fb] = rgbForPdf(t.color);
+  const [fr, fg, fb] = rgbForPdf(t.color, "float");
   const lines = t.text.split(/\r?\n/);
   const lineHeightPx = t.fontSize * (t.lineHeight || 1.2);
   const ascentPx = t.fontSize * 0.8;
@@ -485,7 +483,7 @@ function emitTextNode(ctx: BuildContext, node: PdfTextNode): string {
     strokeB = 0,
     strokeW = 0;
   if (hasStroke && t.strokeColor) {
-    [strokeR, strokeG, strokeB] = rgbForPdf(t.strokeColor);
+    [strokeR, strokeG, strokeB] = rgbForPdf(t.strokeColor, "float");
     strokeW = t.strokeWidth ?? 0;
   }
 
@@ -572,19 +570,19 @@ function emitShapeNode(ctx: BuildContext, node: PdfShapeNode): string {
   const hasGradFill = !!s.fillGradient && s.shapeType !== "line";
   const gradAlpha01 = hasGradFill
     ? (() => {
-        const a = s.fillGradient!.stops[0]?.color.a ?? 1;
-        return a > 1.0001 ? a / 255 : a;
+        const a = s.fillGradient!.stops[0]?.color.a ?? 255;
+        return a / 255;
       })()
     : 1;
   const solidFillA = s.fillColor
-    ? alphaForPdf(s.fillColor) * node.layerOpacity
+    ? alphaForPdf(s.fillColor, "byte") * node.layerOpacity
     : 0;
   const fillA = hasGradFill
     ? Math.max(0, Math.min(1, gradAlpha01)) * node.layerOpacity
     : solidFillA;
   const strokeA =
     s.strokeColor && s.strokeWidth > 0
-      ? alphaForPdf(s.strokeColor) * node.layerOpacity
+      ? alphaForPdf(s.strokeColor, "byte") * node.layerOpacity
       : 0;
   if (fillA === 0 && strokeA === 0) return "";
 
@@ -610,7 +608,7 @@ function emitShapeNode(ctx: BuildContext, node: PdfShapeNode): string {
     // Stroke is emitted afterward in canvas-space too so the stroke aligns
     // with the gradient-clipped fill, not the local rotated frame.
     if (hasStroke && s.strokeColor) {
-      const [r, g, b] = rgbForPdf(s.strokeColor);
+      const [r, g, b] = rgbForPdf(s.strokeColor, "byte");
       out += `${fmt(r)} ${fmt(g)} ${fmt(b)} RG\n`;
       out += `${fmt(s.strokeWidth)} w\n`;
       out += "1 j\n"; // round join (the local-frame path uses Canvas2D round)
@@ -624,11 +622,11 @@ function emitShapeNode(ctx: BuildContext, node: PdfShapeNode): string {
   const paintOp = hasSolidFill && hasStroke ? "B" : hasSolidFill ? "f" : "S";
 
   if (hasSolidFill && s.fillColor) {
-    const [r, g, b] = rgbForPdf(s.fillColor);
+    const [r, g, b] = rgbForPdf(s.fillColor, "byte");
     out += `${fmt(r)} ${fmt(g)} ${fmt(b)} rg\n`;
   }
   if (hasStroke && s.strokeColor) {
-    const [r, g, b] = rgbForPdf(s.strokeColor);
+    const [r, g, b] = rgbForPdf(s.strokeColor, "byte");
     out += `${fmt(r)} ${fmt(g)} ${fmt(b)} RG\n`;
     out += `${fmt(s.strokeWidth)} w\n`;
   }
@@ -724,19 +722,19 @@ function emitPathNode(ctx: BuildContext, node: PdfPathNode): string {
   const hasGradFill = !!p.fillGradient && p.closed;
   const gradAlpha01 = hasGradFill
     ? (() => {
-        const a = p.fillGradient!.stops[0]?.color.a ?? 1;
-        return a > 1.0001 ? a / 255 : a;
+        const a = p.fillGradient!.stops[0]?.color.a ?? 255;
+        return a / 255;
       })()
     : 1;
   const solidFillA = p.fillColor
-    ? alphaForPdf(p.fillColor) * node.layerOpacity
+    ? alphaForPdf(p.fillColor, "byte") * node.layerOpacity
     : 0;
   const fillA = hasGradFill
     ? Math.max(0, Math.min(1, gradAlpha01)) * node.layerOpacity
     : solidFillA;
   const strokeA =
     p.strokeColor && p.strokeWidth > 0
-      ? alphaForPdf(p.strokeColor) * node.layerOpacity
+      ? alphaForPdf(p.strokeColor, "byte") * node.layerOpacity
       : 0;
   if (fillA === 0 && strokeA === 0) return "";
 
@@ -767,11 +765,11 @@ function emitPathNode(ctx: BuildContext, node: PdfPathNode): string {
   let out = "q\n";
   out += `/${gState} gs\n`;
   if (hasFill && p.fillColor) {
-    const [r, g, b] = rgbForPdf(p.fillColor);
+    const [r, g, b] = rgbForPdf(p.fillColor, "byte");
     out += `${fmt(r)} ${fmt(g)} ${fmt(b)} rg\n`;
   }
   if (hasStroke && p.strokeColor) {
-    const [r, g, b] = rgbForPdf(p.strokeColor);
+    const [r, g, b] = rgbForPdf(p.strokeColor, "byte");
     out += `${fmt(r)} ${fmt(g)} ${fmt(b)} RG\n`;
     out += `${fmt(p.strokeWidth)} w\n`;
     out += `${joinCode} j\n`;
@@ -789,17 +787,26 @@ function emitPathNode(ctx: BuildContext, node: PdfPathNode): string {
   // y_pdf = pageHeight - y_canvas.
   const flipY = (y: number): number => ctx.pageHeight - y;
   const first = p.nodes[0];
-  out += `${fmt(first.x)} ${fmt(flipY(first.y))} m\n`;
+  let path = `${fmt(first.x)} ${fmt(flipY(first.y))} m\n`;
   const last = p.closed ? p.nodes.length : p.nodes.length - 1;
   for (let i = 0; i < last; i++) {
     const a = p.nodes[i];
     const b = p.nodes[(i + 1) % p.nodes.length];
-    out += `${fmt(a.x + a.outX)} ${fmt(flipY(a.y + a.outY))} `;
-    out += `${fmt(b.x + b.inX)} ${fmt(flipY(b.y + b.inY))} `;
-    out += `${fmt(b.x)} ${fmt(flipY(b.y))} c\n`;
+    path += `${fmt(a.x + a.outX)} ${fmt(flipY(a.y + a.outY))} `;
+    path += `${fmt(b.x + b.inX)} ${fmt(flipY(b.y + b.inY))} `;
+    path += `${fmt(b.x)} ${fmt(flipY(b.y))} c\n`;
   }
-  if (p.closed) out += "h ";
-  out += `${paintOp}\n`;
+  if (p.closed) path += "h ";
+
+  // Gradient fill: clip to the path and paint the shading inside it.
+  if (hasGradFill) {
+    out += "q\n";
+    out += path;
+    out += evenOdd ? "W* n\n" : "W n\n";
+    out += `/${ensureShading(ctx, p.fillGradient!)} sh\n`;
+    out += "Q\n";
+  }
+  if (paintOp !== "n" || !hasGradFill) out += `${path}${paintOp}\n`;
   out += "Q\n";
   return out;
 }
@@ -949,6 +956,37 @@ export async function exportPdf(input: PdfExportInput): Promise<Uint8Array> {
     gStateObjIds[resId] = pushObj(`${objects.length + 1} 0 obj\n${objStr}\nendobj\n`);
   }
 
+  // Shading objects for gradient fills. Gradient coordinates are canvas
+  // space; the `sh` operators run with the identity CTM (page space), so the
+  // axis is Y-flipped here. Stop colours are 0–255 like other shape colours.
+  const shadingObjIds: Record<string, number> = {};
+  const shadingColorSpace = iccObjId > 0 ? `[/ICCBased ${iccObjId} 0 R]` : "/DeviceRGB";
+  const flipY = (y: number): number => height - y;
+  for (const sh of ctx.shadings) {
+    const fnId = pushObj(`${objects.length + 1} 0 obj
+${shadingFunction(sh.gradient)}
+endobj
+`);
+    const g = sh.gradient;
+    let coords: string;
+    let type: number;
+    if (g.type === "radial") {
+      const r = Math.max(0.5, Math.hypot(g.endX - g.startX, g.endY - g.startY));
+      type = 3;
+      coords = `${fmt(g.startX)} ${fmt(flipY(g.startY))} 0 ${fmt(g.startX)} ${fmt(flipY(g.startY))} ${fmt(r)}`;
+    } else {
+      type = 2;
+      coords = `${fmt(g.startX)} ${fmt(flipY(g.startY))} ${fmt(g.endX)} ${fmt(flipY(g.endY))}`;
+    }
+    const dict =
+      `<< /ShadingType ${type} /ColorSpace ${shadingColorSpace} /Coords [${coords}] ` +
+      `/Function ${fnId} 0 R /Extend [true true] >>`;
+    shadingObjIds[sh.name] = pushObj(`${objects.length + 1} 0 obj
+${dict}
+endobj
+`);
+  }
+
   // Image XObjects (each image: an SMask object first, then the main image
   // referring to it via /SMask).
   const imageObjIds: number[] = [];
@@ -995,6 +1033,12 @@ export async function exportPdf(input: PdfExportInput): Promise<Uint8Array> {
           .map((id, i) => `/${ctx.imageNames[i]} ${id} 0 R`)
           .join(" ") +
         " >> ";
+  const shadingDict =
+    ctx.shadings.length === 0
+      ? ""
+      : "/Shading << " +
+        ctx.shadings.map(({ name }) => `/${name} ${shadingObjIds[name]} 0 R`).join(" ") +
+        " >> ";
   // When an ICC profile is embedded, set it as DefaultRGB so the `rg`/`RG`
   // colour operators used by text and shape fills/strokes are colour-managed
   // by viewers (Acrobat, Preview, etc.).
@@ -1002,7 +1046,7 @@ export async function exportPdf(input: PdfExportInput): Promise<Uint8Array> {
     iccObjId > 0
       ? `/ColorSpace << /DefaultRGB [/ICCBased ${iccObjId} 0 R] >> `
       : "";
-  const resources = `<< ${fontDict}${gStateDict}${xobjectDict}${colorSpaceDict}/ProcSet [/PDF /Text /ImageC /ImageB] >>`;
+  const resources = `<< ${fontDict}${gStateDict}${xobjectDict}${shadingDict}${colorSpaceDict}/ProcSet [/PDF /Text /ImageC /ImageB] >>`;
 
   objects[0] = new TextEncoder().encode(
     `${CATALOG_ID} 0 obj\n<< /Type /Catalog /Pages ${PAGES_ID} 0 R >>\nendobj\n`,
@@ -1040,6 +1084,39 @@ export async function exportPdf(input: PdfExportInput): Promise<Uint8Array> {
   parts.push(new TextEncoder().encode(xref));
 
   return concatBytes(parts);
+}
+
+// ─── Gradient functions ───────────────────────────────────────────────────────
+
+/** The PDF function mapping t ∈ [0, 1] to RGB for a gradient: one Type 2
+ *  (linear interpolation) function per stop interval, stitched with a Type 3
+ *  function when there is more than one interval. */
+function shadingFunction(g: Gradient): string {
+  const stops = [...g.stops]
+    .map((s) => ({ offset: clamp01(s.offset), color: s.color }))
+    .sort((a, b) => a.offset - b.offset);
+  if (stops.length === 0) {
+    stops.push({ offset: 0, color: { r: 0, g: 0, b: 0, a: 255 } }, { offset: 1, color: { r: 255, g: 255, b: 255, a: 255 } });
+  }
+  // Extend the end stops to cover the whole [0, 1] domain.
+  if (stops[0].offset > 0 || stops.length === 1) stops.unshift({ offset: 0, color: stops[0].color });
+  if (stops[stops.length - 1].offset < 1) stops.push({ offset: 1, color: stops[stops.length - 1].color });
+  const rgb = (c: RGBAColor): string => rgbForPdf(c, "byte").map(fmt).join(" ");
+  const interval = (a: RGBAColor, b: RGBAColor): string =>
+    `<< /FunctionType 2 /Domain [0 1] /C0 [${rgb(a)}] /C1 [${rgb(b)}] /N 1 >>`;
+  if (stops.length === 2) return interval(stops[0].color, stops[1].color);
+  const fns: string[] = [];
+  const bounds: string[] = [];
+  const encode: string[] = [];
+  for (let i = 0; i < stops.length - 1; i++) {
+    fns.push(interval(stops[i].color, stops[i + 1].color));
+    if (i > 0) bounds.push(fmt(stops[i].offset));
+    encode.push("0 1");
+  }
+  return (
+    `<< /FunctionType 3 /Domain [0 1] /Functions [${fns.join(" ")}] ` +
+    `/Bounds [${bounds.join(" ")}] /Encode [${encode.join(" ")}] >>`
+  );
 }
 
 // ─── Small byte helpers ───────────────────────────────────────────────────────

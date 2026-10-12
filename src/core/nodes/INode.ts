@@ -8,6 +8,7 @@ import type {
   SocketDirection,
 } from "./graphTypes";
 import type { AutomationHost } from "./automationHost";
+import type { PassFilter } from "./shaderCompiler";
 import type { RuntimeValue } from "./values";
 
 /**
@@ -72,6 +73,13 @@ export interface ShaderContext {
    *  so editing it doesn't rebuild the shader). `null` when the input is
    *  unconnected and has no inline value. */
   input(id: string): string | null;
+  /** Input `id` rendered in a pass of its own over the whole canvas and
+   *  processed by `filter` (e.g. blurred): returns the name of a fetch
+   *  function, `fn(p: vec2i) -> vec4f`, reading the result at integer
+   *  canvas pixel `p` (clamped). The input's upstream nodes run once per
+   *  pixel in that pass; graphs that never call this render in one pass.
+   *  `null` when the input is unconnected. */
+  inputPass(id: string, filter: PassFilter): string | null;
   /** Parameter value, fixed at compile time (e.g. an operation enum).
    *  Changing it rebuilds the shader. */
   param(id: string): ParamValue;

@@ -36,11 +36,11 @@ const OPS: Record<string, Op> = {
   cos: { label: "Cosine", unary: true, wgsl: (a) => `cos(${a})`, js: Math.cos },
   tan: { label: "Tangent", unary: true, wgsl: (a) => `tan(${a})`, js: Math.tan },
   atan2: { label: "Arctan2 (A = y, B = x)", wgsl: (a, b) => `atan2(${a}, ${b})`, js: Math.atan2 },
-  round: { label: "Round", unary: true, wgsl: (a) => `round(${a})`, js: (a) => Math.round(a) },
+  round: { label: "Round", unary: true, wgsl: (a) => `floor(${a} + 0.5)`, js: (a) => Math.round(a) },
   ceil: { label: "Ceil", unary: true, wgsl: (a) => `ceil(${a})`, js: Math.ceil },
   snap: {
     label: "Snap (to multiple of B)",
-    wgsl: (a, b) => `select(round(${a} / ${b}) * ${b}, ${a}, ${b} == 0.0)`,
+    wgsl: (a, b) => `select(floor(${a} / ${b} + 0.5) * ${b}, ${a}, ${b} == 0.0)`,
     js: (a, b) => (b === 0 ? a : Math.round(a / b) * b),
   },
   sign: { label: "Sign", unary: true, wgsl: (a) => `sign(${a})`, js: Math.sign },

@@ -2,6 +2,8 @@
 //
 // Encodes through an OffscreenCanvas and `convertToBlob`, which is async and
 // returns the file bytes directly — no synchronous `toDataURL`, no base64.
+// Used for the lossy formats (JPEG / WebP); PNG export encodes directly
+// (pngCodec.ts) because a canvas premultiplies alpha.
 
 /** Encode RGBA pixels with the browser's built-in encoder. When `background`
  *  is set the pixels are composited over it first (formats without alpha). */

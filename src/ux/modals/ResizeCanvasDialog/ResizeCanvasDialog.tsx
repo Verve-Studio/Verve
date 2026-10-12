@@ -131,18 +131,6 @@ export function ResizeCanvasDialog({
     onConfirm({ width: w, height: h, anchorCol, anchorRow });
   }, [width, height, anchorCol, anchorRow, onConfirm]);
 
-  // Enter = confirm
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        handleConfirm();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, handleConfirm]);
 
   const dw = width - currentWidth;
   const dh = height - currentHeight;
@@ -153,6 +141,7 @@ export function ResizeCanvasDialog({
       title="Resize Canvas"
       width={380}
       onClose={onCancel}
+      onSubmit={handleConfirm}
     >
       <div className={styles.body}>
         {/* ── Current size info ─────────────────────────────────────── */}

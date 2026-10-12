@@ -81,17 +81,6 @@ export function RestoreImageDialog({
     onConfirm({ modelId });
   }, [canConfirm, modelId, onConfirm]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        handleConfirm();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, handleConfirm]);
 
   const selectedScale = models.find((m) => m.id === modelId)?.scale ?? 4;
 
@@ -101,6 +90,7 @@ export function RestoreImageDialog({
       title="Restore Image"
       width={400}
       onClose={onCancel}
+      onSubmit={handleConfirm}
     >
       <div className={styles.body}>
         <p className={styles.intro}>

@@ -30,7 +30,7 @@ const GROUPS: ShortcutGroup[] = [
     label: "Edit",
     rows: [
       { keys: "Ctrl+Z", action: "Undo" },
-      { keys: "Ctrl+Y", action: "Redo" },
+      { keys: "Ctrl+Shift+Z", action: "Redo" },
       { keys: "Ctrl+X", action: "Cut" },
       { keys: "Ctrl+C", action: "Copy" },
       { keys: "Ctrl+Shift+C", action: "Copy Merged" },
@@ -69,6 +69,8 @@ const GROUPS: ShortcutGroup[] = [
       { keys: "Ctrl+'", action: "Show / Hide Grid" },
       { keys: "Ctrl+R", action: "Show / Hide Rulers" },
       { keys: "Ctrl+;", action: "Show / Hide Guides" },
+      { keys: "Ctrl+Y", action: "Proof Colors" },
+      { keys: "Ctrl+Shift+Y", action: "Gamut Warning" },
     ],
   },
   {

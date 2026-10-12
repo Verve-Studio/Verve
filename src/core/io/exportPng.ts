@@ -1,12 +1,10 @@
 // ─── PNG export ───────────────────────────────────────────────────────────────
 //
-// PNG is lossless. The HTML5 canvas API does not expose compression-level
-// controls at encode time; the browser selects an appropriate level internally.
-// An embedded ICC profile is added post-encode by injecting an `iCCP` chunk
-// — the browser's encoder doesn't accept profile bytes directly.
+// PNG is lossless: pixels are encoded directly (pngCodec.ts), not through a
+// 2D canvas, whose premultiplied alpha would alter semi-transparent pixels.
+// An ICC profile is embedded as an `iCCP` chunk.
 
-import { embedIccInPng } from "@/core/cms/iccProfile";
-import { encodeWithCanvas } from "./canvasEncode";
+import { encodePng } from "./pngCodec";
 
 export interface PngExportOptions {
   /** Raw ICC profile bytes to embed as an `iCCP` chunk. */
@@ -16,17 +14,16 @@ export interface PngExportOptions {
 /**
  * Encode RGBA pixel data as a PNG file.
  *
- * @param pixels  Raw RGBA bytes, top-row-first.
+ * @param pixels  Raw straight-alpha RGBA bytes, top-row-first.
  * @param width   Image width in pixels.
  * @param height  Image height in pixels.
  * @returns       The PNG file bytes.
  */
-export async function exportPng(
+export function exportPng(
   pixels: Uint8Array,
   width: number,
   height: number,
   options: PngExportOptions = {},
 ): Promise<Uint8Array> {
-  const png = await encodeWithCanvas(pixels, width, height, "image/png");
-  return options.iccProfile ? embedIccInPng(png, options.iccProfile) : png;
+  return encodePng(pixels, width, height, { iccProfile: options.iccProfile });
 }

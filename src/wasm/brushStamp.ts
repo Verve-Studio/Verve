@@ -78,6 +78,10 @@ const PARAM_I = {
   grainMode: 188,
   blendMode: 204,
   strokeFlags: 208,
+  // Canvas position of the buffers' (0, 0): non-zero only on the slice-copy
+  // path, so canvas-locked grain and the dither hash stay on canvas pixels.
+  originX: 212,
+  originY: 216,
 } as const;
 // Must equal `sizeof(BrushStampParams)` (224, 16-byte aligned). Critical
 // for the batched dispatch — otherwise C++ would read entries at a
@@ -519,6 +523,8 @@ export function ensureBakedBitmap(
   view.setFloat32(PARAM_F.sweepR0, 1, true);
   view.setInt32(PARAM_I.blendMode, 0, true);
   view.setInt32(PARAM_I.strokeFlags, 0, true);
+  view.setInt32(PARAM_I.originX, 0, true);
+  view.setInt32(PARAM_I.originY, 0, true);
 
   // The malloc above may have grown the heap; re-bind the view.
   if (s.paramsView.buffer !== m.HEAPU8.buffer) {
@@ -619,6 +625,9 @@ function packStampParamsAt(
   view.setFloat32(off + PARAM_F.sweepR0, j.sweepR0, true);
   view.setInt32(off + PARAM_I.blendMode, j.blendMode, true);
   view.setInt32(off + PARAM_I.strokeFlags, j.strokeFlags, true);
+  // Canvas-space buffers: no slice origin.
+  view.setInt32(off + PARAM_I.originX, 0, true);
+  view.setInt32(off + PARAM_I.originY, 0, true);
   // Bitmap-path per-stamp offsets. Harmless for the per-stamp path (kernel
   // never reads these fields). For the bitmap path these locate the
   // pre-rasterized coverage bitmap in canvas coords: bitmap pixel (0,0)
@@ -1043,6 +1052,11 @@ export function runBrushStamp(m: PixelOpsModule, j: BrushStampJob): boolean {
     view.setInt32(PARAM_I.maxY, sliceH - 1, true);
     view.setInt32(PARAM_I.layerOffsetX, 0, true);
     view.setInt32(PARAM_I.layerOffsetY, 0, true);
+    // …but tell the kernel where the slice sits on the canvas: canvas-locked
+    // paper grain and the stochastic-rounding hash are keyed on canvas
+    // pixels (slice pixel + origin), matching the zero-copy and JS paths.
+    view.setInt32(PARAM_I.originX, cx0, true);
+    view.setInt32(PARAM_I.originY, cy0, true);
 
     const tipPtr = j.tipData ? uploadTip(m, s, j.tipData) : 0;
     const dualTipPtr = j.dualTipData ? uploadTip(m, s, j.dualTipData) : 0;

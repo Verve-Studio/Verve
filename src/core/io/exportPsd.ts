@@ -125,23 +125,21 @@ function blendModeToPsd(mode: VerveBlendMode): BlendMode {
 // ─── Text-attribute mapping (TextLayerState → ag-psd) ────────────────────────
 
 /**
- * Float RGBA → PSD colour, picking the encoding that preserves the most
- * information for the target bit depth:
- *  - 32-bit PSDs use `FRGB` so HDR (>1) values round-trip verbatim.
- *  - 8-bit PSDs use `RGB` 0–255 ints; HDR clips at 255 by design.
+ * Float RGBA → PSD text colour. ag-psd's text writer only accepts `r/g/b`
+ * (0–255, stored in the engine data as 0–1 floats), CMYK or grey, so every
+ * bit depth uses `r/g/b`:
+ *  - 32-bit PSDs keep the full float precision (no rounding to 8 bits).
+ *  - 8-bit PSDs use 0–255 ints.
+ * The text engine's colour is display-referred, so HDR (> 1) channels clip.
  */
 function rgbaToPsdColor(
   c: RGBAColor,
   bitsPerChannel: 8 | 32,
-):
-  | { r: number; g: number; b: number }
-  | { fr: number; fg: number; fb: number } {
-  if (bitsPerChannel === 32) {
-    return { fr: c.r, fg: c.g, fb: c.b };
-  }
-  const clamp = (v: number): number =>
-    Math.max(0, Math.min(255, Math.round(v * 255)));
-  return { r: clamp(c.r), g: clamp(c.g), b: clamp(c.b) };
+): { r: number; g: number; b: number } {
+  const unit = (v: number): number => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
+  const ch = (v: number): number =>
+    bitsPerChannel === 32 ? unit(v) * 255 : Math.round(unit(v) * 255);
+  return { r: ch(c.r), g: ch(c.g), b: ch(c.b) };
 }
 
 function alignToJustification(a: TextAlign): Justification {

@@ -9,7 +9,7 @@ import {
   assertWritable,
   grantPicked
 } from './fileAccess'
-import { join, basename } from 'node:path'
+import { join, basename, resolve } from 'node:path'
 import { execSync } from 'node:child_process'
 import os from 'node:os'
 import { registerMlHandlers } from './ml/mlIpc'
@@ -326,6 +326,14 @@ export function registerIpcHandlers(): void {
     }
   }
 
+  /** Identity of a recent-file path: normalised, and case-folded where the
+   *  default file system is case-insensitive (Windows, macOS), so the same
+   *  file reached by differently spelled paths is listed once. */
+  const recentFileKey = (path: string): string => {
+    const full = resolve(path)
+    return process.platform === 'win32' || process.platform === 'darwin' ? full.toLowerCase() : full
+  }
+
   const saveRecentFiles = async (files: string[]): Promise<void> => {
     await writeFileAtomic(recentFilesPath(), JSON.stringify(files), 'utf-8')
   }
@@ -334,9 +342,13 @@ export function registerIpcHandlers(): void {
     return loadRecentFiles()
   })
 
-  ipcMain.handle('recentFiles:add', async (_event, path: string) => {
+  ipcMain.handle('recentFiles:add', async (_event, path: unknown) => {
+    if (typeof path !== 'string' || path.length === 0 || path.includes(' ')) {
+      throw new Error('recentFiles:add expects a file path')
+    }
     const files = await loadRecentFiles()
-    const updated = [path, ...files.filter(f => f !== path)].slice(0, RECENT_FILES_MAX)
+    const k = recentFileKey(path)
+    const updated = [path, ...files.filter((f) => recentFileKey(f) !== k)].slice(0, RECENT_FILES_MAX)
     await saveRecentFiles(updated)
     return updated
   })

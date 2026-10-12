@@ -716,7 +716,8 @@ export function buildMenuTree(deps: MenuDeps): MenuNode[] {
           label: "Redo",
           actionId: "redo",
           action: deps.onRedo,
-          shortcut: "CmdOrCtrl+Y",
+          // Ctrl+Y is Proof Colors (Photoshop convention).
+          shortcut: "CmdOrCtrl+Shift+Z",
           noIntercept: true,
         },
         SEP,

@@ -6,7 +6,7 @@ import type {
   TransformHandleMode,
   TransformInterpolation,
 } from "@/types";
-import styles from "./transform.module.scss";
+import styles from "./Transform.module.scss";
 import { resizeCursorForHandle } from "../_shared/resizeCursor";
 import type {
   ToolHandler,
@@ -117,7 +117,8 @@ export function computeForwardMatrix(
 }
 
 /**
- * Compute the 6-element inverse affine vector for WASM:
+ * Compute the 6-element inverse affine vector (edge space — pass it through
+ * `inverseAffineForResampler` before handing it to the WASM resampler):
  *   [a, b, tx, c, d, ty]
  *   srcX = a*dstX + b*dstY + tx
  *   srcY = c*dstX + d*dstY + ty
@@ -133,7 +134,8 @@ export function computeInverseAffine(
 }
 
 /**
- * Compute the 9-element inverse homography for perspective WASM.
+ * Compute the 9-element inverse homography (edge space — pass it through
+ * `inverseHomographyForResampler` before the WASM resampler).
  * srcQuad and dstQuad are [TL, TR, BR, BL].
  * Returns H_inv as Float32Array(9) row-major.
  */
@@ -144,6 +146,41 @@ export function computeInverseHomography(
   const H = computeHomographyDLT(srcQuad, dstQuad);
   const inv = invertM3(H);
   return new Float32Array(inv as unknown as number[]);
+}
+
+/**
+ * The transform matrices above map pixel *edges* (canvas geometry: pixel i
+ * covers [i, i + 1), as the on-screen preview draws it). The WASM resampler
+ * (`applyAffineTransform` / `applyPerspectiveTransform`) works with pixel
+ * *centres* at integer coordinates. Convert an edge-space inverse matrix to
+ * the resampler's convention, T(-0.5) · M⁻¹ · T(+0.5), so the destination
+ * pixel centre (x + 0.5, y + 0.5) samples the source at its centre-space
+ * position. Without this, nearest rotations / flips land one pixel off and
+ * scales sample half a pixel off.
+ */
+export function inverseAffineForResampler(inv: ArrayLike<number>): Float32Array {
+  const [a, b, tx, c, d, ty] = [inv[0], inv[1], inv[2], inv[3], inv[4], inv[5]];
+  return new Float32Array([
+    a,
+    b,
+    tx + 0.5 * (a + b) - 0.5,
+    c,
+    d,
+    ty + 0.5 * (c + d) - 0.5,
+  ]);
+}
+
+/** Homography counterpart of {@link inverseAffineForResampler}. */
+export function inverseHomographyForResampler(h: ArrayLike<number>): Float32Array {
+  // H · T(+0.5): fold the destination half-pixel into the last column.
+  const m = Array.from({ length: 9 }, (_, i) => h[i]);
+  for (let r = 0; r < 3; r++) m[r * 3 + 2] += 0.5 * (m[r * 3] + m[r * 3 + 1]);
+  // T(-0.5) · (…): subtract half of the w row from the u and v rows.
+  for (let col = 0; col < 3; col++) {
+    m[col] -= 0.5 * m[6 + col];
+    m[3 + col] -= 0.5 * m[6 + col];
+  }
+  return new Float32Array(m);
 }
 
 function computeHomographyDLT(

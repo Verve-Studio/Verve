@@ -7,6 +7,15 @@ namespace {
 // ─── Sampling helpers ─────────────────────────────────────────────────────────
 // Templated on the channel type: uint8_t (rgba8, 0–255) or float (rgba32f,
 // scene-linear, values > 1 are valid HDR).
+//
+// Coordinate convention (all modes): pixel centres sit at integer
+// coordinates. The kernels evaluate the inverse matrix at the integer
+// destination coordinate (x, y) — the destination pixel's centre — and the
+// result (su, sv) is a source position in the same convention, so source
+// pixel i covers [i - 0.5, i + 0.5). An identity matrix is a no-op in every
+// interpolation mode. Callers whose matrices map pixel *edges* (canvas
+// geometry, where pixel i covers [i, i + 1)) convert with
+// T(-0.5) · M⁻¹ · T(+0.5) first (see Transform/Transform.tsx).
 
 struct RGBA { float r, g, b, a; };
 
@@ -27,8 +36,8 @@ inline RGBA sample_nearest(const T* src, int srcW, int srcH, float su, float sv)
 
 template <typename T>
 inline RGBA sample_bilinear(const T* src, int srcW, int srcH, float su, float sv) {
-    float x = su - 0.5f;
-    float y = sv - 0.5f;
+    const float x = su;
+    const float y = sv;
     int x0 = static_cast<int>(std::floor(x));
     int y0 = static_cast<int>(std::floor(y));
     int x1 = x0 + 1, y1 = y0 + 1;
@@ -41,8 +50,9 @@ inline RGBA sample_bilinear(const T* src, int srcW, int srcH, float su, float sv
         return load(src, srcW, px, py);
     };
 
-    if (x1 <= 0 || x0 >= srcW || y1 <= 0 || y0 >= srcH) return {0.f, 0.f, 0.f, 0.f};
-
+    // `sample` already rejected positions outside the source; taps beyond
+    // the edge clamp, so the border pixels extend to the source boundary
+    // (half a pixel past their centres) exactly like nearest.
     RGBA c00 = clamp(x0, y0), c10 = clamp(x1, y0);
     RGBA c01 = clamp(x0, y1), c11 = clamp(x1, y1);
 
@@ -64,7 +74,7 @@ inline float cubic_w(float t) {
 
 template <typename T>
 inline RGBA sample_bicubic(const T* src, int srcW, int srcH, float su, float sv) {
-    float x = su - 0.5f, y = sv - 0.5f;
+    const float x = su, y = sv;
     int x0 = static_cast<int>(std::floor(x));
     int y0 = static_cast<int>(std::floor(y));
     float fx = x - static_cast<float>(x0);
@@ -89,8 +99,9 @@ inline RGBA sample_bicubic(const T* src, int srcW, int srcH, float su, float sv)
 
 template <typename T>
 inline RGBA sample(const T* src, int srcW, int srcH, float su, float sv, int interp) {
-    if (su < -0.5f || su >= static_cast<float>(srcW) + 0.5f ||
-        sv < -0.5f || sv >= static_cast<float>(srcH) + 0.5f)
+    // The source covers [-0.5, size - 0.5) in pixel-centre coordinates.
+    if (su < -0.5f || su >= static_cast<float>(srcW) - 0.5f ||
+        sv < -0.5f || sv >= static_cast<float>(srcH) - 0.5f)
         return {0.f, 0.f, 0.f, 0.f};
     if (interp == 0) return sample_nearest(src, srcW, srcH, su, sv);
     if (interp == 1) return sample_bilinear(src, srcW, srcH, su, sv);
@@ -99,10 +110,10 @@ inline RGBA sample(const T* src, int srcW, int srcH, float su, float sv, int int
 
 inline void write_rgba(uint8_t* dst, int dstW, int x, int y, RGBA c) {
     uint8_t* p = dst + (static_cast<std::ptrdiff_t>(y) * dstW + x) * 4;
-    p[0] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.r)));
-    p[1] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.g)));
-    p[2] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.b)));
-    p[3] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.a)));
+    p[0] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.r)) + 0.5f);
+    p[1] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.g)) + 0.5f);
+    p[2] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.b)) + 0.5f);
+    p[3] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, c.a)) + 0.5f);
 }
 
 // Floats keep HDR (> 1); only bicubic undershoot below 0 and alpha outside

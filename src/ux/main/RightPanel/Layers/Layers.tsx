@@ -18,6 +18,7 @@ import {
   shallowEqual2,
   useAppDispatch,
   useAppSelector,
+  useGetAppState,
 } from "@/core/store/AppContext";
 import {
   buildRootLayerIds,
@@ -28,6 +29,7 @@ import {
 import { SliderInput } from "@/ux/widgets/SliderInput/SliderInput";
 import styles from "./Layers.module.scss";
 import { newLayerId } from "@/utils/layerId";
+import { newGroupCommand } from "@/core/services/useLayerGroups";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -352,6 +354,7 @@ export function Layers({
     shallowEqual2,
   );
   const dispatch = useAppDispatch();
+  const getState = useGetAppState();
   const layers = state.layers;
   const activeLayerId = state.activeLayerId ?? undefined;
 
@@ -868,16 +871,12 @@ export function Layers({
     if (effective.length >= 2) {
       onGroupSelected(effective);
     } else {
-      const id = newLayerId("group");
-      pendingLayerLabelRef.current = "New Group";
-      dispatch({
-        type: "ADD_LAYER_GROUP",
-        payload: {
-          id,
-          name: "Group",
-          aboveLayerId: activeLayerId ?? undefined,
-        },
-      });
+      // Same command as Layer → New Layer Group (lands inside the active
+      // layer's parent group).
+      newGroupCommand(
+        { getState, dispatch, pendingLayerLabelRef },
+        { aboveId: activeLayerId ?? null },
+      );
     }
   };
 

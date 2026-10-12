@@ -30,6 +30,13 @@ const LUMA_WGSL = "vec3f(0.2126, 0.7152, 0.0722)";
 
 /** Convert `expr` of port type `from` into port type `to`. */
 export function convertExpr(expr: string, from: PortType, to: PortType): string {
+  if (from === to || !wgslType(from) || !wgslType(to)) return expr;
+  // int and bool share f32 with float, so they're converted by port type:
+  // the same rules as convertValue (values.ts) — int rounds half up
+  // (Math.round, not WGSL's half-to-even `round`), bool is 0 / 1 with any
+  // non-zero value true.
+  if (to === "int" && from !== "bool") return `floor(${convertExpr(expr, from, "float")} + 0.5)`;
+  if (to === "bool") return `select(0.0, 1.0, ${convertExpr(expr, from, "float")} != 0.0)`;
   const a = wgslType(from);
   const b = wgslType(to);
   if (!a || !b || a === b) return expr;

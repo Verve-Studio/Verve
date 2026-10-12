@@ -1,7 +1,11 @@
 import type { AppAction } from "@/core/store/AppContext";
 import type { AppState, CompositeLayerState, LayerState, PixelLayerState } from "@/types";
-import { isContainerLayer, isGroupLayer } from "@/types";
-import { getDescendantIds, getParentGroup } from "@/utils/layerTree";
+import { isCompositeLayer, isContainerLayer, isGroupLayer } from "@/types";
+import {
+  getDescendantIds,
+  getParentGroup,
+  hasLockedCompositeAncestor,
+} from "@/utils/layerTree";
 import { showOperationError } from "@/utils/userFeedback";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
 import type { Dispatch, MutableRefObject } from "react";
@@ -47,6 +51,45 @@ export interface UseLayerGroupsReturn {
 
 const isAttachment = (l: LayerState): l is LayerState & { parentId: string } =>
   "type" in l && (l.type === "mask" || l.type === "adjustment");
+
+/** `LayerGroupCommands.newGroup` on an explicit store: a new empty group /
+ *  composite on top, or directly above `aboveId` inside its parent group.
+ *  Shared by the command and the Layers panel's New Group button, which
+ *  reaches the store directly rather than through this hook. */
+export function newGroupCommand(
+  env: {
+    /** Live state: read again after each dispatch. */
+    getState: () => AppState;
+    dispatch: Dispatch<AppAction>;
+    pendingLayerLabelRef: MutableRefObject<string | null>;
+  },
+  { name, kind = "group", aboveId }: { name?: string; kind?: ContainerKind; aboveId?: string | null } = {},
+): string {
+  const { getState, dispatch, pendingLayerLabelRef } = env;
+  const id = newLayerId(kind);
+  const payload = {
+    id,
+    name: name || (kind === "composite" ? "Composite" : "Group"),
+    aboveLayerId: aboveId ?? undefined,
+  };
+  pendingLayerLabelRef.current = kind === "composite" ? "New Composite Layer" : "New Group";
+  if (kind === "composite") dispatch({ type: "ADD_COMPOSITE_LAYER", payload });
+  else dispatch({ type: "ADD_LAYER_GROUP", payload });
+  if (aboveId) {
+    const parent = getParentGroup(getState().layers, aboveId);
+    if (parent) {
+      dispatch({
+        type: "MOVE_LAYER_INTO_GROUP",
+        payload: {
+          layerId: id,
+          targetGroupId: parent.id,
+          insertIndex: parent.childIds.indexOf(aboveId) + 1,
+        },
+      });
+    }
+  }
+  return id;
+}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -108,37 +151,29 @@ export function useLayerGroups({
       ungroup(id) {
         const group = stateRef.current.layers.find((l) => l.id === id);
         if (!group || !isContainerLayer(group)) throw new Error("The layer isn't a group.");
-        const before = stateRef.current.layers;
+        // A locked composite (or anything inside one) is structurally frozen.
+        // Checked up front so a refused ungroup never half-applies the
+        // composite → group conversion below.
+        if (isCompositeLayer(group) && group.locked) {
+          throw new Error("A locked composite can't be ungrouped. Unlock it first.");
+        }
+        if (hasLockedCompositeAncestor(stateRef.current.layers, id)) {
+          throw new Error("The group can't be ungrouped (it's inside a locked composite).");
+        }
         pendingLayerLabelRef.current = "Ungroup Layers";
         if (!isGroupLayer(group)) setContainerKind(id, "group");
         dispatch({ type: "UNGROUP_LAYERS", payload: { groupId: id } });
-        if (stateRef.current.layers === before) pendingLayerLabelRef.current = null;
+        if (stateRef.current.layers.some((l) => l.id === id)) {
+          pendingLayerLabelRef.current = null;
+          throw new Error("The group couldn't be ungrouped.");
+        }
       },
 
-      newGroup({ name, kind = "group", aboveId } = {}) {
-        const id = newLayerId(kind);
-        const payload = {
-          id,
-          name: name || (kind === "composite" ? "Composite" : "Group"),
-          aboveLayerId: aboveId ?? undefined,
-        };
-        pendingLayerLabelRef.current = kind === "composite" ? "New Composite Layer" : "New Group";
-        if (kind === "composite") dispatch({ type: "ADD_COMPOSITE_LAYER", payload });
-        else dispatch({ type: "ADD_LAYER_GROUP", payload });
-        if (aboveId) {
-          const parent = getParentGroup(stateRef.current.layers, aboveId);
-          if (parent) {
-            dispatch({
-              type: "MOVE_LAYER_INTO_GROUP",
-              payload: {
-                layerId: id,
-                targetGroupId: parent.id,
-                insertIndex: parent.childIds.indexOf(aboveId) + 1,
-              },
-            });
-          }
-        }
-        return id;
+      newGroup(options) {
+        return newGroupCommand(
+          { getState: () => stateRef.current, dispatch, pendingLayerLabelRef },
+          options,
+        );
       },
 
       async mergeGroup(id) {
@@ -228,7 +263,11 @@ export function useLayerGroups({
     (groupId: string): void => {
       const group = stateRef.current.layers.find((l) => l.id === groupId);
       if (!group || !isGroupLayer(group)) return;
-      commands.ungroup(groupId);
+      try {
+        commands.ungroup(groupId);
+      } catch (error) {
+        showOperationError("Ungroup layers failed.", error);
+      }
     },
     [commands, stateRef],
   );

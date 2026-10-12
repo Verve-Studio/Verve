@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, resolve } from 'path'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 // Set the app name early so the macOS menu bar shows "Verve" instead of "Electron".
@@ -57,12 +57,29 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-features', 'Vulkan')
 }
 
+// Test runs on machines without a GPU (CI): run WebGPU on SwiftShader, the
+// software Vulkan implementation bundled with Electron. Slow, but exact.
+if (process.env['VERVE_SOFTWARE_WEBGPU'] === '1') {
+  app.commandLine.appendSwitch('enable-unsafe-webgpu')
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader')
+  app.commandLine.appendSwitch('use-webgpu-adapter', 'swiftshader')
+}
+
 import { registerIpcHandlers } from './ipc'
 import { shutdownMlHost } from './ml/mlHost'
 import { registerPreferencesHandlers } from './preferences'
 import { registerColorProfileHandlers } from './colorProfiles'
 import { buildAndSetMacMenu } from './menu'
 import type { SerializedMenuNode } from './menu'
+import { detectStartupFileFromArgs, isAppUrl, isSafeExternalUrl } from './launchHelpers'
+
+// End-to-end tests run each app instance against a throwaway profile, so they
+// never read or write the user's preferences / recent files and don't collide
+// with a running Verve on the single-instance lock (which is per userData).
+// Must run before anything touches app.getPath('userData').
+if (process.env['VERVE_USER_DATA_DIR']) {
+  app.setPath('userData', resolve(process.env['VERVE_USER_DATA_DIR']))
+}
 
 // ── Single instance ───────────────────────────────────────────────────────────
 // Opening an associated file while Verve is running must not start a second
@@ -100,22 +117,6 @@ app.on('open-file', (event, path) => {
   } catch { /* ignore */ }
 })
 
-function detectStartupFileFromArgs(argv: string[] = process.argv): string | null {
-  // argv[0] is the executable. Don't skip by position beyond that: in dev the
-  // app path (`electron .`) is in there too, and `second-instance` argv has
-  // Chromium's switches reordered and extra ones inserted. Instead skip the
-  // app path explicitly and accept only regular files.
-  const appPath = resolve(app.getAppPath())
-  for (const arg of argv.slice(1)) {
-    if (arg.startsWith('-')) continue
-    try {
-      if (resolve(arg) === appPath) continue
-      if (statSync(arg).isFile()) return arg
-    } catch { /* skip missing / invalid paths */ }
-  }
-  return null
-}
-
 /** Titles of documents with unsaved changes, pushed by the renderer. */
 let unsavedDocuments: string[] = []
 ipcMain.on('app:unsaved-documents', (_event, titles: unknown) => {
@@ -133,31 +134,8 @@ app.on('child-process-gone', (_event, details) => {
   )
 })
 
-/** http(s)/mailto links only — anything else is refused. */
-function isSafeExternalUrl(url: string): boolean {
-  try {
-    const { protocol } = new URL(url)
-    return protocol === 'https:' || protocol === 'http:' || protocol === 'mailto:'
-  } catch {
-    return false
-  }
-}
-
-/** The renderer's own URL: the dev server in development, the bundled
- *  index.html otherwise. */
-function isAppUrl(url: string): boolean {
-  const devUrl = is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
-  if (devUrl) return url.startsWith(devUrl)
-  try {
-    const target = new URL(url)
-    return (
-      target.protocol === 'file:' &&
-      decodeURIComponent(target.pathname).endsWith('/renderer/index.html')
-    )
-  } catch {
-    return false
-  }
-}
+/** The bundled renderer page; the only file:// URL the window may show. */
+const rendererIndexPath = join(__dirname, '../renderer/index.html')
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -269,7 +247,7 @@ function createWindow(): void {
   // Never navigate the app window away from the app itself (a dropped file
   // or link would otherwise replace the editor with that page).
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!isAppUrl(url)) event.preventDefault()
+    if (!isAppUrl(url, rendererIndexPath)) event.preventDefault()
   })
 
   // The editor needs no browser permissions (camera, mic, geolocation, …).
@@ -280,7 +258,7 @@ function createWindow(): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(rendererIndexPath)
   }
 }
 

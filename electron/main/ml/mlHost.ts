@@ -22,6 +22,8 @@ import type { MlPaths } from './paths'
 const IDLE_SHUTDOWN_MS = 3 * 60_000
 
 interface Pending {
+  /** The worker the job was posted to. */
+  owner: UtilityProcess
   resolve: (value: unknown) => void
   reject: (err: Error) => void
   onProgress?: (loaded: number, total: number) => void
@@ -36,8 +38,8 @@ let worker: UtilityProcess | null = null
 let nextId = 1
 const pending = new Map<number, Pending>()
 let idleTimer: ReturnType<typeof setTimeout> | null = null
-/** Set while we terminate the worker on purpose (idle / cancel). */
-let stopping = false
+/** Workers we terminated on purpose (idle / cancel / shutdown). */
+const stopping = new WeakSet<UtilityProcess>()
 
 function mlPathsForWorker(): MlPaths {
   return {
@@ -49,9 +51,31 @@ function mlPathsForWorker(): MlPaths {
   }
 }
 
-function failAll(err: Error): void {
-  for (const p of pending.values()) p.reject(err)
-  pending.clear()
+function hasPending(owner: UtilityProcess): boolean {
+  for (const p of pending.values()) if (p.owner === owner) return true
+  return false
+}
+
+/** Reject the jobs that were posted to `owner` (only those: a newer worker's
+ *  jobs are unaffected by an old worker's exit). */
+function failJobsOf(owner: UtilityProcess, err: Error): void {
+  for (const [id, p] of pending) {
+    if (p.owner !== owner) continue
+    pending.delete(id)
+    p.reject(err)
+  }
+}
+
+/** Terminate the current worker on purpose. `kill` only requests
+ *  termination; the worker is detached right away so that jobs submitted
+ *  before its `exit` arrives start a fresh worker instead of being posted to
+ *  the dying one. Its own jobs are rejected as cancelled on exit. */
+function stopWorker(): void {
+  if (!worker) return
+  const child = worker
+  worker = null
+  stopping.add(child)
+  child.kill()
 }
 
 function ensureWorker(): UtilityProcess {
@@ -63,7 +87,7 @@ function ensureWorker(): UtilityProcess {
   )
   child.on('message', (msg: WorkerMessage) => {
     const p = pending.get(msg.id)
-    if (!p) return
+    if (!p || p.owner !== child) return
     if (msg.type === 'progress') {
       p.onProgress?.(msg.loaded, msg.total)
       return
@@ -75,10 +99,10 @@ function ensureWorker(): UtilityProcess {
   })
   child.on('exit', (code) => {
     if (worker === child) worker = null
-    const intentional = stopping
-    stopping = false
-    if (pending.size > 0) {
-      failAll(
+    const intentional = stopping.has(child)
+    if (hasPending(child)) {
+      failJobsOf(
+        child,
         new Error(
           intentional
             ? 'The AI operation was cancelled.'
@@ -97,9 +121,8 @@ function scheduleIdleShutdown(): void {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = setTimeout(() => {
     idleTimer = null
-    if (pending.size > 0 || !worker) return
-    stopping = true
-    worker.kill()
+    if (!worker || hasPending(worker)) return
+    stopWorker()
   }, IDLE_SHUTDOWN_MS)
 }
 
@@ -117,6 +140,7 @@ export function runMlJob<T>(
   return new Promise<T>((resolve, reject) => {
     pending.set(id, {
       resolve: resolve as (value: unknown) => void,
+      owner: child,
       reject,
       onProgress,
     })
@@ -136,16 +160,14 @@ export async function invalidateMlSession(
 
 /** Abort every running AI job by terminating the worker. */
 export function cancelMlJobs(): void {
-  if (!worker) return
-  stopping = true
-  worker.kill()
+  stopWorker()
 }
 
 /** Terminate the worker (app shutdown). */
 export function shutdownMlHost(): void {
-  if (idleTimer) clearTimeout(idleTimer)
-  if (worker) {
-    stopping = true
-    worker.kill()
+  if (idleTimer) {
+    clearTimeout(idleTimer)
+    idleTimer = null
   }
+  stopWorker()
 }

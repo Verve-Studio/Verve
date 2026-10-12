@@ -321,6 +321,29 @@ const initialState: AppState = {
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
 
+/**
+ * A locked Composite Layer locks its entire subtree against structural
+ * changes. True when `ownerId` is a locked composite or sits inside one —
+ * the check for adding / reordering / removing a layer's mask and effect
+ * attachments, which hang off their owner by `parentId` rather than
+ * appearing in any container's `childIds`.
+ */
+function ownerLockedByComposite(
+  layers: readonly LayerState[],
+  ownerId: string,
+): boolean {
+  const owner = layers.find((l) => l.id === ownerId);
+  if (owner && isCompositeLayer(owner) && owner.locked) return true;
+  return hasLockedCompositeAncestor(layers, ownerId);
+}
+
+/** The layer an attachment (mask / per-layer effect) belongs to, or null. */
+function attachmentOwnerId(layer: LayerState): string | null {
+  return "type" in layer && (layer.type === "mask" || layer.type === "adjustment")
+    ? (layer as MaskLayerState | EffectLayerState).parentId
+    : null;
+}
+
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_TOOL":
@@ -494,6 +517,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
       // any descendant; the user must unlock the composite first.
       if (hasLockedCompositeAncestor(state.layers, action.payload))
         return state;
+      // …including the mask / effects attached to a layer in that subtree.
+      const owner = attachmentOwnerId(target);
+      if (owner !== null && ownerLockedByComposite(state.layers, owner))
+        return state;
       // Collect all IDs to remove: the target + its descendants (for groups/composites) + per-layer children.
       const toRemove = new Set<string>([action.payload]);
       if (isContainerLayer(target)) {
@@ -561,6 +588,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
         (l) => l.id === action.payload.parentId,
       );
       if (parentIdx < 0) return state;
+      // Blocked on a locked composite or any of its descendants (as masks).
+      if (ownerLockedByComposite(state.layers, action.payload.parentId))
+        return state;
       let insertAt = parentIdx + 1;
       while (
         insertAt < state.layers.length &&
@@ -585,6 +615,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "REORDER_ADJUSTMENT_LAYERS": {
       const { parentId, orderedChildIds } = action.payload;
+      if (ownerLockedByComposite(state.layers, parentId)) return state;
       // Build new layers array: keep everything except the children of this parent,
       // then re-insert them in the new order immediately after the parent.
       const childSet = new Set(orderedChildIds);
@@ -1286,6 +1317,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "GROUP_LAYERS": {
       const { groupId, groupName, layerIds } = action.payload;
       if (layerIds.length === 0) return state;
+      // Grouping rewrites the parent's childIds: refused inside a locked
+      // composite's subtree, like every other structural change.
+      if (layerIds.some((id) => hasLockedCompositeAncestor(state.layers, id)))
+        return state;
       const layerIdSet = new Set(layerIds);
 
       // Determine parent context (they must all share one parent; enforced by UI).
@@ -1356,6 +1391,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const { groupId } = action.payload;
       const group = state.layers.find((l) => l.id === groupId);
       if (!group || !isGroupLayer(group)) return state;
+      // Ungrouping splices the children into the parent's childIds.
+      if (hasLockedCompositeAncestor(state.layers, groupId)) return state;
 
       const parentGroup = getParentGroup(state.layers, groupId);
       let nextLayers: LayerState[];

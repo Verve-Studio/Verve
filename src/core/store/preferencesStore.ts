@@ -9,6 +9,11 @@
  * we don't await — the in-memory value is the source of truth at runtime.
  */
 import { useSyncExternalStore } from "react";
+import {
+  sanitizeBufferMemoryBytes,
+  sanitizeHistoryMemoryBytes,
+  validMemoryCapBytes,
+} from "@/utils/memoryLimits";
 
 /** Theme selection. "auto" follows the host OS via prefers-color-scheme. */
 export type ThemePreference = "light" | "dark" | "auto";
@@ -109,7 +114,15 @@ class PreferencesStore {
       if (fromDisk.unifiedMemory === undefined) {
         defaults.unifiedMemory = window.api.platform === "darwin";
       }
-      this.value = { ...defaults, ...fromDisk };
+      // The file is untrusted: clamp the memory limits into the range the
+      // Preferences dialog allows (a 0 / NaN cap would wipe the undo
+      // history or block every allocation).
+      const merged = { ...defaults, ...fromDisk };
+      this.value = {
+        ...merged,
+        historyMemoryBytes: sanitizeHistoryMemoryBytes(merged.historyMemoryBytes),
+        bufferMemoryBytes: sanitizeBufferMemoryBytes(merged.bufferMemoryBytes),
+      };
     } catch {
       this.value = {
         ...DEFAULT_PREFERENCES,
@@ -130,7 +143,18 @@ class PreferencesStore {
    * Disk write failures are intentionally swallowed — the app stays usable.
    */
   set(patch: Partial<AppPreferences>): void {
-    this.value = { ...this.value, ...patch };
+    const next = { ...this.value, ...patch };
+    // Reject corrupt memory caps (keep the current value) rather than
+    // persisting them; the dialog clamps typed values into its range.
+    next.historyMemoryBytes = validMemoryCapBytes(
+      next.historyMemoryBytes,
+      this.value.historyMemoryBytes,
+    );
+    next.bufferMemoryBytes = validMemoryCapBytes(
+      next.bufferMemoryBytes,
+      this.value.bufferMemoryBytes,
+    );
+    this.value = next;
     this.notify();
     void window.api.savePreferences(this.value).catch(() => {});
   }

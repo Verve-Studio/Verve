@@ -1,5 +1,5 @@
 import { effectRegistry } from "@/core/effects";
-import type { EffectRenderOp } from "./types";
+import type { EffectRenderOp, SourceLayer } from "./types";
 import { EffectRuntime } from "./EffectRuntime";
 
 // Re-export the binding kind + pair types so legacy imports keep working.
@@ -28,6 +28,25 @@ export class EffectEncoder {
       pixelHeight,
       intermediateFormat,
     );
+  }
+
+  /** Renders a source layer with its mask and effects into a canvas-sized
+   *  texture valid for the rest of the encode. Installed by the render plan
+   *  executor; without it, sources read as their raw pixels. */
+  sourceRenderer: ((encoder: GPUCommandEncoder, source: SourceLayer) => GPUTexture) | null =
+    null;
+
+  /** The texture an effect binds for another layer it reads, and where its
+   *  top-left sits on the canvas. */
+  renderSource(
+    encoder: GPUCommandEncoder,
+    source: SourceLayer,
+  ): { texture: GPUTexture; offsetX: number; offsetY: number } {
+    if (this.sourceRenderer && (source.mask || source.adjustments.some((op) => op.visible))) {
+      return { texture: this.sourceRenderer(encoder, source), offsetX: 0, offsetY: 0 };
+    }
+    const l = source.layer;
+    return { texture: l.texture, offsetX: l.offsetX, offsetY: l.offsetY };
   }
 
   get pixelWidth(): number {

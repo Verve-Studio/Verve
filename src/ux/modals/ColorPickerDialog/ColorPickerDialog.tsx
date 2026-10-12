@@ -488,21 +488,16 @@ export function ColorPickerDialog({
     setHexText(toHex6(r, g, b));
   }, [r, g, b]);
 
-  // Escape / Enter keyboard handling (Escape delegated to ModalDialog)
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter")
-        onConfirm({
-          r: r * intensity,
-          g: g * intensity,
-          b: b * intensity,
-          a: 1,
-        });
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onConfirm, r, g, b]);
+  // OK button and Enter (via ModalDialog's onSubmit; Escape is handled there
+  // too).
+  const handleConfirm = useCallback((): void => {
+    onConfirm({
+      r: r * intensity,
+      g: g * intensity,
+      b: b * intensity,
+      a: 1,
+    });
+  }, [onConfirm, r, g, b, intensity]);
 
   // Redraw gradient canvas
   useEffect(() => {
@@ -817,7 +812,13 @@ export function ColorPickerDialog({
   if (!open) return null;
 
   return (
-    <ModalDialog open={open} title={title} width={520} onClose={onCancel}>
+    <ModalDialog
+      open={open}
+      title={title}
+      width={520}
+      onClose={onCancel}
+      onSubmit={handleConfirm}
+    >
       {/* Body */}
       <div className={styles.body}>
         {/* ── Left: gradient + strip + HSV sliders ─────────────────── */}
@@ -941,14 +942,7 @@ export function ColorPickerDialog({
         <div className={styles.rightPanel}>
           {/* OK / Cancel / Add to Swatches */}
           <DialogButtonRow
-            onConfirm={() =>
-              onConfirm({
-                r: r * intensity,
-                g: g * intensity,
-                b: b * intensity,
-                a: 1,
-              })
-            }
+            onConfirm={handleConfirm}
             onCancel={onCancel}
             onAddSwatch={
               onAddSwatch

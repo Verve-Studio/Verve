@@ -292,17 +292,6 @@ export function NewImageDialog({
     onConfirm({ width: w, height: h, backgroundFill, pixelFormat });
   }, [widthPx, heightPx, backgroundFill, pixelFormat, onConfirm]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.stopPropagation();
-        handleConfirm();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, handleConfirm]);
 
   const sizeLabel = useMemo(
     () => `${widthPx} × ${heightPx} px`,
@@ -317,6 +306,7 @@ export function NewImageDialog({
       title="New Document"
       width={640}
       onClose={onCancel}
+      onSubmit={handleConfirm}
     >
       {/* ── Body ─────────────────────────────────────────────────── */}
       <div className={styles.body}>

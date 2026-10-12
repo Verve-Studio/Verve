@@ -6,33 +6,101 @@ import type {
   GpuLayer,
   EffectRenderOp,
   RenderPlanEntry,
+  SourceLayer,
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import { buildRootLayerIds } from "@/utils/layerTree";
 
-/** Name → pixel-bearing GPU layer lookup, built on first use. */
-function layerResolver(
-  layers: readonly LayerState[],
-  glLayers: Map<string, GpuLayer>,
-): (name: string) => GpuLayer | undefined {
-  let byName: Map<string, GpuLayer> | null = null;
-  return (name) => {
-    if (!byName) {
-      byName = new Map();
-      for (const l of layers) {
+interface PlanInputs {
+  layers: readonly LayerState[];
+  glLayers: Map<string, GpuLayer>;
+  maskMap: Map<string, GpuLayer>;
+  adjustmentMaskMap: Map<string, GpuLayer>;
+  bypassedAdjustmentIds: ReadonlySet<string>;
+  swatches: RGBAColor[];
+  pixelFormat: PixelFormat;
+}
+
+/**
+ * Plans the effects attached to a layer, and resolves layer names to the
+ * layer as it renders for effects that read other layers (Sample Layer).
+ * Resolving a layer plans its effects, which may resolve further layers, so
+ * a layer whose effects are being planned resolves to its raw pixels: a
+ * layer sampling itself, or layers sampling each other, can't recurse.
+ */
+class PlanResolver {
+  private byName: Map<string, string> | null = null;
+  /** Resolved sources that didn't hit a cycle (those depend on where they
+   *  were resolved from). */
+  private readonly memo = new Map<string, SourceLayer>();
+  /** Layers whose attached effects are being planned. */
+  private readonly planning = new Set<string>();
+  private cycleCut = false;
+
+  constructor(private readonly p: PlanInputs) {}
+
+  readonly resolve = (name: string): SourceLayer | undefined => {
+    if (!this.byName) {
+      this.byName = new Map();
+      for (const l of this.p.layers) {
         if ("type" in l && (l.type === "adjustment" || l.type === "mask")) continue;
-        const gl = glLayers.get(l.id);
-        if (gl && !byName.has(l.name)) byName.set(l.name, gl);
+        if (this.p.glLayers.has(l.id) && !this.byName.has(l.name)) this.byName.set(l.name, l.id);
       }
     }
-    return byName.get(name);
+    const id = this.byName.get(name);
+    if (id === undefined) return undefined;
+    const layer = this.p.glLayers.get(id)!;
+    const mask = this.p.maskMap.get(id);
+    if (this.planning.has(id)) {
+      this.cycleCut = true;
+      return { layer, mask, adjustments: [] };
+    }
+    const hit = this.memo.get(id);
+    if (hit) return hit;
+    const outerCut = this.cycleCut;
+    this.cycleCut = false;
+    const source: SourceLayer = { layer, mask, adjustments: this.attachedEffects(id, layer) };
+    if (!this.cycleCut) this.memo.set(id, source);
+    this.cycleCut ||= outerCut;
+    return source;
   };
+
+  /** The visible effects attached to layer `parentId`, in stack order. */
+  attachedEffects(parentId: string, parent?: GpuLayer): EffectRenderOp[] {
+    const { layers, pixelFormat, bypassedAdjustmentIds, adjustmentMaskMap, swatches } = this.p;
+    if (pixelFormat === "indexed8") return [];
+    this.planning.add(parentId);
+    try {
+      const ops: EffectRenderOp[] = [];
+      for (const adj of layers) {
+        if (
+          "type" in adj &&
+          adj.type === "adjustment" &&
+          adj.visible !== false &&
+          (adj as EffectLayerState).parentId === parentId &&
+          !bypassedAdjustmentIds.has(adj.id)
+        ) {
+          const op = buildAdjustmentEntry(
+            adj as EffectLayerState,
+            adjustmentMaskMap.get(adj.id),
+            swatches,
+            this.resolve,
+            parent,
+          );
+          if (op) ops.push(op);
+        }
+      }
+      return ops;
+    } finally {
+      this.planning.delete(parentId);
+    }
+  }
 }
 
 export function buildAdjustmentEntry(
   ls: EffectLayerState,
   mask: GpuLayer | undefined,
   swatches: RGBAColor[],
-  resolveLayer: (name: string) => GpuLayer | undefined,
+  resolveLayer: (name: string) => SourceLayer | undefined,
   parent?: GpuLayer,
 ): EffectRenderOp | null {
   const effect = effectRegistry.get(ls.effectType);
@@ -60,8 +128,24 @@ export function buildSubPlan(
   swatches: RGBAColor[],
   pixelFormat: PixelFormat = "rgba8",
 ): RenderPlanEntry[] {
-  const layersById = new Map(layers.map((l) => [l.id, l]));
-  const resolveLayer = layerResolver(layers, glLayers);
+  const inputs: PlanInputs = {
+    layers,
+    glLayers,
+    maskMap,
+    adjustmentMaskMap,
+    bypassedAdjustmentIds,
+    swatches,
+    pixelFormat,
+  };
+  return planIds(orderedIds, inputs, new Map(layers.map((l) => [l.id, l])), new PlanResolver(inputs));
+}
+
+function planIds(
+  orderedIds: readonly string[],
+  p: PlanInputs,
+  layersById: ReadonlyMap<string, LayerState>,
+  resolver: PlanResolver,
+): RenderPlanEntry[] {
   const plan: RenderPlanEntry[] = [];
 
   for (const id of orderedIds) {
@@ -73,7 +157,7 @@ export function buildSubPlan(
 
     // Adjustment layers
     if ("type" in ls && ls.type === "adjustment") {
-      if (pixelFormat === "indexed8") continue;
+      if (p.pixelFormat === "indexed8") continue;
       const adjLs = ls as EffectLayerState;
       const parent = layersById.get(adjLs.parentId);
       // Per-layer attachment (parentId → non-container layer): skip, bundled with pixel parent
@@ -81,15 +165,15 @@ export function buildSubPlan(
       // Composite-layer attachment: bundled into composite-layer entry, skip standalone emission
       if (parent && isCompositeLayer(parent)) continue;
       // Group-scoped adjustment: treat as standalone
-      if (bypassedAdjustmentIds.has(ls.id)) continue;
+      if (p.bypassedAdjustmentIds.has(ls.id)) continue;
       // Invisible adjustments are no-ops — omit from plan so planIsFlatLayersOnly
       // stays true and the incremental paint path remains available.
       if (!adjLs.visible) continue;
       const entry = buildAdjustmentEntry(
         adjLs,
-        adjustmentMaskMap.get(ls.id),
-        swatches,
-        resolveLayer,
+        p.adjustmentMaskMap.get(ls.id),
+        p.swatches,
+        resolver.resolve,
       );
       if (entry) plan.push(entry);
       continue;
@@ -105,59 +189,21 @@ export function buildSubPlan(
         opacity: 1,
         blendMode: "pass-through",
         visible: ls.visible,
-        children: buildSubPlan(
-          ls.childIds,
-          layers,
-          glLayers,
-          maskMap,
-          adjustmentMaskMap,
-          bypassedAdjustmentIds,
-          swatches,
-          pixelFormat,
-        ),
+        children: planIds(ls.childIds, p, layersById, resolver),
       });
       continue;
     }
 
     // Composite layer → flatten children, apply attached adjustments
     if (isCompositeLayer(ls)) {
-      const attachedAdj: EffectRenderOp[] = [];
-      if (pixelFormat !== "indexed8") {
-        for (const adj of layers) {
-          if (
-            "type" in adj &&
-            adj.type === "adjustment" &&
-            adj.visible !== false &&
-            (adj as EffectLayerState).parentId === ls.id &&
-            !bypassedAdjustmentIds.has(adj.id)
-          ) {
-            const op = buildAdjustmentEntry(
-              adj as EffectLayerState,
-              adjustmentMaskMap.get(adj.id),
-              swatches,
-              resolveLayer,
-            );
-            if (op) attachedAdj.push(op);
-          }
-        }
-      }
       plan.push({
         kind: "composite-layer",
         layerId: ls.id,
         opacity: ls.opacity,
         blendMode: ls.blendMode,
         visible: ls.visible,
-        children: buildSubPlan(
-          ls.childIds,
-          layers,
-          glLayers,
-          maskMap,
-          adjustmentMaskMap,
-          bypassedAdjustmentIds,
-          swatches,
-          pixelFormat,
-        ),
-        adjustments: attachedAdj,
+        children: planIds(ls.childIds, p, layersById, resolver),
+        adjustments: resolver.attachedEffects(ls.id),
         locked: ls.locked === true,
       });
       continue;
@@ -166,30 +212,10 @@ export function buildSubPlan(
     // Pixel-bearing leaf layer (pixel, text, shape, frame) — collect any
     // attached per-layer adjustments and either bundle them into an
     // adjustment-group or emit a plain layer entry.
-    const baseLayer = glLayers.get(ls.id);
+    const baseLayer = p.glLayers.get(ls.id);
     if (!baseLayer) continue;
 
-    const adjustments: EffectRenderOp[] = [];
-    if (pixelFormat !== "indexed8") {
-      for (const adj of layers) {
-        if (
-          "type" in adj &&
-          adj.type === "adjustment" &&
-          adj.visible !== false &&
-          (adj as EffectLayerState).parentId === ls.id &&
-          !bypassedAdjustmentIds.has(adj.id)
-        ) {
-          const op = buildAdjustmentEntry(
-            adj as EffectLayerState,
-            adjustmentMaskMap.get(adj.id),
-            swatches,
-            resolveLayer,
-            baseLayer,
-          );
-          if (op) adjustments.push(op);
-        }
-      }
-    }
+    const adjustments = resolver.attachedEffects(ls.id, baseLayer);
 
     if (adjustments.length > 0) {
       const isLocked =
@@ -198,12 +224,12 @@ export function buildSubPlan(
         kind: "adjustment-group",
         parentLayerId: ls.id,
         baseLayer,
-        baseMask: maskMap.get(ls.id),
+        baseMask: p.maskMap.get(ls.id),
         adjustments,
         locked: isLocked || undefined,
       });
     } else {
-      plan.push({ kind: "layer", layer: baseLayer, mask: maskMap.get(ls.id) });
+      plan.push({ kind: "layer", layer: baseLayer, mask: p.maskMap.get(ls.id) });
     }
   }
 

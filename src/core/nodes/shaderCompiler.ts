@@ -18,6 +18,13 @@
  * and inline their subgraph body (`ctx.compileBody`) — that is how For Loop
  * builds its loop. A body is compiled as its own graph scope: its nodes only
  * see values passed through its boundary nodes.
+ *
+ * A node that needs an input at other pixels (Blur Color) renders it in a
+ * pass of its own (`ctx.inputPass`): the nodes upstream of that input are
+ * compiled into a separate function `ng_stage{k}` (see
+ * `ShaderCompileResult.passes`), which the host renders into a texture,
+ * filters and binds as `ng_pass{k}`. Graphs without such nodes compile to
+ * the single `ng_shade` function and render in one pass.
  */
 import type { GraphEdge, GraphNode, NodeGraph, ParamValue } from "./graphTypes";
 import type { INode, PortDef, ShaderContext, ShaderOutputs } from "./INode";
@@ -58,6 +65,44 @@ export function writeShaderContext(uniforms: Float32Array, c: ShaderFrameContext
 
 /** Most other layers one graph can sample (one texture binding each). */
 export const MAX_LAYER_SOURCES = 8;
+
+/** Most intermediate passes one graph can use. With the layer sources and
+ *  the host's two textures this stays within WebGPU's default limit of 16
+ *  sampled textures per shader stage. */
+export const MAX_PASSES = 6;
+
+/** How the host processes a pass's texture before the graph reads it. */
+export interface PassFilter {
+  readonly kind: "gaussian" | "box";
+  /** Pixels; 0 = unfiltered. */
+  readonly radius: number;
+}
+
+/** An intermediate pass: the host renders `entry` (same signature as
+ *  `ng_shade`, premultiplied output) over the canvas, applies `filter` and
+ *  binds the result as texture `ng_pass{index}`. Passes are listed in
+ *  dependency order: a pass only reads earlier ones. */
+export interface ShaderPass {
+  readonly entry: string;
+  readonly filter: PassFilter;
+}
+
+/** WGSL declarations of the pass textures, at consecutive bindings. */
+export function passDeclarations(count: number, group: number, firstBinding: number): string {
+  const lines: string[] = [];
+  for (let i = 0; i < count; i++) {
+    lines.push(`@group(${group}) @binding(${firstBinding + i}) var ng_pass${i}: texture_2d<f32>;`);
+  }
+  return lines.join("\n");
+}
+
+/** Texel fetch of pass `i` at canvas pixel `p` (clamped), un-premultiplied. */
+function passFetchCode(name: string, index: number): string {
+  return `fn ${name}(p: vec2i) -> vec4f {
+  let c = textureLoad(ng_pass${index}, clamp(p, vec2i(0, 0), vec2i(textureDimensions(ng_pass${index})) - vec2i(1, 1)), 0);
+  return vec4f(select(vec3f(0.0), c.rgb / c.a, c.a > 1e-6), c.a);
+}`;
+}
 
 /** Another layer a compiled graph samples, by name. The host binds the
  *  layer's texture to `ng_layer{index}` and writes `(offsetX, offsetY,
@@ -125,6 +170,8 @@ export type ShaderCompileResult =
       argumentSlots: ReadonlyMap<string, number>;
       /** Other layers the shader samples; index i is texture `ng_layer{i}`. */
       layerSources: readonly LayerSource[];
+      /** Intermediate passes to render before `ng_shade`; [] for most graphs. */
+      passes: readonly ShaderPass[];
     }
   | { ok: false; errors: ShaderCompileError[] };
 
@@ -172,6 +219,12 @@ export function compileShaderGraph(
     return `ng_u.v[${slot}]${packed.swizzle}`;
   };
   const layerSources: LayerSource[] = [];
+  const passes: ShaderPass[] = [];
+  /** `fn ng_stage{k}` per pass. */
+  const stageFns: string[] = [];
+  /** Pass index per (node, input, filter), so a node compiled into several
+   *  functions still renders its pass once. */
+  const passIndex = new Map<string, number>();
   /** Fetch function of the layer named `layerName`, one per distinct name.
    *  Returns null when the graph already uses MAX_LAYER_SOURCES layers. */
   const layerFetch = (layerName: string): string | null => {
@@ -232,155 +285,203 @@ export function compileShaderGraph(
       sink = outputs[0] ?? fail(null, "Add a Layer Output node");
     }
 
-    // Node outputs are bound in this scope's base block, so a value first
-    // needed inside a nested block (e.g. a loop) is still visible after it.
-    const base = current();
-    const bound = new Map<string, ShaderOutputs>();
-    const visiting = new Set<string>();
     let bodyResult: Record<string, string | null> = {};
 
-    const resolveInput = (nodeId: string, portId: string): string | null => {
-      const [node, def] = lookup(nodeId);
-      const port = nodePorts(def, node, g).inputs.find((p) => p.id === portId);
-      if (!port) return null;
-      const edge = incoming.get(`${nodeId}:${portId}`);
-      if (edge) {
-        const expr = emit(edge.from.node)[edge.from.port];
-        const [srcNode, srcDef] = lookup(edge.from.node);
-        const outPort = nodePorts(srcDef, srcNode, g).outputs.find((p) => p.id === edge.from.port);
-        if (!expr || !outPort) {
-          return fail(edge.from.node, `${srcDef.label} has no shader value for "${edge.from.port}"`);
-        }
-        return convertExpr(expr, outPort.type, port.type);
-      }
-      // Inline values are uniforms, never literals: besides not rebuilding
-      // the shader on every edit, WGSL would constant-fold literal-only
-      // expressions and reject e.g. `1.0 / 0.0` at compile time.
-      if (!port.value) return null;
-      return uniformExpr(paramValue(def, node, portId, g), port.type);
-    };
+    /**
+     * The nodes compiled into one function (`ng_shade`, or a pass's
+     * `ng_stage{k}`). Node outputs are bound in the scope's base block, so a
+     * value first needed inside a nested block (e.g. a loop) is still
+     * visible after it. In a pass, values from outside the body can't be
+     * used: they belong to another function.
+     */
+    const makeScope = (base: string[], inPass: boolean) => {
+      const bound = new Map<string, ShaderOutputs>();
+      const visiting = new Set<string>();
 
-    const emit = (nodeId: string): ShaderOutputs => {
-      const done = bound.get(nodeId);
-      if (done) return done;
-      if (visiting.has(nodeId)) fail(nodeId, "Cycle in graph");
-      const [node, def] = lookup(nodeId);
-      const generate = def.domains.includes("shader") ? def.generateShader : undefined;
-      if (!generate) return fail(nodeId, `${def.label} can't be used in a shader`);
-      visiting.add(nodeId);
-      const ports = nodePorts(def, node, g);
-      for (const id of def.requiredInputs ?? []) {
-        if (!incoming.has(`${nodeId}:${id}`)) {
-          const label = ports.inputs.find((p) => p.id === id)?.label ?? id;
-          fail(nodeId, `${def.label}: connect something to ${label}`);
-        }
-      }
-      used.add(usedKey(path, nodeId));
-      const name = (hint: string): string => `${ident(hint)}${counter++}`;
-
-      const ctx: ShaderContext = {
-        input: (id) => resolveInput(nodeId, id),
-        param: (id) => paramValue(def, node, id, g),
-        uniform: (id) => {
-          const value = paramValue(def, node, id, g);
-          const spec = def.params?.find((p) => p.id === id)?.spec;
-          const type = spec?.kind === "color" ? "color" : spec?.kind === "vec2" ? "vec2" : "float";
-          return uniformExpr(value, type) ?? fail(nodeId, `Parameter "${id}" has no shader value`);
-        },
-        argument: (id) =>
-          argumentExpr(id) ?? fail(nodeId, `Unknown argument "${id}"`),
-        uniformFloats: (values) => {
-          const slot = uniforms.length / 4;
-          uniforms.push(...values);
-          while (uniforms.length % 4 !== 0) uniforms.push(0);
-          return { slot, at: (i) => `ng_u.v[${slot} + (${i}) / 4][(${i}) % 4]` };
-        },
-        uv: "ng_uv",
-        pixel: "ng_pixel",
-        source: "ng_src",
-        resolution: "ng_u.v[0].xy",
-        texelSize: "ng_u.v[0].zw",
-        layerOrigin: "ng_u.v[1].xy",
-        layerSize: "ng_u.v[1].zw",
-        isFloat: "ng_u.v[2].x",
-        load: (p) => `ng_load(${p})`,
-        layerFetch: (layerName) =>
-          layerFetch(layerName) ??
-          fail(nodeId, `A shader can sample at most ${MAX_LAYER_SOURCES} other layers`),
-        sampleLayer: (uv) => `${registerSampler(addHelper, "bilinear", "clamp")}(${uv})`,
-        helper: addHelper,
-        linear: options.linear,
-        setResult: (expr) => {
-          result = expr;
-        },
-
-        name,
-        local: (type, expr) => {
-          const n = name("l");
-          current().push(`let ${n}: ${type} = ${expr};`);
-          return n;
-        },
-        variable: (type, init) => {
-          const n = name("v");
-          current().push(`var ${n}: ${type} = ${init};`);
-          return n;
-        },
-        statement: (code) => {
-          current().push(code);
-        },
-        block: (header, body) => {
-          const inner: string[] = [];
-          blocks.push(inner);
-          try {
-            body();
-          } finally {
-            blocks.pop();
+      const resolveInput = (nodeId: string, portId: string): string | null => {
+        const [node, def] = lookup(nodeId);
+        const port = nodePorts(def, node, g).inputs.find((p) => p.id === portId);
+        if (!port) return null;
+        const edge = incoming.get(`${nodeId}:${portId}`);
+        if (edge) {
+          const expr = emit(edge.from.node)[edge.from.port];
+          const [srcNode, srcDef] = lookup(edge.from.node);
+          const outPort = nodePorts(srcDef, srcNode, g).outputs.find((p) => p.id === edge.from.port);
+          if (!expr || !outPort) {
+            return fail(edge.from.node, `${srcDef.label} has no shader value for "${edge.from.port}"`);
           }
-          current().push(`${header} {`, ...inner.map((l) => `  ${l}`), `}`);
-        },
-
-        ports,
-        sockets: node.body?.subgraph?.sockets ?? [],
-        compileBody: (inputs) => {
-          if (!node.body) return fail(nodeId, `${def.label} has no body`);
-          return compileGraph(node.body, [...path, nodeId], inputs);
-        },
-        bodyInputs: () => bodyInputs ?? fail(nodeId, "Only valid inside a subgraph body"),
-        setBodyOutputs: (values) => {
-          bodyResult = { ...values };
-        },
+          return convertExpr(expr, outPort.type, port.type);
+        }
+        // Inline values are uniforms, never literals: besides not rebuilding
+        // the shader on every edit, WGSL would constant-fold literal-only
+        // expressions and reject e.g. `1.0 / 0.0` at compile time.
+        if (!port.value) return null;
+        return uniformExpr(paramValue(def, node, portId, g), port.type);
       };
 
-      // A node's own statements go to its scope's base block (even when it
-      // is first needed inside another node's open block); only the blocks
-      // it opens itself nest inside that.
-      let out: ShaderOutputs;
-      blocks.push(base);
-      try {
-        out = generate.call(def, ctx);
-      } catch (err) {
-        if (err instanceof CompileError) throw err;
-        return fail(nodeId, err instanceof Error ? err.message : String(err));
-      } finally {
-        blocks.pop();
-      }
+      const emit = (nodeId: string): ShaderOutputs => {
+        const done = bound.get(nodeId);
+        if (done) return done;
+        if (visiting.has(nodeId)) fail(nodeId, "Cycle in graph");
+        const [node, def] = lookup(nodeId);
+        const generate = def.domains.includes("shader") ? def.generateShader : undefined;
+        if (!generate) return fail(nodeId, `${def.label} can't be used in a shader`);
+        visiting.add(nodeId);
+        const ports = nodePorts(def, node, g);
+        for (const id of def.requiredInputs ?? []) {
+          if (!incoming.has(`${nodeId}:${id}`)) {
+            const label = ports.inputs.find((p) => p.id === id)?.label ?? id;
+            fail(nodeId, `${def.label}: connect something to ${label}`);
+          }
+        }
+        used.add(usedKey(path, nodeId));
+        const name = (hint: string): string => `${ident(hint)}${counter++}`;
 
-      // Bind each output to a let so downstream nodes reuse it.
-      const names: Record<string, string> = {};
-      for (const p of ports.outputs) {
-        const expr = out[p.id];
-        const type = wgslType(p.type);
-        if (!expr || !type) continue;
-        const n = name(`n_${p.id}_`);
-        base.push(`let ${n}: ${type} = ${expr};`);
-        names[p.id] = n;
-      }
-      visiting.delete(nodeId);
-      bound.set(nodeId, names);
-      return names;
+        const ctx: ShaderContext = {
+          input: (id) => resolveInput(nodeId, id),
+          param: (id) => paramValue(def, node, id, g),
+          uniform: (id) => {
+            const value = paramValue(def, node, id, g);
+            const spec = def.params?.find((p) => p.id === id)?.spec;
+            const type = spec?.kind === "color" ? "color" : spec?.kind === "vec2" ? "vec2" : "float";
+            return uniformExpr(value, type) ?? fail(nodeId, `Parameter "${id}" has no shader value`);
+          },
+          argument: (id) =>
+            argumentExpr(id) ?? fail(nodeId, `Unknown argument "${id}"`),
+          uniformFloats: (values) => {
+            const slot = uniforms.length / 4;
+            uniforms.push(...values);
+            while (uniforms.length % 4 !== 0) uniforms.push(0);
+            return { slot, at: (i) => `ng_u.v[${slot} + (${i}) / 4][(${i}) % 4]` };
+          },
+          uv: "ng_uv",
+          pixel: "ng_pixel",
+          source: "ng_src",
+          inputPass: (id, filter) => {
+            const key = `${usedKey(path, nodeId)}:${id}:${filter.kind}:${filter.radius}`;
+            let k = passIndex.get(key);
+            if (k === undefined) {
+              // Compile the input's upstream nodes into their own function;
+              // passes they need themselves are created (and listed) first.
+              const body: string[] = [];
+              blocks.push(body);
+              let value: string | null;
+              try {
+                value = makeScope(body, true).resolveInput(nodeId, id);
+              } finally {
+                blocks.pop();
+              }
+              if (value === null) return null;
+              if (passes.length >= MAX_PASSES) {
+                fail(nodeId, `A shader can use at most ${MAX_PASSES} blur passes`);
+              }
+              k = passes.length;
+              const entry = `ng_stage${k}`;
+              stageFns.push(
+                [
+                  `fn ${entry}(ng_uv: vec2f, ng_pixel: vec2f, ng_src: vec4f) -> vec4f {`,
+                  ...body.map((l) => `  ${l}`),
+                  `  let c: vec4f = ${value};`,
+                  `  return vec4f(c.rgb * c.a, c.a);`,
+                  `}`,
+                ].join("\n"),
+              );
+              passes.push({ entry, filter });
+              passIndex.set(key, k);
+            }
+            return addHelper(`ng_load_pass${k}`, passFetchCode(`ng_load_pass${k}`, k));
+          },
+          resolution: "ng_u.v[0].xy",
+          texelSize: "ng_u.v[0].zw",
+          layerOrigin: "ng_u.v[1].xy",
+          layerSize: "ng_u.v[1].zw",
+          isFloat: "ng_u.v[2].x",
+          load: (p) => `ng_load(${p})`,
+          layerFetch: (layerName) =>
+            layerFetch(layerName) ??
+            fail(nodeId, `A shader can sample at most ${MAX_LAYER_SOURCES} other layers`),
+          sampleLayer: (uv) => `${registerSampler(addHelper, "bilinear", "clamp")}(${uv})`,
+          helper: addHelper,
+          linear: options.linear,
+          setResult: (expr) => {
+            result = expr;
+          },
+
+          name,
+          local: (type, expr) => {
+            const n = name("l");
+            current().push(`let ${n}: ${type} = ${expr};`);
+            return n;
+          },
+          variable: (type, init) => {
+            const n = name("v");
+            current().push(`var ${n}: ${type} = ${init};`);
+            return n;
+          },
+          statement: (code) => {
+            current().push(code);
+          },
+          block: (header, body) => {
+            const inner: string[] = [];
+            blocks.push(inner);
+            try {
+              body();
+            } finally {
+              blocks.pop();
+            }
+            current().push(`${header} {`, ...inner.map((l) => `  ${l}`), `}`);
+          },
+
+          ports,
+          sockets: node.body?.subgraph?.sockets ?? [],
+          compileBody: (inputs) => {
+            if (!node.body) return fail(nodeId, `${def.label} has no body`);
+            return compileGraph(node.body, [...path, nodeId], inputs);
+          },
+          bodyInputs: () => {
+            if (inPass && bodyInputs) {
+              fail(nodeId, "A blur inside a loop body can't use values from outside it");
+            }
+            return bodyInputs ?? fail(nodeId, "Only valid inside a subgraph body");
+          },
+          setBodyOutputs: (values) => {
+            bodyResult = { ...values };
+          },
+        };
+
+        // A node's own statements go to its scope's base block (even when it
+        // is first needed inside another node's open block); only the blocks
+        // it opens itself nest inside that.
+        let out: ShaderOutputs;
+        blocks.push(base);
+        try {
+          out = generate.call(def, ctx);
+        } catch (err) {
+          if (err instanceof CompileError) throw err;
+          return fail(nodeId, err instanceof Error ? err.message : String(err));
+        } finally {
+          blocks.pop();
+        }
+
+        // Bind each output to a let so downstream nodes reuse it.
+        const names: Record<string, string> = {};
+        for (const p of ports.outputs) {
+          const expr = out[p.id];
+          const type = wgslType(p.type);
+          if (!expr || !type) continue;
+          const n = name(`n_${p.id}_`);
+          base.push(`let ${n}: ${type} = ${expr};`);
+          names[p.id] = n;
+        }
+        visiting.delete(nodeId);
+        bound.set(nodeId, names);
+        return names;
+      };
+
+      return { emit, resolveInput };
     };
 
-    emit(sink.id);
+    makeScope(current(), false).emit(sink.id);
     return bodyResult;
   };
 
@@ -399,6 +500,7 @@ export function compileShaderGraph(
 
   const code = [
     ...helpers.values(),
+    ...stageFns,
     `fn ${SHADER_ENTRY}(ng_uv: vec2f, ng_pixel: vec2f, ng_src: vec4f) -> vec4f {`,
     ...blocks[0].map((l) => `  ${l}`),
     `  return ${result};`,
@@ -411,5 +513,6 @@ export function compileShaderGraph(
     used,
     argumentSlots,
     layerSources,
+    passes,
   };
 }

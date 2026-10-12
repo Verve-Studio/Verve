@@ -7,6 +7,7 @@ import type {
 } from "@/graphics/webgpu/rendering/WebGPURenderer";
 import type { LayerState, RGBAColor, PixelFormat } from "@/types";
 import { isGroupLayer } from "@/types";
+import { clearSelectedPixels } from "@/utils/clearSelectedPixels";
 import {
   buildRenderPlan as buildCanvasRenderPlan,
   buildSubPlan,
@@ -696,42 +697,8 @@ export function useCanvasHandle({
         const renderer = rendererRef.current;
         const layer = glLayersRef.current.get(layerId);
         if (!renderer || !layer) return;
-        const w = renderer.pixelWidth;
+        clearSelectedPixels(layer, mask, renderer.pixelWidth);
         const indexed = layer.format === "indexed8";
-        for (let i = 0; i < mask.length; i++) {
-          if (!mask[i]) continue;
-          const cx = i % w;
-          const cy = Math.floor(i / w);
-          const lx = cx - layer.offsetX;
-          const ly = cy - layer.offsetY;
-          if (
-            lx < 0 ||
-            ly < 0 ||
-            lx >= layer.layerWidth ||
-            ly >= layer.layerHeight
-          )
-            continue;
-          if (indexed) {
-            // Indexed8 has 1 byte per pixel; 255 is the transparent sentinel.
-            // No partial alpha — any selected pixel is wiped to transparent.
-            const pi = ly * layer.layerWidth + lx;
-            (layer.data as Uint8Array)[pi] = 255;
-            continue;
-          }
-          const pi = (ly * layer.layerWidth + lx) * 4;
-          const f = 1 - mask[i] / 255;
-          if (layer.format === "rgba32f") {
-            layer.data[pi] *= f;
-            layer.data[pi + 1] *= f;
-            layer.data[pi + 2] *= f;
-            layer.data[pi + 3] *= f;
-          } else {
-            layer.data[pi] = Math.round(layer.data[pi] * f);
-            layer.data[pi + 1] = Math.round(layer.data[pi + 1] * f);
-            layer.data[pi + 2] = Math.round(layer.data[pi + 2] * f);
-            layer.data[pi + 3] = Math.round(layer.data[pi + 3] * f);
-          }
-        }
         if (indexed) {
           renderer.flushLayer(
             layer,

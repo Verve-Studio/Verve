@@ -6,6 +6,8 @@ import { activeScope } from "@/core/store/scope";
 
 interface UseKeyboardShortcutsOptions {
   handleUndo: () => void;
+  /** Ctrl+Shift+Z (Cmd+Shift+Z on macOS). Ctrl+Y belongs to Proof Colors,
+   *  as in Photoshop. */
   handleRedo: () => void;
   handleCopy: () => void;
   handleCopyMerged?: () => void;
@@ -39,6 +41,10 @@ interface UseKeyboardShortcutsOptions {
   handleNewLayer?: () => void;
   handleGroupLayers?: () => void;
   handleUngroupLayers?: () => void;
+  /** View → Proof Colors (Ctrl+Y). */
+  handleToggleProofColors?: () => void;
+  /** View → Gamut Warning (Ctrl+Shift+Y). */
+  handleToggleGamutWarning?: () => void;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -76,6 +82,8 @@ export function useKeyboardShortcuts({
   handleNewLayer,
   handleGroupLayers,
   handleUngroupLayers,
+  handleToggleProofColors,
+  handleToggleGamutWarning,
 }: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -134,9 +142,12 @@ export function useKeyboardShortcuts({
       } else if (k === "z") {
         e.preventDefault();
         handleUndo();
+      } else if (k === "y" && e.shiftKey) {
+        e.preventDefault();
+        handleToggleGamutWarning?.();
       } else if (k === "y") {
         e.preventDefault();
-        handleRedo();
+        handleToggleProofColors?.();
       } else if (k === "c" && e.shiftKey) {
         e.preventDefault();
         handleCopyMerged?.();
@@ -247,5 +258,7 @@ export function useKeyboardShortcuts({
     handleNewLayer,
     handleGroupLayers,
     handleUngroupLayers,
+    handleToggleProofColors,
+    handleToggleGamutWarning,
   ]);
 }

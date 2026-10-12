@@ -11,6 +11,12 @@ import { useTrackedMemory } from "@/core/store/memoryStore";
 import styles from "./PreferencesDialog.module.scss";
 import { activeScope } from "@/core/store/scope";
 import { HistoryStore } from "@/core/store/historyStore";
+import {
+  GB,
+  MAX_HISTORY_LIMIT_GB,
+  MIN_MEMORY_LIMIT_GB,
+  parseMemoryLimitGB,
+} from "@/utils/memoryLimits";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -114,9 +120,8 @@ function AppearanceSection(): React.JSX.Element {
 
 // ─── Memory section ──────────────────────────────────────────────────────────
 
-const GB = 1024 * 1024 * 1024;
-const MIN_HISTORY_GB = 0.5;
-const MAX_HISTORY_GB = 64;
+const MIN_HISTORY_GB = MIN_MEMORY_LIMIT_GB;
+const MAX_HISTORY_GB = MAX_HISTORY_LIMIT_GB;
 const STEP_GB = 0.5;
 
 function formatBytes(bytes: number): string {
@@ -140,8 +145,10 @@ function MemorySection(): React.JSX.Element {
 
   const valueGB = prefs.historyMemoryBytes / GB;
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const gb = Number(e.target.value);
-    if (!Number.isFinite(gb)) return;
+    // Empty / out-of-range input must never reach the store: a 0-byte cap
+    // evicts the undo history of every open document.
+    const gb = parseMemoryLimitGB(e.target.value, MAX_HISTORY_GB);
+    if (gb === null) return;
     preferencesStore.set({ historyMemoryBytes: Math.round(gb * GB) });
   };
 
@@ -165,8 +172,8 @@ function MemorySection(): React.JSX.Element {
       ? Math.max(MIN_HISTORY_GB, Math.floor((systemRamBytes / GB) * 2) / 2)
       : 64;
   const handleBufferChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const gb = Number(e.target.value);
-    if (!Number.isFinite(gb)) return;
+    const gb = parseMemoryLimitGB(e.target.value, bufferMaxGB);
+    if (gb === null) return;
     preferencesStore.set({ bufferMemoryBytes: Math.round(gb * GB) });
   };
   const handleBufferMaxOutChange = (

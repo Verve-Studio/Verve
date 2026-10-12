@@ -1,0 +1,19 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`compileShaderGraph > runs a representative graph end to end 1`] = `
+"fn ng_mix_multiply(f: f32, ca: vec4f, cb: vec4f) -> vec4f {
+  let a = ca.rgb;
+  let b = cb.rgb;
+  return vec4f(mix(a, a * b, f), mix(ca.a, cb.a, f));
+}
+fn ng_invert(f: f32, c: vec4f) -> vec4f {
+  return vec4f(mix(c.rgb, 1.0 - c.rgb, f), c.a);
+}
+fn ng_shade(ng_uv: vec2f, ng_pixel: vec2f, ng_src: vec4f) -> vec4f {
+  let n_color_0: vec4f = ng_src;
+  let n_alpha_1: f32 = ng_src.a;
+  let n_color_2: vec4f = ng_invert(ng_u.v[4].x, n_color_0);
+  let n_color_3: vec4f = ng_mix_multiply(ng_u.v[3].x, n_color_2, ng_u.v[5]);
+  return vec4f((n_color_3).rgb, n_alpha_1);
+}"
+`;

@@ -620,6 +620,8 @@ function runTransform<T extends Uint8Array | Float32Array>(
  * invMatrix: [a, b, tx, c, d, ty] — maps output (x,y) to source (u,v):
  *   u = a*x + b*y + tx
  *   v = c*x + d*y + ty
+ * Pixel centres are at integer coordinates on both sides (identity = no-op
+ * in every mode); edge-space matrices go through `inverseAffineForResampler`.
  * interp: 0=nearest, 1=bilinear, 2=bicubic
  */
 export function applyAffineTransform<T extends Uint8Array | Float32Array>(

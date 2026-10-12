@@ -59,12 +59,18 @@ export function serializeAdjOpStatic(op: EffectRenderOp): string {
   }
   // Source layers are part of the static key, content included: the op
   // can read them anywhere, so the dirty-rect path can't patch its output.
+  // A source renders with its mask and its own effects, so they're keyed too.
   if (op.sourceLayers) {
-    for (const l of op.sourceLayers) {
+    for (const s of op.sourceLayers) {
+      if (!s) {
+        parts.push("src:-");
+        continue;
+      }
+      const { layer: l, mask: m } = s;
       parts.push(
-        l
-          ? `src:${l.id}:${l.contentVersion}:${l.offsetX}:${l.offsetY}:${l.layerWidth}x${l.layerHeight}`
-          : "src:-",
+        `src:${l.id}:${l.contentVersion}:${l.offsetX}:${l.offsetY}:${l.layerWidth}x${l.layerHeight}` +
+          (m ? `:M${m.id}:${m.contentVersion}:${m.offsetX}:${m.offsetY}` : "") +
+          (s.adjustments.length > 0 ? `:[${computeAdjGroupParamsKey(s.adjustments)}]` : ""),
       );
     }
   }
@@ -82,14 +88,14 @@ export function serializeAdjOp(op: EffectRenderOp): string {
 
 /** Stable key for a list of adjustment ops — used as the params portion of the group cache key. */
 export function computeAdjGroupParamsKey(
-  adjustments: EffectRenderOp[],
+  adjustments: readonly EffectRenderOp[],
 ): string {
   return adjustments.map(serializeAdjOp).join("§");
 }
 
 /** {@link computeAdjGroupParamsKey} without selection-mask content versions. */
 export function computeAdjGroupStaticKey(
-  adjustments: EffectRenderOp[],
+  adjustments: readonly EffectRenderOp[],
 ): string {
   return adjustments.map(serializeAdjOpStatic).join("§");
 }

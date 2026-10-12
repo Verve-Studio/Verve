@@ -46,7 +46,12 @@ function erasePixelOp(
     canvasY >= renderer.pixelHeight
   )
     return;
-  if (sel && sel.mask[canvasY * sel.width + canvasX] === 0) return;
+  // Soft (feathered) selections scale the erase strength; 0 = outside.
+  if (sel) {
+    const v = sel.mask[canvasY * sel.width + canvasX];
+    if (v === 0) return;
+    if (v !== 255) blendFactor *= v / 255;
+  }
   const lx = canvasX - layer.offsetX;
   const ly = canvasY - layer.offsetY;
   if (lx < 0 || lx >= layer.layerWidth || ly < 0 || ly >= layer.layerHeight)

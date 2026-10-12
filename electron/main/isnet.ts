@@ -1,4 +1,5 @@
 import { mlPaths } from './ml/paths'
+import { assertImageSize, assertPixelBuffer } from './ml/imageParams'
 import { join } from 'node:path'
 import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -234,9 +235,8 @@ export async function runIsnet(params: {
   width: number
   height: number
 }): Promise<{ mask: Uint8Array; width: number; height: number; provider: string }> {
-  if (params.rgba.length !== params.width * params.height * 4) {
-    throw new Error(`rgba length ${params.rgba.length} ≠ ${params.width}×${params.height}×4`)
-  }
+  assertImageSize(params.width, params.height)
+  assertPixelBuffer('rgba', params.rgba, params.width, params.height, 4)
   const sess = await loadSession()
   const ort = getOrt()
   const rgba = params.rgba

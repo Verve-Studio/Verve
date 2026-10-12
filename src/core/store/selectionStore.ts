@@ -117,10 +117,7 @@ export class SelectionStore {
     this.pending = null;
 
     if (lx > rx || ly > ry) {
-      if (mode === "set") {
-        this.mask = null;
-        this.borderSegments = null;
-      }
+      this.applyEmpty(mode);
       this.notify();
       return;
     }
@@ -145,10 +142,7 @@ export class SelectionStore {
     this.pending = null;
 
     if (points.length < 3) {
-      if (mode === "set") {
-        this.mask = null;
-        this.borderSegments = null;
-      }
+      this.applyEmpty(mode);
       this.notify();
       return;
     }
@@ -210,6 +204,7 @@ export class SelectionStore {
     antiAlias = false,
   ): void {
     const { width: w, height: h } = this;
+    // A click off the canvas is ignored (not an empty region).
     if (sx < 0 || sx >= w || sy < 0 || sy >= h) return;
 
     const m = new Uint8Array(w * h);
@@ -419,7 +414,12 @@ export class SelectionStore {
     if (!SELECTION_MODES.includes(mode)) {
       throw new Error(`Unknown selection mode "${String(mode)}"`);
     }
+    if (mode === "subtract" && !this.mask) {
+      // Nothing is selected, so there is nothing to subtract from.
+      return;
+    }
     if (mode === "set" || !this.mask) {
+      // With no existing selection, add and intersect take the new region.
       this.mask = newMask;
     } else if (mode === "add") {
       // Union: take the stronger selection value
@@ -428,41 +428,42 @@ export class SelectionStore {
       }
     } else if (mode === "intersect") {
       // Intersection: retain only pixels selected in both masks.
-      // When there is no existing mask, intersect with "everything selected" → keep the new mask as-is.
       for (let i = 0; i < newMask.length; i++) {
         this.mask[i] = Math.min(this.mask[i], newMask[i]);
-      }
-      // If the result is entirely zero, treat as no selection.
-      let any = false;
-      for (let i = 0; i < this.mask.length; i++)
-        if (this.mask[i]) {
-          any = true;
-          break;
-        }
-      if (!any) {
-        this.mask = null;
-        this.borderSegments = null;
-        return;
       }
     } else if (mode === "subtract") {
       // Subtract: reduce by the subtracted strength
       for (let i = 0; i < this.mask.length; i++) {
         if (newMask[i]) this.mask[i] = Math.max(0, this.mask[i] - newMask[i]);
       }
-      // If the entire mask is now zero, treat as no selection
-      let any = false;
-      for (let i = 0; i < this.mask.length; i++)
-        if (this.mask[i]) {
-          any = true;
-          break;
-        }
-      if (!any) {
-        this.mask = null;
-        this.borderSegments = null;
-        return;
+    }
+    // A mask that selects nothing is stored as no selection.
+    const m = this.mask;
+    let any = false;
+    for (let i = 0; i < m.length; i++)
+      if (m[i]) {
+        any = true;
+        break;
       }
+    if (!any) {
+      this.mask = null;
+      this.borderSegments = null;
+      return;
     }
     this.borderSegments = this.computeBorderSegments();
+  }
+
+  /** Apply an empty region (off-canvas rectangle, degenerate polygon) in
+   *  `mode`: "set" and "intersect" leave nothing
+   *  selected; "add" and "subtract" leave the selection unchanged. */
+  private applyEmpty(mode: SelectionMode): void {
+    if (!SELECTION_MODES.includes(mode)) {
+      throw new Error(`Unknown selection mode "${String(mode)}"`);
+    }
+    if (mode === "set" || mode === "intersect") {
+      this.mask = null;
+      this.borderSegments = null;
+    }
   }
 
   /**

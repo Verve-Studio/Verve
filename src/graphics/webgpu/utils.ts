@@ -270,7 +270,13 @@ export function writeUniformBuffer(
   buffer: GPUBuffer,
   data: ArrayBuffer | Float32Array | Uint32Array,
 ): void {
-  const src = data instanceof ArrayBuffer ? data : (data.buffer as ArrayBuffer);
+  // Upload exactly the view's bytes: a typed array may be a sub-view of a
+  // larger buffer, so `data.buffer` alone would send the wrong bytes (and
+  // overrun a buffer sized from the view's byteLength).
+  const src =
+    data instanceof ArrayBuffer
+      ? data
+      : new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
   device.queue.writeBuffer(buffer, 0, src);
 }
 

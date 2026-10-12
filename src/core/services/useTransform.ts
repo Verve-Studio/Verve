@@ -3,6 +3,8 @@ import type { AppAction } from "@/core/store/AppContext";
 import {
   computeInverseAffine,
   computeInverseHomography,
+  inverseAffineForResampler,
+  inverseHomographyForResampler,
 } from "@/core/tools/Transform/Transform";
 import type { AppState, PixelFormat, RGBAColor } from "@/types";
 import type { CanvasHandle } from "@/ux/main/Canvas/Canvas";
@@ -17,6 +19,7 @@ import { activeScope } from "@/core/store/scope";
 import { statusMessageStore } from "@/core/store/statusMessageStore";
 import { notificationStore } from "@/core/store/notificationStore";
 import { extractErrorMessage } from "@/utils/userFeedback";
+import { indexedSelected } from "@/core/tools/_shared/primitives";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,8 +104,10 @@ function findMaskBoundingRect(
 
 /** Crop `rect` out of a canvas-sized buffer as the resampler's RGBA input
  *  (indexed8 is packed: red = index, alpha 255 / 0). Unselected pixels are
- *  left transparent. */
-function cropForTransform(
+ *  left transparent. A soft selection lifts alpha × mask / 255 (the rest is
+ *  left behind by `clearSelectedPixels`, as with the Move tool); indexed8
+ *  has no partial alpha, so its mask is thresholded at 50%. */
+export function cropForTransform(
   src: Pixels,
   format: PixelFormat,
   srcW: number,
@@ -115,10 +120,11 @@ function cropForTransform(
   for (let row = 0; row < h; row++) {
     for (let col = 0; col < w; col++) {
       const si = (y + row) * srcW + (x + col);
-      if (mask !== null && mask[si] === 0) continue;
+      const m = mask !== null ? mask[si] : 255;
+      if (m === 0) continue;
       const di = (row * w + col) * 4;
       if (format === "indexed8") {
-        if (src[si] === 255) continue;
+        if (src[si] === 255 || !indexedSelected(m)) continue;
         out[di] = src[si];
         out[di + 3] = 255;
         continue;
@@ -126,7 +132,8 @@ function cropForTransform(
       out[di] = src[si * 4];
       out[di + 1] = src[si * 4 + 1];
       out[di + 2] = src[si * 4 + 2];
-      out[di + 3] = src[si * 4 + 3];
+      const a = m === 255 ? src[si * 4 + 3] : (src[si * 4 + 3] * m) / 255;
+      out[di + 3] = format === "rgba32f" ? a : Math.round(a);
     }
   }
   return out;
@@ -255,9 +262,8 @@ export function useTransform({
           { x: originalW, y: originalH },
           { x: 0, y: originalH },
         ];
-        const invH = computeInverseHomography(
-          srcQuad,
-          params.perspectiveCorners,
+        const invH = inverseHomographyForResampler(
+          computeInverseHomography(srcQuad, params.perspectiveCorners),
         );
         result = await applyPerspectiveTransform(
           floatBuffer,
@@ -269,7 +275,9 @@ export function useTransform({
           interpInt,
         );
       } else {
-        const invMatrix = computeInverseAffine(params, originalW, originalH);
+        const invMatrix = inverseAffineForResampler(
+          computeInverseAffine(params, originalW, originalH),
+        );
         result = await applyAffineTransform(
           floatBuffer,
           originalW,

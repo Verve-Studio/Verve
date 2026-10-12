@@ -19,6 +19,33 @@ export interface SizeInputsProps {
   max?: number;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function clampSide(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(v)));
+}
+
+/**
+ * The edited side `v` and the side derived from it (`v * ratio`), both kept
+ * within [min, max]. When the derived side would exceed `max`, the edited side
+ * shrinks instead so the aspect ratio holds (the dialogs would otherwise clamp
+ * one side on OK and distort the image).
+ */
+function fitConstrained(
+  v: number,
+  ratio: number,
+  min: number,
+  max: number,
+): [edited: number, derived: number] {
+  let edited = clampSide(v, min, max);
+  let derived = Math.round(edited * ratio);
+  if (derived > max) {
+    derived = max;
+    edited = clampSide(max / ratio, min, max);
+  }
+  return [edited, Math.max(min, derived)];
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SizeInputs({
@@ -35,41 +62,42 @@ export function SizeInputs({
 }: SizeInputsProps): React.JSX.Element {
   const handleWidthChange = useCallback(
     (v: number): void => {
-      const w = Math.max(min, Math.round(v));
-      onWidthChange(w);
       if (constrain && originHeight > 0 && originWidth > 0) {
-        onHeightChange(
-          Math.max(min, Math.round((w * originHeight) / originWidth)),
-        );
+        const [w, h] = fitConstrained(v, originHeight / originWidth, min, max);
+        onWidthChange(w);
+        onHeightChange(h);
+      } else {
+        onWidthChange(clampSide(v, min, max));
       }
     },
-    [constrain, originWidth, originHeight, min, onWidthChange, onHeightChange],
+    [constrain, originWidth, originHeight, min, max, onWidthChange, onHeightChange],
   );
 
   const handleHeightChange = useCallback(
     (v: number): void => {
-      const h = Math.max(min, Math.round(v));
-      onHeightChange(h);
       if (constrain && originWidth > 0 && originHeight > 0) {
-        onWidthChange(
-          Math.max(min, Math.round((h * originWidth) / originHeight)),
-        );
+        const [h, w] = fitConstrained(v, originWidth / originHeight, min, max);
+        onHeightChange(h);
+        onWidthChange(w);
+      } else {
+        onHeightChange(clampSide(v, min, max));
       }
     },
-    [constrain, originWidth, originHeight, min, onWidthChange, onHeightChange],
+    [constrain, originWidth, originHeight, min, max, onWidthChange, onHeightChange],
   );
 
   const handleConstrainToggle = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>): void => {
       onConstrainChange(e.target.checked);
       if (e.target.checked && originWidth > 0 && originHeight > 0) {
-        // Snap height to match current width ratio
-        onHeightChange(
-          Math.max(min, Math.round((width * originHeight) / originWidth)),
-        );
+        // Snap height to match current width ratio (shrinking both if the
+        // height would exceed max).
+        const [w, h] = fitConstrained(width, originHeight / originWidth, min, max);
+        if (w !== width) onWidthChange(w);
+        onHeightChange(h);
       }
     },
-    [onConstrainChange, originWidth, originHeight, min, width, onHeightChange],
+    [onConstrainChange, originWidth, originHeight, min, max, width, onWidthChange, onHeightChange],
   );
 
   const aspectRatio =

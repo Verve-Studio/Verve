@@ -39,6 +39,7 @@
  * FinalizationRegistry as a safety net in case `.destroy()` is forgotten.
  */
 import { preferencesStore } from "./preferencesStore";
+import { DEFAULT_BUFFER_BYTES, validMemoryCapBytes } from "@/utils/memoryLimits";
 import { useSyncExternalStore } from "react";
 
 export type MemoryBucket = "cpu" | "gpu";
@@ -66,6 +67,12 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${bytes} B`;
+}
+
+/** The buffer cap in force: a corrupt preference (0, negative, NaN) would
+ *  refuse every allocation, so it falls back to the default. */
+function capBytes(pref: number): number {
+  return validMemoryCapBytes(pref, DEFAULT_BUFFER_BYTES);
 }
 
 class MemoryStore {
@@ -110,7 +117,7 @@ class MemoryStore {
         bucket,
         n,
         this.getCapped(),
-        prefs.bufferMemoryBytes,
+        capBytes(prefs.bufferMemoryBytes),
       );
     }
     this.add(bucket, n);
@@ -137,7 +144,7 @@ class MemoryStore {
     const projected = prefs.unifiedMemory
       ? this.cpu + this.gpu + n
       : this.cpu + n;
-    return projected <= prefs.bufferMemoryBytes;
+    return projected <= capBytes(prefs.bufferMemoryBytes);
   }
 
   private add(bucket: MemoryBucket, n: number): void {
